@@ -54,6 +54,7 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 ### Generation
 
 ```bash
+# Default generation without inference strategies enabled
 python generate.py --checkpoint logs/<run_dir>/best_model.pt \
     --prompt "The history of" --num_tokens 512
 ```
@@ -61,6 +62,9 @@ python generate.py --checkpoint logs/<run_dir>/best_model.pt \
 Optional inference strategies:
 
 ```bash
+# Use all strategies (recommended)
+python generate.py --checkpoint best_model.pt --strategies
+
 # Entropy-adaptive temperature
 python generate.py --checkpoint best_model.pt --entropy_adaptive
 
