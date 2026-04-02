@@ -346,43 +346,10 @@ def train():
     if device == 'cuda':
         torch.backends.cudnn.benchmark = True
 
-    # Create run directory
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    dataset_name = config.get("dataset", "wikitext-103")
-    log_dir = os.path.join(config.get("out_dir", "logs"), f"{dataset_name}_{timestamp}")
-    os.makedirs(log_dir, exist_ok=True)
-
-    # Backup config and source
-    with open(os.path.join(log_dir, "config.json"), 'w') as f:
-        json.dump(config, f, indent=4)
-    try:
-        shutil.copy("model.py", os.path.join(log_dir, "model.py"))
-        shutil.copy("train.py", os.path.join(log_dir, "train.py"))
-    except Exception:
-        pass
-
-    logger = Logger(log_dir)
-
-    # Log config
-    logger.log(f"Starting EXARCH Training on {dataset_name.upper()}")
-    logger.log(f"Device: {device}, AMP: {use_amp} ({amp_dtype_str})")
-    logger.log("")
-    max_len = max(len(k) for k in config.keys() if not k.startswith("__"))
-    for k, v in config.items():
-        if not k.startswith("__"):
-            logger.log(f"\t{k.ljust(max_len + 1)}: {v}")
-    logger.log("")
-
-    # Load dataset
-    train_data, val_data, test_data, enc = load_and_encode_dataset(config, logger)
-    train_data = train_data.to(device)
-    val_data = val_data.to(device)
-    test_data = test_data.to(device)
-    vocab_size = enc.n_vocab
-
     # Benchmark-only mode: skip training, load checkpoint, run benchmarks + generation
     benchmark_only = config.get('benchmark_only', False)
     benchmark_run_dir = config.get('benchmark_run_dir', '')
+    dataset_name = config.get("dataset", "wikitext-103")
 
     if benchmark_only:
         if not benchmark_run_dir:
@@ -392,7 +359,6 @@ def train():
         if os.path.exists(run_config_path):
             with open(run_config_path, 'r') as f:
                 run_config = json.load(f)
-            # Use the run's architecture config but keep current benchmark settings
             for k in ['C', 'layers', 'levels', 'low_rank', 'mlp_expansion', 'mlp_layers',
                        'wavelet_mode', 'shared_lifting_weights', 'lifting_linear_only',
                        'lifting_hidden_mult', 'lifting_init', 'lifting_dropout',
@@ -409,6 +375,39 @@ def train():
         logger = Logger(log_dir, filename="benchmark.txt")
         logger.log(f"=== BENCHMARK ONLY MODE ===")
         logger.log(f"Run directory: {benchmark_run_dir}")
+    else:
+        # Create run directory
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_dir = os.path.join(config.get("out_dir", "logs"), f"{dataset_name}_{timestamp}")
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Backup config and source
+        with open(os.path.join(log_dir, "config.json"), 'w') as f:
+            json.dump(config, f, indent=4)
+        try:
+            shutil.copy("model.py", os.path.join(log_dir, "model.py"))
+            shutil.copy("train.py", os.path.join(log_dir, "train.py"))
+        except Exception:
+            pass
+
+        logger = Logger(log_dir)
+
+    # Log config
+    logger.log(f"Starting EXARCH {'Benchmark' if benchmark_only else 'Training'} on {dataset_name.upper()}")
+    logger.log(f"Device: {device}, AMP: {use_amp} ({amp_dtype_str})")
+    logger.log("")
+    max_len = max(len(k) for k in config.keys() if not k.startswith("__"))
+    for k, v in config.items():
+        if not k.startswith("__"):
+            logger.log(f"\t{k.ljust(max_len + 1)}: {v}")
+    logger.log("")
+
+    # Load dataset
+    train_data, val_data, test_data, enc = load_and_encode_dataset(config, logger)
+    train_data = train_data.to(device)
+    val_data = val_data.to(device)
+    test_data = test_data.to(device)
+    vocab_size = enc.n_vocab
 
     # Compute training schedule
     T = config['block_size']
