@@ -4,7 +4,9 @@
 
 <h3 align="center"><b>Explicit Attentionless Reasoning with Causal Harmonics</b></h3>
 
+<br>
 ---
+<br>
 
 EXARCH is an attention-free language model that replaces self-attention with a wavelet-based spectral mixing architecture. Each block decomposes the input sequence via a learnable lifting wavelet scheme, applies a Fast Hadamard Transform followed by per-scale gated spectral mixing (SwiGLU), then reconstructs via the inverse wavelet transform. Stacked with standard MLPs and optional cross-layer semantic feedback, this produces a fully causal sequence model with no attention mechanism, no quadratic scaling, and no key/value cache.
 
