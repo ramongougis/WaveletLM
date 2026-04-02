@@ -45,7 +45,7 @@ Key config options:
 | `optimizer` | Adagrad | Adagrad or AdamW |
 | `amp_dtype` | fp16 | fp16 or bf16 |
 
-Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`.
+Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`notes/runs.md`](notes/runs.md).
 
 ### Generation
 
@@ -107,6 +107,10 @@ optional contract to C_embed --> LayerNorm --> LM Head --> logits
 ## Multinodal
 
 EXARCH supports a product-of-experts mode where multiple independent model cells process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in config.
+
+## Results
+
+See [`notes/runs.md`](notes/runs.md) for a full log of training runs, configs, and benchmark results.
 
 ## License
 
