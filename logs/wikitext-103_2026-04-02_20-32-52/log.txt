@@ -1,0 +1,76 @@
+[2026-04-02 20:32:52] Starting EXARCH Training on WIKITEXT-103
+[2026-04-02 20:32:52] Device: cuda, AMP: True (fp16)
+[2026-04-02 20:32:52] 
+[2026-04-02 20:32:52] 	dataset                             : wikitext-103
+[2026-04-02 20:32:52] 	out_dir                             : logs
+[2026-04-02 20:32:52] 	compile                             : True
+[2026-04-02 20:32:52] 	seed                                : 1337
+[2026-04-02 20:32:52] 	epochs                              : 1
+[2026-04-02 20:32:52] 	micro_batch_size                    : 8
+[2026-04-02 20:32:52] 	grad_accum                          : 2
+[2026-04-02 20:32:52] 	block_size                          : 512
+[2026-04-02 20:32:52] 	eval_interval                       : 100
+[2026-04-02 20:32:52] 	skip_warmup_saves                   : True
+[2026-04-02 20:32:52] 	C                                   : 2048
+[2026-04-02 20:32:52] 	layers                              : 20
+[2026-04-02 20:32:52] 	levels                              : 9
+[2026-04-02 20:32:52] 	low_rank                            : 0
+[2026-04-02 20:32:52] 	mlp_expansion                       : 1
+[2026-04-02 20:32:52] 	mlp_layers                          : 2
+[2026-04-02 20:32:52] 	wavelet_mode                        : lifting
+[2026-04-02 20:32:52] 	shared_lifting_weights              : False
+[2026-04-02 20:32:52] 	lifting_linear_only                 : False
+[2026-04-02 20:32:52] 	lifting_hidden_mult                 : 1
+[2026-04-02 20:32:52] 	lifting_init                        : haar
+[2026-04-02 20:32:52] 	lifting_dropout                     : 0.0
+[2026-04-02 20:32:52] 	use_mixer_gate                      : True
+[2026-04-02 20:32:52] 	mixer_gate_activation               : silu
+[2026-04-02 20:32:52] 	semantic_feedback                   : True
+[2026-04-02 20:32:52] 	semantic_feedback_cross_window      : True
+[2026-04-02 20:32:52] 	learned_residual                    : True
+[2026-04-02 20:32:52] 	skip_proj_out                       : False
+[2026-04-02 20:32:52] 	stochastic_depth_rate               : 0.0
+[2026-04-02 20:32:52] 	dropout_embedding                   : 0.0
+[2026-04-02 20:32:52] 	dropout_projection                  : 0.0
+[2026-04-02 20:32:52] 	dropout_mixer                       : 0.0
+[2026-04-02 20:32:52] 	dropout_mlp                         : 0.0
+[2026-04-02 20:32:52] 	dropout_lm_head                     : 0.0
+[2026-04-02 20:32:52] 	optimizer                           : Adagrad
+[2026-04-02 20:32:52] 	optimizer_eps                       : 2e-13
+[2026-04-02 20:32:52] 	lr                                  : 0.005
+[2026-04-02 20:32:52] 	min_lr                              : 0.0002
+[2026-04-02 20:32:52] 	warmup_fraction                     : 0.3
+[2026-04-02 20:32:52] 	grad_clip                           : 1.0
+[2026-04-02 20:32:52] 	tie_embedding_to_lm_head            : False
+[2026-04-02 20:32:52] 	gradient_checkpointing              : False
+[2026-04-02 20:32:52] 	use_amp                             : True
+[2026-04-02 20:32:52] 	amp_dtype                           : fp16
+[2026-04-02 20:32:52] 	allow_tf32                          : True
+[2026-04-02 20:32:52] 	generation_prompt                   : The history of
+[2026-04-02 20:32:52] 	temperature                         : 1.0
+[2026-04-02 20:32:52] 	num_new_tokens                      : 512
+[2026-04-02 20:32:52] 	top_p                               : 0.95
+[2026-04-02 20:32:52] 	repetition_penalty                  : 1.1
+[2026-04-02 20:32:52] 	benchmark_only                      : False
+[2026-04-02 20:32:52] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-02_11-53-11
+[2026-04-02 20:32:52] 	multinodal_enabled                  : False
+[2026-04-02 20:32:52] 	multinodal_num_cells                : 2
+[2026-04-02 20:32:52] 	multinodal_cell_dim                 : 512
+[2026-04-02 20:32:52] 	multinodal_seeds                    : [42, 137]
+[2026-04-02 20:32:52] 	multinodal_combination              : average
+[2026-04-02 20:32:52] 	multinodal_cross_cell_gating        : False
+[2026-04-02 20:32:52] 	multinodal_cross_cell_gate_interval : 1
+[2026-04-02 20:32:52] 	multinodal_features_per_cell        : -1
+[2026-04-02 20:32:52] 	multinodal_bagged_eps               : 1e-06
+[2026-04-02 20:32:52] 
+[2026-04-02 20:32:52] [Dataset] Loading wikitext-103 from cache...
+[2026-04-02 20:32:53] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-04-02 20:32:53] [Dataset] Vocab size: 50257
+[2026-04-02 20:32:54] [Schedule] 14614 steps/epoch, 14614 total steps
+[2026-04-02 20:32:54] [Schedule] Warmup: 4384 steps (30%)
+[2026-04-02 20:32:58] [Run Folder] logs/wikitext-103_2026-04-02_20-32-52
+[2026-04-02 20:32:58] [Model] 5241.19M parameters (5241.19M trainable)
+[2026-04-02 20:32:58] [Compile] torch.compile enabled
+[2026-04-02 20:32:59] [Optimizer] Adagrad, lr=0.005, eps=2e-13
+[2026-04-02 20:32:59] 
+=== EPOCH 1/1 ===
