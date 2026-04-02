@@ -17,7 +17,7 @@
 
 ---
 
-### Width (C): 1 epoch, exp=1
+### Width (C): epochs = 1, mlp_expansion = 1
 
 | Run | C | Folder | BPB (sliding) | Params | Notes |
 |-----|---|--------|---------------|--------|-------|
@@ -27,7 +27,7 @@
 | 4   | 512  | [link](#run-4) | | | |
 | 5   | 1024 | [link](#run-5) | | | |
 
-### Epochs: C=256, exp=1
+### Epochs: C = 256, mlp_expansion = 1
 
 | Run | Epochs | Folder | BPB (sliding) | Notes |
 |-----|--------|--------|---------------|-------|
@@ -42,7 +42,7 @@
 | 14   | 9  | | | |
 | 15   | 10 | | | |
 
-### Boolean ablations: C=256, 3 epochs, exp=1
+### Boolean ablations: C = 256, epochs = 3, mlp_expansion = 1
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Delta |
 |-----|---------|-------|--------|---------------|--------|-------|
@@ -56,7 +56,7 @@
 | 22   | `lifting_linear_only` | true | | | | |
 | 23   | `tie_embedding_to_lm_head` | true | | | | |
 
-### MLP expansion: C=256, 3 epochs, optimal booleans
+### MLP expansion: C = 256, epochs = 3, optimal booleans
 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Notes |
 |-----|---------------|--------|---------------|--------|-------|
@@ -69,7 +69,7 @@
 |   | 25 | | | | |
 |   | 50 | | | | |
 
-### Layers: C=256, 3 epochs, optimal booleans + mlp_expansion
+### Layers: C = 256, epochs = 3, optimal booleans + mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Notes |
 |-----|--------|--------|---------------|--------|-------|
@@ -81,7 +81,7 @@
 |   | 16 | | | | |
 |   | 30 | | | | |
 
-### Levels: C=256, 3 epochs, optimal booleans + mlp_expansion + layers
+### Levels: C = 256, epochs = 3, optimal booleans + mlp_expansion + layers
 
 | Run | Levels | Folder | BPB (sliding) | Params | Notes |
 |-----|--------|--------|---------------|--------|-------|
@@ -160,7 +160,7 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 
 **Folder:** `logs/wikitext-103_2026-04-02_11-53-11/` ([log](../logs/wikitext-103_2026-04-02_11-53-11/log.txt))
 
-**Description:** End-to-end pipeline test + first width scaling point. C=64, mlp_expansion=1, 1 epoch.
+**Description:** End-to-end pipeline test and first width scaling point. C = 64, mlp_expansion = 1, & epochs = 1.
 
 <details>
 <summary>Config</summary>
@@ -249,7 +249,7 @@ Metrics:
 
 **Status:** Pending
 
-**Description:** C=128, mlp_expansion=1, 1 epoch. Width scaling.
+**Description:** C = 128, mlp_expansion = 1, epochs = 1. Width scaling.
 
 ---
 
@@ -257,7 +257,7 @@ Metrics:
 
 **Status:** Pending
 
-**Description:** C=256, mlp_expansion=1, 1 epoch. Width scaling.
+**Description:** C = 256, mlp_expansion = 1, epochs = 1. Width scaling.
 
 ---
 
@@ -265,7 +265,7 @@ Metrics:
 
 **Status:** Pending
 
-**Description:** C=512, mlp_expansion=1, 1 epoch. Width scaling.
+**Description:** C = 512, mlp_expansion = 1, epochs = 1. Width scaling.
 
 ---
 
@@ -273,5 +273,5 @@ Metrics:
 
 **Status:** Pending
 
-**Description:** C=1024, mlp_expansion=1, 1 epoch. Width scaling.
+**Description:** C = 1024, mlp_expansion = 1, epochs = 1. Width scaling.
 
