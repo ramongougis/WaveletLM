@@ -1,6 +1,3 @@
-git add .
-git commit -m "results for C = 64 with epochs = 1 run"
-git push
 for C in 2048 1024 512 256 128; do
     python -c "
 import json

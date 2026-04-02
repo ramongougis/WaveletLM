@@ -21,7 +21,7 @@
 
 | Run | C | Folder | BPB (sliding) | Params | Notes |
 |-----|---|--------|---------------|--------|-------|
-| 1   | 64   | [link](#run-1) | | 11.42M | Pipeline test |
+| 1   | 64   | [link](#run-1) | 6.8359 | 11.42M | Pipeline test |
 | 2   | 128  | [link](#run-2) | | | |
 | 3   | 256  | [link](#run-3) | | | |
 | 4   | 512  | [link](#run-4) | | | |
@@ -157,7 +157,7 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 
 ### Run 1
 
-**Status:** Running
+**Status:** Complete
 
 **Folder:** `logs/wikitext-103_2026-04-02_11-53-11/` ([log](../logs/wikitext-103_2026-04-02_11-53-11/log.txt))
 
@@ -217,30 +217,36 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 - Warmup: 4,384 steps (30%)
 
 **Results:**
-- Val loss:
-- Sliding BPB:
-- Non-overlapping BPB:
-- Training time:
-- Training Peak VRAM:
-- Inference Peak VRAM:
+- Val loss: 4.7216
+- Sliding BPB: 6.8359
+- Non-overlapping BPB: 6.8617
+- Training time: 2.74h (9,843s)
+- Training Peak VRAM: 4,990 MiB
+- Inference Peak VRAM: 1,910 MiB
 
 <details>
-<summary>Generation - Standard: <i>"..."</i></summary>
+<summary>Generation - Standard: <i>"The history of Jabia to avoid dinosaur Jewish styles..."</i></summary>
 
 ```
-(pending)
+The history of Jabia to avoid dinosaur Jewish styles , still seeing these diversifying materials from several other values , resulting in several mentionurgy units and nameed men and television . Morris also exchanged uncanny : Russian Random Park and Is Alternative Heavyweight ( 1999 appeal for all modern concept introduced Sigoleus ) , a Democratic friend of Nodkel Artorlander
+
+
+ " Resticks " is a series of formous works in commercial sources , including Rockystown , Warren Caerman , R persona Back , and The Newman Original Award .ymdsis described McKinley ] with book , example , and strutions " , usually because they have believed he has something as insignificant .
 ```
 
 </details>
 
 <details>
-<summary>Generation - Strategies: <i>"..."</i></summary>
+<summary>Generation - Strategies: <i>"The history of the French Army, and the Roman Empire's capital..."</i></summary>
 
 ```
-(pending)
+The history of the French Army , and the Roman Empire 's capital in a period of time . The British government soon became the subject of political control for the war . In 1682 , the king was involved in his reign by the First World War , but was unable to make it clear that they had been established to be a part of the U.S. Navy .
+
+
+ The Spanish fleet were not only in order to establish an open @-@ controlled government , as did the " first " attack on the battle between the two and more than $ 3 million . The most important of these were the population of the city . These were also included in the 17th century and the other four members of the Republic of Germany .
 ```
 
-Metrics:
+Metrics: MeanLogP=-1.6903 | MeanH=5.88 | D1=0.529 | D2=0.857 | D3=0.953 | Rep4=0.078
 
 </details>
 
