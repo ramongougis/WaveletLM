@@ -380,6 +380,36 @@ def train():
     test_data = test_data.to(device)
     vocab_size = enc.n_vocab
 
+    # Benchmark-only mode: skip training, load checkpoint, run benchmarks + generation
+    benchmark_only = config.get('benchmark_only', False)
+    benchmark_run_dir = config.get('benchmark_run_dir', '')
+
+    if benchmark_only:
+        if not benchmark_run_dir:
+            raise ValueError("benchmark_only=true requires benchmark_run_dir to be set")
+        # Load config from the run directory
+        run_config_path = os.path.join(benchmark_run_dir, "config.json")
+        if os.path.exists(run_config_path):
+            with open(run_config_path, 'r') as f:
+                run_config = json.load(f)
+            # Use the run's architecture config but keep current benchmark settings
+            for k in ['C', 'layers', 'levels', 'low_rank', 'mlp_expansion', 'mlp_layers',
+                       'wavelet_mode', 'shared_lifting_weights', 'lifting_linear_only',
+                       'lifting_hidden_mult', 'lifting_init', 'lifting_dropout',
+                       'use_mixer_gate', 'mixer_gate_activation', 'semantic_feedback',
+                       'semantic_feedback_cross_window', 'learned_residual', 'skip_proj_out',
+                       'stochastic_depth_rate', 'tie_embedding_to_lm_head',
+                       'multinodal_enabled', 'multinodal_num_cells', 'multinodal_cell_dim',
+                       'multinodal_seeds', 'multinodal_cross_cell_gating',
+                       'multinodal_cross_cell_gate_interval', 'multinodal_features_per_cell',
+                       'multinodal_bagged_eps']:
+                if k in run_config:
+                    config[k] = run_config[k]
+        log_dir = benchmark_run_dir
+        logger = Logger(log_dir, filename="benchmark.txt")
+        logger.log(f"=== BENCHMARK ONLY MODE ===")
+        logger.log(f"Run directory: {benchmark_run_dir}")
+
     # Compute training schedule
     T = config['block_size']
     effective_batch = config['micro_batch_size'] * config.get('grad_accum', 1)
@@ -388,8 +418,9 @@ def train():
     warmup_fraction = config.get('warmup_fraction', 0.3)
     warmup_steps = int(warmup_fraction * total_steps)
 
-    logger.log(f"[Schedule] {steps_per_epoch} steps/epoch, {total_steps} total steps")
-    logger.log(f"[Schedule] Warmup: {warmup_steps} steps ({warmup_fraction*100:.0f}%)")
+    if not benchmark_only:
+        logger.log(f"[Schedule] {steps_per_epoch} steps/epoch, {total_steps} total steps")
+        logger.log(f"[Schedule] Warmup: {warmup_steps} steps ({warmup_fraction*100:.0f}%)")
 
     # Build model
     if config.get('multinodal_enabled', False):
@@ -402,164 +433,171 @@ def train():
     total_params, trainable_params = parameter_breakdown(model, config)
     logger.log(f"[Model] {total_params/1e6:.2f}M parameters ({trainable_params/1e6:.2f}M trainable)")
 
-    # Compile
-    if config.get('compile', True) and device == 'cuda':
-        logger.log("[Compile] torch.compile enabled")
-        model = torch.compile(model)
+    train_peak_mem = None
 
-    # Optimizer
-    optimizer_name = config.get('optimizer', 'Adagrad')
-    if optimizer_name == 'Adagrad':
-        optimizer = torch.optim.Adagrad(
-            model.parameters(), lr=config['lr'],
-            eps=config.get('optimizer_eps', 2e-13))
-    elif optimizer_name == 'AdamW':
-        optimizer = torch.optim.AdamW(
-            model.parameters(), lr=config['lr'],
-            eps=config.get('optimizer_eps', 1e-8))
-    else:
-        raise ValueError(f"Unknown optimizer: {optimizer_name}")
-    logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}")
+    if not benchmark_only:
+        # Compile
+        if config.get('compile', True) and device == 'cuda':
+            logger.log("[Compile] torch.compile enabled")
+            model = torch.compile(model)
 
-    # GradScaler for fp16 only
-    use_scaler = use_amp and amp_dtype_str == 'fp16'
-    scaler = torch.amp.GradScaler('cuda', enabled=use_scaler)
+        # Optimizer
+        optimizer_name = config.get('optimizer', 'Adagrad')
+        if optimizer_name == 'Adagrad':
+            optimizer = torch.optim.Adagrad(
+                model.parameters(), lr=config['lr'],
+                eps=config.get('optimizer_eps', 2e-13))
+        elif optimizer_name == 'AdamW':
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=config['lr'],
+                eps=config.get('optimizer_eps', 1e-8))
+        else:
+            raise ValueError(f"Unknown optimizer: {optimizer_name}")
+        logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}")
 
-    # Training state
-    get_batch = make_get_batch(train_data, val_data, config, device)
-    best_val_loss = float('inf')
-    best_epoch = 0
-    global_step = 0
-    epoch_times = []
-    overall_start_time = time.time()
+        # GradScaler for fp16 only
+        use_scaler = use_amp and amp_dtype_str == 'fp16'
+        scaler = torch.amp.GradScaler('cuda', enabled=use_scaler)
 
-    if device == 'cuda':
+        # Training state
+        get_batch = make_get_batch(train_data, val_data, config, device)
+        best_val_loss = float('inf')
+        best_epoch = 0
+        global_step = 0
+        epoch_times = []
+        overall_start_time = time.time()
+
+        if device == 'cuda':
+            torch.cuda.reset_peak_memory_stats()
+
+        # =====================================================================
+        # TRAINING LOOP
+        # =====================================================================
+
+        for epoch in range(config['epochs']):
+            epoch_start = time.time()
+            logger.log(f"\n=== EPOCH {epoch+1}/{config['epochs']} ===")
+
+            pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1}")
+            for step in pbar:
+                lr = get_lr(global_step, config, total_steps, warmup_steps)
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
+
+                optimizer.zero_grad(set_to_none=True)
+                loss_accum = 0.0
+
+                for micro in range(config.get('grad_accum', 1)):
+                    xb, yb = get_batch('train')
+
+                    with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
+                        _, loss = model(xb, yb)
+                        loss = loss / config.get('grad_accum', 1)
+
+                    loss_accum += loss.detach().item()
+
+                    if scaler.is_enabled():
+                        scaler.scale(loss).backward()
+                    else:
+                        loss.backward()
+
+                # Gradient clipping
+                if scaler.is_enabled():
+                    scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config.get("grad_clip", 1.0))
+
+                if scaler.is_enabled():
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+
+                global_step += 1
+
+                pbar.set_postfix({'loss': f"{loss_accum:.4f}", 'lr': f"{lr:.2e}"})
+
+                # Eval
+                if global_step % config['eval_interval'] == 0:
+                    losses = estimate_loss(model, get_batch, config, device, use_amp, amp_dtype)
+                    pbar.clear()
+                    logger.log(
+                        f"Step {global_step}: "
+                        f"train loss {losses['train']:.4f}, "
+                        f"val loss {losses['val']:.4f}\t\t"
+                        f"lr={lr:.2e}"
+                    )
+
+                    if losses['val'] < best_val_loss:
+                        best_val_loss = losses['val']
+                        best_epoch = epoch + 1
+
+                        skip_warmup = config.get('skip_warmup_saves', True)
+                        if skip_warmup and global_step < warmup_steps:
+                            logger.log(f"New Best Val: {best_val_loss:.4f} (skipping save during warmup)")
+                        else:
+                            logger.log(f"New Best Val: {best_val_loss:.4f}. Saving...")
+                            try:
+                                state_dict = model._orig_mod.state_dict()
+                            except AttributeError:
+                                state_dict = model.state_dict()
+                            save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"))
+
+            # End of epoch
+            epoch_duration = time.time() - epoch_start
+            epoch_times.append(epoch_duration)
+
+            losses = estimate_loss(model, get_batch, config, device, use_amp, amp_dtype)
+            logger.log(f"Epoch {epoch+1} done. Time: {epoch_duration:.1f}s ({epoch_duration/3600:.2f}h)")
+            logger.log(f"  Train loss: {losses['train']:.4f}, Val loss: {losses['val']:.4f}")
+
+            total_elapsed = time.time() - overall_start_time
+            logger.log(f"  Cumulative time: {total_elapsed/3600:.2f}h")
+
+            if losses['val'] < best_val_loss:
+                best_val_loss = losses['val']
+                best_epoch = epoch + 1
+                logger.log(f"  New Best Val Loss! Saving model...")
+                try:
+                    state_dict = model._orig_mod.state_dict()
+                except AttributeError:
+                    state_dict = model.state_dict()
+                save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"))
+
+        # =====================================================================
+        # TRAINING COMPLETE
+        # =====================================================================
+
+        avg_epoch_time = sum(epoch_times) / len(epoch_times) if epoch_times else 0
+        logger.log("\n=== TRAINING COMPLETE ===")
+        logger.log(f"Best Val Loss: {best_val_loss:.4f} (epoch {best_epoch})")
+        logger.log(f"Avg Epoch Time: {avg_epoch_time:.1f}s")
+        logger.log(f"Total Time: {time.time() - overall_start_time:.1f}s")
+
+        # Record training VRAM before teardown
+        if device == 'cuda':
+            train_peak_mem = torch.cuda.max_memory_allocated() / 1e9
+            logger.log(f"\nTraining Peak VRAM: {train_peak_mem:.2f} GB")
+
+        # =====================================================================
+        # TEARDOWN: free all training state to get clean VRAM for inference
+        # =====================================================================
+
+        del model, optimizer, scaler
+        torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
 
     # =========================================================================
-    # TRAINING LOOP
+    # BENCHMARKS & GENERATION (runs after training or in benchmark_only mode)
     # =========================================================================
-
-    for epoch in range(config['epochs']):
-        epoch_start = time.time()
-        logger.log(f"\n=== EPOCH {epoch+1}/{config['epochs']} ===")
-
-        pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1}")
-        for step in pbar:
-            lr = get_lr(global_step, config, total_steps, warmup_steps)
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
-
-            optimizer.zero_grad(set_to_none=True)
-            loss_accum = 0.0
-
-            for micro in range(config.get('grad_accum', 1)):
-                xb, yb = get_batch('train')
-
-                with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
-                    _, loss = model(xb, yb)
-                    loss = loss / config.get('grad_accum', 1)
-
-                loss_accum += loss.detach().item()
-
-                if scaler.is_enabled():
-                    scaler.scale(loss).backward()
-                else:
-                    loss.backward()
-
-            # Gradient clipping
-            if scaler.is_enabled():
-                scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.get("grad_clip", 1.0))
-
-            if scaler.is_enabled():
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
-
-            global_step += 1
-
-            pbar.set_postfix({'loss': f"{loss_accum:.4f}", 'lr': f"{lr:.2e}"})
-
-            # Eval
-            if global_step % config['eval_interval'] == 0:
-                losses = estimate_loss(model, get_batch, config, device, use_amp, amp_dtype)
-                pbar.clear()
-                logger.log(
-                    f"Step {global_step}: "
-                    f"train loss {losses['train']:.4f}, "
-                    f"val loss {losses['val']:.4f}\t\t"
-                    f"lr={lr:.2e}"
-                )
-
-                if losses['val'] < best_val_loss:
-                    best_val_loss = losses['val']
-                    best_epoch = epoch + 1
-
-                    skip_warmup = config.get('skip_warmup_saves', True)
-                    if skip_warmup and global_step < warmup_steps:
-                        logger.log(f"New Best Val: {best_val_loss:.4f} (skipping save during warmup)")
-                    else:
-                        logger.log(f"New Best Val: {best_val_loss:.4f}. Saving...")
-                        try:
-                            state_dict = model._orig_mod.state_dict()
-                        except AttributeError:
-                            state_dict = model.state_dict()
-                        save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"))
-
-        # End of epoch
-        epoch_duration = time.time() - epoch_start
-        epoch_times.append(epoch_duration)
-
-        losses = estimate_loss(model, get_batch, config, device, use_amp, amp_dtype)
-        logger.log(f"Epoch {epoch+1} done. Time: {epoch_duration:.1f}s ({epoch_duration/3600:.2f}h)")
-        logger.log(f"  Train loss: {losses['train']:.4f}, Val loss: {losses['val']:.4f}")
-
-        total_elapsed = time.time() - overall_start_time
-        logger.log(f"  Cumulative time: {total_elapsed/3600:.2f}h")
-
-        if losses['val'] < best_val_loss:
-            best_val_loss = losses['val']
-            best_epoch = epoch + 1
-            logger.log(f"  New Best Val Loss! Saving model...")
-            try:
-                state_dict = model._orig_mod.state_dict()
-            except AttributeError:
-                state_dict = model.state_dict()
-            save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"))
-
-    # =========================================================================
-    # TRAINING COMPLETE
-    # =========================================================================
-
-    avg_epoch_time = sum(epoch_times) / len(epoch_times) if epoch_times else 0
-    logger.log("\n=== TRAINING COMPLETE ===")
-    logger.log(f"Best Val Loss: {best_val_loss:.4f} (epoch {best_epoch})")
-    logger.log(f"Avg Epoch Time: {avg_epoch_time:.1f}s")
-    logger.log(f"Total Time: {time.time() - overall_start_time:.1f}s")
-
-    # Record training VRAM before teardown
-    if device == 'cuda':
-        train_peak_mem = torch.cuda.max_memory_allocated() / 1e9
-        logger.log(f"\nTraining Peak VRAM: {train_peak_mem:.2f} GB")
-
-    # =========================================================================
-    # TEARDOWN: free all training state to get clean VRAM for inference
-    # =========================================================================
-
-    del model, optimizer, scaler
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
 
     # Rebuild model from config for inference
-    logger.log("\nReloading best model for benchmarks...")
+    logger.log("\nLoading best model for benchmarks...")
     best_model_path = os.path.join(log_dir, "best_model.pt")
 
     if config.get('multinodal_enabled', False):
-        model = MultiNodeExarchLM(config).to(device)
+        model = MultiNodeExarchLM(vocab_size, config, device=device).to(device)
     else:
-        model = ExarchLM(config).to(device)
+        model = ExarchLM(vocab_size, config, device=device).to(device)
 
     try:
         ckpt = torch.load(best_model_path, map_location=device)
@@ -639,7 +677,8 @@ def train():
     if device == 'cuda':
         inference_peak_mem = torch.cuda.max_memory_allocated() / 1e9
         logger.log(f"Inference Peak VRAM: {inference_peak_mem:.2f} GB")
-        logger.log(f"Training Peak VRAM: {train_peak_mem:.2f} GB")
+        if train_peak_mem is not None:
+            logger.log(f"Training Peak VRAM: {train_peak_mem:.2f} GB")
 
     logger.close()
     print(f"\nRun directory: {log_dir}")

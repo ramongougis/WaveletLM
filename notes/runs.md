@@ -142,14 +142,14 @@ Mean BPB: _ ± _
 
 ### Planned: model comparisons (WikiText-103, matched compute)
 
-All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset preprocessing, and same sliding window evaluation methodology.
+All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset preprocessing, and same sliding window evaluation methodology. Competitors use all available optimizations (Flash Attention, torch.compile, KV cache, etc.) to ensure the comparison reflects each architecture's best-case performance.
 
-| Model | Type | Params | BPB (sliding) | Train tok/s | Gen tok/s | Training time | Notes |
-|-------|------|--------|---------------|-------------|-----------|---------------|-------|
-| EXARCH | Wavelet mixer | | | | | | Best config from sweeps |
-| GPT-2 | Transformer | | | | | | Matched compute |
-| Mamba | SSM | | | | | | Matched compute |
-| RWKV | Linear attention | | | | | | Matched compute |
+| Model | Type | Params | BPB (sliding) | Train tok/s | Gen tok/s | Training time | Optimizations | Notes |
+|-------|------|--------|---------------|-------------|-----------|---------------|---------------|-------|
+| EXARCH | Wavelet mixer | | | | | | torch.compile, fp16 | Best config from sweeps |
+| GPT-2 | Transformer | | | | | | Flash Attention, KV cache, TurboQuant, torch.compile, fp16 | Matched compute |
+| Mamba | SSM | | | | | | Mamba CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
+| RWKV | Linear attention | | | | | | Custom CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 
 ---
 
