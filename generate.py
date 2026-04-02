@@ -389,6 +389,8 @@ def main():
     parser.add_argument("--device", default="cuda")
 
     # Inference strategies
+    parser.add_argument("--strategies", action="store_true",
+                        help="Enable all inference strategies (entropy_adaptive, lookahead, wavelet_coherence, best_of_n=5, metrics)")
     parser.add_argument("--best_of_n", type=int, default=1)
     parser.add_argument("--entropy_adaptive", action="store_true")
     parser.add_argument("--entropy_temp_min", type=float, default=0.3)
@@ -404,6 +406,16 @@ def main():
     parser.add_argument("--n", type=int, default=1,
                         help="Number of completions to generate")
     args = parser.parse_args()
+
+    # --strategies enables all inference strategies with sensible defaults
+    if args.strategies:
+        args.entropy_adaptive = True
+        if args.lookahead_k == 0:
+            args.lookahead_k = 3
+        args.wavelet_coherence = True
+        if args.best_of_n == 1:
+            args.best_of_n = 5
+        args.metrics = True
 
     # Resolve device
     device = torch.device(args.device if torch.cuda.is_available() or args.device != 'cuda' else 'cpu')

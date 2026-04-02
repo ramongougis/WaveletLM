@@ -591,32 +591,48 @@ def train():
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
 
-    # Generate sample
-    logger.log("\n=== GENERATION SAMPLE ===")
+    # Generate samples using generate.py functions
+    from generate import generate_one, generate_best_of_n, compute_quality_metrics, format_metrics
+
     prompt = config.get('generation_prompt', 'The history of')
     prompt_ids = enc.encode(prompt)
-    idx = torch.tensor([prompt_ids], dtype=torch.long, device=device)
-
-    if hasattr(model, 'reset_semantic_state'):
-        model.reset_semantic_state()
-
+    input_tensor = torch.tensor([prompt_ids], dtype=torch.long, device=device)
     num_tokens = config.get('num_new_tokens', 512)
-    temperature = config.get('temperature', 1.0)
     block_size = config['block_size']
 
-    with torch.no_grad():
-        for _ in range(num_tokens):
-            idx_cond = idx[:, -block_size:]
-            with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
-                logits, _ = model(idx_cond, targets=None)
-            logits = logits[:, -1, :] / temperature
-            probs = F.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
-            idx = torch.cat((idx, idx_next), dim=1)
+    base_kwargs = dict(
+        temperature=config.get('temperature', 1.0),
+        num_tokens=num_tokens,
+        context_len=block_size,
+        use_amp=use_amp,
+        amp_dtype=amp_dtype,
+    )
 
-    generated = enc.decode(idx[0].tolist())
+    # Standard generation (no strategies)
+    logger.log("\n=== GENERATION — Standard ===")
     logger.log(f"Prompt: {prompt}")
-    logger.log(f"Generated:\n{generated}\n")
+    if hasattr(model, 'reset_semantic_state'):
+        model.reset_semantic_state()
+    txt = generate_one(model, enc, input_tensor, **base_kwargs)
+    logger.log(f"Generated:\n{txt}\n")
+
+    # Generation with all strategies
+    logger.log("=== GENERATION — Strategies ===")
+    logger.log(f"Prompt: {prompt}")
+    if hasattr(model, 'reset_semantic_state'):
+        model.reset_semantic_state()
+    strategies_kwargs = dict(
+        **base_kwargs,
+        entropy_adaptive=True,
+        lookahead_k=3,
+        lookahead_depth=5,
+        wavelet_coherence=True,
+    )
+    txt, metrics = generate_best_of_n(
+        model, enc, input_tensor, n=5, seed=config.get('seed', 1337),
+        **strategies_kwargs)
+    logger.log(f"Generated:\n{txt}\n")
+    logger.log(f"Metrics: {format_metrics(metrics)}")
 
     if device == 'cuda':
         inference_peak_mem = torch.cuda.max_memory_allocated() / 1e9
