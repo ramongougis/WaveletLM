@@ -83,6 +83,26 @@
 - Training Peak VRAM: —
 - Inference Peak VRAM: —
 
+<details>
+<summary>Generation — Standard: <i>"..."</i></summary>
+
+```
+(pending)
+```
+
+</details>
+
+<details>
+<summary>Generation — Strategies: <i>"..."</i></summary>
+
+```
+(pending)
+```
+
+Metrics: —
+
+</details>
+
 ---
 
 ### Run 2
