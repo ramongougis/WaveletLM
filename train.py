@@ -398,6 +398,7 @@ def train():
         model = ExarchLM(vocab_size, config, device=device)
     model = model.to(device)
 
+    logger.log(f"[Run Folder] {log_dir}")
     total_params, trainable_params = parameter_breakdown(model, config)
     logger.log(f"[Model] {total_params/1e6:.2f}M parameters ({trainable_params/1e6:.2f}M trainable)")
 
