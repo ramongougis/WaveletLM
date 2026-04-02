@@ -52,6 +52,22 @@ def load_and_encode_dataset(config, logger):
 
     dataset_name = config.get("dataset", "wikitext-103")
 
+    # Check for cached encoded tensors
+    cache_dir = ".cache"
+    cache_path = os.path.join(cache_dir, f"{dataset_name}_gpt2.pt")
+
+    if os.path.exists(cache_path):
+        logger.log(f"[Dataset] Loading {dataset_name} from cache...")
+        cached = torch.load(cache_path, weights_only=True)
+        train_data = cached['train'].long()
+        val_data = cached['val'].long()
+        test_data = cached['test'].long()
+        logger.log(f"[Dataset] {dataset_name}: train={len(train_data):,}, "
+                   f"val={len(val_data):,}, test={len(test_data):,} tokens (cached)")
+        logger.log(f"[Dataset] Vocab size: {vocab_size}")
+        return train_data, val_data, test_data, enc
+
+    # Encode from scratch
     if dataset_name == "wikitext-103":
         ds = load_dataset("wikitext", "wikitext-103-raw-v1")
     elif dataset_name == "wikitext-2":
@@ -68,6 +84,24 @@ def load_and_encode_dataset(config, logger):
     train_data = encode_split(ds["train"])
     val_data = encode_split(ds["validation"])
     test_data = encode_split(ds["test"])
+
+    # Cache for future runs (stored as int32 to save space; cast back on load)
+    os.makedirs(cache_dir, exist_ok=True)
+    torch.save({'train': train_data.int(), 'val': val_data.int(), 'test': test_data.int()}, cache_path)
+    logger.log(f"[Dataset] Cached to {cache_path}")
+
+    # Remove HuggingFace dataset cache now that we have our own tensor cache
+    del ds
+    try:
+        import shutil as _shutil
+        hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "datasets")
+        if os.path.exists(hf_cache):
+            for entry in os.listdir(hf_cache):
+                if dataset_name.replace("-", "_") in entry.lower():
+                    _shutil.rmtree(os.path.join(hf_cache, entry), ignore_errors=True)
+                    logger.log(f"[Dataset] Removed HF cache: {entry}")
+    except Exception:
+        pass
 
     logger.log(f"[Dataset] {dataset_name}: train={len(train_data):,}, "
                f"val={len(val_data):,}, test={len(test_data):,} tokens")
@@ -574,8 +608,8 @@ def train():
 
         # Record training VRAM before teardown
         if device == 'cuda':
-            train_peak_mem = torch.cuda.max_memory_allocated() / 1e9
-            logger.log(f"\nTraining Peak VRAM: {train_peak_mem:.2f} GB")
+            train_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
+            logger.log(f"\nTraining Peak VRAM: {train_peak_mem:.0f} MiB")
 
         # =====================================================================
         # TEARDOWN: free all training state to get clean VRAM for inference
@@ -674,10 +708,10 @@ def train():
     logger.log(f"Metrics: {format_metrics(metrics)}")
 
     if device == 'cuda':
-        inference_peak_mem = torch.cuda.max_memory_allocated() / 1e9
-        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.2f} GB")
+        inference_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.0f} MiB")
         if train_peak_mem is not None:
-            logger.log(f"Training Peak VRAM: {train_peak_mem:.2f} GB")
+            logger.log(f"Training Peak VRAM: {train_peak_mem:.0f} MiB")
 
     logger.close()
     print(f"\nRun directory: {log_dir}")
