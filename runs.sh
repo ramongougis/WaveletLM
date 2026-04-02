@@ -1,7 +1,6 @@
-for C in 2048 1024 512 256 128; do
-    if [ $C -ge 2048 ]; then LR=0.005
-    elif [ $C -ge 1024 ]; then LR=0.01
-    else LR=0.02
+for C in 1024 512 256 128; do
+    if [ $C -ge 1024 ]; then LR=0.005
+    else LR=0.01
     fi
     python -c "
 import json
