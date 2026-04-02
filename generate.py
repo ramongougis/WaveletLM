@@ -407,14 +407,12 @@ def main():
                         help="Number of completions to generate")
     args = parser.parse_args()
 
-    # --strategies enables all inference strategies with sensible defaults
+    # --strategies enables inference strategies matching EXARCH-research defaults
     if args.strategies:
         args.entropy_adaptive = True
-        if args.lookahead_k == 0:
-            args.lookahead_k = 3
-        args.wavelet_coherence = True
-        if args.best_of_n == 1:
-            args.best_of_n = 5
+        args.entropy_temp_max = 0.9
+        args.top_p = 0.85
+        args.repetition_penalty = 1.2
         args.metrics = True
 
     # Resolve device

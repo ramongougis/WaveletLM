@@ -662,14 +662,14 @@ def train():
         model.reset_semantic_state()
     strategies_kwargs = dict(
         **base_kwargs,
+        top_p=0.85,
+        repetition_penalty=1.2,
         entropy_adaptive=True,
-        lookahead_k=3,
-        lookahead_depth=5,
-        wavelet_coherence=True,
+        entropy_temp_max=0.9,
     )
-    txt, metrics = generate_best_of_n(
-        model, enc, input_tensor, n=5, seed=config.get('seed', 1337),
-        **strategies_kwargs)
+    txt, token_ids, stats = generate_one(
+        model, enc, input_tensor, return_stats=True, **strategies_kwargs)
+    metrics = compute_quality_metrics(token_ids, stats['log_probs'], stats['entropies'])
     logger.log(f"Generated:\n{txt}\n")
     logger.log(f"Metrics: {format_metrics(metrics)}")
 
