@@ -847,6 +847,10 @@ class MultiNodeExarchLM(nn.Module):
 
             self.cells.append(cell)
 
+        # Gradient scaling: 1/sqrt(N) normalizes gradient variance across cells,
+        # preventing fp16 overflow during warmup that caused persistent NaN instability.
+        self.grad_scale = 1.0 / math.sqrt(self.num_cells)
+
         # Mirror attributes for training loop compatibility
         self.lm_head = self.cells[0].lm_head
 
@@ -911,6 +915,7 @@ class MultiNodeExarchLM(nn.Module):
         if targets is not None:
             combined_loss = F.cross_entropy(
                 combined.view(-1, combined.size(-1)), targets.view(-1).long())
+            combined_loss = combined_loss * self.grad_scale
 
         return combined, combined_loss
 
