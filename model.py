@@ -581,20 +581,11 @@ class ExarchLM(nn.Module):
 
         self.C = config['C']
         C = self.C
-        self.C_embed = config.get('C_embed', C)
         self.vocab_size = vocab_size
 
-        # Embedding with optional expansion
-        self.token_embedding = nn.Embedding(vocab_size, self.C_embed)
-        nn.init.normal_(self.token_embedding.weight, mean=0.0, std=1.0 / math.sqrt(self.C_embed))
-
-        if self.C_embed < C:
-            if C % self.C_embed != 0:
-                raise ValueError(f"C ({C}) must be divisible by C_embed ({self.C_embed})")
-            self.expansion_factor = C // self.C_embed
-            print(f"[Embedding] C_embed={self.C_embed} -> C={C} (expansion={self.expansion_factor})")
-        else:
-            self.expansion_factor = 1
+        # Embedding
+        self.token_embedding = nn.Embedding(vocab_size, C)
+        nn.init.normal_(self.token_embedding.weight, mean=0.0, std=1.0 / math.sqrt(C))
 
         # Dropout
         self.dropout_emb = nn.Dropout(config.get('dropout_embedding', 0.0))
@@ -675,8 +666,8 @@ class ExarchLM(nn.Module):
         ])
 
         # Final LN and LM head
-        self.final_ln = nn.LayerNorm(self.C_embed)
-        self.lm_head = nn.Linear(self.C_embed, vocab_size, bias=False)
+        self.final_ln = nn.LayerNorm(C)
+        self.lm_head = nn.Linear(C, vocab_size, bias=False)
 
         # Weight tying
         if config.get("tie_embedding_to_lm_head", False):
@@ -694,17 +685,11 @@ class ExarchLM(nn.Module):
         self._persistent_token_count = 0
 
     def _forward_embed(self, idx):
-        """Embedding lookup + expansion + dropout. Used by MultiNodeExarchLM lockstep forward."""
-        x = self.token_embedding(idx)
-        if self.expansion_factor > 1:
-            x = x.repeat(1, 1, self.expansion_factor)
-        return self.dropout_emb(x)
+        """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""
+        return self.dropout_emb(self.token_embedding(idx))
 
     def _forward_head(self, x, targets=None):
-        """Final contraction, LN, LM head, and loss. Used by MultiNodeExarchLM lockstep forward."""
-        B, T = x.shape[:2]
-        if self.expansion_factor > 1:
-            x = x.view(B, T, self.expansion_factor, self.C_embed).mean(dim=2)
+        """Final LN, LM head, and loss. Used by MultiNodeExarchLM lockstep forward."""
         x = self.final_ln(x)
         x = self.dropout_lm(x)
         logits = self.lm_head(x)
@@ -716,9 +701,7 @@ class ExarchLM(nn.Module):
     def forward(self, idx, targets=None):
         B, T = idx.shape
 
-        x = self.token_embedding(idx)  # [B, T, C_embed]
-        if self.expansion_factor > 1:
-            x = x.repeat(1, 1, self.expansion_factor)  # [B, T, C]
+        x = self.token_embedding(idx)  # [B, T, C]
         x = self.dropout_emb(x)
 
         # Initialize from persistent state if cross-window feedback is enabled
@@ -744,10 +727,6 @@ class ExarchLM(nn.Module):
         if self.semantic_feedback_cross_window and current_state is not None:
             self._persistent_semantic_state = current_state[:, -1, :].detach()
             self._persistent_token_count += T
-
-        # Contract if expanded
-        if self.expansion_factor > 1:
-            x = x.view(B, T, self.expansion_factor, self.C_embed).mean(dim=2)
 
         x = self.final_ln(x)
         x = self.dropout_lm(x)
@@ -819,7 +798,6 @@ class MultiNodeExarchLM(nn.Module):
         # Build cell configs
         cell_config = dict(config)
         cell_config['C'] = self.cell_dim
-        cell_config['C_embed'] = self.cell_dim
 
         # Create cells
         self.cells = nn.ModuleList()

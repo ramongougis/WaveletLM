@@ -537,16 +537,35 @@ def train():
     logger.log(f"Avg Epoch Time: {avg_epoch_time:.1f}s")
     logger.log(f"Total Time: {time.time() - overall_start_time:.1f}s")
 
-    # Load best model for benchmarks + generation
-    logger.log("\nLoading best model for benchmarks...")
+    # Record training VRAM before teardown
+    if device == 'cuda':
+        train_peak_mem = torch.cuda.max_memory_allocated() / 1e9
+        logger.log(f"\nTraining Peak VRAM: {train_peak_mem:.2f} GB")
+
+    # =========================================================================
+    # TEARDOWN: free all training state to get clean VRAM for inference
+    # =========================================================================
+
+    del model, optimizer, scaler
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+
+    # Rebuild model from config for inference
+    logger.log("\nReloading best model for benchmarks...")
+    best_model_path = os.path.join(log_dir, "best_model.pt")
+
+    if config.get('multinodal_enabled', False):
+        model = MultiNodeExarchLM(config).to(device)
+    else:
+        model = ExarchLM(config).to(device)
+
     try:
-        ckpt = torch.load(os.path.join(log_dir, "best_model.pt"), map_location=device)
+        ckpt = torch.load(best_model_path, map_location=device)
         new_state_dict = {}
         for k, v in ckpt.items():
             new_key = k[10:] if k.startswith("_orig_mod.") else k
             new_state_dict[new_key] = v
-        target = model._orig_mod if hasattr(model, '_orig_mod') else model
-        target.load_state_dict(new_state_dict, strict=False)
+        model.load_state_dict(new_state_dict, strict=False)
         logger.log("Best model loaded.")
     except Exception as e:
         logger.log(f"Could not load best model: {e}")
@@ -578,9 +597,8 @@ def train():
     prompt_ids = enc.encode(prompt)
     idx = torch.tensor([prompt_ids], dtype=torch.long, device=device)
 
-    base_model = getattr(model, "_orig_mod", model)
-    if hasattr(base_model, 'reset_semantic_state'):
-        base_model.reset_semantic_state()
+    if hasattr(model, 'reset_semantic_state'):
+        model.reset_semantic_state()
 
     num_tokens = config.get('num_new_tokens', 512)
     temperature = config.get('temperature', 1.0)
@@ -590,7 +608,7 @@ def train():
         for _ in range(num_tokens):
             idx_cond = idx[:, -block_size:]
             with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
-                logits, _ = base_model(idx_cond, targets=None)
+                logits, _ = model(idx_cond, targets=None)
             logits = logits[:, -1, :] / temperature
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
@@ -601,8 +619,9 @@ def train():
     logger.log(f"Generated:\n{generated}\n")
 
     if device == 'cuda':
-        peak_mem = torch.cuda.max_memory_allocated() / 1e9
-        logger.log(f"Peak GPU memory: {peak_mem:.2f} GB")
+        inference_peak_mem = torch.cuda.max_memory_allocated() / 1e9
+        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.2f} GB")
+        logger.log(f"Training Peak VRAM: {train_peak_mem:.2f} GB")
 
     logger.close()
     print(f"\nRun directory: {log_dir}")

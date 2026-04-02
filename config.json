@@ -6,7 +6,7 @@
     "seed": 1337,
 
     "__comment_training": "=== TRAINING ===",
-    "epochs": 10,
+    "epochs": 1,
     "micro_batch_size": 8,
     "grad_accum": 2,
     "block_size": 512,
@@ -14,10 +14,8 @@
     "skip_warmup_saves": true,
 
     "__comment_architecture": "=== ARCHITECTURE ===",
-    "C": 1024,
+    "C": 64,
     "__comment_C": "Mixer working width. Must be power of 2 for Hadamard (or will be padded to next power of 2).",
-    "C_embed": 1024,
-    "__comment_C_embed": "Embedding dimension. When < C, embedding is repeated (C/C_embed) times before mixer, then contracted via mean before LM head. Set equal to C for no expansion.",
     "layers": 20,
     "levels": 9,
     "__comment_levels": "Wavelet decomposition levels. Should be ~log2(block_size).",

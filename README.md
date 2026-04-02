@@ -10,7 +10,7 @@
 
 <br>
 
-EXARCH is an attention-free language model that replaces self-attention with a wavelet-based spectral mixing architecture. Each block decomposes the input sequence via a learnable lifting wavelet scheme, applies a Fast Hadamard Transform followed by per-scale gated spectral mixing (SwiGLU), then reconstructs via the inverse wavelet transform. Stacked with standard MLPs and optional cross-layer semantic feedback, this produces a fully causal sequence model with no attention mechanism, no quadratic scaling, and no key/value cache.
+EXARCH is an attention-free language model that replaces attention with a wavelet-based spectral mixing architecture. Each block decomposes the input sequence via a learnable lifting wavelet scheme, applies a Fast Hadamard Transform followed by per-scale gated spectral mixing (SwiGLU), then reconstructs via the inverse wavelet transform. Stacked with standard MLPs and optional cross-layer semantic feedback, this produces a fully causal sequence model with no attention mechanism, no quadratic scaling, and no key/value cache.
 
 ## Installation
 
@@ -31,7 +31,7 @@ cd EXARCH
 
 ### Training
 
-All configuration lives in `config.json`. Edit it to set model dimensions, dataset, optimizer, and hardware options, then run:
+The configuration lives in `config.json`. Edit it to set model dimensions, dataset, optimizer, and hardware options, then run:
 
 ```bash
 python train.py
@@ -80,7 +80,7 @@ python generate.py --checkpoint best_model.pt --wavelet_coherence
 Input tokens
     |
     v
-Learned Embedding (C_embed) --> optional repeat to C
+Learned Embedding (C)
     |
     v
 +----------------------------+
@@ -99,7 +99,7 @@ Learned Embedding (C_embed) --> optional repeat to C
 +----------------------------+
     |
     v
-optional contract to C_embed --> LayerNorm --> LM Head --> logits
+LayerNorm --> LM Head --> logits
 ```
 
 **Wavelet decomposition** uses a learnable lifting scheme (predict/update networks initialized to Haar wavelets) that decomposes the sequence into multi-scale coefficients, capturing both coarse structure and fine detail at each position.
