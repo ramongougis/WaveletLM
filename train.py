@@ -485,6 +485,7 @@ def train():
             # Eval
             if global_step % config['eval_interval'] == 0:
                 losses = estimate_loss(model, get_batch, config, device, use_amp, amp_dtype)
+                pbar.clear()
                 logger.log(
                     f"Step {global_step}: "
                     f"train loss {losses['train']:.4f}, "
