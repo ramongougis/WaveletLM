@@ -905,11 +905,9 @@ class MultiNodeExarchLM(nn.Module):
 class Logger:
     """Simple file + console logger."""
 
-    def __init__(self, log_dir, run_name=None, append=False):
+    def __init__(self, log_dir, filename="log.txt", append=False):
         os.makedirs(log_dir, exist_ok=True)
-        if run_name is None:
-            run_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_path = os.path.join(log_dir, f"{run_name}.log")
+        self.log_path = os.path.join(log_dir, filename)
         mode = 'a' if append else 'w'
         self.file = open(self.log_path, mode, encoding='utf-8')
 
