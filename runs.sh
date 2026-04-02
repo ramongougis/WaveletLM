@@ -1,4 +1,4 @@
-for C in 2048 1024 512 256 128 64; do
+for C in 2048 1024 512 256 128; do
     if [ $C -ge 2048 ]; then LR=0.005
     elif [ $C -ge 1024 ]; then LR=0.01
     else LR=0.02
