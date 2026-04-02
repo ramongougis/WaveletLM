@@ -26,6 +26,7 @@
 | 3   | 256  | [link](#run-3) | | | |
 | 4   | 512  | [link](#run-4) | | | |
 | 5   | 1024 | [link](#run-5) | | | |
+| 6   | 2048 | [link](#run-6) | | | |
 
 ### Epochs: C = 256, mlp_expansion = 1
 
@@ -274,4 +275,12 @@ Metrics:
 **Status:** Pending
 
 **Description:** C = 1024, mlp_expansion = 1, epochs = 1. Width scaling.
+
+---
+
+### Run 6
+
+**Status:** Pending
+
+**Description:** C = 2048, mlp_expansion = 1, epochs = 1. Width scaling.
 
