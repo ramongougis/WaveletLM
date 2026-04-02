@@ -10,6 +10,35 @@
 | 4   | C with 1 epoch (exp=1) | 512 | 1 | [link](#run-4) | — | — | Width scaling |
 | 5   | C with 1 epoch (exp=1) | 1024 | 1 | [link](#run-5) | — | — | Width scaling |
 
+### Epochs with C=256 (exp=1)
+
+| Run | Epochs | Folder | BPB (sliding) | Notes |
+|-----|--------|--------|---------------|-------|
+| 6   | 1  | — | — | Shared with width sweep (Run 3) |
+| 7   | 2  | — | — | |
+| 8   | 3  | — | — | Ablation baseline |
+| 9   | 4  | — | — | |
+| 10   | 5  | — | — | |
+| 11   | 6  | — | — | |
+| 12   | 7  | — | — | |
+| 13   | 8  | — | — | |
+| 14   | 9  | — | — | |
+| 15   | 10 | — | — | |
+
+### Boolean ablations (C=256, 3 epochs, exp=1)
+
+| Run | Setting | Value | Folder | BPB (sliding) | Params | Delta |
+|-----|---------|-------|--------|---------------|--------|-------|
+| 8   | Baseline (all standard) | — | — | — | — | — |
+| 16   | `semantic_feedback` | false | — | — | — | — |
+| 17   | `semantic_feedback_cross_window` | false | — | — | — | — |
+| 18   | `learned_residual` | false | — | — | — | — |
+| 19   | `use_mixer_gate` | false | — | — | — | — |
+| 20   | `skip_proj_out` | true | — | — | — | — |
+| 21   | `shared_lifting_weights` | true | — | — | — | — |
+| 22   | `lifting_linear_only` | true | — | — | — | — |
+| 23   | `tie_embedding_to_lm_head` | true | — | — | — | — |
+
 ---
 
 ## Run Details
@@ -134,3 +163,4 @@ Metrics: —
 **Status:** Pending
 
 **Description:** C=1024, mlp_expansion=1, 1 epoch. Width scaling.
+
