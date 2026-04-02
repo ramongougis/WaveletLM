@@ -1,4 +1,4 @@
-for C in 2048 1024 512 256 128; do
+for C in 2048 1024 512 256 128 64; do
     python -c "
 import json
 cfg = json.load(open('config.json'))
