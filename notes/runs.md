@@ -4,7 +4,11 @@
 
 | Run | Sweep | C | Epochs | Folder | BPB (sliding) | Params | Notes |
 |-----|-------|---|--------|--------|---------------|--------|-------|
-| 1   | C with 1 epoch | 64 | 1 | [link](#run-1) | — | — | End-to-end pipeline test |
+| 1   | C with 1 epoch | 64  | 1 | [link](#run-1) | — | 11.55M | End-to-end pipeline test |
+| 2   | C with 1 epoch | 128 | 1 | [link](#run-2) | — | — | Width scaling |
+| 3   | C with 1 epoch | 256 | 1 | [link](#run-3) | — | — | Width scaling |
+| 4   | C with 1 epoch | 512 | 1 | [link](#run-4) | — | — | Width scaling |
+| 5   | C with 1 epoch | 1024 | 1 | [link](#run-5) | — | — | Width scaling |
 
 ---
 
@@ -13,6 +17,8 @@
 ### Run 1
 
 **Status:** Running
+
+**Folder:** `logs/wikitext-103_2026-04-02_11-32-52/` ([log](../logs/wikitext-103_2026-04-02_11-32-52/log.txt))
 
 **Description:** End-to-end pipeline test. C=64, 1 epoch. Validates benchmarks, VRAM reporting, and generation with strategies.
 
@@ -66,8 +72,8 @@
 </details>
 
 **Schedule:**
-- Steps/epoch: ~16,005 (MBS=8, GA=2)
-- Warmup: ~4,802 steps (30%)
+- 14,614 steps/epoch, 14,614 total steps
+- Warmup: 4,384 steps (30%)
 
 **Results:**
 - Val loss: —
@@ -76,3 +82,35 @@
 - Training time: —
 - Training Peak VRAM: —
 - Inference Peak VRAM: —
+
+---
+
+### Run 2
+
+**Status:** Pending
+
+**Description:** C=128, 1 epoch. Width scaling ablation.
+
+---
+
+### Run 3
+
+**Status:** Pending
+
+**Description:** C=256, 1 epoch. Width scaling ablation.
+
+---
+
+### Run 4
+
+**Status:** Pending
+
+**Description:** C=512, 1 epoch. Width scaling ablation.
+
+---
+
+### Run 5
+
+**Status:** Pending
+
+**Description:** C=1024, 1 epoch. Width scaling ablation.
