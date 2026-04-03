@@ -384,6 +384,8 @@ class ProductKeyMemory(nn.Module):
             f"num_keys ({num_keys}) must be a perfect square"
 
         half_dim = self.head_dim // 2
+        # Per-half top-k is clamped to sub_keys (can't retrieve more than exist)
+        self.half_k = min(self.top_k, self.sub_keys)
 
         # Query projection: input -> two half-queries per head
         self.query_proj = nn.Linear(C, pkm_heads * self.head_dim, bias=False,
@@ -418,40 +420,193 @@ class ProductKeyMemory(nn.Module):
         scores_a = torch.einsum('bthd,hsd->bths', q_a, self.keys_a)
         scores_b = torch.einsum('bthd,hsd->bths', q_b, self.keys_b)
 
-        # Top-k from each half
-        top_a_scores, top_a_idx = scores_a.topk(self.top_k, dim=-1)  # [B,T,H,k]
-        top_b_scores, top_b_idx = scores_b.topk(self.top_k, dim=-1)
+        # Top-k from each half (clamped to sub_keys)
+        top_a_scores, top_a_idx = scores_a.topk(self.half_k, dim=-1)  # [B,T,H,hk]
+        top_b_scores, top_b_idx = scores_b.topk(self.half_k, dim=-1)
 
-        # Product scores: all k*k combinations -> top-k of those
-        # [B, T, H, k, 1] + [B, T, H, 1, k] -> [B, T, H, k, k]
+        # Product scores: all hk*hk combinations -> top-k of those
         prod_scores = top_a_scores.unsqueeze(-1) + top_b_scores.unsqueeze(-2)
-        prod_scores_flat = prod_scores.view(B, T, self.heads, -1)  # [B,T,H,k*k]
+        prod_scores_flat = prod_scores.view(B, T, self.heads, -1)  # [B,T,H,hk*hk]
 
         # Combined indices: a_idx * sub_keys + b_idx
         prod_idx = (top_a_idx.unsqueeze(-1) * self.sub_keys +
                     top_b_idx.unsqueeze(-2))
-        prod_idx_flat = prod_idx.view(B, T, self.heads, -1)  # [B,T,H,k*k]
+        prod_idx_flat = prod_idx.view(B, T, self.heads, -1)
 
-        # Select final top-k from k*k candidates
-        final_scores, final_pos = prod_scores_flat.topk(self.top_k, dim=-1)
-        final_idx = prod_idx_flat.gather(-1, final_pos)  # [B,T,H,k]
+        # Select final top-k from hk*hk candidates
+        final_top_k = min(self.top_k, prod_scores_flat.size(-1))
+        final_scores, final_pos = prod_scores_flat.topk(final_top_k, dim=-1)
+        final_idx = prod_idx_flat.gather(-1, final_pos)
 
         # Softmax weights over final top-k
-        weights = F.softmax(final_scores.float(), dim=-1).to(x.dtype)  # [B,T,H,k]
+        weights = F.softmax(final_scores.float(), dim=-1).to(x.dtype)
 
         # Offset indices per head for the shared EmbeddingBag
         head_offsets = torch.arange(self.heads, device=x.device) * self.num_keys
         final_idx = final_idx + head_offsets.view(1, 1, -1, 1)
 
         # Weighted lookup: flatten for EmbeddingBag
-        flat_idx = final_idx.reshape(-1, self.top_k)     # [B*T*H, k]
-        flat_w = weights.reshape(-1, self.top_k)          # [B*T*H, k]
+        flat_idx = final_idx.reshape(-1, final_top_k)
+        flat_w = weights.reshape(-1, final_top_k)
 
         out = self.values(flat_idx, per_sample_weights=flat_w)  # [B*T*H, C]
         out = out.view(B, T, self.heads, C)
 
         # Sum across heads
         return out.sum(dim=2)  # [B, T, C]
+
+
+# ==============================================================================
+# 5b. FAST-WEIGHT PRODUCT KEY MEMORY (FwPKM)
+# ==============================================================================
+
+class FastWeightPKM(nn.Module):
+    """Fast-Weight Product Key Memory.
+
+    Structurally identical to ProductKeyMemory during training. At inference,
+    an optional update_fast_weights() method updates value deltas per chunk,
+    enabling episodic/contextual memory without retraining.
+
+    Sits on top of the MLP+PKM gated output (chained, not parallel).
+    """
+
+    def __init__(self, C: int, num_keys: int = 529, top_k: int = 32,
+                 heads: int = 1, device=None, dtype=None):
+        super().__init__()
+        self.C = C
+        self.num_keys = num_keys
+        self.top_k = top_k
+        self.heads = heads
+        self.head_dim = C // heads
+
+        # Sub-key size: sqrt(num_keys) entries per half
+        self.sub_keys = int(math.sqrt(num_keys))
+        assert self.sub_keys ** 2 == num_keys, \
+            f"num_keys ({num_keys}) must be a perfect square"
+
+        half_dim = self.head_dim // 2
+        self.half_k = min(self.top_k, self.sub_keys)
+
+        # Query projection
+        self.query_proj = nn.Linear(C, heads * self.head_dim, bias=False,
+                                    device=device, dtype=dtype)
+
+        # Two codebooks of sub-keys per head
+        self.keys_a = nn.Parameter(
+            torch.randn(heads, self.sub_keys, half_dim,
+                        device=device, dtype=dtype) * 0.02)
+        self.keys_b = nn.Parameter(
+            torch.randn(heads, self.sub_keys, half_dim,
+                        device=device, dtype=dtype) * 0.02)
+
+        # Value table: num_keys entries per head, each maps to C
+        self.values = nn.EmbeddingBag(
+            num_keys * heads, C, mode='sum',
+            device=device, dtype=dtype)
+        nn.init.normal_(self.values.weight, std=0.02)
+
+        # Fast-weight deltas: same shape as values, zeroed during training
+        self.register_buffer(
+            'value_deltas',
+            torch.zeros(num_keys * heads, C, device=device,
+                        dtype=dtype if dtype else torch.float32))
+
+    def _pkm_lookup(self, x: torch.Tensor):
+        """Core PKM lookup returning output and indices/weights for updates.
+
+        Returns:
+            out: [B, T, C] retrieved values
+            flat_idx: [B*T*H, k] indices used
+            flat_w: [B*T*H, k] softmax weights used
+        """
+        B, T, C = x.shape
+
+        # Project to queries: [B, T, heads, head_dim]
+        q = self.query_proj(x).view(B, T, self.heads, self.head_dim)
+
+        # Split each query into two halves
+        half = self.head_dim // 2
+        q_a = q[..., :half]
+        q_b = q[..., half:]
+
+        # Score against sub-key codebooks
+        scores_a = torch.einsum('bthd,hsd->bths', q_a, self.keys_a)
+        scores_b = torch.einsum('bthd,hsd->bths', q_b, self.keys_b)
+
+        # Top-k from each half (clamped to sub_keys)
+        top_a_scores, top_a_idx = scores_a.topk(self.half_k, dim=-1)
+        top_b_scores, top_b_idx = scores_b.topk(self.half_k, dim=-1)
+
+        # Product scores: all hk*hk combinations -> top-k of those
+        prod_scores = top_a_scores.unsqueeze(-1) + top_b_scores.unsqueeze(-2)
+        prod_scores_flat = prod_scores.view(B, T, self.heads, -1)
+
+        prod_idx = (top_a_idx.unsqueeze(-1) * self.sub_keys +
+                    top_b_idx.unsqueeze(-2))
+        prod_idx_flat = prod_idx.view(B, T, self.heads, -1)
+
+        # Select final top-k from hk*hk candidates
+        final_top_k = min(self.top_k, prod_scores_flat.size(-1))
+        final_scores, final_pos = prod_scores_flat.topk(final_top_k, dim=-1)
+        final_idx = prod_idx_flat.gather(-1, final_pos)
+
+        # Softmax weights over final top-k
+        weights = F.softmax(final_scores.float(), dim=-1).to(x.dtype)
+
+        # Offset indices per head
+        head_offsets = torch.arange(self.heads, device=x.device) * self.num_keys
+        final_idx = final_idx + head_offsets.view(1, 1, -1, 1)
+
+        # Flatten for lookup
+        flat_idx = final_idx.reshape(-1, final_top_k)
+        flat_w = weights.reshape(-1, final_top_k)
+
+        # Weighted lookup from base values
+        out = self.values(flat_idx, per_sample_weights=flat_w)
+
+        # Add fast-weight delta contribution (always when grad needed, else only if nonzero)
+        if self.value_deltas.requires_grad or self.value_deltas.any():
+            delta_vals = self.value_deltas[flat_idx]  # [B*T*H, k, C]
+            delta_out = (flat_w.unsqueeze(-1) * delta_vals).sum(dim=1)  # [B*T*H, C]
+            out = out + delta_out
+
+        out = out.view(B, T, self.heads, C)
+        return out.sum(dim=2), flat_idx, flat_w  # [B, T, C]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out, _, _ = self._pkm_lookup(x)
+        return out
+
+    def update_fast_weights(self, queries: torch.Tensor,
+                            targets: torch.Tensor, lr: float = 0.01):
+        """Update value deltas using local MSE loss. Called between chunks
+        during inference only.
+
+        Args:
+            queries: [B, chunk_size, C] - input representations from this chunk
+            targets: [B, chunk_size, C] - lookahead targets (shifted by 1)
+            lr: learning rate for fast-weight update
+        """
+        # Temporarily enable grad for value_deltas
+        self.value_deltas.requires_grad_(True)
+
+        # Retrieve current values
+        retrieved, flat_idx, flat_w = self._pkm_lookup(queries)
+
+        # MSE loss against targets
+        loss = F.mse_loss(retrieved, targets)
+
+        # Gradient w.r.t. value_deltas only
+        grad = torch.autograd.grad(loss, self.value_deltas, retain_graph=False)[0]
+
+        # Update deltas (gradient descent)
+        with torch.no_grad():
+            self.value_deltas -= lr * grad
+            self.value_deltas.requires_grad_(False)
+
+    def reset_fast_weights(self):
+        """Reset deltas to zero. Call at start of new document/sequence."""
+        self.value_deltas.zero_()
 
 
 # ==============================================================================
@@ -506,6 +661,10 @@ class ExarchBlock(nn.Module):
         pkm_num_keys: int = 529,
         pkm_top_k: int = 32,
         pkm_heads: int = 1,
+        fwpkm_enabled: bool = False,
+        fwpkm_num_keys: int = 529,
+        fwpkm_top_k: int = 32,
+        fwpkm_heads: int = 1,
     ):
         super().__init__()
         self.C = C
@@ -595,6 +754,13 @@ class ExarchBlock(nn.Module):
             nn.init.zeros_(self.memory_gate.weight)
             nn.init.constant_(self.memory_gate.bias, -2.0)  # sigmoid(-2) ≈ 0.12, starts MLP-heavy
 
+        # FwPKM: chains on top of MLP+PKM output (Stage 2 refinement)
+        self.fwpkm_enabled = fwpkm_enabled
+        if fwpkm_enabled:
+            self.fwpkm = FastWeightPKM(
+                self.C, num_keys=fwpkm_num_keys, top_k=fwpkm_top_k,
+                heads=fwpkm_heads, device=device, dtype=dtype)
+
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
 
@@ -677,19 +843,25 @@ class ExarchBlock(nn.Module):
         else:
             x = x + self.dropout_proj(projected)
 
-        # MLP / PKM
+        # Stage 1: MLP / PKM (base memory)
         h2 = self.ln2(x)
         if self.use_mlp and self.pkm_enabled:
             mlp_out = self.ffwd(h2)
             pkm_out = self.pkm(h2)
             g = torch.sigmoid(self.memory_gate(h2))  # [B, T, 1]
-            mem_out = (1 - g) * mlp_out + g * pkm_out
+            base = (1 - g) * mlp_out + g * pkm_out
         elif self.use_mlp:
-            mem_out = self.ffwd(h2)
+            base = self.ffwd(h2)
         elif self.pkm_enabled:
-            mem_out = self.pkm(h2)
+            base = self.pkm(h2)
         else:
-            mem_out = torch.zeros_like(h2)
+            base = torch.zeros_like(h2)
+
+        # Stage 2: FwPKM refinement (chains on base memory output)
+        if self.fwpkm_enabled:
+            mem_out = self.fwpkm(base)
+        else:
+            mem_out = base
 
         if self.learned_residual:
             x = self.residual_alpha_mlp * x + mem_out
@@ -793,6 +965,10 @@ class ExarchLM(nn.Module):
                 pkm_num_keys=config.get("pkm_num_keys", 529),
                 pkm_top_k=config.get("pkm_top_k", 32),
                 pkm_heads=config.get("pkm_heads", 1),
+                fwpkm_enabled=config.get("fwpkm_enabled", False),
+                fwpkm_num_keys=config.get("fwpkm_num_keys", 529),
+                fwpkm_top_k=config.get("fwpkm_top_k", 32),
+                fwpkm_heads=config.get("fwpkm_heads", 1),
             )
             for _ in range(L)
         ])
@@ -815,6 +991,25 @@ class ExarchLM(nn.Module):
         """Reset cross-window semantic state (call at start of new document/sequence)."""
         self._persistent_semantic_state = None
         self._persistent_token_count = 0
+
+    def reset_fast_weights(self):
+        """Reset FwPKM deltas across all layers."""
+        for layer in self.layers:
+            if hasattr(layer, 'fwpkm') and layer.fwpkm_enabled:
+                layer.fwpkm.reset_fast_weights()
+
+    def update_fast_weights(self, queries: torch.Tensor,
+                            targets: torch.Tensor, lr: float = 0.01):
+        """Update FwPKM deltas across all layers using chunk representations.
+
+        Args:
+            queries: [B, chunk_size, C] - input to each layer's FwPKM
+            targets: [B, chunk_size, C] - shifted-by-1 targets
+            lr: learning rate for fast-weight updates
+        """
+        for layer in self.layers:
+            if hasattr(layer, 'fwpkm') and layer.fwpkm_enabled:
+                layer.fwpkm.update_fast_weights(queries, targets, lr=lr)
 
     def _forward_embed(self, idx):
         """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""
@@ -1093,6 +1288,9 @@ def parameter_breakdown(model, config):
         if block0.pkm_enabled:
             pkm_per = sum(p.numel() for p in block0.pkm.parameters())
             print(f"    PKM/layer:      {pkm_per:>13,} ({pkm_per/1e6:.2f}M)")
+        if block0.fwpkm_enabled:
+            fwpkm_per = sum(p.numel() for p in block0.fwpkm.parameters())
+            print(f"    FwPKM/layer:    {fwpkm_per:>13,} ({fwpkm_per/1e6:.2f}M)")
 
         print(f"  LM head:          {lm_params:>13,} ({lm_params/1e6:.2f}M)")
         print(f"  Final LayerNorm:  {ln_params:>13,} ({ln_params/1e6:.2f}M)")

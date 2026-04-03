@@ -199,6 +199,9 @@ def generate_one(
     wavelet_coherence_weight: float = 0.5,
     wavelet_coherence_window: int = 128,
     wavelet_coherence_levels: int = 4,
+    fwpkm_inference_updates: bool = False,
+    fwpkm_update_lr: float = 0.01,
+    fwpkm_chunk_size: int = 64,
 ):
     """Generate tokens one at a time with optional inference strategies."""
     idx = input_tensor.clone()
@@ -208,6 +211,10 @@ def generate_one(
     # Reset semantic state
     if hasattr(model, 'reset_semantic_state'):
         model.reset_semantic_state()
+
+    # Reset FwPKM fast weights at start of generation
+    if fwpkm_inference_updates and hasattr(model, 'reset_fast_weights'):
+        model.reset_fast_weights()
 
     # Wavelet coherence: compute prompt's topic fingerprint
     prompt_fingerprint = None
@@ -319,6 +326,23 @@ def generate_one(
 
         idx = torch.cat((idx, idx_next), dim=1)
 
+        # FwPKM: update fast weights after each chunk
+        if (fwpkm_inference_updates and hasattr(model, 'update_fast_weights')
+                and (i + 1) % fwpkm_chunk_size == 0
+                and idx.size(1) > fwpkm_chunk_size):
+            chunk_end = idx.size(1)
+            chunk_start = chunk_end - fwpkm_chunk_size
+            chunk_ids = idx[:, chunk_start:chunk_end]
+
+            # Get embeddings for query/target pairs
+            _emb = getattr(model, 'token_embedding', None)
+            if _emb is not None:
+                with torch.no_grad():
+                    chunk_emb = _emb(chunk_ids)  # [B, chunk_size, C]
+                queries = chunk_emb[:, :-1, :]   # [B, chunk_size-1, C]
+                targets = chunk_emb[:, 1:, :]    # [B, chunk_size-1, C]
+                model.update_fast_weights(queries, targets, lr=fwpkm_update_lr)
+
     text = enc.decode(idx[0].tolist())
     generated_ids = idx[0, prompt_len:].tolist()
 
@@ -401,6 +425,10 @@ def main():
     parser.add_argument("--wavelet_coherence_weight", type=float, default=0.5)
     parser.add_argument("--wavelet_coherence_window", type=int, default=128)
     parser.add_argument("--wavelet_coherence_levels", type=int, default=4)
+    parser.add_argument("--fwpkm_inference_updates", action="store_true",
+                        help="Enable FwPKM fast-weight updates during generation")
+    parser.add_argument("--fwpkm_update_lr", type=float, default=0.01)
+    parser.add_argument("--fwpkm_chunk_size", type=int, default=64)
     parser.add_argument("--metrics", action="store_true",
                         help="Print quality metrics")
     parser.add_argument("--n", type=int, default=1,
@@ -484,6 +512,9 @@ def main():
         wavelet_coherence_weight=args.wavelet_coherence_weight,
         wavelet_coherence_window=args.wavelet_coherence_window,
         wavelet_coherence_levels=args.wavelet_coherence_levels,
+        fwpkm_inference_updates=args.fwpkm_inference_updates,
+        fwpkm_update_lr=args.fwpkm_update_lr,
+        fwpkm_chunk_size=args.fwpkm_chunk_size,
     )
 
     print(f"\nPrompt: {args.prompt}")
