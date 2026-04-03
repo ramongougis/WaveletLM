@@ -36,11 +36,11 @@
 | 5   | 3  | | | Ablation baseline |
 | 6   | 5  | | | |
 
-### Boolean ablations: C = 512, epochs = 3, mlp_expansion = 1
+### Boolean ablations: C = 512, epochs = 1, mlp_expansion = 1
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Delta |
 |-----|---------|-------|--------|---------------|--------|-------|
-| 5   | Baseline (all standard) | | | | | |
+| 4   | Baseline (all standard) | | | | | |
 | 7   | `semantic_feedback` | false | | | | |
 | 8   | `semantic_feedback_cross_window` | false | | | | |
 | 9   | `learned_residual` | false | | | | |
@@ -50,55 +50,48 @@
 | 13   | `lifting_linear_only` | true | | | | |
 | 14   | `tie_embedding_to_lm_head` | true | | | | |
 
-### MLP expansion: C = 512, epochs = 3, optimal booleans
+### MLP expansion: C = 512, epochs = 1, optimal booleans
 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Notes |
 |-----|---------------|--------|---------------|--------|-------|
 |   | 1  | | | | Baseline (optimal booleans from ablations; may be Run 8) |
 |   | 2  | | | | |
-|   | 5  | | | | |
 |   | 10 | | | | |
-|   | 20 | | | | |
 |   | 50 | | | | |
 
-### Memory: C = 512, epochs = 3, optimal booleans + mlp_expansion
+### Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|-------|
 |   | off | off | | | | | | Baseline (MLP only, from MLP sweep) |
-|   | on  | off | 529 | | | | | PKM default |
-|   | on  | off | 4096 | | | | | PKM large (64x64 sub-keys) |
-|   | on  | off | 65536 | | | | | PKM massive (256x256 sub-keys) |
+|   | on  | off | 529 | | | | | PKM default (23x23 subkeys) |
+|   | on  | off | 16384 | | | | | PKM large (128x128 sub-keys) |
 |   | off | on  | | 529 | | | | FwPKM only (no static memory) |
 |   | on  | on  | 529 | 529 | | | | PKM + FwPKM default |
-|   | on  | on  | 4096 | 4096 | | | | PKM + FwPKM large |
+|   | on  | on  | 16384 | 16384 | | | | PKM + FwPKM large |
 |   | off | off | | | | | | MLP off, PKM off (wavelet pipeline only) |
 |   | on  | off | 529 | | | | | MLP off, PKM only |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
-### Layers: C = 512, epochs = 3, optimal booleans + mlp_expansion
+### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Notes |
 |-----|--------|--------|---------------|--------|-------|
 |   | 20 | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
 |   | 1  | | | | |
-|   | 2  | | | | |
 |   | 4  | | | | |
-|   | 8  | | | | |
-|   | 16 | | | | |
+|   | 10  | | | | |
 |   | 20 | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
 |   | 30 | | | | |
 
-### Levels: C = 512, epochs = 3, optimal booleans + mlp_expansion + layers, block_size = 512 & stays constant
+### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512 & stays constant
 
 | Run | Levels | Folder | BPB (sliding) | Params | Notes |
 |-----|--------|--------|---------------|--------|-------|
 |   | 9 | | | | Baseline (default = log2(block_size=512)) |
 |   | 1 | | | | |
-|   | 3 | | | | |
 |   | 5 | | | | |
-|   | 7 | | | | |
 |   | 9 | | | | Baseline (default = log2(block_size=512)) |
 |   | 11 | | | | Beyond log2(block_size=512); expect no further gain |
 
@@ -126,6 +119,12 @@
 | `dropout_mixer` | 0.0 | Spectral mixer dropout | TBD |
 | `dropout_mlp` | 0.0 | MLP dropout | TBD |
 | `dropout_lm_head` | 0.0 | LM head dropout | TBD |
+
+### Best run: optimal config, 10 epochs, seed = 1337
+
+| Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
+|-----|--------|---------------|--------|---------------|------------------|-------|
+|   | | | | | | All optimal settings from sweeps above |
 
 ### Seed variance: best EXARCH config
 
