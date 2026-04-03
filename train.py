@@ -58,14 +58,20 @@ def load_and_encode_dataset(config, logger):
 
     if os.path.exists(cache_path):
         logger.log(f"[Dataset] Loading {dataset_name} from cache...")
-        cached = torch.load(cache_path, weights_only=True)
+        cached = torch.load(cache_path, weights_only=False)
         train_data = cached['train'].long()
         val_data = cached['val'].long()
         test_data = cached['test'].long()
+        test_bytes = cached.get('test_bytes', None)
+        if test_bytes is None:
+            # Old cache without byte count — compute from decoding
+            test_bytes = len(enc.decode(test_data.tolist()).encode("utf-8"))
+        bytes_per_token = test_bytes / len(test_data)
         logger.log(f"[Dataset] {dataset_name}: train={len(train_data):,}, "
                    f"val={len(val_data):,}, test={len(test_data):,} tokens (cached)")
+        logger.log(f"[Dataset] Test: {test_bytes:,} bytes, {bytes_per_token:.4f} bytes/token")
         logger.log(f"[Dataset] Vocab size: {vocab_size}")
-        return train_data, val_data, test_data, enc
+        return train_data, val_data, test_data, enc, bytes_per_token
 
     # Encode from scratch
     if dataset_name == "wikitext-103":
@@ -77,17 +83,19 @@ def load_and_encode_dataset(config, logger):
 
     def encode_split(split_data):
         text = "\n\n".join(split_data["text"])
+        num_bytes = len(text.encode("utf-8"))
         tokens = enc.encode(text, allowed_special=set())
-        return torch.tensor(tokens, dtype=torch.long)
+        return torch.tensor(tokens, dtype=torch.long), num_bytes
 
     logger.log(f"[Dataset] Loading {dataset_name}...")
-    train_data = encode_split(ds["train"])
-    val_data = encode_split(ds["validation"])
-    test_data = encode_split(ds["test"])
+    train_data, _ = encode_split(ds["train"])
+    val_data, _ = encode_split(ds["validation"])
+    test_data, test_bytes = encode_split(ds["test"])
 
     # Cache for future runs (stored as int32 to save space; cast back on load)
     os.makedirs(cache_dir, exist_ok=True)
-    torch.save({'train': train_data.int(), 'val': val_data.int(), 'test': test_data.int()}, cache_path)
+    torch.save({'train': train_data.int(), 'val': val_data.int(), 'test': test_data.int(),
+                'test_bytes': test_bytes}, cache_path)
     logger.log(f"[Dataset] Cached to {cache_path}")
 
     # Remove HuggingFace dataset cache now that we have our own tensor cache
@@ -103,11 +111,13 @@ def load_and_encode_dataset(config, logger):
     except Exception:
         pass
 
+    bytes_per_token = test_bytes / len(test_data)
     logger.log(f"[Dataset] {dataset_name}: train={len(train_data):,}, "
                f"val={len(val_data):,}, test={len(test_data):,} tokens")
+    logger.log(f"[Dataset] Test: {test_bytes:,} bytes, {bytes_per_token:.4f} bytes/token")
     logger.log(f"[Dataset] Vocab size: {vocab_size}")
 
-    return train_data, val_data, test_data, enc
+    return train_data, val_data, test_data, enc, bytes_per_token
 
 
 # ==============================================================================
@@ -437,7 +447,7 @@ def train():
     logger.log("")
 
     # Load dataset
-    train_data, val_data, test_data, enc = load_and_encode_dataset(config, logger)
+    train_data, val_data, test_data, enc, bytes_per_token = load_and_encode_dataset(config, logger)
     train_data = train_data.to(device)
     val_data = val_data.to(device)
     test_data = test_data.to(device)
@@ -649,18 +659,22 @@ def train():
     results_full = evaluate_full_validation(
         model, test_data, config, logger, device, use_amp, amp_dtype)
     if results_full:
+        bpb_full = results_full['bits_per_token'] / bytes_per_token
         logger.log(f"\n[BENCHMARK - Non-overlapping]")
         logger.log(f"  Perplexity: {results_full['perplexity']:.4f}")
         logger.log(f"  BPT: {results_full['bits_per_token']:.4f}")
+        logger.log(f"  BPB: {bpb_full:.4f}")
         logger.log(f"  Avg Loss: {results_full['avg_loss']:.4f}")
 
     # Sliding window benchmark
     results_sw = evaluate_sliding_window(
         model, test_data, config, logger, device, use_amp, amp_dtype)
     if results_sw:
+        bpb_sw = results_sw['bits_per_token'] / bytes_per_token
         logger.log(f"\n[BENCHMARK - Sliding Window]")
         logger.log(f"  Perplexity: {results_sw['perplexity']:.4f}")
         logger.log(f"  BPT: {results_sw['bits_per_token']:.4f}")
+        logger.log(f"  BPB: {bpb_sw:.4f}")
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
 
