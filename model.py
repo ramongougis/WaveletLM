@@ -357,6 +357,104 @@ class FeedForward(nn.Module):
 
 
 # ==============================================================================
+# 5b. PRODUCT KEY MEMORY (PKM)
+# ==============================================================================
+
+class ProductKeyMemory(nn.Module):
+    """Product Key Memory (Lample et al. 2019).
+
+    Splits the query into two halves, each matched against a codebook of
+    sqrt(num_keys) sub-keys. The top-k product scores index into a value
+    table of num_keys entries. This gives O(2*sqrt(num_keys)) lookup cost
+    instead of O(num_keys).
+    """
+
+    def __init__(self, C: int, num_keys: int = 512, pkm_top_k: int = 32,
+                 pkm_heads: int = 1, device=None, dtype=None):
+        super().__init__()
+        self.C = C
+        self.num_keys = num_keys
+        self.top_k = pkm_top_k
+        self.heads = pkm_heads
+        self.head_dim = C // pkm_heads
+
+        # Sub-key size: sqrt(num_keys) entries per half
+        self.sub_keys = int(math.sqrt(num_keys))
+        assert self.sub_keys ** 2 == num_keys, \
+            f"num_keys ({num_keys}) must be a perfect square"
+
+        half_dim = self.head_dim // 2
+
+        # Query projection: input -> two half-queries per head
+        self.query_proj = nn.Linear(C, pkm_heads * self.head_dim, bias=False,
+                                    device=device, dtype=dtype)
+
+        # Two codebooks of sub-keys per head
+        self.keys_a = nn.Parameter(
+            torch.randn(pkm_heads, self.sub_keys, half_dim,
+                        device=device, dtype=dtype) * 0.02)
+        self.keys_b = nn.Parameter(
+            torch.randn(pkm_heads, self.sub_keys, half_dim,
+                        device=device, dtype=dtype) * 0.02)
+
+        # Value table: num_keys entries per head, each maps to head_dim
+        self.values = nn.EmbeddingBag(
+            num_keys * pkm_heads, C, mode='sum',
+            device=device, dtype=dtype)
+        nn.init.normal_(self.values.weight, std=0.02)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, C = x.shape
+
+        # Project to queries: [B, T, heads, head_dim]
+        q = self.query_proj(x).view(B, T, self.heads, self.head_dim)
+
+        # Split each query into two halves
+        half = self.head_dim // 2
+        q_a = q[..., :half]  # [B, T, heads, half]
+        q_b = q[..., half:]  # [B, T, heads, half]
+
+        # Score against sub-key codebooks: [B, T, heads, sub_keys]
+        scores_a = torch.einsum('bthd,hsd->bths', q_a, self.keys_a)
+        scores_b = torch.einsum('bthd,hsd->bths', q_b, self.keys_b)
+
+        # Top-k from each half
+        top_a_scores, top_a_idx = scores_a.topk(self.top_k, dim=-1)  # [B,T,H,k]
+        top_b_scores, top_b_idx = scores_b.topk(self.top_k, dim=-1)
+
+        # Product scores: all k*k combinations -> top-k of those
+        # [B, T, H, k, 1] + [B, T, H, 1, k] -> [B, T, H, k, k]
+        prod_scores = top_a_scores.unsqueeze(-1) + top_b_scores.unsqueeze(-2)
+        prod_scores_flat = prod_scores.view(B, T, self.heads, -1)  # [B,T,H,k*k]
+
+        # Combined indices: a_idx * sub_keys + b_idx
+        prod_idx = (top_a_idx.unsqueeze(-1) * self.sub_keys +
+                    top_b_idx.unsqueeze(-2))
+        prod_idx_flat = prod_idx.view(B, T, self.heads, -1)  # [B,T,H,k*k]
+
+        # Select final top-k from k*k candidates
+        final_scores, final_pos = prod_scores_flat.topk(self.top_k, dim=-1)
+        final_idx = prod_idx_flat.gather(-1, final_pos)  # [B,T,H,k]
+
+        # Softmax weights over final top-k
+        weights = F.softmax(final_scores.float(), dim=-1).to(x.dtype)  # [B,T,H,k]
+
+        # Offset indices per head for the shared EmbeddingBag
+        head_offsets = torch.arange(self.heads, device=x.device) * self.num_keys
+        final_idx = final_idx + head_offsets.view(1, 1, -1, 1)
+
+        # Weighted lookup: flatten for EmbeddingBag
+        flat_idx = final_idx.reshape(-1, self.top_k)     # [B*T*H, k]
+        flat_w = weights.reshape(-1, self.top_k)          # [B*T*H, k]
+
+        out = self.values(flat_idx, per_sample_weights=flat_w)  # [B*T*H, C]
+        out = out.view(B, T, self.heads, C)
+
+        # Sum across heads
+        return out.sum(dim=2)  # [B, T, C]
+
+
+# ==============================================================================
 # 6. SEMANTIC FEEDBACK — Running Mean
 # ==============================================================================
 
@@ -404,6 +502,10 @@ class ExarchBlock(nn.Module):
         shared_lifting_module: 'LiftingWaveletDecompose' = None,
         use_mixer_gate: bool = True,
         mixer_gate_activation: str = "silu",
+        pkm_enabled: bool = False,
+        pkm_num_keys: int = 512,
+        pkm_top_k: int = 32,
+        pkm_heads: int = 1,
     ):
         super().__init__()
         self.C = C
@@ -476,8 +578,22 @@ class ExarchBlock(nn.Module):
         self.ln1 = nn.LayerNorm(self.C)
         self.ln2 = nn.LayerNorm(self.C)
 
-        self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
-                                dropout_mlp=dropout_mlp, hidden_layers=mlp_layers)
+        self.use_mlp = mlp_expansion > 0
+        if self.use_mlp:
+            self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
+                                    dropout_mlp=dropout_mlp, hidden_layers=mlp_layers)
+
+        self.pkm_enabled = pkm_enabled
+        if pkm_enabled:
+            self.pkm = ProductKeyMemory(
+                self.C, num_keys=pkm_num_keys, pkm_top_k=pkm_top_k,
+                pkm_heads=pkm_heads, device=device, dtype=dtype)
+
+        # Learned gate when both MLP and PKM are active
+        if self.use_mlp and pkm_enabled:
+            self.memory_gate = nn.Linear(self.C, 1, bias=True, device=device, dtype=dtype)
+            nn.init.zeros_(self.memory_gate.weight)
+            nn.init.constant_(self.memory_gate.bias, -2.0)  # sigmoid(-2) ≈ 0.12, starts MLP-heavy
 
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
@@ -561,12 +677,24 @@ class ExarchBlock(nn.Module):
         else:
             x = x + self.dropout_proj(projected)
 
-        # MLP
+        # MLP / PKM
         h2 = self.ln2(x)
-        if self.learned_residual:
-            x = self.residual_alpha_mlp * x + self.ffwd(h2)
+        if self.use_mlp and self.pkm_enabled:
+            mlp_out = self.ffwd(h2)
+            pkm_out = self.pkm(h2)
+            g = torch.sigmoid(self.memory_gate(h2))  # [B, T, 1]
+            mem_out = (1 - g) * mlp_out + g * pkm_out
+        elif self.use_mlp:
+            mem_out = self.ffwd(h2)
+        elif self.pkm_enabled:
+            mem_out = self.pkm(h2)
         else:
-            x = x + self.ffwd(h2)
+            mem_out = torch.zeros_like(h2)
+
+        if self.learned_residual:
+            x = self.residual_alpha_mlp * x + mem_out
+        else:
+            x = x + mem_out
 
         return x, current_running_mean
 
@@ -661,6 +789,10 @@ class ExarchLM(nn.Module):
                 shared_lifting_module=shared_lifting,
                 use_mixer_gate=config.get("use_mixer_gate", True),
                 mixer_gate_activation=config.get("mixer_gate_activation", "silu"),
+                pkm_enabled=config.get("pkm_enabled", False),
+                pkm_num_keys=config.get("pkm_num_keys", 512),
+                pkm_top_k=config.get("pkm_top_k", 32),
+                pkm_heads=config.get("pkm_heads", 1),
             )
             for _ in range(L)
         ])
@@ -952,6 +1084,16 @@ def parameter_breakdown(model, config):
 
         print(f"  Token embedding:  {emb_params:>13,} ({emb_params/1e6:.2f}M)")
         print(f"  Layers (total):   {layer_params:>13,} ({layer_params/1e6:.2f}M)")
+
+        # Per-layer MLP vs PKM breakdown
+        block0 = model.layers[0]
+        if block0.use_mlp:
+            mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
+            print(f"    MLP/layer:      {mlp_per:>13,} ({mlp_per/1e6:.2f}M)")
+        if block0.pkm_enabled:
+            pkm_per = sum(p.numel() for p in block0.pkm.parameters())
+            print(f"    PKM/layer:      {pkm_per:>13,} ({pkm_per/1e6:.2f}M)")
+
         print(f"  LM head:          {lm_params:>13,} ({lm_params/1e6:.2f}M)")
         print(f"  Final LayerNorm:  {ln_params:>13,} ({ln_params/1e6:.2f}M)")
 

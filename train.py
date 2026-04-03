@@ -404,6 +404,7 @@ def train():
             with open(run_config_path, 'r') as f:
                 run_config = json.load(f)
             for k in ['C', 'layers', 'levels', 'low_rank', 'mlp_expansion', 'mlp_layers',
+                       'pkm_enabled', 'pkm_num_keys', 'pkm_top_k', 'pkm_heads',
                        'wavelet_mode', 'shared_lifting_weights', 'lifting_linear_only',
                        'lifting_hidden_mult', 'lifting_init', 'lifting_dropout',
                        'use_mixer_gate', 'mixer_gate_activation', 'semantic_feedback',

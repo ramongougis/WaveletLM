@@ -22,7 +22,7 @@
 | Run | C | Folder | BPB (sliding) | Params | Notes |
 |-----|---|--------|---------------|--------|-------|
 | 1   | 64   | [link](#run-1) | 1.5168 | 11.42M | Pipeline test |
-| 2   | 128  | [link](#run-2) | | | |
+| 2   | 128  | [link](#run-2) | 1.4729 | 32.66M | |
 | 3   | 256  | [link](#run-3) | 1.2929 | 98.63M | |
 | 4   | 512  | [link](#run-4) | 1.1751 | 366.58M | |
 | 5   | 1024 | [link](#run-5) | 1.1422 | 1362.31M | LR=0.005 |
@@ -256,9 +256,42 @@ Metrics: MeanLogP=-1.6903 | MeanH=5.88 | D1=0.529 | D2=0.857 | D3=0.953 | Rep4=0
 
 ### Run 2
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 128, mlp_expansion = 1, epochs = 1. Width scaling.
+**Folder:** `logs/wikitext-103_2026-04-03_10-22-17/` ([log](../logs/wikitext-103_2026-04-03_10-22-17/log.txt))
+
+**Description:** C = 128, mlp_expansion = 1, epochs = 1. Width scaling. LR = 0.01.
+
+**Results:**
+- Val loss: 4.5788
+- Sliding BPB: 1.4729 (BPT: 6.6377)
+- Non-overlapping BPB: 1.4788 (BPT: 6.6642)
+- Params: 32.66M
+- Training time: 2.79h (10,045s)
+- Training Peak VRAM: 6,360 MiB
+- Inference Peak VRAM: 2,668 MiB
+
+<details>
+<summary>Generation - Standard: <i>"The history of Holy Evans. The climate three-style scene..."</i></summary>
+
+```
+The history of " Holy Evans " . The climate three @-@ style scene was also expressed by Mind Boutovsel as the Informate and Waters . Archaeologicalologist Murphy Fassemist Jerry T. Peter abamazand , of Annieyíben , is known as Christina Mackgenija . Lokis published and commissioned for Birmingham in 1940 . The.aly Clan features their own character members FC ğ Lie Soil , W. Magnus 's jets and Cyril " Toro Wil pregnant " The New Media ( chazarushotes ) as with Godalu ruté .
+```
+
+</details>
+
+<details>
+<summary>Generation - Strategies: <i>"The history of the war. The Court, however, was not a major role..."</i></summary>
+
+```
+The history of the war . The Court , however , was not a major role in the political and political life of the world .
+
+ In 1852 , the United States became an important part of its government 's military law , and it was passed by the U.S. Army to be established in Europe in mid @-@ January 1774 , and the first city of North America ( now known as the University of New Zealand ) . It had been built at the age of 80 when a large number of American companies were destroyed by the British . The government also served on the National Register of Historic Places and the site of the National Commission for the Museum of Honor .
+```
+
+Metrics: MeanLogP=-1.4610 | MeanH=5.58 | D1=0.490 | D2=0.836 | D3=0.965 | Rep4=0.057
+
+</details>
 
 ---
 
