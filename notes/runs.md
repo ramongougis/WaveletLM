@@ -6,14 +6,15 @@
 2. [Epochs: C=512, exp=1](#epochs--c256-exp1)
 3. [Boolean ablations: C=512, 3 epochs, exp=1](#boolean-ablations--c512-3-epochs-exp1)
 4. [MLP expansion: C=512, 3 epochs, optimal booleans](#mlp-expansion--c512-3-epochs-optimal-booleans)
-5. [Layers: C=512, 3 epochs, optimal booleans + mlp_expansion](#layers--c512-3-epochs-optimal-booleans--mlp_expansion)
-6. [Levels: C=512, 3 epochs, optimal booleans + mlp_expansion + layers](#levels--c512-3-epochs-optimal-booleans--mlp_expansion--layers)
-7. [Planned: medium priority](#planned--medium-priority)
-8. [Planned: lower priority](#planned--lower-priority-fine-tuning)
-9. [Seed variance: best EXARCH config](#seed-variance--best-exarch-config)
-10. [Planned: dataset comparisons](#planned--dataset-comparisons-best-config-feasible-epochs)
-11. [Planned: model comparisons](#planned--model-comparisons-wikitext-103-matched-compute)
-12. [Run Details](#run-details)
+5. [Memory (PKM/FwPKM): C=512, 3 epochs, optimal booleans + mlp_expansion](#memory--c512-3-epochs-optimal-booleans--mlp_expansion)
+6. [Layers: C=512, 3 epochs, optimal booleans + mlp_expansion](#layers--c512-3-epochs-optimal-booleans--mlp_expansion)
+7. [Levels: C=512, 3 epochs, optimal booleans + mlp_expansion + layers](#levels--c512-3-epochs-optimal-booleans--mlp_expansion--layers)
+8. [Planned: medium priority](#planned--medium-priority)
+9. [Planned: lower priority](#planned--lower-priority-fine-tuning)
+10. [Seed variance: best EXARCH config](#seed-variance--best-exarch-config)
+11. [Planned: dataset comparisons](#planned--dataset-comparisons-best-config-feasible-epochs)
+12. [Planned: model comparisons](#planned--model-comparisons-wikitext-103-matched-compute)
+13. [Run Details](#run-details)
 
 ---
 
@@ -68,6 +69,22 @@
 |   | 20 | | | | |
 |   | 25 | | | | |
 |   | 50 | | | | |
+
+### Memory: C = 512, epochs = 3, optimal booleans + mlp_expansion
+
+| Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Notes |
+|-----|-----|-------|--------------|----------------|--------|---------------|--------|-------|
+|   | off | off | | | | | | Baseline (MLP only, from MLP sweep) |
+|   | on  | off | 529 | | | | | PKM default |
+|   | on  | off | 4096 | | | | | PKM large (64x64 sub-keys) |
+|   | on  | off | 65536 | | | | | PKM massive (256x256 sub-keys) |
+|   | off | on  | | 529 | | | | FwPKM only (no static memory) |
+|   | on  | on  | 529 | 529 | | | | PKM + FwPKM default |
+|   | on  | on  | 4096 | 4096 | | | | PKM + FwPKM large |
+|   | off | off | | | | | | MLP off, PKM off (wavelet pipeline only) |
+|   | on  | off | 529 | | | | | MLP off, PKM only |
+
+> **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
 ### Layers: C = 512, epochs = 3, optimal booleans + mlp_expansion
 

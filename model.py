@@ -369,7 +369,7 @@ class ProductKeyMemory(nn.Module):
     instead of O(num_keys).
     """
 
-    def __init__(self, C: int, num_keys: int = 512, pkm_top_k: int = 32,
+    def __init__(self, C: int, num_keys: int = 529, pkm_top_k: int = 32,
                  pkm_heads: int = 1, device=None, dtype=None):
         super().__init__()
         self.C = C
@@ -503,7 +503,7 @@ class ExarchBlock(nn.Module):
         use_mixer_gate: bool = True,
         mixer_gate_activation: str = "silu",
         pkm_enabled: bool = False,
-        pkm_num_keys: int = 512,
+        pkm_num_keys: int = 529,
         pkm_top_k: int = 32,
         pkm_heads: int = 1,
     ):
@@ -790,7 +790,7 @@ class ExarchLM(nn.Module):
                 use_mixer_gate=config.get("use_mixer_gate", True),
                 mixer_gate_activation=config.get("mixer_gate_activation", "silu"),
                 pkm_enabled=config.get("pkm_enabled", False),
-                pkm_num_keys=config.get("pkm_num_keys", 512),
+                pkm_num_keys=config.get("pkm_num_keys", 529),
                 pkm_top_k=config.get("pkm_top_k", 32),
                 pkm_heads=config.get("pkm_heads", 1),
             )
