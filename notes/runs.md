@@ -33,29 +33,22 @@
 | Run | Epochs | Folder | BPB (sliding) | Notes |
 |-----|--------|--------|---------------|-------|
 | 4   | 1  | [link](#run-4) | 1.1751 | Shared with width sweep (Run 4) |
-| 5   | 2  | | | |
-| 6   | 3  | | | Ablation baseline |
-| 7   | 4  | | | |
-| 8   | 5  | | | |
-| 9   | 6  | | | |
-| 10   | 7  | | | |
-| 11   | 8  | | | |
-| 12   | 9  | | | |
-| 13   | 10 | | | |
+| 5   | 3  | | | Ablation baseline |
+| 6   | 5  | | | |
 
 ### Boolean ablations: C = 512, epochs = 3, mlp_expansion = 1
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Delta |
 |-----|---------|-------|--------|---------------|--------|-------|
-| 6   | Baseline (all standard) | | | | | |
-| 14   | `semantic_feedback` | false | | | | |
-| 15   | `semantic_feedback_cross_window` | false | | | | |
-| 16   | `learned_residual` | false | | | | |
-| 17   | `use_mixer_gate` | false | | | | |
-| 18   | `skip_proj_out` | true | | | | |
-| 19   | `shared_lifting_weights` | true | | | | |
-| 20   | `lifting_linear_only` | true | | | | |
-| 21   | `tie_embedding_to_lm_head` | true | | | | |
+| 5   | Baseline (all standard) | | | | | |
+| 7   | `semantic_feedback` | false | | | | |
+| 8   | `semantic_feedback_cross_window` | false | | | | |
+| 9   | `learned_residual` | false | | | | |
+| 10   | `use_mixer_gate` | false | | | | |
+| 11   | `skip_proj_out` | true | | | | |
+| 12   | `shared_lifting_weights` | true | | | | |
+| 13   | `lifting_linear_only` | true | | | | |
+| 14   | `tie_embedding_to_lm_head` | true | | | | |
 
 ### MLP expansion: C = 512, epochs = 3, optimal booleans
 
@@ -65,9 +58,7 @@
 |   | 2  | | | | |
 |   | 5  | | | | |
 |   | 10 | | | | |
-|   | 15 | | | | |
 |   | 20 | | | | |
-|   | 25 | | | | |
 |   | 50 | | | | |
 
 ### Memory: C = 512, epochs = 3, optimal booleans + mlp_expansion

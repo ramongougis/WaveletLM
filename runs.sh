@@ -1,4 +1,4 @@
-for EPOCHS in 2 3 4 5 6 7 8 9 10; do
+for EPOCHS in 3 5; do
     python -c "
 import json
 cfg = json.load(open('config.json'))
