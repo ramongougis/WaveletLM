@@ -1,16 +1,16 @@
-for C in 1024 512 256 128; do
-    if [ $C -ge 1024 ]; then LR=0.005
-    else LR=0.01
-    fi
+for EPOCHS in 2 3 4 5 6 7 8 9 10; do
     python -c "
 import json
 cfg = json.load(open('config.json'))
-cfg['C'] = $C
-cfg['lr'] = $LR
+cfg['C'] = 512
+cfg['lr'] = 0.01
+cfg['mlp_expansion'] = 1
+cfg['epochs'] = $EPOCHS
 json.dump(cfg, open('config.json', 'w'), indent=4)
 "
     python train.py
     git add .
-    git commit -m "results for C = $C with epochs = 1 run"
+    git commit --no-edit -m "results for C=512, epochs=$EPOCHS run"
+    git pull --no-edit
     git push
 done
