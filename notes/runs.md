@@ -98,6 +98,8 @@
 | Parameter | Current | What it tests | Values |
 |-----------|---------|---------------|--------|
 | `multinodal_enabled` | false | Multinodal product-of-experts (num_cells, cell_dim, cross-cell gating) | TBD |
+
+> **Multinodal LR note:** More nodes increase aggregate gradient variance (analogous to wider C). When doubling node count, try LR / sqrt(2) first; if still unstable, halve LR.
 | `low_rank` | 0 | Low-rank factorization in spectral mixer (0 = full rank) | TBD |
 | `lifting_hidden_mult` | 1 | Hidden dim multiplier for lifting predict/update MLPs | TBD |
 | `lr` | 0.02 | Initial learning rate (Adagrad is adaptive but initial LR still matters) | TBD |
