@@ -3,14 +3,14 @@
 
 # Setting name, config key, value
 ABLATIONS=(
-    "semantic_feedback:semantic_feedback:false"
-    "semantic_feedback_cross_window:semantic_feedback_cross_window:false"
-    "learned_residual:learned_residual:false"
-    "use_mixer_gate:use_mixer_gate:false"
-    "skip_proj_out:skip_proj_out:true"
-    "shared_lifting_weights:shared_lifting_weights:true"
-    "lifting_linear_only:lifting_linear_only:true"
-    "tie_embedding_to_lm_head:tie_embedding_to_lm_head:true"
+    "semantic_feedback:semantic_feedback:False"
+    "semantic_feedback_cross_window:semantic_feedback_cross_window:False"
+    "learned_residual:learned_residual:False"
+    "use_mixer_gate:use_mixer_gate:False"
+    "skip_proj_out:skip_proj_out:True"
+    "shared_lifting_weights:shared_lifting_weights:True"
+    "lifting_linear_only:lifting_linear_only:True"
+    "tie_embedding_to_lm_head:tie_embedding_to_lm_head:True"
 )
 
 for entry in "${ABLATIONS[@]}"; do
