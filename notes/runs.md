@@ -34,7 +34,7 @@
 |-----|--------|--------|---------------|------------|----------------|-------|
 | 4   | 1  | [link](#run-4) | 1.1751 | 18,738 MiB | 2,179 MiB | Shared with width sweep (Run 4) |
 | 6   | 3  | [link](#run-6) | 1.1169 | 18,738 MiB | 2,179 MiB | Ablation baseline |
-| 7   | 5  | | | | | |
+| 7   | 5  | [link](#run-7) | 1.1237 | 18,738 MiB | 2,179 MiB | Overfit; best val at epoch 4, not 5. No dropout. |
 
 ### Boolean ablations: C = 512, epochs = 1, mlp_expansion = 1
 
@@ -111,6 +111,39 @@
 | `lr` | 0.02 | Initial learning rate (Adagrad is adaptive but initial LR still matters) | TBD |
 | `block_size` | 512 | Context window; trades VRAM for longer-range modeling. Change levels to log2(block_size) for each block size tested. | TBD |
 
+### Dropout optimization: C = 512, optimal booleans + mlp_expansion + layers + levels
+
+Dropout is tested at 3 epochs (overfitting confirmed at 5 epochs without dropout). Each dropout is swept independently at a coarse grid, then the best values are combined in a final 10-epoch run.
+
+> **Why 3 epochs:** Run 7 showed clear overfitting at epochs 4-5 with no dropout (train/val gap 0.64). Dropout should reduce this gap and potentially unlock more epochs.
+
+#### Phase 1: Coarse grid (3 epochs each, one dropout at a time)
+
+| Run | Dropout | Value | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Delta vs 0.0 |
+|-----|---------|-------|--------|---------------|------------|----------------|--------------|
+|   | Baseline (all 0.0) | 0.0 | | | | | |
+|   | `dropout_mlp` | 0.05 | | | | | |
+|   | `dropout_mlp` | 0.1 | | | | | |
+|   | `dropout_mlp` | 0.2 | | | | | |
+|   | `dropout_projection` | 0.05 | | | | | |
+|   | `dropout_projection` | 0.1 | | | | | |
+|   | `dropout_projection` | 0.2 | | | | | |
+|   | `dropout_mixer` | 0.05 | | | | | |
+|   | `dropout_mixer` | 0.1 | | | | | |
+|   | `dropout_mixer` | 0.2 | | | | | |
+|   | `dropout_embedding` | 0.05 | | | | | |
+|   | `dropout_embedding` | 0.1 | | | | | |
+|   | `dropout_embedding` | 0.2 | | | | | |
+|   | `dropout_lm_head` | 0.05 | | | | | |
+|   | `dropout_lm_head` | 0.1 | | | | | |
+|   | `dropout_lm_head` | 0.2 | | | | | |
+
+#### Phase 2: Best combination (10 epochs)
+
+| Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
+|-----|--------|---------------|--------|---------------|------------------|-------|
+|   | | | | | | Best dropout values from Phase 1 combined. Target: unlock epochs 4-10 without overfitting. |
+
 ### Planned: lower priority (fine-tuning)
 
 | Parameter | Current | What it tests | Values |
@@ -118,11 +151,6 @@
 | `grad_accum` | 2 | Effective batch size (with micro_batch_size) | TBD |
 | `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
 | `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
-| `dropout_embedding` | 0.0 | Embedding dropout | TBD |
-| `dropout_projection` | 0.0 | Post-wavelet projection dropout | TBD |
-| `dropout_mixer` | 0.0 | Spectral mixer dropout | TBD |
-| `dropout_mlp` | 0.0 | MLP dropout | TBD |
-| `dropout_lm_head` | 0.0 | LM head dropout | TBD |
 
 ### Best run: optimal config, 10 epochs, seed = 1337
 
@@ -496,9 +524,55 @@ Metrics: MeanLogP=-1.3999 | MeanH=4.32 | D1=0.607 | D2=0.933 | D3=0.992 | Rep4=0
 
 ### Run 7
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 5.
+**Folder:** `logs/wikitext-103_2026-04-03_22-59-40/` ([log](../logs/wikitext-103_2026-04-03_22-59-40/log.txt))
+
+**Description:** C = 512, mlp_expansion = 1, epochs = 5. No dropout. Overfit — best val at epoch 4, BPB worse than 3-epoch run.
+
+**Results:**
+- Best val loss: 3.4428 (epoch 4)
+- Sliding BPB: 1.1237 (BPT: 5.0645)
+- Non-overlapping BPB: 1.1338 (BPT: 5.1100)
+- Params: 366.58M
+- Training time: 14.15h (50,929s), avg 2.82h/epoch
+- Training Peak VRAM: 18,738 MiB
+- Inference Peak VRAM: 8,475 MiB (use generate.py for accurate measurement)
+- Train/val gap: 0.64 at epoch 5 (vs 0.43 at epoch 3) — clear overfitting
+
+<details>
+<summary>Generation - Standard: <i>"The history of Mureş, which Croatia held until 7 July..."</i></summary>
+
+```
+The history of Mureş , which Croatia held until 7 July . 
+
+ Between 2 and 4 August , ZNG redeployed the 14th Infantry Brigade to southern Namia , establishing full surrender areas without being detected . Apart from RSHA logoplates , an artillery establishment unit put aside the 700 prisoners installed for the purpose of demarcation traffic and the establishment of barracks , guards , and positions . One battalion of the 366th Pan into 66th Division was assigned the task of capturing the Hungarian underworld from Maribor . The SADF opened the road attack , launched attempts to secure the barracks , electrification report , targeted capture of various documents with tactical faults and valise orders , and stores and blankets , preparing the wounded prisoners , weapons and equipment , and assisting those deployed by the regiment . 
+
+ The planning of the ZNDOR Area Corps terminated on 31 August . During day night the brigade manoeuvred through much of the airspace of the 14th , deploying F / A @-@ 18s , two C @-@ 130Es , and five Bf 109s . At the same time , the Partisans started to aim them completely . The Kampfgruppe Carchi rouge was to be taken by western @-@ occupied ARSK troops to help rebuild the area . The 37th Guards Brigade was tasked with attacking at Neg pressed and Mazosi and the 28th Brigade halted . Two days later , 12th Infantry Brigade withdrew amidst bad weather throughout the town , now resumed by filling the border at Srenica . 
+```
+
+</details>
+
+<details>
+<summary>Generation - Strategies: <i>"The history of the United States and its expansion into southern Canada..."</i></summary>
+
+```
+The history of the United States and its expansion into southern Canada , which is now a part of North America . 
+
+ The city has been an important centre for agriculture since the 19th century . In 1867 the population was estimated at more than 4 @,@ 000 people . By 1900 it had grown to become known as " The City of Portland 's Fairgrounds " . It later became the Union Bank Building ( formerly the headquarters building ) in 1918 , where it served until 1936 . 
+
+ During World War II , Phoenix grew from 200 @-@ 9 % of its residents by age 25 , mainly due to poor health following the war , but still recovering much of its food . Today , the town 's economy needs significant economic growth , with large areas such as bars and restaurants being closed out . As of 2008 , there were about 400 active service personnel on the island , including the Army Air Corps and Royal Navy Service RAN aircraft . There are also many special operations facilities in the area that include military equipment such as radar and aerial surveillance . 
+
+ = = Geography = = 
+
+ Plymouth Harbour is located north @-@ west of Norfolk Island and lies along the eastern shore of Lake Ontario off the coast of Devonport Bay . A small tidal estuary extends across the River Thames at its mouth southwest of Glenrothes . The sea level rises in elevation approximately 1 mile ( 0 @.@ 6 km ) below sea level ; while the lower cliffs cover 2 miles ( 3 @.@ 2 km ) long , the harbour is very shallow and can reach up to 20 ft ( 7 @.@ 1 m ) above mean low water . 
+
+ At the western edge of Bristol , the River Avon flows through the Atlantic Ocean near Port Moody towards the east , passing over the Channel Tunnel at its entrance into the Bay of Fundy just before the main landing . On the northern side of the river , the canal passes under the Great Western Railway 's railway line and crosses the Black River at the southern end of the lake . The river turns northeast again at this point , turning southeastwards toward Tiverton Lock and then heading southward past Blakeney Point to cross the River Clyde . After entering Bridgwater , the canal enters the heart of the River Lea at Paddington , leaving behind the Bridgewater Canal , which carries the A3 motorway . From here , it meets the South Wales Main Line on the River Trent , at the confluence of the River Mersey and the Stourhead Bridge
+```
+
+Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0.039
+
+</details>
 
 ---
 
