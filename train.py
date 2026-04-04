@@ -680,6 +680,11 @@ def train():
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
 
+    # Free training state and reset VRAM peak tracking before generation
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
     # Generate samples using generate.py functions
     from generate import generate_one, generate_best_of_n, compute_quality_metrics, format_metrics
 

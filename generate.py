@@ -552,8 +552,8 @@ def main():
             print(f"Metrics: {format_metrics(metrics)}")
 
     if device.type == 'cuda':
-        peak_mem = torch.cuda.max_memory_allocated() / 1e9
-        print(f"\nPeak GPU memory: {peak_mem:.2f} GB")
+        peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        print(f"\nPeak GPU memory: {peak_mem:.0f} MiB")
 
 
 if __name__ == "__main__":
