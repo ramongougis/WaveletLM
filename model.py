@@ -748,18 +748,19 @@ class ExarchBlock(nn.Module):
                 self.C, num_keys=pkm_num_keys, pkm_top_k=pkm_top_k,
                 pkm_heads=pkm_heads, device=device, dtype=dtype)
 
-        # Learned gate when both MLP and PKM are active
-        if self.use_mlp and pkm_enabled:
-            self.memory_gate = nn.Linear(self.C, 1, bias=True, device=device, dtype=dtype)
-            nn.init.zeros_(self.memory_gate.weight)
-            nn.init.constant_(self.memory_gate.bias, -2.0)  # sigmoid(-2) ≈ 0.12, starts MLP-heavy
-
-        # FwPKM: chains on top of MLP+PKM output (Stage 2 refinement)
         self.fwpkm_enabled = fwpkm_enabled
         if fwpkm_enabled:
             self.fwpkm = FastWeightPKM(
                 self.C, num_keys=fwpkm_num_keys, top_k=fwpkm_top_k,
                 heads=fwpkm_heads, device=device, dtype=dtype)
+
+        # Learned scalars for memory module combination
+        if self.use_mlp:
+            self.alpha_mlp = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
+        if pkm_enabled:
+            self.alpha_pkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
+        if fwpkm_enabled:
+            self.alpha_fwpkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
 
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
@@ -843,25 +844,15 @@ class ExarchBlock(nn.Module):
         else:
             x = x + self.dropout_proj(projected)
 
-        # Stage 1: MLP / PKM (base memory)
+        # Memory modules (parallel, learned scalar combination)
         h2 = self.ln2(x)
-        if self.use_mlp and self.pkm_enabled:
-            mlp_out = self.ffwd(h2)
-            pkm_out = self.pkm(h2)
-            g = torch.sigmoid(self.memory_gate(h2))  # [B, T, 1]
-            base = (1 - g) * mlp_out + g * pkm_out
-        elif self.use_mlp:
-            base = self.ffwd(h2)
-        elif self.pkm_enabled:
-            base = self.pkm(h2)
-        else:
-            base = torch.zeros_like(h2)
-
-        # Stage 2: FwPKM refinement (chains on base memory output)
+        mem_out = torch.zeros_like(h2)
+        if self.use_mlp:
+            mem_out = mem_out + self.alpha_mlp * self.ffwd(h2)
+        if self.pkm_enabled:
+            mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
         if self.fwpkm_enabled:
-            mem_out = self.fwpkm(base)
-        else:
-            mem_out = base
+            mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
 
         if self.learned_residual:
             x = self.residual_alpha_mlp * x + mem_out

@@ -20,80 +20,78 @@
 
 ### Width (C): epochs = 1, mlp_expansion = 1
 
-| Run | C | Folder | BPB (sliding) | Params | Notes |
-|-----|---|--------|---------------|--------|-------|
-| 1   | 64   | [link](#run-1) | 1.5168 | 11.42M | Pipeline test; LR=0.02 |
-| 2   | 128  | [link](#run-2) | 1.4729 | 32.66M | LR=0.02 |
-| 3   | 256  | [link](#run-3) | 1.2929 | 98.63M | LR=0.02 |
-| 4   | 512  | [link](#run-4) | 1.1751 | 366.58M | LR=0.01 |
-| 5   | 1024 | [link](#run-5) | 1.1422 | 1362.31M | LR=0.005 |
+| Run | C | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---|--------|---------------|--------|------------|----------------|-------|
+| 1   | 64   | [link](#run-1) | 1.5168 | 11.42M | 5,110 MiB | 169 MiB | Pipeline test; LR=0.02 |
+| 2   | 128  | [link](#run-2) | 1.4729 | 32.66M | 6,360 MiB | 285 MiB | LR=0.02 |
+| 3   | 256  | [link](#run-3) | 1.2929 | 98.63M | 9,958 MiB | 689 MiB | LR=0.02 |
+| 4   | 512  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | LR=0.01 |
+| 5   | 1024 | [link](#run-5) | 1.1422 | 1362.31M | 42,643 MiB | 7,890 MiB | LR=0.005 |
 
 ### Epochs: C = 512, mlp_expansion = 1
 
-| Run | Epochs | Folder | BPB (sliding) | Notes |
-|-----|--------|--------|---------------|-------|
-| 4   | 1  | [link](#run-4) | 1.1751 | Shared with width sweep (Run 4) |
-| 5   | 3  | | | Ablation baseline |
-| 6   | 5  | | | |
+| Run | Epochs | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|------------|----------------|-------|
+| 4   | 1  | [link](#run-4) | 1.1751 | 18,738 MiB | 2,179 MiB | Shared with width sweep (Run 4) |
+| 6   | 3  | [link](#run-6) | 1.1169 | 18,738 MiB | 2,179 MiB | Ablation baseline |
+| 7   | 5  | | | | | |
 
 ### Boolean ablations: C = 512, epochs = 1, mlp_expansion = 1
 
-| Run | Setting | Value | Folder | BPB (sliding) | Params | Delta |
-|-----|---------|-------|--------|---------------|--------|-------|
-| 4   | Baseline (all standard) | | | | | |
-| 7   | `semantic_feedback` | false | | | | |
-| 8   | `semantic_feedback_cross_window` | false | | | | |
-| 9   | `learned_residual` | false | | | | |
-| 10   | `use_mixer_gate` | false | | | | |
-| 11   | `skip_proj_out` | true | | | | |
-| 12   | `shared_lifting_weights` | true | | | | |
-| 13   | `lifting_linear_only` | true | | | | |
-| 14   | `tie_embedding_to_lm_head` | true | | | | |
+| Run | Setting | Value | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta |
+|-----|---------|-------|--------|---------------|--------|------------|----------------|-------|
+| 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | |
+| 8   | `semantic_feedback` | false | | | | | | |
+| 9   | `semantic_feedback_cross_window` | false | | | | | | |
+| 10  | `learned_residual` | false | | | | | | |
+| 11  | `use_mixer_gate` | false | | | | | | |
+| 12  | `skip_proj_out` | true | | | | | | |
+| 13  | `shared_lifting_weights` | true | | | | | | |
+| 14  | `lifting_linear_only` | true | | | | | | |
+| 15  | `tie_embedding_to_lm_head` | true | | | | | | |
 
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
-| Run | mlp_expansion | Folder | BPB (sliding) | Params | Notes |
-|-----|---------------|--------|---------------|--------|-------|
-|   | 1  | | | | Baseline (optimal booleans from ablations; may be Run 8) |
-|   | 2  | | | | |
-|   | 10 | | | | |
-|   | 50 | | | | |
+| Run | mlp_expansion | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---------------|--------|---------------|--------|------------|----------------|-------|
+|   | 1  | | | | | | Baseline (optimal booleans from ablations; may be Run 8) |
+|   | 2  | | | | | | |
+|   | 10 | | | | | | |
+|   | 50 | | | | | | |
 
 ### Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
-| Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Notes |
-|-----|-----|-------|--------------|----------------|--------|---------------|--------|-------|
-|   | off | off | | | | | | Baseline (MLP only, from MLP sweep) |
-|   | on  | off | 529 | | | | | PKM default (23x23 subkeys) |
-|   | on  | off | 16384 | | | | | PKM large (128x128 sub-keys) |
-|   | off | on  | | 529 | | | | FwPKM only (no static memory) |
-|   | on  | on  | 529 | 529 | | | | PKM + FwPKM default |
-|   | on  | on  | 16384 | 16384 | | | | PKM + FwPKM large |
-|   | off | off | | | | | | MLP off, PKM off (wavelet pipeline only) |
-|   | on  | off | 529 | | | | | MLP off, PKM only |
+| Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
+|   | off | off | | | | | | | | Baseline (MLP only, from MLP sweep) |
+|   | on  | off | 529 | | | | | | | PKM default (23x23 subkeys) |
+|   | on  | off | 16384 | | | | | | | PKM large (128x128 sub-keys) |
+|   | off | on  | | 529 | | | | | | FwPKM only (no static memory) |
+|   | on  | on  | 529 | 529 | | | | | | PKM + FwPKM default |
+|   | on  | on  | 16384 | 16384 | | | | | | PKM + FwPKM large |
+|   | off | off | | | | | | | | MLP off, PKM off (wavelet pipeline only) |
+|   | on  | off | 529 | | | | | | | MLP off, PKM only |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
 ### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
-| Run | Layers | Folder | BPB (sliding) | Params | Notes |
-|-----|--------|--------|---------------|--------|-------|
-|   | 20 | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
-|   | 1  | | | | |
-|   | 4  | | | | |
-|   | 10  | | | | |
-|   | 20 | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
-|   | 30 | | | | |
+| Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 1  | | | | | | |
+|   | 4  | | | | | | |
+|   | 10  | | | | | | |
+|   | 20 | | | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
+|   | 30 | | | | | | |
 
 ### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512 & stays constant
 
-| Run | Levels | Folder | BPB (sliding) | Params | Notes |
-|-----|--------|--------|---------------|--------|-------|
-|   | 9 | | | | Baseline (default = log2(block_size=512)) |
-|   | 1 | | | | |
-|   | 5 | | | | |
-|   | 9 | | | | Baseline (default = log2(block_size=512)) |
-|   | 11 | | | | Beyond log2(block_size=512); expect no further gain |
+| Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 1 | | | | | | |
+|   | 5 | | | | | | |
+|   | 9 | | | | | | Baseline (default = log2(block_size=512)) |
+|   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
 
 ### Planned: medium priority
 
@@ -437,9 +435,56 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 ### Run 6
 
-**Status:** Pending
+**Status:** Complete
+
+**Folder:** `logs/wikitext-103_2026-04-03_14-34-51/` ([log](../logs/wikitext-103_2026-04-03_14-34-51/log.txt))
 
 **Description:** C = 512, mlp_expansion = 1, epochs = 3. Ablation baseline.
+
+**Results:**
+- Best val loss: 3.4292 (epoch 3)
+- Sliding BPB: 1.1169 (BPT: 5.0337)
+- Non-overlapping BPB: 1.1272 (BPT: 5.0801)
+- Params: 366.58M
+- Training time: 8.35h (30,076s), avg 2.84h/epoch
+- Training Peak VRAM: 18,738 MiB
+- Inference Peak VRAM: 8,475 MiB (use generate.py for accurate measurement)
+
+<details>
+<summary>Generation - Standard: <i>"The history of commercial commerce with inland sporting enterprises..."</i></summary>
+
+```
+The history of commercial commerce with inland sporting enterprises of an average age . The industries of British miners varied in frequency with good preservation . 
+
+
+
+ = = Dance = = 
+
+
+
+ The heart of a national theatre " brings our world around half the lead " . The temperature , sensation , movement , and Easter hall are diverse digital taste impedance , and teller swing of all the finer output . In the woven halls , almost all pavements in the Rock and roll clubs are typically open pericock . The field itself is predominantly Early English hall ( Funk Market ) . A Chicago musical theatre , called the Cub Theater , also incorporates a number of long ballets . The St Battery 's basic style style is classified with repertoire theme . Expositions with stops of a few hundred feet to form a dreamy lounge reflect social lives such as rosé : The Dveresien , the Gum accompany the widows and daughters in the convention ; football games and short piecebooks . In 1910 and 1913 the Gatehouse was the home of the main centre of music , design and storytelling . The rebuilt houses for the members and their patrons are enclosed in a single @-@ floor window , between which one in a scene is promised a gift from the ordinary , although this is concerned with the best conditions in earnest . 
+```
+
+</details>
+
+<details>
+<summary>Generation - Strategies: <i>"The history of the United States in which it is depicted..."</i></summary>
+
+```
+The history of the United States in which it is depicted . 
+
+ The book 's title comes from its influence on " the most significant and important contribution to American literary literature " , as well as being a precursor to historical fiction . In the first volume of his biography , A.E. Scott , author of the Encyclopedia of African @-@ Americans , William Wordsworth wrote : " [ It ] contains nothing to do with the fact that the novel is about a woman who has been given access by her family to America or her old friend , but who he knows today can hardly be able to know what she wants to say ... She does not have to bear this idea that I will never write another poem for my own sake . " 
+
+ = = Publication history = = 
+
+ Poe was originally conceived as a publisher for an anthology called The Book of Mrs. Tiggyback ( 1868 ) ; it had been published by E. C. Wells before publication and later editions were published under the name My Life as a King . The following year , after reading the book , Crane sent a copy to George W. Bush to publish his memoirs . There was no formal suggestion , nor any agreement could be made to justify his work , so the story was changed into a single collection of letters to the public . He also published two other books — " The Great Gatsby " ( " The Longest Day " ) and " A Letter from the Last Judgment to the Revolt of the Colonies " — in each case titled " The Diary of a Black Bird " — which appeared in the February 12 , 1832 edition of the second part of the " True Story " issue , and reprinted several times over subsequent years . By June 17 , 1853 , Hemings had written six more volumes , and began publishing stories without their names until March 1915 . His last writing credit came for the third issue in May 1901 , when he suggested that he write one of the final chapters in the series , but at least three copies of the book are known . The book was published in August 1941 , and was serialized between November 1 and July 27 , 1922 . Two further short stories were collected in January 1910 : one in April 1916 , one in December 1917 , and the next four , including the first issue of the new magazine , " The Autobiography of Malcolm X " . This was followed by two short stories entitled " New Years " . 
+
+ After some initial success , Johnson did not appear again until 1918 , though he continued writing
+```
+
+Metrics: MeanLogP=-1.3999 | MeanH=4.32 | D1=0.607 | D2=0.933 | D3=0.992 | Rep4=0.031
+
+</details>
 
 ---
 
@@ -447,7 +492,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 4.
+**Description:** C = 512, mlp_expansion = 1, epochs = 5.
 
 ---
 
@@ -455,7 +500,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 5.
+**Description:** C = 512, epochs = 1, `semantic_feedback` = false.
 
 ---
 
@@ -463,7 +508,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 6.
+**Description:** C = 512, epochs = 1, `semantic_feedback_cross_window` = false.
 
 ---
 
@@ -471,7 +516,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 7.
+**Description:** C = 512, epochs = 1, `learned_residual` = false.
 
 ---
 
@@ -479,7 +524,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 8.
+**Description:** C = 512, epochs = 1, `use_mixer_gate` = false.
 
 ---
 
@@ -487,7 +532,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 9.
+**Description:** C = 512, epochs = 1, `skip_proj_out` = true.
 
 ---
 
@@ -495,5 +540,21 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Pending
 
-**Description:** C = 512, mlp_expansion = 1, epochs = 10.
+**Description:** C = 512, epochs = 1, `shared_lifting_weights` = true.
+
+---
+
+### Run 14
+
+**Status:** Pending
+
+**Description:** C = 512, epochs = 1, `lifting_linear_only` = true.
+
+---
+
+### Run 15
+
+**Status:** Pending
+
+**Description:** C = 512, epochs = 1, `tie_embedding_to_lm_head` = true.
 
