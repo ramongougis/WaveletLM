@@ -730,7 +730,7 @@ def train():
 
     if device == 'cuda':
         inference_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
-        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.0f} MiB")
+        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.0f} MiB (use generate.py for accurate measurement)")
         if train_peak_mem is not None:
             logger.log(f"Training Peak VRAM: {train_peak_mem:.0f} MiB")
 
