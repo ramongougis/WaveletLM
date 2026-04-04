@@ -537,7 +537,7 @@ Metrics: MeanLogP=-1.3999 | MeanH=4.32 | D1=0.607 | D2=0.933 | D3=0.992 | Rep4=0
 - Params: 366.58M
 - Training time: 14.15h (50,929s), avg 2.82h/epoch
 - Training Peak VRAM: 18,738 MiB
-- Inference Peak VRAM: 8,475 MiB (use generate.py for accurate measurement)
+- Inference Peak VRAM: 2,178 MiB
 - Train/val gap: 0.64 at epoch 5 (vs 0.43 at epoch 3) — clear overfitting
 
 <details>
