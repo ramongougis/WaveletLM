@@ -765,6 +765,10 @@ class ExarchBlock(nn.Module):
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
 
+        # FwPKM per-layer representation caching
+        self._cache_h2 = False
+        self._cached_h2 = None
+
     def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None):
         _, _, C = x.shape
         current_running_mean = None
@@ -846,6 +850,8 @@ class ExarchBlock(nn.Module):
 
         # Memory modules (parallel, learned scalar combination)
         h2 = self.ln2(x)
+        if self._cache_h2:
+            self._cached_h2 = h2.detach()
         mem_out = torch.zeros_like(h2)
         if self.use_mlp:
             mem_out = mem_out + self.alpha_mlp * self.ffwd(h2)
@@ -989,18 +995,34 @@ class ExarchLM(nn.Module):
             if hasattr(layer, 'fwpkm') and layer.fwpkm_enabled:
                 layer.fwpkm.reset_fast_weights()
 
-    def update_fast_weights(self, queries: torch.Tensor,
-                            targets: torch.Tensor, lr: float = 0.01):
-        """Update FwPKM deltas across all layers using chunk representations.
+    def update_fast_weights(self, chunk_ids: torch.Tensor, lr: float = 0.01):
+        """Update FwPKM deltas using per-layer representations from a forward pass.
+
+        Runs a no-grad forward pass on chunk_ids to populate each layer's
+        cached h2, then updates each layer's FwPKM using its own representations.
 
         Args:
-            queries: [B, chunk_size, C] - input to each layer's FwPKM
-            targets: [B, chunk_size, C] - shifted-by-1 targets
+            chunk_ids: [B, chunk_size] - token IDs for the chunk
             lr: learning rate for fast-weight updates
         """
+        # Enable h2 caching
         for layer in self.layers:
-            if hasattr(layer, 'fwpkm') and layer.fwpkm_enabled:
+            if layer.fwpkm_enabled:
+                layer._cache_h2 = True
+
+        # Forward pass to populate per-layer cached h2
+        with torch.no_grad():
+            self.forward(chunk_ids)
+
+        # Update each layer's FwPKM with its own representations
+        for layer in self.layers:
+            if layer.fwpkm_enabled:
+                h2 = layer._cached_h2
+                queries = h2[:, :-1, :]  # [B, T-1, C]
+                targets = h2[:, 1:, :]   # [B, T-1, C]
                 layer.fwpkm.update_fast_weights(queries, targets, lr=lr)
+                layer._cache_h2 = False
+                layer._cached_h2 = None
 
     def _forward_embed(self, idx):
         """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""

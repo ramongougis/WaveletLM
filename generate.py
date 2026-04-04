@@ -333,15 +333,7 @@ def generate_one(
             chunk_end = idx.size(1)
             chunk_start = chunk_end - fwpkm_chunk_size
             chunk_ids = idx[:, chunk_start:chunk_end]
-
-            # Get embeddings for query/target pairs
-            _emb = getattr(model, 'token_embedding', None)
-            if _emb is not None:
-                with torch.no_grad():
-                    chunk_emb = _emb(chunk_ids)  # [B, chunk_size, C]
-                queries = chunk_emb[:, :-1, :]   # [B, chunk_size-1, C]
-                targets = chunk_emb[:, 1:, :]    # [B, chunk_size-1, C]
-                model.update_fast_weights(queries, targets, lr=fwpkm_update_lr)
+            model.update_fast_weights(chunk_ids, lr=fwpkm_update_lr)
 
     text = enc.decode(idx[0].tolist())
     generated_ids = idx[0, prompt_len:].tolist()

@@ -50,6 +50,12 @@
 | 14  | `lifting_linear_only` | true | | | | | | |
 | 15  | `tie_embedding_to_lm_head` | true | | | | | | |
 
+### Best Boolean ablations combination: C=512, epochs = 1, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
+
+| Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
+|-----|--------|---------------|--------|---------------|------------------|-------|
+|   | | | | | | Boolean ablations chosen: TBD |
+
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
