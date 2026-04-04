@@ -41,7 +41,7 @@
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta |
 |-----|---------|-------|--------|---------------|--------|------------|----------------|-------|
 | 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | |
-| 8   | `semantic_feedback` | false | | | | | | |
+| 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 17,764 MiB | | -0.0014 |
 | 9   | `semantic_feedback_cross_window` | false | | | | | | |
 | 10  | `learned_residual` | false | | | | | | |
 | 11  | `use_mixer_gate` | false | | | | | | |
@@ -49,12 +49,13 @@
 | 13  | `shared_lifting_weights` | true | | | | | | |
 | 14  | `lifting_linear_only` | true | | | | | | |
 | 15  | `tie_embedding_to_lm_head` | true | | | | | | |
+|   | `semantic_feedback` (3ep) | false | | | | | | 3-epoch retest; verify 1-epoch result holds |
 
 ### Best Boolean ablations combination: C=512, epochs = 1, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | | | | Boolean ablations chosen: TBD |
+|   | | | | | | Boolean values chosen: semantic_feedback:false,  |
 
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
@@ -111,38 +112,15 @@
 | `lr` | 0.02 | Initial learning rate (Adagrad is adaptive but initial LR still matters) | TBD |
 | `block_size` | 512 | Context window; trades VRAM for longer-range modeling. Change levels to log2(block_size) for each block size tested. | TBD |
 
-### Dropout optimization: C = 512, optimal booleans + mlp_expansion + layers + levels
+### Dropout optimization: C = 512, 3 epochs, optimal booleans + mlp_expansion + layers + levels
 
-Dropout is tested at 3 epochs (overfitting confirmed at 5 epochs without dropout). Each dropout is swept independently at a coarse grid, then the best values are combined in a final 10-epoch run.
+Starting from EXARCH-research's tuned dropout values (jointly optimized at 10 epochs). Testing at 3 epochs first; if overfitting persists, scale all values up conservatively.
 
-> **Why 3 epochs:** Run 7 showed clear overfitting at epochs 4-5 with no dropout (train/val gap 0.64). Dropout should reduce this gap and potentially unlock more epochs.
-
-#### Phase 1: Coarse grid (3 epochs each, one dropout at a time)
-
-| Run | Dropout | Value | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Delta vs 0.0 |
-|-----|---------|-------|--------|---------------|------------|----------------|--------------|
-|   | Baseline (all 0.0) | 0.0 | | | | | |
-|   | `dropout_mlp` | 0.05 | | | | | |
-|   | `dropout_mlp` | 0.1 | | | | | |
-|   | `dropout_mlp` | 0.2 | | | | | |
-|   | `dropout_projection` | 0.05 | | | | | |
-|   | `dropout_projection` | 0.1 | | | | | |
-|   | `dropout_projection` | 0.2 | | | | | |
-|   | `dropout_mixer` | 0.05 | | | | | |
-|   | `dropout_mixer` | 0.1 | | | | | |
-|   | `dropout_mixer` | 0.2 | | | | | |
-|   | `dropout_embedding` | 0.05 | | | | | |
-|   | `dropout_embedding` | 0.1 | | | | | |
-|   | `dropout_embedding` | 0.2 | | | | | |
-|   | `dropout_lm_head` | 0.05 | | | | | |
-|   | `dropout_lm_head` | 0.1 | | | | | |
-|   | `dropout_lm_head` | 0.2 | | | | | |
-
-#### Phase 2: Best combination (10 epochs)
-
-| Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
-|-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | | | | Best dropout values from Phase 1 combined. Target: unlock epochs 4-10 without overfitting. |
+| Run | Dropout values | Epochs | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Train/val gap | Notes |
+|-----|----------------|--------|--------|---------------|------------|----------------|---------------|-------|
+|   | Baseline (all 0.0) | 3 | [link](#run-6) | 1.1169 | 18,738 MiB | 2,179 MiB | 0.43 | From epoch sweep |
+|   | emb=0.1, proj=0.05, mixer=0.05, mlp=0.05, lm_head=0.12 | 5 | | | | | |  |
+|   | 1.5×: emb=0.15, proj=0.075, mixer=0.075, mlp=0.075, lm_head=0.18 | 5 | | | | | | Only if still overfitting  |
 
 ### Planned: lower priority (fine-tuning)
 
@@ -578,9 +556,20 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 ### Run 8
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `semantic_feedback` = false.
+**Folder:** `logs/wikitext-103_2026-04-04_13-38-15/` ([log](../logs/wikitext-103_2026-04-04_13-38-15/log.txt))
+
+**Description:** C = 512, epochs = 1, `semantic_feedback` = false. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6294 (epoch 1)
+- Sliding BPB: 1.1737 (BPT: 5.2899)
+- Non-overlapping BPB: 1.1836 (BPT: 5.3344)
+- Params: 361.23M
+- Training time: 2.83h (10,213s)
+- Training Peak VRAM: 17,764 MiB
+- Delta: -0.0014 (negligible improvement)
 
 ---
 
