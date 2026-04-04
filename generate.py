@@ -444,7 +444,16 @@ def main():
         run_dir = os.path.dirname(args.checkpoint)
         config_path = os.path.join(run_dir, "config.json")
     else:
+        run_dir = os.path.dirname(args.checkpoint)
         config_path = args.config
+
+    # Log to both stdout and generations.txt
+    gen_file_path = os.path.join(run_dir, "generations.txt")
+    gen_file = open(gen_file_path, 'a', encoding='utf-8')
+
+    def log(msg=""):
+        print(msg)
+        gen_file.write(msg + "\n")
 
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config not found: {config_path}")
@@ -509,13 +518,18 @@ def main():
         fwpkm_chunk_size=args.fwpkm_chunk_size,
     )
 
-    print(f"\nPrompt: {args.prompt}")
-    print(f"Generating {args.num_tokens} tokens (temp={args.temperature}, top_p={args.top_p})...")
-    print("-" * 60)
+    gen_file.write("\n" + "=" * 60 + "\n")
+    gen_file.write(f"Generation run: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    gen_file.write(f"Checkpoint: {args.checkpoint}\n")
+    gen_file.write("=" * 60 + "\n\n")
+
+    log(f"Prompt: {args.prompt}")
+    log(f"Generating {args.num_tokens} tokens (temp={args.temperature}, top_p={args.top_p})...")
+    log("-" * 60)
 
     for sample_idx in range(args.n):
         if args.n > 1:
-            print(f"\n--- Sample {sample_idx + 1}/{args.n} ---")
+            log(f"\n--- Sample {sample_idx + 1}/{args.n} ---")
 
         t0 = time.time()
 
@@ -536,16 +550,19 @@ def main():
 
         elapsed = time.time() - t0
 
-        print(txt)
-        print("-" * 60)
-        print(f"Time: {elapsed:.2f}s ({args.num_tokens/elapsed:.1f} tok/s)")
+        log(txt)
+        log("-" * 60)
+        log(f"Time: {elapsed:.2f}s ({args.num_tokens/elapsed:.1f} tok/s)")
 
         if metrics:
-            print(f"Metrics: {format_metrics(metrics)}")
+            log(f"Metrics: {format_metrics(metrics)}")
 
     if device.type == 'cuda':
         peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
-        print(f"\nPeak GPU memory: {peak_mem:.0f} MiB")
+        log(f"\nPeak GPU memory: {peak_mem:.0f} MiB")
+
+    gen_file.close()
+    print(f"Saved to {gen_file_path}")
 
 
 if __name__ == "__main__":
