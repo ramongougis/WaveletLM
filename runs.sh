@@ -1,21 +1,15 @@
-# Boolean ablations: C=512, epochs=1, mlp_expansion=1
-# Each run toggles one setting from baseline
+# 3-epoch ablation retests: verify if 1-epoch results hold at longer training
+# Each run resets to baseline, sets epochs=3, then toggles one setting
 
-# Setting name, config key, value
 ABLATIONS=(
     "semantic_feedback:semantic_feedback:False"
-    "semantic_feedback_cross_window:semantic_feedback_cross_window:False"
-    "learned_residual:learned_residual:False"
-    "use_mixer_gate:use_mixer_gate:False"
-    "skip_proj_out:skip_proj_out:True"
-    "shared_lifting_weights:shared_lifting_weights:True"
     "lifting_linear_only:lifting_linear_only:True"
-    "tie_embedding_to_lm_head:tie_embedding_to_lm_head:True"
+    "shared_lifting_weights:shared_lifting_weights:True"
 )
 
 for entry in "${ABLATIONS[@]}"; do
     IFS=':' read -r NAME KEY VALUE <<< "$entry"
-    echo "=== Ablation: $KEY=$VALUE ==="
+    echo "=== 3-epoch ablation: $KEY=$VALUE ==="
     python -c "
 import json
 cfg = json.load(open('config.json'))
@@ -23,7 +17,7 @@ cfg = json.load(open('config.json'))
 cfg['C'] = 512
 cfg['lr'] = 0.01
 cfg['mlp_expansion'] = 1
-cfg['epochs'] = 1
+cfg['epochs'] = 3
 cfg['semantic_feedback'] = True
 cfg['semantic_feedback_cross_window'] = True
 cfg['learned_residual'] = True
@@ -38,7 +32,7 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 "
     python train.py
     git add .
-    git commit --no-edit -m "boolean ablation: $KEY=$VALUE"
+    git commit --no-edit -m "3-epoch ablation: $KEY=$VALUE"
     git pull --no-edit
     git push
 done

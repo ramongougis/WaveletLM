@@ -680,10 +680,16 @@ def train():
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
 
-    # Free training state and reset VRAM peak tracking before generation
+    # Free benchmark activations before generation
+    del results_full, results_sw
     if device == 'cuda':
         torch.cuda.empty_cache()
+        import gc; gc.collect()
         torch.cuda.reset_peak_memory_stats()
+
+    # Snapshot VRAM baseline (model weights only) before generation
+    if device == 'cuda':
+        inference_baseline_mem = torch.cuda.memory_allocated() / (1024 ** 2)
 
     # Generate samples using generate.py functions
     from generate import generate_one, generate_best_of_n, compute_quality_metrics, format_metrics
@@ -730,7 +736,8 @@ def train():
 
     if device == 'cuda':
         inference_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
-        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.0f} MiB (use generate.py for accurate measurement)")
+        inference_act_mem = inference_peak_mem - inference_baseline_mem
+        logger.log(f"Inference Peak VRAM: {inference_peak_mem:.0f} MiB (model={inference_baseline_mem:.0f} + activations={inference_act_mem:.0f})")
         if train_peak_mem is not None:
             logger.log(f"Training Peak VRAM: {train_peak_mem:.0f} MiB")
 

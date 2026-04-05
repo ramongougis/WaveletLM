@@ -49,13 +49,15 @@
 | 13  | `shared_lifting_weights` | true | [link](#run-13) | 1.1859 | 186.92M | 2.42h | 16,762 MiB | 4,609 MiB | +0.0108 |
 | 14  | `lifting_linear_only` | true | [link](#run-14) | 1.1892 | 272.02M | 1.79h | 13,236 MiB | 6,069 MiB | +0.0141 |
 | 15  | `tie_embedding_to_lm_head` | true | [link](#run-15) | 1.1815 | 340.85M | 2.77h | 18,523 MiB | 7,300 MiB | +0.0064 |
-|   | `semantic_feedback` (3ep) | false | | | | | | 3-epoch retest; verify 1-epoch result holds |
+|   | `semantic_feedback` (3ep) | false | | | | | | 3-epoch retest; verify if epochs matter for this |
+|   | `lifting_linear_only` (3ep) | true | | | | | | 3-epoch retest; verify if epochs matter for this |
+|   | `shared_lifting_weights` (3ep) | true | | | | | | 3-epoch retest; verify if epochs matter for this |
 
 ### Best Boolean ablations combination: C=512, epochs = 1, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | | | | All defaults are optimal. Only semantic_feedback=false (-0.0014) and semantic_feedback_cross_window=false (-0.0003) show marginal improvement; all others degrade. See discussion below. |
+|   | | | | | |  |
 
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
