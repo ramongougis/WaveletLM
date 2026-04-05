@@ -41,14 +41,14 @@
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------|
 | 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB | |
-| 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 2.83h | 17,764 MiB | 7,600 MiB | -0.0014 |
-| 9   | `semantic_feedback_cross_window` | false | [link](#run-9) | 1.1748 | 366.58M | 2.62h | 18,809 MiB | 7,691 MiB | -0.0003 |
-| 10  | `learned_residual` | false | [link](#run-10) | 1.1814 | 366.58M | 2.66h | 18,818 MiB | 7,693 MiB | +0.0063 |
-| 11  | `use_mixer_gate` | false | [link](#run-11) | 1.2009 | 314.15M | 2.45h | 16,518 MiB | 6,793 MiB | +0.0258 |
-| 12  | `skip_proj_out` | true | [link](#run-12) | 1.1835 | 361.33M | 2.60h | 18,668 MiB | 7,602 MiB | +0.0084 |
-| 13  | `shared_lifting_weights` | true | [link](#run-13) | 1.1859 | 186.92M | 2.42h | 16,762 MiB | 4,609 MiB | +0.0108 |
-| 14  | `lifting_linear_only` | true | [link](#run-14) | 1.1892 | 272.02M | 1.79h | 13,236 MiB | 6,069 MiB | +0.0141 |
-| 15  | `tie_embedding_to_lm_head` | true | [link](#run-15) | 1.1815 | 340.85M | 2.77h | 18,523 MiB | 7,300 MiB | +0.0064 |
+| 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 2.83h | 17,764 MiB | 2,147 MiB | -0.0014 |
+| 9   | `semantic_feedback_cross_window` | false | [link](#run-9) | 1.1748 | 366.58M | 2.62h | 18,809 MiB | 2,178 MiB | -0.0003 |
+| 10  | `learned_residual` | false | [link](#run-10) | 1.1814 | 366.58M | 2.66h | 18,818 MiB | 2,178 MiB | +0.0063 |
+| 11  | `use_mixer_gate` | false | [link](#run-11) | 1.2009 | 314.15M | 2.45h | 16,518 MiB | 1,878 MiB | +0.0258 |
+| 12  | `skip_proj_out` | true | [link](#run-12) | 1.1835 | 361.33M | 2.60h | 18,668 MiB | 2,148 MiB | +0.0084 |
+| 13  | `shared_lifting_weights` | true | [link](#run-13) | 1.1859 | 186.92M | 2.42h | 16,762 MiB | 1,150 MiB | +0.0108 |
+| 14  | `lifting_linear_only` | true | [link](#run-14) | 1.1892 | 272.02M | 1.79h | 13,236 MiB | 1,637 MiB | +0.0141 |
+| 15  | `tie_embedding_to_lm_head` | true | [link](#run-15) | 1.1815 | 340.85M | 2.77h | 18,523 MiB | 2,080 MiB | +0.0064 |
 |   | `semantic_feedback` (3ep) | false | | | | | | 3-epoch retest; verify if epochs matter for this |
 |   | `lifting_linear_only` (3ep) | true | | | | | | 3-epoch retest; verify if epochs matter for this |
 |   | `shared_lifting_weights` (3ep) | true | | | | | | 3-epoch retest; verify if epochs matter for this |
@@ -589,7 +589,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.1849 (BPT: 5.3404)
 - Params: 366.58M
 - Training Peak VRAM: 18,809 MiB
-- Inference Peak VRAM: 7,691 MiB
+- Inference Peak VRAM: 2,178 MiB
 - Generation metrics: MeanLogP=-1.1949 | MeanH=4.28 | D1=0.635 | D2=0.918 | D3=0.978 | Rep4=0.039
 - Delta: -0.0003 (negligible)
 
@@ -609,7 +609,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.1916 (BPT: 5.3707)
 - Params: 366.58M
 - Training Peak VRAM: 18,818 MiB
-- Inference Peak VRAM: 7,693 MiB
+- Inference Peak VRAM: 2,178 MiB
 - Generation metrics: MeanLogP=-1.4711 | MeanH=4.73 | D1=0.602 | D2=0.896 | D3=0.963 | Rep4=0.078
 - Delta: +0.0063 (slight degradation)
 
@@ -629,7 +629,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.2115 (BPT: 5.4604)
 - Params: 314.15M
 - Training Peak VRAM: 16,518 MiB
-- Inference Peak VRAM: 6,793 MiB
+- Inference Peak VRAM: 1,878 MiB
 - Generation metrics: MeanLogP=-1.5123 | MeanH=4.70 | D1=0.533 | D2=0.851 | D3=0.957 | Rep4=0.090
 - Delta: +0.0258 (significant degradation — mixer gate is critical)
 
@@ -649,7 +649,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.1935 (BPT: 5.3788)
 - Params: 361.33M
 - Training Peak VRAM: 18,668 MiB
-- Inference Peak VRAM: 7,602 MiB
+- Inference Peak VRAM: 2,148 MiB
 - Generation metrics: MeanLogP=-1.4088 | MeanH=4.57 | D1=0.600 | D2=0.892 | D3=0.965 | Rep4=0.076
 - Delta: +0.0084 (slight degradation — proj_out contributes as channel mixing layer)
 
@@ -669,7 +669,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.1956 (BPT: 5.3885)
 - Params: 186.92M (massive reduction — shared lifting saves ~180M params)
 - Training Peak VRAM: 16,762 MiB
-- Inference Peak VRAM: 4,609 MiB
+- Inference Peak VRAM: 1,150 MiB
 - Generation metrics: MeanLogP=-1.1411 | MeanH=3.88 | D1=0.615 | D2=0.926 | D3=0.975 | Rep4=0.039
 - Delta: +0.0108 (moderate degradation — per-layer lifting is worth the parameter cost)
 
@@ -689,7 +689,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.1985 (BPT: 5.4016)
 - Params: 272.02M (lighter — linear P/U vs 2-layer MLP)
 - Training Peak VRAM: 13,236 MiB
-- Inference Peak VRAM: 6,069 MiB
+- Inference Peak VRAM: 1,637 MiB
 - Generation metrics: MeanLogP=-1.3912 | MeanH=4.54 | D1=0.604 | D2=0.890 | D3=0.976 | Rep4=0.039
 - Delta: +0.0141 (moderate degradation — MLP-based lifting is worth the compute)
 
@@ -709,7 +709,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 - Non-overlapping BPB: 1.1912 (BPT: 5.3685)
 - Params: 340.85M (saves ~26M params from shared embedding/head)
 - Training Peak VRAM: 18,523 MiB
-- Inference Peak VRAM: 7,300 MiB
+- Inference Peak VRAM: 2,080 MiB
 - Generation metrics: MeanLogP=-1.4808 | MeanH=4.63 | D1=0.633 | D2=0.918 | D3=0.982 | Rep4=0.031
 - Delta: +0.0064 (slight degradation — separate LM head helps)
 
