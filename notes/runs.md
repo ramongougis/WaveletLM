@@ -4,17 +4,19 @@
 
 1. [Width (C): 1 epoch, exp=1](#width-c--1-epoch-exp1)
 2. [Epochs: C=512, exp=1](#epochs--c256-exp1)
-3. [Boolean ablations: C=512, 3 epochs, exp=1](#boolean-ablations--c512-3-epochs-exp1)
+3. [Boolean ablations: C=512, 1 epoch, exp=1](#boolean-ablations--c512-1-epoch-exp1) (includes 3-epoch retests)
 4. [MLP expansion: C=512, 3 epochs, optimal booleans](#mlp-expansion--c512-3-epochs-optimal-booleans)
 5. [Memory (PKM/FwPKM): C=512, 3 epochs, optimal booleans + mlp_expansion](#memory--c512-3-epochs-optimal-booleans--mlp_expansion)
 6. [Layers: C=512, 3 epochs, optimal booleans + mlp_expansion](#layers--c512-3-epochs-optimal-booleans--mlp_expansion)
 7. [Levels: C=512, 3 epochs, optimal booleans + mlp_expansion + layers](#levels--c512-3-epochs-optimal-booleans--mlp_expansion--layers)
 8. [Planned: medium priority](#planned--medium-priority)
-9. [Planned: lower priority](#planned--lower-priority-fine-tuning)
-10. [Seed variance: best EXARCH config](#seed-variance--best-exarch-config)
-11. [Planned: dataset comparisons](#planned--dataset-comparisons-best-config-feasible-epochs)
-12. [Planned: model comparisons](#planned--model-comparisons-wikitext-103-matched-compute)
-13. [Run Details](#run-details)
+9. [Dropout optimization](#dropout-optimization--c--512-3-epochs-optimal-booleans--mlp_expansion--layers--levels)
+10. [Post-training quantization (PTQ)](#post-training-quantization-ptq--inference-only-applied-to-best-checkpoint)
+11. [Planned: lower priority](#planned--lower-priority-fine-tuning)
+12. [Seed variance: best EXARCH config](#seed-variance--best-exarch-config)
+13. [Planned: dataset comparisons](#planned--dataset-comparisons-best-config-feasible-epochs)
+14. [Planned: model comparisons](#planned--model-comparisons-wikitext-103-matched-compute)
+15. [Run Details](#run-details)
 
 ---
 
@@ -36,7 +38,7 @@
 | 6   | 3  | [link](#run-6) | 1.1169 | 18,738 MiB | 2,179 MiB | Ablation baseline |
 | 7   | 5  | [link](#run-7) | 1.1237 | 18,738 MiB | 2,179 MiB | Overfit; best val at epoch 4, not 5. No dropout. |
 
-### Boolean ablations: C = 512, epochs = 1, mlp_expansion = 1
+### Boolean ablations part 1: C = 512, epochs = 1, mlp_expansion = 1
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------|
@@ -49,11 +51,13 @@
 | 13  | `shared_lifting_weights` | true | [link](#run-13) | 1.1859 | 186.92M | 2.42h | 16,762 MiB | 1,150 MiB | +0.0108 |
 | 14  | `lifting_linear_only` | true | [link](#run-14) | 1.1892 | 272.02M | 1.79h | 13,236 MiB | 1,637 MiB | +0.0141 |
 | 15  | `tie_embedding_to_lm_head` | true | [link](#run-15) | 1.1815 | 340.85M | 2.77h | 18,523 MiB | 2,080 MiB | +0.0064 |
+
+### Boolean ablations part 2: C = 512, epochs = 3, mlp_expansion = 1
 |   | `semantic_feedback` (3ep) | false | | | | | | 3-epoch retest; verify if epochs matter for this |
 |   | `lifting_linear_only` (3ep) | true | | | | | | 3-epoch retest; verify if epochs matter for this |
 |   | `shared_lifting_weights` (3ep) | true | | | | | | 3-epoch retest; verify if epochs matter for this |
 
-### Best Boolean ablations combination: C=512, epochs = 1, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
+### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
@@ -123,6 +127,49 @@ Starting from EXARCH-research's tuned dropout values (jointly optimized at 10 ep
 |   | Baseline (all 0.0) | 3 | [link](#run-6) | 1.1169 | 18,738 MiB | 2,179 MiB | 0.43 | From epoch sweep |
 |   | emb=0.1, proj=0.05, mixer=0.05, mlp=0.05, lm_head=0.12 | 5 | | | | | |  |
 |   | 1.5×: emb=0.15, proj=0.075, mixer=0.075, mlp=0.075, lm_head=0.18 | 5 | | | | | | Only if still overfitting  |
+
+### Post-training quantization (PTQ): inference-only, applied to best checkpoint
+
+Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scales (high-level semantics) get more bits; fine scales (local detail) tolerate aggressive quantization. All runs use the same trained checkpoint — no retraining needed.
+
+**Baseline checkpoint:** best trained model from sweeps above (TBD)
+
+#### Uniform quantization (all components same bits)
+
+| Run | Bits | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
+|-----|------|--------|---------------|------------------|----------------|-------|-------|
+|   | 16 (baseline) | | | | | | No quantization |
+|   | 8 | | | | | | Uniform INT8 |
+|   | 4 | | | | | | Uniform INT4 — stress test |
+
+#### Per-scale mixed precision (EXARCH's unique advantage)
+
+| Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
+|-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
+|   | 8 | 4 | 2 | 4 | 16 | 8 | | | | | | Default mixed config |
+|   | 8 | 8 | 4 | 4 | 16 | 8 | | | | | | Conservative fine scales |
+|   | 8 | 4 | 2 | 8 | 16 | 8 | | | | | | Higher MLP precision |
+|   | 8 | 4 | 2 | 4 | 8 | 8 | | | | | | Quantize lifting too |
+|   | 4 | 4 | 2 | 4 | 8 | 4 | | | | | | Aggressive — minimum viable |
+|   | 8 | 4 | 2 | 4 | 16 | 4 | | | | | | Aggressive embedding |
+
+#### Component isolation (quantize one component, keep rest at 16)
+
+| Run | Component quantized | Bits | Folder | BPB (sliding) | Delta | Notes |
+|-----|-------------------|------|--------|---------------|-------|-------|
+|   | Mixer only (all scales) | 8 | | | | Mixer sensitivity |
+|   | Mixer only (all scales) | 4 | | | | |
+|   | MLP only | 8 | | | | MLP sensitivity |
+|   | MLP only | 4 | | | | |
+|   | Embedding only | 8 | | | | Embedding sensitivity |
+|   | Embedding only | 4 | | | | |
+|   | Lifting only | 8 | | | | Lifting sensitivity |
+
+#### Best PTQ combination
+
+| Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
+|-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
+|   | | | | | | | | | | | | Best combo from above; chosen to minimize size while keeping BPB delta < 0.01 |
 
 ### Planned: lower priority (fine-tuning)
 

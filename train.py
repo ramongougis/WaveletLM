@@ -32,7 +32,7 @@ from datasets import load_dataset
 
 from model import (
     set_seed, ExarchLM, MultiNodeExarchLM,
-    Logger, parameter_breakdown,
+    Logger, parameter_breakdown, quantize_model,
 )
 
 
@@ -656,6 +656,12 @@ def train():
         logger.log(f"Could not load best model: {e}")
 
     model.eval()
+
+    if config.get('quantize_enabled', False):
+        q_stats = quantize_model(model, config)
+        logger.log(f"\n[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
+                   f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
+                   f"({q_stats['compression_ratio']:.2f}x)")
 
     # Non-overlapping benchmark
     results_full = evaluate_full_validation(

@@ -102,5 +102,17 @@
     "multinodal_cross_cell_gating": false,
     "multinodal_cross_cell_gate_interval": 1,
     "multinodal_features_per_cell": -1,
-    "multinodal_bagged_eps": 1e-06
+    "multinodal_bagged_eps": 1e-06,
+    "__comment_quantization": "=== POST-TRAINING QUANTIZATION ===",
+    "quantize_enabled": false,
+    "quantize_mixer_coarse_bits": 8,
+    "__comment_quantize_mixer_coarse": "Bit-width for mixer weights at scales 0-2 (coarsest, high-level semantics).",
+    "quantize_mixer_mid_bits": 4,
+    "__comment_quantize_mixer_mid": "Bit-width for mixer weights at scales 3-5.",
+    "quantize_mixer_fine_bits": 2,
+    "__comment_quantize_mixer_fine": "Bit-width for mixer weights at scales 6+ (finest detail).",
+    "quantize_mlp_bits": 4,
+    "quantize_lifting_bits": 16,
+    "__comment_quantize_lifting": "Keep lifting networks at high precision to preserve wavelet reconstruction quality.",
+    "quantize_embedding_bits": 8
 }

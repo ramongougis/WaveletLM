@@ -1310,3 +1310,258 @@ def parameter_breakdown(model, config):
 
     print(f"{'='*60}\n")
     return total, trainable
+
+
+# ==============================================================================
+# 11. POST-TRAINING QUANTIZATION (PTQ)
+# ==============================================================================
+
+def quantize_tensor(weight, bits, per_channel=True):
+    """Symmetric quantization of a weight tensor to N-bit integer representation.
+
+    Args:
+        weight: float tensor (2D)
+        bits: target bit-width (2, 4, 8, or 16). 16 = no-op.
+        per_channel: if True, compute scale per output channel (dim=0)
+
+    Returns:
+        (quantized_int8, scales) where scales are float32
+    """
+    if bits >= 16:
+        return weight, None
+
+    qmin = -(1 << (bits - 1))
+    qmax = (1 << (bits - 1)) - 1
+
+    if per_channel and weight.dim() >= 2:
+        # Per output channel (dim=0)
+        amax = weight.abs().amax(dim=list(range(1, weight.dim())), keepdim=True)
+    else:
+        amax = weight.abs().amax()
+
+    amax = amax.clamp(min=1e-8)
+    scale = amax / qmax
+
+    quantized = (weight / scale).round().clamp(qmin, qmax).to(torch.int8)
+    return quantized, scale.to(torch.float32)
+
+
+def dequantize_tensor(quantized_int, scale, bits, dtype=torch.float16):
+    """Dequantize: weight_approx = scale * quantized_int."""
+    if bits >= 16:
+        return quantized_int
+    return (scale * quantized_int.float()).to(dtype)
+
+
+class QuantizedLinear(nn.Module):
+    """Drop-in replacement for nn.Linear with quantized weights."""
+
+    def __init__(self, original, bits):
+        super().__init__()
+        self.in_features = original.in_features
+        self.out_features = original.out_features
+        self.bits = bits
+
+        if bits >= 16:
+            self.weight = original.weight
+            self._quantized = False
+        else:
+            q_int, scale = quantize_tensor(original.weight.data, bits, per_channel=True)
+            self.register_buffer('weight_int', q_int)
+            self.register_buffer('weight_scale', scale)
+            self._quantized = True
+
+        if original.bias is not None:
+            self.bias = nn.Parameter(original.bias.data.clone())
+        else:
+            self.bias = None
+
+    def forward(self, x):
+        if self._quantized:
+            w = dequantize_tensor(self.weight_int, self.weight_scale, self.bits, dtype=x.dtype)
+        else:
+            w = self.weight
+        return F.linear(x, w, self.bias)
+
+
+class QuantizedEmbedding(nn.Module):
+    """Drop-in replacement for nn.Embedding with quantized weights."""
+
+    def __init__(self, original, bits):
+        super().__init__()
+        self.num_embeddings = original.num_embeddings
+        self.embedding_dim = original.embedding_dim
+        self.bits = bits
+        self.padding_idx = original.padding_idx
+
+        if bits >= 16:
+            self.weight = original.weight
+            self._quantized = False
+        else:
+            q_int, scale = quantize_tensor(original.weight.data, bits, per_channel=False)
+            self.register_buffer('weight_int', q_int)
+            self.register_buffer('weight_scale', scale)
+            self._quantized = True
+
+    def forward(self, x):
+        if self._quantized:
+            w = dequantize_tensor(self.weight_int, self.weight_scale, self.bits, dtype=torch.float16)
+        else:
+            w = self.weight
+        return F.embedding(x, w, padding_idx=self.padding_idx)
+
+
+def _get_mixer_bits(scale_idx, config):
+    """Map wavelet scale index to bit-width tier."""
+    if scale_idx <= 2:
+        return config.get('quantize_mixer_coarse_bits', 8)
+    elif scale_idx <= 5:
+        return config.get('quantize_mixer_mid_bits', 4)
+    else:
+        return config.get('quantize_mixer_fine_bits', 2)
+
+
+def _quantize_sequential(seq, bits):
+    """Replace nn.Linear modules inside an nn.Sequential with QuantizedLinear."""
+    for i, module in enumerate(seq):
+        if isinstance(module, nn.Linear):
+            seq[i] = QuantizedLinear(module, bits)
+
+
+def _compute_module_mib(module):
+    """Compute storage in MiB for a module's parameters and buffers."""
+    total = 0
+    for p in module.parameters():
+        total += p.numel() * p.element_size()
+    for b in module.buffers():
+        total += b.numel() * b.element_size()
+    return total / (1024 ** 2)
+
+
+def quantize_model(model, config):
+    """Apply post-training quantization to an ExarchLM or MultiNodeExarchLM.
+
+    Replaces nn.Linear and nn.Embedding modules with quantized versions
+    based on config settings. Small parameters (LayerNorm, scalars, scale_weights)
+    are kept at full precision.
+
+    Args:
+        model: ExarchLM or MultiNodeExarchLM in eval mode
+        config: dict with quantize_* keys
+
+    Returns:
+        dict with {original_mib, quantized_mib, compression_ratio, per_component}
+    """
+    # Compute original size
+    original_bytes = sum(p.numel() * p.element_size() for p in model.parameters())
+    original_mib = original_bytes / (1024 ** 2)
+
+    emb_bits = config.get('quantize_embedding_bits', 8)
+    mlp_bits = config.get('quantize_mlp_bits', 4)
+    lift_bits = config.get('quantize_lifting_bits', 16)
+
+    # Collect all ExarchLM cells to quantize
+    if isinstance(model, MultiNodeExarchLM):
+        cells = list(model.cells)
+        # Quantize cross-cell gates
+        if model.cross_cell_gating:
+            for gate in model.cross_cell_gates:
+                gate.proj = QuantizedLinear(gate.proj, mlp_bits)
+    elif isinstance(model, ExarchLM):
+        cells = [model]
+    else:
+        raise TypeError(f"quantize_model expects ExarchLM or MultiNodeExarchLM, got {type(model)}")
+
+    # Track shared lifting to avoid double-quantization
+    quantized_lifting_ids = set()
+
+    for cell in cells:
+        # --- Embedding ---
+        tied = (hasattr(cell, 'lm_head') and hasattr(cell, 'token_embedding') and
+                cell.lm_head.weight.data_ptr() == cell.token_embedding.weight.data_ptr())
+
+        cell.token_embedding = QuantizedEmbedding(cell.token_embedding, emb_bits)
+
+        if tied:
+            # Share the quantized weight with lm_head via a thin wrapper
+            cell.lm_head = QuantizedLinear(cell.lm_head, emb_bits)
+        else:
+            cell.lm_head = QuantizedLinear(cell.lm_head, emb_bits)
+
+        # --- Per-layer ---
+        for layer in cell.layers:
+            # Mixer (per-scale)
+            for s, mixer in enumerate(layer.scale_mixers):
+                bits = _get_mixer_bits(s, config)
+                mixer.mixer = QuantizedLinear(mixer.mixer, bits)
+                if mixer.use_mixer_gate:
+                    mixer.gate = QuantizedLinear(mixer.gate, bits)
+
+            # Lifting wavelet
+            lifting = layer.lifting_wavelet
+            if id(lifting) not in quantized_lifting_ids:
+                quantized_lifting_ids.add(id(lifting))
+                for i, net in enumerate(lifting.predict_nets):
+                    if isinstance(net, nn.Linear):
+                        lifting.predict_nets[i] = QuantizedLinear(net, lift_bits)
+                    elif isinstance(net, nn.Sequential):
+                        _quantize_sequential(net, lift_bits)
+                for i, net in enumerate(lifting.update_nets):
+                    if isinstance(net, nn.Linear):
+                        lifting.update_nets[i] = QuantizedLinear(net, lift_bits)
+                    elif isinstance(net, nn.Sequential):
+                        _quantize_sequential(net, lift_bits)
+
+            # proj_out
+            if hasattr(layer, 'proj_out') and isinstance(layer.proj_out, nn.Linear):
+                layer.proj_out = QuantizedLinear(layer.proj_out, mlp_bits)
+
+            # MLP
+            if hasattr(layer, 'ffwd'):
+                _quantize_sequential(layer.ffwd.net, mlp_bits)
+
+            # Semantic feedback cross_layer_mix
+            if hasattr(layer, 'cross_layer_mix') and isinstance(layer.cross_layer_mix, nn.Linear):
+                layer.cross_layer_mix = QuantizedLinear(layer.cross_layer_mix, mlp_bits)
+
+            # PKM query_proj
+            if layer.pkm_enabled and hasattr(layer.pkm, 'query_proj'):
+                layer.pkm.query_proj = QuantizedLinear(layer.pkm.query_proj, mlp_bits)
+
+            # FwPKM query_proj
+            if layer.fwpkm_enabled and hasattr(layer.fwpkm, 'query_proj'):
+                layer.fwpkm.query_proj = QuantizedLinear(layer.fwpkm.query_proj, mlp_bits)
+
+    # Compute quantized size
+    quantized_bytes = 0
+    for p in model.parameters():
+        quantized_bytes += p.numel() * p.element_size()
+    for b in model.buffers():
+        quantized_bytes += b.numel() * b.element_size()
+    quantized_mib = quantized_bytes / (1024 ** 2)
+
+    ratio = original_mib / quantized_mib if quantized_mib > 0 else float('inf')
+
+    stats = {
+        'original_mib': original_mib,
+        'quantized_mib': quantized_mib,
+        'compression_ratio': ratio,
+    }
+
+    # Print report
+    print(f"\n{'='*60}")
+    print(f"[Quantization] Original: {original_mib:.1f} MiB -> "
+          f"Quantized: {quantized_mib:.1f} MiB ({ratio:.2f}x compression)")
+    print(f"  Mixer bits: coarse={config.get('quantize_mixer_coarse_bits', 8)}, "
+          f"mid={config.get('quantize_mixer_mid_bits', 4)}, "
+          f"fine={config.get('quantize_mixer_fine_bits', 2)}")
+    print(f"  MLP bits: {mlp_bits}, Lifting bits: {lift_bits}, "
+          f"Embedding bits: {emb_bits}")
+    if mlp_bits < 8 or any(config.get(k, 8) < 8 for k in
+                           ['quantize_mixer_coarse_bits', 'quantize_mixer_mid_bits',
+                            'quantize_mixer_fine_bits']):
+        print(f"  Note: sub-8-bit stored as int8 (no packing). "
+              f"Deployment packing would further reduce size.")
+    print(f"{'='*60}\n")
+
+    return stats

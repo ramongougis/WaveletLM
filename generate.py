@@ -26,7 +26,7 @@ import torch
 import torch.nn.functional as F
 import tiktoken
 
-from model import ExarchLM, MultiNodeExarchLM, causal_haar_decompose
+from model import ExarchLM, MultiNodeExarchLM, causal_haar_decompose, quantize_model
 
 
 # ==============================================================================
@@ -483,6 +483,12 @@ def main():
     print(f"Loading checkpoint: {args.checkpoint}")
     load_checkpoint(model, args.checkpoint)
     model.eval()
+
+    if config.get('quantize_enabled', False):
+        q_stats = quantize_model(model, config)
+        print(f"[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
+              f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
+              f"({q_stats['compression_ratio']:.2f}x)")
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model: {total_params/1e6:.2f}M parameters")
