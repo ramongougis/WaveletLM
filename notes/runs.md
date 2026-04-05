@@ -38,24 +38,24 @@
 
 ### Boolean ablations: C = 512, epochs = 1, mlp_expansion = 1
 
-| Run | Setting | Value | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta |
-|-----|---------|-------|--------|---------------|--------|------------|----------------|-------|
-| 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | |
-| 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 17,764 MiB | | -0.0014 |
-| 9   | `semantic_feedback_cross_window` | false | | | | | | |
-| 10  | `learned_residual` | false | | | | | | |
-| 11  | `use_mixer_gate` | false | | | | | | |
-| 12  | `skip_proj_out` | true | | | | | | |
-| 13  | `shared_lifting_weights` | true | | | | | | |
-| 14  | `lifting_linear_only` | true | | | | | | |
-| 15  | `tie_embedding_to_lm_head` | true | | | | | | |
+| Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta |
+|-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------|
+| 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB | |
+| 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 2.83h | 17,764 MiB | 7,600 MiB | -0.0014 |
+| 9   | `semantic_feedback_cross_window` | false | [link](#run-9) | 1.1748 | 366.58M | 2.62h | 18,809 MiB | 7,691 MiB | -0.0003 |
+| 10  | `learned_residual` | false | [link](#run-10) | 1.1814 | 366.58M | 2.66h | 18,818 MiB | 7,693 MiB | +0.0063 |
+| 11  | `use_mixer_gate` | false | [link](#run-11) | 1.2009 | 314.15M | 2.45h | 16,518 MiB | 6,793 MiB | +0.0258 |
+| 12  | `skip_proj_out` | true | [link](#run-12) | 1.1835 | 361.33M | 2.60h | 18,668 MiB | 7,602 MiB | +0.0084 |
+| 13  | `shared_lifting_weights` | true | [link](#run-13) | 1.1859 | 186.92M | 2.42h | 16,762 MiB | 4,609 MiB | +0.0108 |
+| 14  | `lifting_linear_only` | true | [link](#run-14) | 1.1892 | 272.02M | 1.79h | 13,236 MiB | 6,069 MiB | +0.0141 |
+| 15  | `tie_embedding_to_lm_head` | true | [link](#run-15) | 1.1815 | 340.85M | 2.77h | 18,523 MiB | 7,300 MiB | +0.0064 |
 |   | `semantic_feedback` (3ep) | false | | | | | | 3-epoch retest; verify 1-epoch result holds |
 
 ### Best Boolean ablations combination: C=512, epochs = 1, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | | | | Boolean values chosen: semantic_feedback:false,  |
+|   | | | | | | All defaults are optimal. Only semantic_feedback=false (-0.0014) and semantic_feedback_cross_window=false (-0.0003) show marginal improvement; all others degrade. See discussion below. |
 
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
@@ -575,55 +575,139 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 ### Run 9
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `semantic_feedback_cross_window` = false.
+**Folder:** `logs/wikitext-103_2026-04-04_16-31-53/` ([log](../logs/wikitext-103_2026-04-04_16-31-53/log.txt))
+
+**Description:** C = 512, epochs = 1, `semantic_feedback_cross_window` = false. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6499 (epoch 1)
+- Sliding BPB: 1.1748 (BPT: 5.2949)
+- Non-overlapping BPB: 1.1849 (BPT: 5.3404)
+- Params: 366.58M
+- Training Peak VRAM: 18,809 MiB
+- Inference Peak VRAM: 7,691 MiB
+- Generation metrics: MeanLogP=-1.1949 | MeanH=4.28 | D1=0.635 | D2=0.918 | D3=0.978 | Rep4=0.039
+- Delta: -0.0003 (negligible)
 
 ---
 
 ### Run 10
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `learned_residual` = false.
+**Folder:** `logs/wikitext-103_2026-04-04_19-12-31/` ([log](../logs/wikitext-103_2026-04-04_19-12-31/log.txt))
+
+**Description:** C = 512, epochs = 1, `learned_residual` = false. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6675 (epoch 1)
+- Sliding BPB: 1.1814 (BPT: 5.3247)
+- Non-overlapping BPB: 1.1916 (BPT: 5.3707)
+- Params: 366.58M
+- Training Peak VRAM: 18,818 MiB
+- Inference Peak VRAM: 7,693 MiB
+- Generation metrics: MeanLogP=-1.4711 | MeanH=4.73 | D1=0.602 | D2=0.896 | D3=0.963 | Rep4=0.078
+- Delta: +0.0063 (slight degradation)
 
 ---
 
 ### Run 11
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `use_mixer_gate` = false.
+**Folder:** `logs/wikitext-103_2026-04-04_21-55-38/` ([log](../logs/wikitext-103_2026-04-04_21-55-38/log.txt))
+
+**Description:** C = 512, epochs = 1, `use_mixer_gate` = false. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.7562 (epoch 1)
+- Sliding BPB: 1.2009 (BPT: 5.4126)
+- Non-overlapping BPB: 1.2115 (BPT: 5.4604)
+- Params: 314.15M
+- Training Peak VRAM: 16,518 MiB
+- Inference Peak VRAM: 6,793 MiB
+- Generation metrics: MeanLogP=-1.5123 | MeanH=4.70 | D1=0.533 | D2=0.851 | D3=0.957 | Rep4=0.090
+- Delta: +0.0258 (significant degradation — mixer gate is critical)
 
 ---
 
 ### Run 12
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `skip_proj_out` = true.
+**Folder:** `logs/wikitext-103_2026-04-05_00-26-06/` ([log](../logs/wikitext-103_2026-04-05_00-26-06/log.txt))
+
+**Description:** C = 512, epochs = 1, `skip_proj_out` = true. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6788 (epoch 1)
+- Sliding BPB: 1.1835 (BPT: 5.3340)
+- Non-overlapping BPB: 1.1935 (BPT: 5.3788)
+- Params: 361.33M
+- Training Peak VRAM: 18,668 MiB
+- Inference Peak VRAM: 7,602 MiB
+- Generation metrics: MeanLogP=-1.4088 | MeanH=4.57 | D1=0.600 | D2=0.892 | D3=0.965 | Rep4=0.076
+- Delta: +0.0084 (slight degradation — proj_out contributes as channel mixing layer)
 
 ---
 
 ### Run 13
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `shared_lifting_weights` = true.
+**Folder:** `logs/wikitext-103_2026-04-05_03-05-29/` ([log](../logs/wikitext-103_2026-04-05_03-05-29/log.txt))
+
+**Description:** C = 512, epochs = 1, `shared_lifting_weights` = true. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6848 (epoch 1)
+- Sliding BPB: 1.1859 (BPT: 5.3448)
+- Non-overlapping BPB: 1.1956 (BPT: 5.3885)
+- Params: 186.92M (massive reduction — shared lifting saves ~180M params)
+- Training Peak VRAM: 16,762 MiB
+- Inference Peak VRAM: 4,609 MiB
+- Generation metrics: MeanLogP=-1.1411 | MeanH=3.88 | D1=0.615 | D2=0.926 | D3=0.975 | Rep4=0.039
+- Delta: +0.0108 (moderate degradation — per-layer lifting is worth the parameter cost)
 
 ---
 
 ### Run 14
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `lifting_linear_only` = true.
+**Folder:** `logs/wikitext-103_2026-04-05_05-33-33/` ([log](../logs/wikitext-103_2026-04-05_05-33-33/log.txt))
+
+**Description:** C = 512, epochs = 1, `lifting_linear_only` = true. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6762 (epoch 1)
+- Sliding BPB: 1.1892 (BPT: 5.3593)
+- Non-overlapping BPB: 1.1985 (BPT: 5.4016)
+- Params: 272.02M (lighter — linear P/U vs 2-layer MLP)
+- Training Peak VRAM: 13,236 MiB
+- Inference Peak VRAM: 6,069 MiB
+- Generation metrics: MeanLogP=-1.3912 | MeanH=4.54 | D1=0.604 | D2=0.890 | D3=0.976 | Rep4=0.039
+- Delta: +0.0141 (moderate degradation — MLP-based lifting is worth the compute)
 
 ---
 
 ### Run 15
 
-**Status:** Pending
+**Status:** Complete
 
-**Description:** C = 512, epochs = 1, `tie_embedding_to_lm_head` = true.
+**Folder:** `logs/wikitext-103_2026-04-05_07-23-27/` ([log](../logs/wikitext-103_2026-04-05_07-23-27/log.txt))
+
+**Description:** C = 512, epochs = 1, `tie_embedding_to_lm_head` = true. Boolean ablation.
+
+**Results:**
+- Best val loss: 3.6677 (epoch 1)
+- Sliding BPB: 1.1815 (BPT: 5.3248)
+- Non-overlapping BPB: 1.1912 (BPT: 5.3685)
+- Params: 340.85M (saves ~26M params from shared embedding/head)
+- Training Peak VRAM: 18,523 MiB
+- Inference Peak VRAM: 7,300 MiB
+- Generation metrics: MeanLogP=-1.4808 | MeanH=4.63 | D1=0.633 | D2=0.918 | D3=0.982 | Rep4=0.031
+- Delta: +0.0064 (slight degradation — separate LM head helps)
 
