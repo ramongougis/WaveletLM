@@ -61,7 +61,7 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 | 6   | Baseline (3ep) | | [link](#run-6) | 1.1169 | 366.58M | 8.34h | 18,738 MiB | 2,179 MiB | | | |
 |     | `semantic_feedback` | false | [link](../logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | SF now slightly hurts to remove; confirms it helps at longer training |
 |     | `lifting_linear_only` | true | [link](../logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | Gap widened from 1ep; MLP lifting increasingly valuable |
-|     | `shared_lifting_weights` | true | | | | | | | | +0.0108 | Running |
+|     | `shared_lifting_weights` | true | [link](../logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | Gap narrowed slightly from 1ep; shared lifting adapts better with more training |
 
 > **LLO tradeoff note:** `lifting_linear_only=true` costs +0.017 BPB but saves 94M params (5.5 GB training VRAM) and 36% wall time. On VRAM-constrained hardware, this headroom can fund larger `mlp_expansion`, bigger batches, or longer training — any of which may recover more than 0.017 BPB. As absolute BPB decreases, the raw delta from LLO will likely shrink while the *relative* importance of each BPB point increases. The optimal choice depends on the VRAM budget: if the freed capacity enables a higher-impact change (e.g., mlp_expansion 1→2), LLO=true wins despite the direct cost. This is a key parameter-efficiency vs. expressivity tradeoff for the paper.
 
@@ -188,11 +188,23 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 | `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
 | `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
 
+### Shared lifting weights at scale: 6 epochs
+
+Test whether the SLW gap continues narrowing at full training length. Gap trend: +0.0108 (1ep) → +0.0089 (3ep) → ?
+
+| Run | SLW | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Delta | Notes |
+|-----|-----|--------|---------------|--------|---------------|------------------|-------|-------|
+|   | false | | | | | | | Best config baseline (from best run below) |
+|   | true  | | | | | | | If delta < 0.003, SLW becomes default for deployment |
+
 ### Best run: optimal config, 10 epochs, seed = 1337
+
+Target config: C=1024, L=20, SLW=true, mlp_expansion=200, PKM=65536, FwPKM=65536, optimal booleans + dropout from sweeps. ~12B params. Requires B200 (192 GB HBM3e).
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | | | | All optimal settings from sweeps above |
+|   | | | ~12B | | ~140 GB / ~24 GB (fp16) | fp16 inference fits on a single 4090 |
+|   | | | ~12B | | ~140 GB / ~6 GB (PTQ) | With PTQ; inference fits on RTX 4060 (8 GB) |
 
 ### Seed variance: best EXARCH config
 
