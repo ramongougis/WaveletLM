@@ -118,7 +118,6 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # MLP EXPANSION SWEEP (epochs=1, all defaults)
 # =====================================================================
 
-run_with "MLP expansion=1 (baseline)" ""
 run_with "MLP expansion=2" "cfg['mlp_expansion'] = 2"
 run_with "MLP expansion=10" "cfg['mlp_expansion'] = 10"
 run_with "MLP expansion=20" "cfg['mlp_expansion'] = 20"
