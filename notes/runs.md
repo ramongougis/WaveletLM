@@ -65,18 +65,20 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 
 > **LLO tradeoff note:** `lifting_linear_only=true` costs +0.017 BPB but saves 94M params (5.5 GB training VRAM) and 36% wall time. On VRAM-constrained hardware, this headroom can fund larger `mlp_expansion`, bigger batches, or longer training — any of which may recover more than 0.017 BPB. As absolute BPB decreases, the raw delta from LLO will likely shrink while the *relative* importance of each BPB point increases. The optimal choice depends on the VRAM budget: if the freed capacity enables a higher-impact change (e.g., mlp_expansion 1→2), LLO=true wins despite the direct cost. This is a key parameter-efficiency vs. expressivity tradeoff for the paper.
 
-### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1, and each of the best-performing Boolean ablations above (to be noted)
+### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1
+
+All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that shared lifting wavelets may contribute negligibly at much higher epochs, however (>=10), and could probably be turned off then.
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | | | |  |
+| 6   | [link](#run-6) | 1.1169 | 366.58M | 8.34h | 18,738 / 2,179 MiB | Baseline IS the best combo |
 
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|--------|---------------|--------|------------|----------------|-------|
-|   | 1  | | | | | | Baseline (optimal booleans from ablations; may be Run 8) |
-|   | 2  | | | | | | |
+|   | 1  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
+|   | 2  | [link](../logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1678 | 377.08M | 19,118 MiB | | -0.0073 from baseline |
 |   | 10 | | | | | | |
 |   | 20 | | | | | | |
 |   | 50 | | | | | | |
