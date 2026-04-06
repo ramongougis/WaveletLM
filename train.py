@@ -657,12 +657,6 @@ def train():
 
     model.eval()
 
-    if config.get('quantize_enabled', False):
-        q_stats = quantize_model(model, config)
-        logger.log(f"\n[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
-                   f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
-                   f"({q_stats['compression_ratio']:.2f}x)")
-
     # Non-overlapping benchmark
     results_full = evaluate_full_validation(
         model, test_data, config, logger, device, use_amp, amp_dtype)
@@ -686,15 +680,38 @@ def train():
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
 
-    # Free benchmark activations before generation
-    del results_full, results_sw
+    # Tear down benchmark model entirely and rebuild fresh for generation
+    # This ensures inference VRAM matches generate.py (clean CUDA state)
+    del model, results_full, results_sw
+    import gc; gc.collect()
     if device == 'cuda':
         torch.cuda.empty_cache()
-        import gc; gc.collect()
         torch.cuda.reset_peak_memory_stats()
 
-    # Snapshot VRAM baseline (model weights only) before generation
+    # Rebuild model from scratch (identical to generate.py's loading path)
+    if config.get('multinodal_enabled', False):
+        model = MultiNodeExarchLM(vocab_size, config, device=device).to(device)
+    else:
+        model = ExarchLM(vocab_size, config, device=device).to(device)
+    ckpt = torch.load(best_model_path, map_location=device)
+    new_state_dict = {}
+    for k, v in ckpt.items():
+        new_key = k[10:] if k.startswith("_orig_mod.") else k
+        new_state_dict[new_key] = v
+    model.load_state_dict(new_state_dict, strict=False)
+    del ckpt, new_state_dict
+    model.eval()
+
+    if config.get('quantize_enabled', False):
+        q_stats = quantize_model(model, config)
+        logger.log(f"\n[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
+                   f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
+                   f"({q_stats['compression_ratio']:.2f}x)")
+
     if device == 'cuda':
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
         inference_baseline_mem = torch.cuda.memory_allocated() / (1024 ** 2)
 
     # Generate samples using generate.py functions
