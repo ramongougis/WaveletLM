@@ -42,7 +42,7 @@
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------|
-| 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB | |
+| 4   | Baseline (all standard) | - | [link](#run-4) | 1.1751 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB | - |
 | 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 2.83h | 17,764 MiB | 2,147 MiB | -0.0014 |
 | 9   | `semantic_feedback_cross_window` | false | [link](#run-9) | 1.1748 | 366.58M | 2.62h | 18,809 MiB | 2,178 MiB | -0.0003 |
 | 10  | `learned_residual` | false | [link](#run-10) | 1.1814 | 366.58M | 2.66h | 18,818 MiB | 2,178 MiB | +0.0063 |
