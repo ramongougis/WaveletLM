@@ -78,10 +78,10 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|--------|---------------|--------|------------|----------------|-------|
 |   | 1  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
-|   | 2  | [link](../logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1678 | 377.08M | 19,118 MiB | | -0.0073 from baseline |
-|   | 10 | [link](../logs/wikitext-103_2026-04-06_17-51-28/log.txt) | 1.1532 | 461.04M | 21,519 MiB | | -0.0219 |
-|   | 20 | [link](../logs/wikitext-103_2026-04-06_20-38-06/log.txt) | 1.1487 | 566.00M | 24,520 MiB | | -0.0264 |
-|   | 50 | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | | -0.0342; 3.80h |
+|   | 2  | [link](../logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1678 | 377.08M | 19,118 MiB | 2,239 MiB | -0.0073 |
+|   | 10 | [link](../logs/wikitext-103_2026-04-06_17-51-28/log.txt) | 1.1532 | 461.04M | 21,519 MiB | 2,719 MiB | -0.0219 |
+|   | 20 | [link](../logs/wikitext-103_2026-04-06_20-38-06/log.txt) | 1.1487 | 566.00M | 24,520 MiB | 3,320 MiB | -0.0264 |
+|   | 50 | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | -0.0342 |
 
 ### Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
