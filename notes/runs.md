@@ -88,14 +88,24 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
 |   | off | off | | | | | | | | Baseline (MLP only, from MLP sweep) |
-|   | on  | off | 529 | | | | | | | PKM default (23x23 subkeys) |
-|   | on  | off | 16384 | | | | | | | PKM large (128x128 sub-keys) |
+|   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
+|   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
 |   | off | on  | | 529 | | | | | | FwPKM only (no static memory) |
 |   | on  | on  | 529 | 529 | | | | | | PKM + FwPKM default |
 |   | on  | on  | 16384 | 16384 | | | | | | PKM + FwPKM large |
 |   | off | off | | | | | | | | MLP off, PKM off (wavelet pipeline only) |
 |   | on  | off | 529 | | | | | | | MLP off, PKM only |
 |   | on  | on  | 529 | 529 | | | | | | MLP off, PKM+FwPKM |
+
+#### MLP exp=50 + memory (can sparse memory push past the MLP ceiling?)
+
+| Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
+|   | off | off | | | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
+|   | on  | off | 16384 | | | | ~1.05B | ~37 GB | | PKM large on saturated MLP |
+|   | off | on  | | 16384 | | | ~1.05B | ~37 GB | | FwPKM large on saturated MLP |
+|   | on  | on  | 16384 | 16384 | | | ~1.22B | ~41 GB | | Both large; max memory capacity |
+|   | on  | on  | 529 | 529 | | | ~902M | ~35 GB | | Both default; minimal overhead test |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
