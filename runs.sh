@@ -108,20 +108,15 @@ import json
 json.dump(cfg, open('config.json', 'w'), indent=4)
 "
     python train.py
+    LATEST_CKPT=$(ls -dt logs/wikitext-103_*/best_model.pt 2>/dev/null | head -1)
+    if [ -n "$LATEST_CKPT" ]; then
+        python generate.py --checkpoint "$LATEST_CKPT"
+    fi
     git add .
     git commit --no-edit -m "$NAME"
     git pull --no-edit
     git push
 }
-
-# =====================================================================
-# MLP EXPANSION SWEEP (epochs=1, all defaults)
-# =====================================================================
-
-run_with "MLP expansion=2" "cfg['mlp_expansion'] = 2"
-run_with "MLP expansion=10" "cfg['mlp_expansion'] = 10"
-run_with "MLP expansion=20" "cfg['mlp_expansion'] = 20"
-run_with "MLP expansion=50" "cfg['mlp_expansion'] = 50"
 
 # =====================================================================
 # MEMORY SWEEP (epochs=1, mlp_expansion=1, all defaults)
@@ -134,6 +129,7 @@ run_with "Memory: PKM+FwPKM (529 keys)" "cfg['pkm_enabled'] = True; cfg['fwpkm_e
 run_with "Memory: PKM+FwPKM large (16384 keys)" "cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_num_keys'] = 16384"
 run_with "Memory: MLP off, wavelet only" "cfg['mlp_expansion'] = 0"
 run_with "Memory: MLP off, PKM only (529 keys)" "cfg['mlp_expansion'] = 0; cfg['pkm_enabled'] = True"
+run_with "Memory: MLP off, PKM+FwPKM (529 keys)" "cfg['mlp_expansion'] = 0; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True"
 
 # =====================================================================
 # RESET to baseline after all runs
