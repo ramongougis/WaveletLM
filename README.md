@@ -98,7 +98,7 @@ Learned Embedding (C)
 |  Learned Scale Weights     |
 |  Wavelet Reconstruct       |
 |  Residual Connection       |
-|  LayerNorm --> MLP          |
+|  LayerNorm --> MLP         |
 |  Residual Connection       |
 +----------------------------+
     |
