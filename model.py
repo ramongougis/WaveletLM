@@ -286,7 +286,7 @@ _MIXER_GATE_ACTIVATIONS = {
 class GatedSpectralMixer(nn.Module):
     def __init__(self, Cp: int, num_blocks: int, rank: int = 4, eps: float = 1e-3,
                  use_mixer_gate: bool = True, mixer_gate_activation: str = "sigmoid",
-                 device=None, dtype=None):
+                 add_bias: bool = False, device=None, dtype=None):
         super().__init__()
         self.Cp = Cp
         self.use_mixer_gate = use_mixer_gate
@@ -304,6 +304,11 @@ class GatedSpectralMixer(nn.Module):
         else:
             self.U = None
             self.V = None
+
+        if add_bias:
+            self.bias = nn.Parameter(torch.zeros(Cp, device=device, dtype=dtype))
+        else:
+            self.bias = None
 
         self.reset_parameters(eps)
 
@@ -326,6 +331,8 @@ class GatedSpectralMixer(nn.Module):
         if self.U is not None:
             mid = torch.matmul(X_spec, self.V)
             out = out + torch.matmul(mid, self.U.t())
+        if self.bias is not None:
+            out = out + self.bias
         return out
 
 
@@ -665,6 +672,7 @@ class ExarchBlock(nn.Module):
         fwpkm_num_keys: int = 529,
         fwpkm_top_k: int = 32,
         fwpkm_heads: int = 1,
+        mixer_depth: int = 1,
     ):
         super().__init__()
         self.C = C
@@ -706,17 +714,41 @@ class ExarchBlock(nn.Module):
                 eye = 0.5 * torch.eye(eye_sz, device=w.device, dtype=w.dtype)
                 w[:eye_sz, :eye_sz] += eye
 
-        # Spectral mixers: one per scale
+        # Spectral mixers: one per scale, optionally stacked with mixer_depth
         S = levels + 1
-        self.scale_mixers = nn.ModuleList([
-            GatedSpectralMixer(
-                Cp=self.Cp, num_blocks=1, rank=low_rank,
-                use_mixer_gate=use_mixer_gate,
-                mixer_gate_activation=mixer_gate_activation,
-                device=device, dtype=dtype,
-            )
-            for _ in range(S)
-        ])
+        self.mixer_depth = mixer_depth
+
+        if mixer_depth == 1:
+            # Exactly today's code — single set of mixers, no LN, no bias
+            self.scale_mixers = nn.ModuleList([
+                GatedSpectralMixer(
+                    Cp=self.Cp, num_blocks=1, rank=low_rank,
+                    use_mixer_gate=use_mixer_gate,
+                    mixer_gate_activation=mixer_gate_activation,
+                    add_bias=False,
+                    device=device, dtype=dtype,
+                )
+                for _ in range(S)
+            ])
+        else:
+            # Depth > 1: intermediate steps get LN + bias, final step gets neither
+            self.mixer_depth_norms = nn.ModuleList([
+                nn.ModuleList([nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)])
+                for _ in range(mixer_depth - 1)
+            ])
+            self.scale_mixers_by_depth = nn.ModuleList([
+                nn.ModuleList([
+                    GatedSpectralMixer(
+                        Cp=self.Cp, num_blocks=1, rank=low_rank,
+                        use_mixer_gate=use_mixer_gate,
+                        mixer_gate_activation=mixer_gate_activation,
+                        add_bias=(d < mixer_depth - 1),
+                        device=device, dtype=dtype,
+                    )
+                    for _ in range(S)
+                ])
+                for d in range(mixer_depth)
+            ])
 
         self.scale_weights = nn.Parameter(
             torch.full((S,), 1.0, device=device, dtype=dtype)
@@ -810,13 +842,31 @@ class ExarchBlock(nn.Module):
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
-        # Per-scale spectral mixing
-        mixed_by_scale = []
-        for s in range(S):
-            Xs = stacked_spec[:, :, s, :]
-            Ys = self.scale_mixers[s](Xs)
-            mixed_by_scale.append(Ys)
-        mixed_spec = torch.stack(mixed_by_scale, dim=2)
+        # Per-scale spectral mixing (with optional depth stacking)
+        if self.mixer_depth == 1:
+            mixed_by_scale = []
+            for s in range(S):
+                Xs = stacked_spec[:, :, s, :]
+                Ys = self.scale_mixers[s](Xs)
+                mixed_by_scale.append(Ys)
+            mixed_spec = torch.stack(mixed_by_scale, dim=2)
+        else:
+            mixed_spec = stacked_spec
+            for d in range(self.mixer_depth):
+                depth_mixers = self.scale_mixers_by_depth[d]
+                mixed_by_scale = []
+                for s in range(S):
+                    Xs = mixed_spec[:, :, s, :]
+                    if d < self.mixer_depth - 1:
+                        # Intermediate: LN + mixer(+bias), no residual
+                        Xs_normed = self.mixer_depth_norms[d][s](Xs)
+                        Ys = depth_mixers[s](Xs_normed)
+                        mixed_by_scale.append(Ys)
+                    else:
+                        # Final: raw mixer, no LN, no bias, no residual
+                        Ys = depth_mixers[s](Xs)
+                        mixed_by_scale.append(Ys)
+                mixed_spec = torch.stack(mixed_by_scale, dim=2)
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
@@ -966,6 +1016,7 @@ class ExarchLM(nn.Module):
                 fwpkm_num_keys=config.get("fwpkm_num_keys", 529),
                 fwpkm_top_k=config.get("fwpkm_top_k", 32),
                 fwpkm_heads=config.get("fwpkm_heads", 1),
+                mixer_depth=config.get("mixer_depth", 1),
             )
             for _ in range(L)
         ])
@@ -1293,8 +1344,16 @@ def parameter_breakdown(model, config):
         print(f"  Token embedding:  {emb_params:>13,} ({emb_params/1e6:.2f}M)")
         print(f"  Layers (total):   {layer_params:>13,} ({layer_params/1e6:.2f}M)")
 
-        # Per-layer MLP vs PKM breakdown
+        # Per-layer component breakdown
         block0 = model.layers[0]
+        if block0.mixer_depth > 1:
+            if hasattr(block0, 'scale_mixers_by_depth'):
+                mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())
+                norm_per = sum(p.numel() for p in block0.mixer_depth_norms.parameters())
+                print(f"    Mixer (depth={block0.mixer_depth}): {mixer_per + norm_per:>9,} ({(mixer_per + norm_per)/1e6:.2f}M)")
+        else:
+            mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
+            print(f"    Mixer/layer:    {mixer_per:>13,} ({mixer_per/1e6:.2f}M)")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
             print(f"    MLP/layer:      {mlp_per:>13,} ({mlp_per/1e6:.2f}M)")

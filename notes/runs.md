@@ -97,6 +97,17 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 |   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
 |   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
 
+#### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
+
+Stacked spectral mixing within each block — adding depth to the per-scale gated transforms in Hadamard space without repeating wavelet/Hadamard passes. Each depth step: LN + gated linear + bias (no residual), final step omits LN/bias.
+
+| Run | mixer_depth | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|-------------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 1 | | | 366.58M | | | | Baseline (today's behavior) |
+|   | 2 | | | 471.74M | | | | First depth increase |
+|   | 3 | | | 576.91M | | | | |
+|   | 5 | | | 787.24M | | | | Stress test |
+
 #### MLP exp=50 + memory (can sparse memory push past the MLP ceiling?)
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
