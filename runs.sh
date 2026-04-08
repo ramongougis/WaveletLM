@@ -1,4 +1,4 @@
-# MLP expansion sweep + Memory (PKM/FwPKM) sweep
+# Mixer depth sweep + MLP exp=50 + Memory sweep
 # Each run resets config.json to the 1-epoch baseline, then applies its changes.
 # Baseline sourced from logs/wikitext-103_2026-04-03_04-51-07/config.json
 
@@ -41,6 +41,7 @@ baseline = {
     "lifting_dropout": 0.0,
     "use_mixer_gate": True,
     "mixer_gate_activation": "silu",
+    "mixer_depth": 1,
     "semantic_feedback": True,
     "semantic_feedback_cross_window": True,
     "learned_residual": True,
@@ -119,17 +120,22 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# MEMORY SWEEP (epochs=1, mlp_expansion=1, all defaults)
+# MIXER DEPTH SWEEP (epochs=1, mlp_expansion=1, all defaults)
 # =====================================================================
 
-run_with "Memory: PKM only (529 keys)" "cfg['pkm_enabled'] = True"
-run_with "Memory: PKM large (16384 keys)" "cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384"
-run_with "Memory: FwPKM only (529 keys)" "cfg['fwpkm_enabled'] = True"
-run_with "Memory: PKM+FwPKM (529 keys)" "cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True"
-run_with "Memory: PKM+FwPKM large (16384 keys)" "cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_num_keys'] = 16384"
-run_with "Memory: MLP off, wavelet only" "cfg['mlp_expansion'] = 0"
-run_with "Memory: MLP off, PKM only (529 keys)" "cfg['mlp_expansion'] = 0; cfg['pkm_enabled'] = True"
-run_with "Memory: MLP off, PKM+FwPKM (529 keys)" "cfg['mlp_expansion'] = 0; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True"
+# depth=1 is baseline (Run 4), no need to rerun
+run_with "Mixer depth: 2" "cfg['mixer_depth'] = 2"
+run_with "Mixer depth: 3" "cfg['mixer_depth'] = 3"
+run_with "Mixer depth: 5" "cfg['mixer_depth'] = 5"
+
+# =====================================================================
+# MLP exp=50 + MEMORY (epochs=1, can sparse memory push past MLP ceiling?)
+# =====================================================================
+
+run_with "MLP50+Memory: PKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384"
+run_with "MLP50+Memory: FwPKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+run_with "MLP50+Memory: PKM+FwPKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_num_keys'] = 16384"
+run_with "MLP50+Memory: PKM+FwPKM default (529)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True"
 
 # =====================================================================
 # RESET to baseline after all runs
