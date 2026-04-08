@@ -90,8 +90,8 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 |   | off | off | | | | | | | | Baseline (MLP only, from MLP sweep) |
 |   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
 |   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
-|   | off | on  | | 529 | | | | | | FwPKM only (no static memory) |
-|   | on  | on  | 529 | 529 | | | | | | PKM + FwPKM default |
+|   | off | on  | | 529 | [link](../logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
+|   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1713 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
 |   | on  | on  | 16384 | 16384 | | | | | | PKM + FwPKM large |
 |   | off | off | | | | | | | | MLP off, PKM off (wavelet pipeline only) |
 |   | on  | off | 529 | | | | | | | MLP off, PKM only |
