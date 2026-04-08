@@ -92,9 +92,9 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 |   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
 |   | off | on  | | 529 | [link](../logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
 |   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1713 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
-|   | on  | on  | 16384 | 16384 | | | | | | PKM + FwPKM large |
-|   | off | off | | | | | | | | MLP off, PKM off (wavelet pipeline only) |
-|   | on  | off | 529 | | | | | | | MLP off, PKM only |
+|   | on  | on  | 16384 | 16384 | [link](../logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1579 | 715.23M | 24,335 MiB | 4,173 MiB | PKM+FwPKM large; -0.0172 vs baseline |
+|   | off | off | | | [link](../logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
+|   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
 |   | on  | on  | 529 | 529 | | | | | | MLP off, PKM+FwPKM |
 
 #### MLP exp=50 + memory (can sparse memory push past the MLP ceiling?)

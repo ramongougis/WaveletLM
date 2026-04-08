@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# EXARCH - Explicit Attentionless Reasoning with Causal Harmonics
+# EXARCH - Exclusively Attentionless Reasoning with Causal Harmonics
 # generate.py
 
 import argparse
