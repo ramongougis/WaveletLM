@@ -26,12 +26,12 @@ mixer_depth=1 (today's behavior, unchanged):
 mixer_depth=D (D >= 2):
   Y_0 = X   (input in Hadamard space, per scale)
 
-  For depth d = 1, ..., D-1:      (intermediate steps: LN + bias + residual)
+  For depth d = 1, ..., D-1:      (intermediate steps: LN + bias, no residual)
     Z_d = LN_d(Y_{d-1})
-    Y_d = Y_{d-1} + [W_mixer_d * Z_d . sigma(W_gate_d * Z_d) + B_d]
+    Y_d = [W_mixer_d * Z_d . sigma(W_gate_d * Z_d) + B_d]
 
   Final step d = D:                (no LN, no bias — mirrors depth=1 output)
-    Y_D = Y_{D-1} + [W_mixer_D * Y_{D-1} . sigma(W_gate_D * Y_{D-1})]
+    Y_D = [W_mixer_D * Y_{D-1} . sigma(W_gate_D * Y_{D-1})]
 
   Output = Y_D
 ```
@@ -41,7 +41,6 @@ Where:
 - W_mixer_d = Linear(Cp, Cp, bias=False) — mixer path
 - W_gate_d = Linear(Cp, Cp, bias=False) — gating path, sigma = SiLU
 - B_d = Parameter(Cp) — learned bias after gating (intermediate steps only)
-- Residual connection from Y_{d-1} to Y_d
 
 At mixer_depth=1, no LN or bias is added — behavior is identical to today's code.
 At mixer_depth>1, the final step also omits LN/bias so its output boundary matches
@@ -103,7 +102,7 @@ def forward(self, X_spec):
         out = signal
     if self.U is not None:
         mid = torch.matmul(X_spec, self.V)
-        out = out + torch.matmul(mid, self.U.t())
+        out = torch.matmul(mid, self.U.t())
     if self.bias is not None:
         out = out + self.bias
     return out
@@ -173,14 +172,14 @@ else:
         for s in range(S):
             Xs = mixed_spec[:, :, s, :]
             if d < self.mixer_depth - 1:
-                # Intermediate: LN + mixer(+bias) + residual
+                # Intermediate: LN + mixer(+bias), no residual
                 Xs_normed = self.mixer_depth_norms[d][s](Xs)
                 Ys = depth_mixers[s](Xs_normed)
-                mixed_by_scale.append(Xs + Ys)
+                mixed_by_scale.append(Ys)
             else:
-                # Final: raw mixer, no LN, no bias, + residual
+                # Final: raw mixer, no LN, no bias, no residual
                 Ys = depth_mixers[s](Xs)
-                mixed_by_scale.append(Xs + Ys)
+                mixed_by_scale.append(Ys)
         mixed_spec = torch.stack(mixed_by_scale, dim=2)
 ```
 
@@ -201,7 +200,7 @@ Add to runs.md after memory sweep, before layers sweep:
 
 | Run | mixer_depth | Params     | Notes                          |
 |-----|-------------|------------|--------------------------------|
-|     | 1           | ~366.9M    | Baseline + LN/bias overhead    |
+|     | 1           | ~366.6M    | Baseline (identical to today)  |
 |     | 2           | ~472.1M    | First depth increase           |
 |     | 3           | ~577.3M    | Diminishing returns expected   |
 |     | 5           | ~787.7M    | Stress test                    |
@@ -223,4 +222,7 @@ mixer_depth is secondary.
 - Root cause: no normalization between repeats, gradient magnitudes compounded
 - Fix: pre-norm LayerNorm before each depth step (this plan)
 - Additional safety: bias initialized to zero, mixer W initialized near-identity
+- No residual connections between depth steps (clean composition, like standard FFNNs)
+- If vanishing gradients at depth 3+: consider adding residuals as ablation
+  (`mixer_depth_residual: true/false`)
 - If NaN still occurs: reduce LR, or add dropout between depth steps
