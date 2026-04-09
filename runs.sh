@@ -149,11 +149,45 @@ run_with "Mixer depth: 2, stabilizers=true, lr=0.02" "cfg['mixer_depth'] = 2; cf
 run_with "Mixer depth: 5, stabilizers=true" "cfg['mixer_depth'] = 5; cfg['mixer_depth_stabilizers'] = True"
 
 # =====================================================================
-# REMAINING MLP50+MEMORY (skip PKM-16384 which NaN'd; continue from FwPKM)
+# LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
 # =====================================================================
 
-run_with "MLP50+Memory: PKM+FwPKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_num_keys'] = 16384"
-run_with "MLP50+Memory: PKM+FwPKM default (529)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True"
+# layers=20 is baseline (Run 4), no need to rerun
+run_with "Layers: 1" "cfg['layers'] = 1"
+run_with "Layers: 4" "cfg['layers'] = 4"
+run_with "Layers: 10" "cfg['layers'] = 10"
+run_with "Layers: 15" "cfg['layers'] = 15"
+run_with "Layers: 18" "cfg['layers'] = 18"
+run_with "Layers: 30" "cfg['layers'] = 30"
+
+# =====================================================================
+# LEVELS SWEEP (epochs=1, mlp_expansion=1, C=512, layers=20, block_size=512)
+# =====================================================================
+
+# levels=9 is baseline (default = log2(block_size=512)), no need to rerun
+run_with "Levels: 1" "cfg['levels'] = 1"
+run_with "Levels: 5" "cfg['levels'] = 5"
+run_with "Levels: 11" "cfg['levels'] = 11"
+
+# =====================================================================
+# MEDIUM PRIORITY SWEEPS
+# =====================================================================
+
+# Low-rank factorization (0 = baseline/full rank)
+run_with "Low-rank: 4" "cfg['low_rank'] = 4"
+run_with "Low-rank: 16" "cfg['low_rank'] = 16"
+
+# Lifting hidden multiplier
+run_with "Lifting hidden mult: 2" "cfg['lifting_hidden_mult'] = 2"
+run_with "Lifting hidden mult: 4" "cfg['lifting_hidden_mult'] = 4"
+
+# Learning rate
+run_with "LR: 0.005" "cfg['lr'] = 0.005"
+run_with "LR: 0.02" "cfg['lr'] = 0.02"
+
+# Block size (adjust levels to match)
+run_with "Block size: 256, levels=8" "cfg['block_size'] = 256; cfg['levels'] = 8"
+run_with "Block size: 1024, levels=10" "cfg['block_size'] = 1024; cfg['levels'] = 10"
 
 # =====================================================================
 # RESET to baseline after all runs

@@ -124,8 +124,8 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
 |   | off | off | | | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
 |   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
-|   | off | on  | | 16384 | | | ~1.05B | ~37 GB | | FwPKM large on saturated MLP |
-|   | on  | on  | 16384 | 16384 | | | ~1.22B | ~41 GB | | Both large; max memory capacity |
+|   | off | on  | | 16384 | [link](../logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1411 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
+|   | on  | on  | 16384 | 16384 | [link](../logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
 |   | on  | on  | 529 | 529 | | | ~902M | ~35 GB | | Both default; minimal overhead test |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
@@ -168,17 +168,39 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 |   | 9 | | | | | | Baseline (default = log2(block_size=512)) |
 |   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
 
-### Planned: medium priority
+### Medium priority sweeps: C = 512, epochs = 1
 
-| Parameter | Current | What it tests | Values |
-|-----------|---------|---------------|--------|
-| `multinodal_enabled` | false | Multinodal product-of-experts (num_cells, cell_dim, cross-cell gating) | TBD |
+#### Low-rank factorization in spectral mixer
 
-> **Multinodal LR note:** More nodes increase aggregate gradient variance (analogous to wider C). When doubling node count, try LR / sqrt(2) first; if still unstable, halve LR.
-| `low_rank` | 0 | Low-rank factorization in spectral mixer (0 = full rank) | TBD |
-| `lifting_hidden_mult` | 1 | Hidden dim multiplier for lifting predict/update MLPs | TBD |
-| `lr` | 0.02 | Initial learning rate (Adagrad is adaptive but initial LR still matters) | TBD |
-| `block_size` | 512 | Context window; trades VRAM for longer-range modeling. Change levels to log2(block_size) for each block size tested. | TBD |
+| Run | low_rank | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|----------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 0  | | | | | | | Baseline (full rank) |
+|   | 4  | | | | | | | Adds U·V^T perturbation (~0.8M total) |
+|   | 16 | | | | | | | Higher rank perturbation |
+
+#### Lifting hidden multiplier
+
+| Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 1 | | | | | | | Baseline |
+|   | 2 | | | | | | | Wider predict/update MLPs in wavelet lifting |
+|   | 4 | | | | | | | |
+
+#### Learning rate
+
+| Run | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|-----|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 0.005 | | | | | | | Slower convergence, possibly more stable |
+|   | 0.01  | | | | | | | Baseline |
+|   | 0.02  | | | | | | | Faster; used for C=64/128/256 in width sweep |
+
+#### Block size (context window)
+
+| Run | block_size | levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|------------|--------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 256  | 8 | | | | | | | Half context; levels=log2(256) |
+|   | 512  | 9 | | | | | | | Baseline |
+|   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
 
 ### Dropout optimization: C = 512, 3 epochs, optimal booleans + mlp_expansion + layers + levels
 
