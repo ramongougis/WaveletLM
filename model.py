@@ -673,6 +673,8 @@ class ExarchBlock(nn.Module):
         fwpkm_top_k: int = 32,
         fwpkm_heads: int = 1,
         mixer_depth: int = 1,
+        mixer_depth_stabilizers: bool = False,
+        per_layer_embedding: bool = False,
     ):
         super().__init__()
         self.C = C
@@ -732,6 +734,7 @@ class ExarchBlock(nn.Module):
             ])
         else:
             # Depth > 1: intermediate steps get LN + bias, final step gets neither
+            self.mixer_depth_stabilizers = mixer_depth_stabilizers
             self.mixer_depth_norms = nn.ModuleList([
                 nn.ModuleList([nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)])
                 for _ in range(mixer_depth - 1)
@@ -740,6 +743,7 @@ class ExarchBlock(nn.Module):
                 nn.ModuleList([
                     GatedSpectralMixer(
                         Cp=self.Cp, num_blocks=1, rank=low_rank,
+                        eps=1e-3 / (d + 1) if mixer_depth_stabilizers else 1e-3,
                         use_mixer_gate=use_mixer_gate,
                         mixer_gate_activation=mixer_gate_activation,
                         add_bias=(d < mixer_depth - 1),
@@ -749,6 +753,20 @@ class ExarchBlock(nn.Module):
                 ])
                 for d in range(mixer_depth)
             ])
+            if mixer_depth_stabilizers:
+                # Per-depth learnable scalars for stability (intermediate steps only)
+                # beta_d: scales LN output before feeding to mixer (input magnitude)
+                # alpha_d: scales mixer output (output magnitude)
+                # Both initialized to 1/D so combined initial effect is 1/D² per step
+                D = mixer_depth - 1  # number of intermediate steps
+                self.mixer_depth_betas = nn.ParameterList([
+                    nn.Parameter(torch.tensor(1.0 / mixer_depth, device=device, dtype=dtype))
+                    for _ in range(D)
+                ])
+                self.mixer_depth_alphas = nn.ParameterList([
+                    nn.Parameter(torch.tensor(1.0 / mixer_depth, device=device, dtype=dtype))
+                    for _ in range(D)
+                ])
 
         self.scale_weights = nn.Parameter(
             torch.full((S,), 1.0, device=device, dtype=dtype)
@@ -765,6 +783,10 @@ class ExarchBlock(nn.Module):
         if learned_residual:
             self.residual_alpha_spectral = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
             self.residual_alpha_mlp = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
+
+        self.per_layer_embedding = per_layer_embedding
+        if per_layer_embedding:
+            self.embedding_residual_gamma = nn.Parameter(torch.zeros(C, device=device, dtype=dtype))
 
         self.ln1 = nn.LayerNorm(self.C)
         self.ln2 = nn.LayerNorm(self.C)
@@ -801,7 +823,7 @@ class ExarchBlock(nn.Module):
         self._cache_h2 = False
         self._cached_h2 = None
 
-    def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None):
         _, _, C = x.shape
         current_running_mean = None
         gate_bias_scales = None
@@ -820,6 +842,9 @@ class ExarchBlock(nn.Module):
                 gb = pad_features_to_pow2(gb, self.Cp)
                 gate_bias_scales.append(gb)
             gate_bias_scales = torch.stack(gate_bias_scales, dim=2)  # [B,T,S,Cp]
+
+        if self.per_layer_embedding and token_embeddings is not None:
+            x = x + self.embedding_residual_gamma * token_embeddings
 
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
@@ -860,7 +885,11 @@ class ExarchBlock(nn.Module):
                     if d < self.mixer_depth - 1:
                         # Intermediate: LN + mixer(+bias), no residual
                         Xs_normed = self.mixer_depth_norms[d][s](Xs)
+                        if self.mixer_depth_stabilizers:
+                            Xs_normed = self.mixer_depth_betas[d] * Xs_normed
                         Ys = depth_mixers[s](Xs_normed)
+                        if self.mixer_depth_stabilizers:
+                            Ys = self.mixer_depth_alphas[d] * Ys
                         mixed_by_scale.append(Ys)
                     else:
                         # Final: raw mixer, no LN, no bias, no residual
@@ -975,6 +1004,8 @@ class ExarchLM(nn.Module):
         if learned_residual:
             print(f"[Residual] Learned alpha (init=1.0, per-block spectral+MLP)")
 
+        self.per_layer_embedding = config.get("per_layer_embedding", False)
+
         # Stochastic depth
         self.stochastic_depth_rate = config.get("stochastic_depth_rate", 0.0)
         L = config['layers']
@@ -1017,6 +1048,8 @@ class ExarchLM(nn.Module):
                 fwpkm_top_k=config.get("fwpkm_top_k", 32),
                 fwpkm_heads=config.get("fwpkm_heads", 1),
                 mixer_depth=config.get("mixer_depth", 1),
+                mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
+                per_layer_embedding=config.get("per_layer_embedding", False),
             )
             for _ in range(L)
         ])
@@ -1092,8 +1125,9 @@ class ExarchLM(nn.Module):
     def forward(self, idx, targets=None):
         B, T = idx.shape
 
-        x = self.token_embedding(idx)  # [B, T, C]
-        x = self.dropout_emb(x)
+        tok_emb = self.token_embedding(idx)  # [B, T, C]
+        x = self.dropout_emb(tok_emb)
+        ple = tok_emb if self.per_layer_embedding else None
 
         # Initialize from persistent state if cross-window feedback is enabled
         if self.semantic_feedback_cross_window and self._persistent_semantic_state is not None:
@@ -1108,11 +1142,11 @@ class ExarchLM(nn.Module):
                     continue
 
             if self.gradient_checkpointing and self.training:
-                def layer_wrapper(lx, _layer=layer, _state=current_state):
-                    return _layer(lx, _state)
+                def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
+                    return _layer(lx, _state, token_embeddings=_ple)
                 x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
             else:
-                x, current_state = layer(x, current_state)
+                x, current_state = layer(x, current_state, token_embeddings=ple)
 
         # Update persistent state for next window
         if self.semantic_feedback_cross_window and current_state is not None:
