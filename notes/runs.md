@@ -87,7 +87,7 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | off | off | | | | | | | | Baseline (MLP only, from MLP sweep) |
+|   | off | off | | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4, MLP only) |
 |   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
 |   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
 |   | off | on  | | 529 | [link](../logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
@@ -98,22 +98,13 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 |   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
 |   | off | on  | | 1681 | | | 389.46M | | | FwPKM param-matched to PKM+FwPKM-529 (388.37M); tests stacking vs. just more params |
 
-#### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion
-
-Reintroduces original token embedding as a learned per-channel residual at each block. Learned gamma (C,) per layer, zero-initialized. +0.01M params total.
-
-| Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
-|-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | false | | | 366.58M | | | | Baseline |
-|   | true  | | | 366.59M | | | | +10,240 params |
-
 #### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 Stacked spectral mixing within each block — adding depth to the per-scale gated transforms in Hadamard space without repeating wavelet/Hadamard passes. Each depth step: LN + gated linear + bias (no residual), final step omits LN/bias.
 
 | Run | mixer_depth | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 1 | | | 366.58M | | | | Baseline (today's behavior) |
+|   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
 |   | 2 | [link](../logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
 |   | 3 | [link](../logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
 |   | 5 | [link](../logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
@@ -126,7 +117,16 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 |   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
 |   | off | on  | | 16384 | [link](../logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1411 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
 |   | on  | on  | 16384 | 16384 | [link](../logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
-|   | on  | on  | 529 | 529 | | | ~902M | ~35 GB | | Both default; minimal overhead test |
+|   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1398 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
+
+#### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion
+
+Reintroduces original token embedding as a learned per-channel residual at each block. Learned gamma (C,) per layer, zero-initialized. +0.01M params total.
+
+| Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | false | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
+|   | true  | | | 366.59M | | | | +10,240 params |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
