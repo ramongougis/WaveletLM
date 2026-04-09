@@ -96,6 +96,16 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 |   | off | off | | | [link](../logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
 |   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
 |   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
+|   | off | on  | | 1681 | | | 389.46M | | | FwPKM param-matched to PKM+FwPKM-529 (388.37M); tests stacking vs. just more params |
+
+#### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion
+
+Reintroduces original token embedding as a learned per-channel residual at each block. Learned gamma (C,) per layer, zero-initialized. +0.01M params total.
+
+| Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | false | | | 366.58M | | | | Baseline |
+|   | true  | | | 366.59M | | | | +10,240 params |
 
 #### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -104,21 +114,38 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 | Run | mixer_depth | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 1 | | | 366.58M | | | | Baseline (today's behavior) |
-|   | 2 | | | 471.74M | | | | First depth increase |
-|   | 3 | | | 576.91M | | | | |
-|   | 5 | | | 787.24M | | | | Stress test |
+|   | 2 | [link](../logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
+|   | 3 | [link](../logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
+|   | 5 | [link](../logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
 
 #### MLP exp=50 + memory (can sparse memory push past the MLP ceiling?)
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
 |   | off | off | | | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
-|   | on  | off | 16384 | | | | ~1.05B | ~37 GB | | PKM large on saturated MLP |
+|   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
 |   | off | on  | | 16384 | | | ~1.05B | ~37 GB | | FwPKM large on saturated MLP |
 |   | on  | on  | 16384 | 16384 | | | ~1.22B | ~41 GB | | Both large; max memory capacity |
 |   | on  | on  | 529 | 529 | | | ~902M | ~35 GB | | Both default; minimal overhead test |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
+
+#### Mixer depth + higher LR: can LayerNorm-stabilized depth tolerate more aggressive learning?
+
+| Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 2 | 0.01 | | | 471.74M | | | | From depth sweep above |
+|   | 2 | 0.02 | | | 471.74M | | | | 2x LR; LN should absorb magnitude spikes |
+
+#### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
+
+| Run | mixer_depth | stabilizers | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 2 | false | 0.01 | | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep (already complete) |
+|   | 2 | true  | 0.01 | | | 471.74M | | | | Stabilizers on stable config — effect on BPB? |
+|   | 2 | true  | 0.02 | | | 471.74M | | | | Stabilizers + 2x LR |
+|   | 5 | false | 0.01 | | NaN | 787.24M | 39,657 MiB | — | — | Diverged step 3600 (already complete) |
+|   | 5 | true  | 0.01 | | | 787.24M | | | | Can stabilizers save depth=5? |
 
 ### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -127,6 +154,8 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 |   | 1  | | | | | | |
 |   | 4  | | | | | | |
 |   | 10  | | | | | | |
+|   | 15  | | | | | | |
+|   | 18  | | | | | | |
 |   | 20 | | | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
 |   | 30 | | | | | | |
 

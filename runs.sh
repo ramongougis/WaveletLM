@@ -42,6 +42,7 @@ baseline = {
     "use_mixer_gate": True,
     "mixer_gate_activation": "silu",
     "mixer_depth": 1,
+    "mixer_depth_stabilizers": False,
     "semantic_feedback": True,
     "semantic_feedback_cross_window": True,
     "learned_residual": True,
@@ -85,7 +86,8 @@ baseline = {
     "quantize_mixer_fine_bits": 2,
     "quantize_mlp_bits": 4,
     "quantize_lifting_bits": 16,
-    "quantize_embedding_bits": 8
+    "quantize_embedding_bits": 8,
+    "per_layer_embedding": False
 }
 '
 
@@ -120,20 +122,36 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# MIXER DEPTH SWEEP (epochs=1, mlp_expansion=1, all defaults)
+# PER-LAYER EMBEDDING (PLE)
 # =====================================================================
 
-# depth=1 is baseline (Run 4), no need to rerun
-run_with "Mixer depth: 2" "cfg['mixer_depth'] = 2"
-run_with "Mixer depth: 3" "cfg['mixer_depth'] = 3"
-run_with "Mixer depth: 5" "cfg['mixer_depth'] = 5"
+run_with "Per-layer embedding: true" "cfg['per_layer_embedding'] = True"
 
 # =====================================================================
-# MLP exp=50 + MEMORY (epochs=1, can sparse memory push past MLP ceiling?)
+# FwPKM PARAM-MATCHED TEST: is PKM+FwPKM stacking just more params?
 # =====================================================================
 
-run_with "MLP50+Memory: PKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384"
-run_with "MLP50+Memory: FwPKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+# FwPKM-1681 (389.46M) vs PKM+FwPKM-529 (388.37M) — near-identical params
+run_with "Memory: FwPKM only (1681 keys, param-matched)" "cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 1681"
+
+# =====================================================================
+# MIXER DEPTH + HIGHER LR
+# =====================================================================
+
+run_with "Mixer depth: 2, lr=0.02" "cfg['mixer_depth'] = 2; cfg['lr'] = 0.02"
+
+# =====================================================================
+# MIXER DEPTH STABILIZERS ABLATION
+# =====================================================================
+
+run_with "Mixer depth: 2, stabilizers=true" "cfg['mixer_depth'] = 2; cfg['mixer_depth_stabilizers'] = True"
+run_with "Mixer depth: 2, stabilizers=true, lr=0.02" "cfg['mixer_depth'] = 2; cfg['mixer_depth_stabilizers'] = True; cfg['lr'] = 0.02"
+run_with "Mixer depth: 5, stabilizers=true" "cfg['mixer_depth'] = 5; cfg['mixer_depth_stabilizers'] = True"
+
+# =====================================================================
+# REMAINING MLP50+MEMORY (skip PKM-16384 which NaN'd; continue from FwPKM)
+# =====================================================================
+
 run_with "MLP50+Memory: PKM+FwPKM large (16384)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_num_keys'] = 16384"
 run_with "MLP50+Memory: PKM+FwPKM default (529)" "cfg['mlp_expansion'] = 50; cfg['pkm_enabled'] = True; cfg['fwpkm_enabled'] = True"
 
