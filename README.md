@@ -49,7 +49,7 @@ Key config options:
 | `optimizer` | Adagrad | Adagrad or AdamW |
 | `amp_dtype` | fp16 | fp16 or bf16 |
 
-Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`notes/runs.md`](notes/runs.md).
+Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`runs.md`](runs.md).
 
 ### Generation
 
@@ -118,7 +118,7 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 
 ## Results
 
-See [`notes/runs.md`](notes/runs.md) for a full log of training runs, configs, and benchmark results.
+See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
 ## License
 

@@ -59,9 +59,9 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta (3ep) | Delta (1ep) | Notes |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------------|-------------|-------|
 | 6   | Baseline (3ep) | | [link](#run-6) | 1.1169 | 366.58M | 8.34h | 18,738 MiB | 2,179 MiB | | | |
-|     | `semantic_feedback` | false | [link](../logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | SF now slightly hurts to remove; confirms it helps at longer training |
-|     | `lifting_linear_only` | true | [link](../logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | Gap widened from 1ep; MLP lifting increasingly valuable |
-|     | `shared_lifting_weights` | true | [link](../logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | Gap narrowed slightly from 1ep; shared lifting adapts better with more training |
+|     | `semantic_feedback` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | SF now slightly hurts to remove; confirms it helps at longer training |
+|     | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | Gap widened from 1ep; MLP lifting increasingly valuable |
+|     | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | Gap narrowed slightly from 1ep; shared lifting adapts better with more training |
 
 > **LLO tradeoff note:** `lifting_linear_only=true` costs +0.017 BPB but saves 94M params (5.5 GB training VRAM) and 36% wall time. On VRAM-constrained hardware, this headroom can fund larger `mlp_expansion`, bigger batches, or longer training — any of which may recover more than 0.017 BPB. As absolute BPB decreases, the raw delta from LLO will likely shrink while the *relative* importance of each BPB point increases. The optimal choice depends on the VRAM budget: if the freed capacity enables a higher-impact change (e.g., mlp_expansion 1→2), LLO=true wins despite the direct cost. This is a key parameter-efficiency vs. expressivity tradeoff for the paper.
 
@@ -78,25 +78,25 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|--------|---------------|--------|------------|----------------|-------|
 |   | 1  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
-|   | 2  | [link](../logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1678 | 377.08M | 19,118 MiB | 2,239 MiB | -0.0073 |
-|   | 10 | [link](../logs/wikitext-103_2026-04-06_17-51-28/log.txt) | 1.1532 | 461.04M | 21,519 MiB | 2,719 MiB | -0.0219 |
-|   | 20 | [link](../logs/wikitext-103_2026-04-06_20-38-06/log.txt) | 1.1487 | 566.00M | 24,520 MiB | 3,320 MiB | -0.0264 |
-|   | 50 | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | -0.0342 |
+|   | 2  | [link](logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1678 | 377.08M | 19,118 MiB | 2,239 MiB | -0.0073 |
+|   | 10 | [link](logs/wikitext-103_2026-04-06_17-51-28/log.txt) | 1.1532 | 461.04M | 21,519 MiB | 2,719 MiB | -0.0219 |
+|   | 20 | [link](logs/wikitext-103_2026-04-06_20-38-06/log.txt) | 1.1487 | 566.00M | 24,520 MiB | 3,320 MiB | -0.0264 |
+|   | 50 | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | -0.0342 |
 
 ### Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
 |   | off | off | | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4, MLP only) |
-|   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
-|   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
-|   | off | on  | | 529 | [link](../logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
-|   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1713 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
-|   | on  | on  | 16384 | 16384 | [link](../logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1579 | 715.23M | 24,335 MiB | 4,173 MiB | PKM+FwPKM large; -0.0172 vs baseline |
-|   | off | off | | | [link](../logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
-|   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
-|   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
-|   | off | on  | | 1681 | [link](../logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1735 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
+|   | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
+|   | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
+|   | off | on  | | 529 | [link](logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
+|   | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1713 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
+|   | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1579 | 715.23M | 24,335 MiB | 4,173 MiB | PKM+FwPKM large; -0.0172 vs baseline |
+|   | off | off | | | [link](logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
+|   | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
+|   | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
+|   | off | on  | | 1681 | [link](logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1735 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
 
 #### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -105,19 +105,19 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 | Run | mixer_depth | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | 2 | [link](../logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
-|   | 3 | [link](../logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
-|   | 5 | [link](../logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
+|   | 2 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
+|   | 3 | [link](logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
+|   | 5 | [link](logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
 
 #### MLP exp=50 + memory (can sparse memory push past the MLP ceiling?)
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | off | off | | | [link](../logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
-|   | on  | off | 16384 | | [link](../logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
-|   | off | on  | | 16384 | [link](../logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1411 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
-|   | on  | on  | 16384 | 16384 | [link](../logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
-|   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1398 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
+|   | off | off | | | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
+|   | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
+|   | off | on  | | 16384 | [link](logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1411 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
+|   | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
+|   | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1398 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
 
 #### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -126,7 +126,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 | Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | false | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | true  | [link](../logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1742 | 366.59M | 18,898 MiB | 2,179 MiB | -0.0009 | +10,240 params; essentially free |
+|   | true  | [link](logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1742 | 366.59M | 18,898 MiB | 2,179 MiB | -0.0009 | +10,240 params; essentially free |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
@@ -134,8 +134,8 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 2 | 0.01 | [link](../logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
-|   | 2 | 0.02 | [link](../logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
+|   | 2 | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
+|   | 2 | 0.02 | [link](logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
 
 #### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
 
@@ -323,7 +323,7 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-02_11-53-11/` ([log](../logs/wikitext-103_2026-04-02_11-53-11/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-02_11-53-11/` ([log](logs/wikitext-103_2026-04-02_11-53-11/log.txt))
 
 **Description:** End-to-end pipeline test and first width scaling point. C = 64, mlp_expansion = 1, & epochs = 1.
 
@@ -420,7 +420,7 @@ Metrics: MeanLogP=-1.6903 | MeanH=5.88 | D1=0.529 | D2=0.857 | D3=0.953 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-03_10-22-17/` ([log](../logs/wikitext-103_2026-04-03_10-22-17/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-03_10-22-17/` ([log](logs/wikitext-103_2026-04-03_10-22-17/log.txt))
 
 **Description:** C = 128, mlp_expansion = 1, epochs = 1. Width scaling. LR = 0.01.
 
@@ -461,7 +461,7 @@ Metrics: MeanLogP=-1.4610 | MeanH=5.58 | D1=0.490 | D2=0.836 | D3=0.965 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-03_07-37-34/` ([log](../logs/wikitext-103_2026-04-03_07-37-34/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-03_07-37-34/` ([log](logs/wikitext-103_2026-04-03_07-37-34/log.txt))
 
 **Description:** C = 256, mlp_expansion = 1, epochs = 1. Width scaling. LR = 0.01.
 
@@ -504,7 +504,7 @@ Metrics: MeanLogP=-1.1437 | MeanH=3.59 | D1=0.607 | D2=0.906 | D3=0.963 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-03_04-51-07/` ([log](../logs/wikitext-103_2026-04-03_04-51-07/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-03_04-51-07/` ([log](logs/wikitext-103_2026-04-03_04-51-07/log.txt))
 
 **Description:** C = 512, mlp_expansion = 1, epochs = 1. Width scaling. LR = 0.01.
 
@@ -549,7 +549,7 @@ Metrics: MeanLogP=-1.1437 | MeanH=3.59 | D1=0.607 | D2=0.906 | D3=0.963 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-02_22-51-10/` ([log](../logs/wikitext-103_2026-04-02_22-51-10/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-02_22-51-10/` ([log](logs/wikitext-103_2026-04-02_22-51-10/log.txt))
 
 **Description:** C = 1024, mlp_expansion = 1, epochs = 1. Width scaling. LR = 0.005 (halved due to NaN at LR=0.01 and LR=0.02).
 
@@ -594,7 +594,7 @@ Metrics: MeanLogP=-1.3842 | MeanH=4.19 | D1=0.559 | D2=0.892 | D3=0.971 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-03_14-34-51/` ([log](../logs/wikitext-103_2026-04-03_14-34-51/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-03_14-34-51/` ([log](logs/wikitext-103_2026-04-03_14-34-51/log.txt))
 
 **Description:** C = 512, mlp_expansion = 1, epochs = 3. Ablation baseline.
 
@@ -649,7 +649,7 @@ Metrics: MeanLogP=-1.3999 | MeanH=4.32 | D1=0.607 | D2=0.933 | D3=0.992 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-03_22-59-40/` ([log](../logs/wikitext-103_2026-04-03_22-59-40/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-03_22-59-40/` ([log](logs/wikitext-103_2026-04-03_22-59-40/log.txt))
 
 **Description:** C = 512, mlp_expansion = 1, epochs = 5. No dropout. Overfit — best val at epoch 4, BPB worse than 3-epoch run.
 
@@ -703,7 +703,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-04_13-38-15/` ([log](../logs/wikitext-103_2026-04-04_13-38-15/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-04_13-38-15/` ([log](logs/wikitext-103_2026-04-04_13-38-15/log.txt))
 
 **Description:** C = 512, epochs = 1, `semantic_feedback` = false. Boolean ablation.
 
@@ -722,7 +722,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-04_16-31-53/` ([log](../logs/wikitext-103_2026-04-04_16-31-53/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-04_16-31-53/` ([log](logs/wikitext-103_2026-04-04_16-31-53/log.txt))
 
 **Description:** C = 512, epochs = 1, `semantic_feedback_cross_window` = false. Boolean ablation.
 
@@ -742,7 +742,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-04_19-12-31/` ([log](../logs/wikitext-103_2026-04-04_19-12-31/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-04_19-12-31/` ([log](logs/wikitext-103_2026-04-04_19-12-31/log.txt))
 
 **Description:** C = 512, epochs = 1, `learned_residual` = false. Boolean ablation.
 
@@ -762,7 +762,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-04_21-55-38/` ([log](../logs/wikitext-103_2026-04-04_21-55-38/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-04_21-55-38/` ([log](logs/wikitext-103_2026-04-04_21-55-38/log.txt))
 
 **Description:** C = 512, epochs = 1, `use_mixer_gate` = false. Boolean ablation.
 
@@ -782,7 +782,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-05_00-26-06/` ([log](../logs/wikitext-103_2026-04-05_00-26-06/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-05_00-26-06/` ([log](logs/wikitext-103_2026-04-05_00-26-06/log.txt))
 
 **Description:** C = 512, epochs = 1, `skip_proj_out` = true. Boolean ablation.
 
@@ -802,7 +802,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-05_03-05-29/` ([log](../logs/wikitext-103_2026-04-05_03-05-29/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-05_03-05-29/` ([log](logs/wikitext-103_2026-04-05_03-05-29/log.txt))
 
 **Description:** C = 512, epochs = 1, `shared_lifting_weights` = true. Boolean ablation.
 
@@ -822,7 +822,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-05_05-33-33/` ([log](../logs/wikitext-103_2026-04-05_05-33-33/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-05_05-33-33/` ([log](logs/wikitext-103_2026-04-05_05-33-33/log.txt))
 
 **Description:** C = 512, epochs = 1, `lifting_linear_only` = true. Boolean ablation.
 
@@ -842,7 +842,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Status:** Complete
 
-**Folder:** `logs/wikitext-103_2026-04-05_07-23-27/` ([log](../logs/wikitext-103_2026-04-05_07-23-27/log.txt))
+**Folder:** `logs/wikitext-103_2026-04-05_07-23-27/` ([log](logs/wikitext-103_2026-04-05_07-23-27/log.txt))
 
 **Description:** C = 512, epochs = 1, `tie_embedding_to_lm_head` = true. Boolean ablation.
 
