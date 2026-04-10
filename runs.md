@@ -71,11 +71,11 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta (3ep) | Delta (1ep) | Notes |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------------|-------------|-------|
 | 6   | Baseline (3ep) | | [link](#run-6) | 1.1169 | 366.58M | 8.34h | 18,738 MiB | 2,179 MiB | | | |
-| 16  | `semantic_feedback` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | SF now slightly hurts to remove; confirms it helps at longer training |
-| 17  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | Gap widened from 1ep; MLP lifting increasingly valuable |
-| 18  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | Gap narrowed slightly from 1ep; shared lifting adapts better with more training |
+| 16  | `semantic_feedback` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | SF true is better. |
+| 17  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | LLO true performs worse with more epochs. |
+| 18  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | SLW true performs better with more epochs. |
 
-> **LLO tradeoff note:** `lifting_linear_only=true` costs +0.017 BPB but saves 94M params (5.5 GB training VRAM) and 36% wall time. On VRAM-constrained hardware, this headroom can fund larger `mlp_expansion`, bigger batches, or longer training instead.
+> **Notes:** With epochs >= 3 `semantic_feedback=true` is best, as is `lifting_linear_only=false`. It's likely that at much higher epochs, `shared_lifting_weights=true` is best; the parameters, run time, and extreme VRAM savings (~1/2 at 3 epochs!) it saves could be better used elsewhere (larger MLP, more epochs, larger micro batch size, etc.).
 
 ### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1
 
