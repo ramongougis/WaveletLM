@@ -182,9 +182,11 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |-----|---------------|-------------|-----|-----|-----|--------|---------------|--------|------------|----------------|-------|
 |   | 1   | 1  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | L=1 baseline |
 |   | 100 | 1  | 0.01 | 4  | 4 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2469 | 119.18M | 4,324 MiB | 759 MiB | Massive MLP; -0.0708 vs L=1 baseline; 28min total |
-|   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4757 | 114.54M | 7,078 MiB | 719 MiB | MD=10; +0.1580 vs L=1 baseline; WORSE |
+|   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4757 | 114.54M | 7,078 MiB | 719 MiB | MD=10 no residuals; +0.1580 vs L=1 baseline; WORSE |
 |   | 1   | 10 | 0.02 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_18-42-34/log.txt) | NaN | 114.54M | — | — | — | Diverged step 4200 (LR=0.019) |
-|   | 1   | 10 | 0.01 | 8  | 2 | | | 114.54M | | | | MD=10 + residuals (mixer_depth_residuals=true) |
+|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | MD=2 at L=1; sweet spot at L=20, how about L=1? |
+|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | MD=2 + residuals |
+|   | 1   | 10 | 0.01 | 8  | 2 | | | 114.54M | | | | MD=10 + residuals |
 |   | 100 | 10 | 0.01 | 8  | 2 | | | | | | | Combine MLP width + mixer depth |
 |   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | PLE=true; embedding recall may matter more at L=1 |
 |   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | SF=false; semantic feedback is mostly self-referential at L=1 |

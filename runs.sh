@@ -127,6 +127,8 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
 # =====================================================================
 
+run_with "L=1, mixer_depth=2" "cfg['layers'] = 1; cfg['mixer_depth'] = 2"
+run_with "L=1, mixer_depth=2, residuals=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True"
 run_with "L=1, mixer_depth=10, residuals=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['mixer_depth_residuals'] = True"
 run_with "L=1, MLP=100, mixer_depth=10" "cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['mixer_depth'] = 10"
 run_with "L=1, mixer_depth=10, PLE=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['per_layer_embedding'] = True"
