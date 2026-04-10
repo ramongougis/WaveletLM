@@ -2,33 +2,33 @@
 
 ## Sweep Index
 
-1. [Width (C): epochs = 1, mlp_expansion = 1]
-2. [Epochs: C = 512, mlp_expansion = 1]
-3. [Boolean ablations part 1: C = 512, epochs = 1, mlp_expansion = 1]
-4. [Boolean ablations part 2: C = 512, epochs = 3, mlp_expansion = 1]
-5. [Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1]
-6. [MLP expansion: C = 512, epochs = 1, optimal booleans]
-7. [Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion]
-8. [Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion]
-9. [MLP expansion = 50 + memory]
-10. [Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1]
-11. [Mixer depth + higher LR]
-12. [Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init]
-13. [Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion]
-14. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512]
-15. [Low-rank factorization in spectral mixer]
-16. [Lifting hidden multiplier]
-17. [Learning rate]
-18. [Block size (context window)]
-19. [Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels]
-20. [Post-training quantization (PTQ): inference-only, applied to best checkpoint]
-21. [PTQ: Uniform quantization (all components same bits)]
-22. [PTQ: Per-scale mixed precision quantization]
-23. [PTQ: Component isolation (quantize one component; keep the rest at 16)]
-24. [Best PTQ combination]
-25. [Run Details](#run-details)
-26. [Run Details](#run-details)
-27. [Run Details](#run-details)
+1. [Width (C): epochs = 1, mlp_expansion = 1](#width-c-epochs--1-mlp_expansion--1)
+2. [Epochs: C = 512, mlp_expansion = 1](#epochs-c--512-mlp_expansion--1)
+3. [Boolean ablations part 1: C = 512, epochs = 1, mlp_expansion = 1](#boolean-ablations-part-1-c--512-epochs--1-mlp_expansion--1)
+4. [Boolean ablations part 2: C = 512, epochs = 3, mlp_expansion = 1](#boolean-ablations-part-2-c--512-epochs--3-mlp_expansion--1)
+5. [Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1](#best-boolean-ablations-combination-c512-epochs--3-mlp_expansion--1)
+6. [MLP expansion: C = 512, epochs = 1, optimal booleans](#mlp-expansion-c--512-epochs--1-optimal-booleans)
+7. [Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion](#memory-c--512-epochs--1-optimal-booleans--mlp_expansion)
+8. [Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion](#mixer-depth-c--512-epochs--1-optimal-booleans--mlp_expansion)
+9. [MLP expansion = 50 + memory](#mlp-expansion--50--memory)
+10. [Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1](#per-layer-embedding-ple-c--512-epochs--1-optimal-booleans--mlp_expansion--1)
+11. [Mixer depth + higher LR](#mixer-depth--higher-lr)
+12. [Mixer depth stabilizers ablation](#mixer-depth-stabilizers-ablation-alpha_d-beta_d-init-1d-scaled-mixer-init)
+13. [Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers-c--512-epochs--1-optimal-booleans--mlp_expansion)
+14. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
+15. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
+16. [Lifting hidden multiplier](#lifting-hidden-multiplier)
+17. [Learning rate](#learning-rate)
+18. [Block size (context window)](#block-size-context-window)
+19. [Dropout optimization](#dropout-optimization-c--512-5-epochs-optimal-booleans--mlp_expansion--layers--levels)
+20. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+21. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+22. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+23. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+24. [Best PTQ combination](#best-ptq-combination)
+25. [Section](link)
+26. [Section](link)
+27. [Section](link)
 
 ---
 
@@ -110,7 +110,7 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 | 30  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
 | 31  | off | on  | | 1681 | [link](logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1735 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
 
-#### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
+### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 Stacked spectral mixing within each block — adding depth to the per-scale gated transforms in Hadamard space without repeating wavelet/Hadamard passes. Each depth step: LN + gated linear + bias (no residual), final step omits LN/bias.
 
@@ -121,7 +121,7 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 | 33  | 3 | [link](logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
 | 34  | 5 | [link](logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
 
-#### MLP expansion = 50 + memory
+### MLP expansion = 50 + memory
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
@@ -131,7 +131,7 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 | 37  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
 | 38  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1398 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
 
-#### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1
+### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1
 
 Reintroduces original token embedding as a learned per-channel residual at each block. Learned gamma (C,) per layer, zero-initialized. +0.01M params total.
 
@@ -142,14 +142,14 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
-#### Mixer depth + higher LR
+### Mixer depth + higher LR
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
 | 32  | 2 | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
 | 40  | 2 | 0.02 | [link](logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
 
-#### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
+### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
 
 | Run | mixer_depth | stabilizers | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
@@ -180,7 +180,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 9 | | | | | | Baseline (default = log2(block_size=512)) |
 |   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
 
-#### Low-rank factorization in spectral mixer
+### Low-rank factorization in spectral mixer
 
 | Run | low_rank | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|----------|--------|---------------|--------|------------|----------------|-------|-------|
@@ -188,7 +188,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 4  | | | | | | | Adds U·V^T perturbation (~0.8M total) |
 |   | 16 | | | | | | | Higher rank perturbation |
 
-#### Lifting hidden multiplier
+### Lifting hidden multiplier
 
 | Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
@@ -196,7 +196,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 2 | | | | | | | Wider predict/update MLPs in wavelet lifting |
 |   | 4 | | | | | | | |
 
-#### Learning rate
+### Learning rate
 
 | Run | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-----|--------|---------------|--------|------------|----------------|-------|-------|
@@ -204,7 +204,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 0.01  | | | | | | | Baseline |
 |   | 0.02  | | | | | | | Faster; used for C=64/128/256 in width sweep |
 
-#### Block size (context window)
+### Block size (context window)
 
 | Run | block_size | levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|------------|--------|--------|---------------|--------|------------|----------------|-------|-------|
