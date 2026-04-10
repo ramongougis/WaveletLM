@@ -128,8 +128,10 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # =====================================================================
 
 run_with "L=1, MD=2, residuals, C=1024" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 1024"
+run_with "L=1, MD=2, residuals, C=2048" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 2048"
 run_with "L=1, MD=2, residuals, block=2048, levels=11" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['block_size'] = 2048; cfg['levels'] = 11"
 run_with "L=1, MD=2, resid, PLE, C=1024, block=2048, levels=11, MLP=100" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 1024; cfg['block_size'] = 2048; cfg['levels'] = 11; cfg['mlp_expansion'] = 100"
+run_with "L=1, MD=2, resid, PLE, C=2048, block=2048, levels=11, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['block_size'] = 2048; cfg['levels'] = 11; cfg['mlp_expansion'] = 20"
 
 # =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
