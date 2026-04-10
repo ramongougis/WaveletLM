@@ -2,21 +2,33 @@
 
 ## Sweep Index
 
-1. [Width (C): 1 epoch, exp=1](#width-c--1-epoch-exp1)
-2. [Epochs: C=512, exp=1](#epochs--c256-exp1)
-3. [Boolean ablations: C=512, 1 epoch, exp=1](#boolean-ablations--c512-1-epoch-exp1) (includes 3-epoch retests)
-4. [MLP expansion: C=512, 3 epochs, optimal booleans](#mlp-expansion--c512-3-epochs-optimal-booleans)
-5. [Memory (PKM/FwPKM): C=512, 3 epochs, optimal booleans + mlp_expansion](#memory--c512-3-epochs-optimal-booleans--mlp_expansion)
-6. [Layers: C=512, 3 epochs, optimal booleans + mlp_expansion](#layers--c512-3-epochs-optimal-booleans--mlp_expansion)
-7. [Levels: C=512, 3 epochs, optimal booleans + mlp_expansion + layers](#levels--c512-3-epochs-optimal-booleans--mlp_expansion--layers)
-8. [Planned: medium priority](#planned--medium-priority)
-9. [Dropout optimization](#dropout-optimization--c--512-3-epochs-optimal-booleans--mlp_expansion--layers--levels)
-10. [Post-training quantization (PTQ)](#post-training-quantization-ptq--inference-only-applied-to-best-checkpoint)
-11. [Planned: lower priority](#planned--lower-priority-fine-tuning)
-12. [Seed variance: best EXARCH config](#seed-variance--best-exarch-config)
-13. [Planned: dataset comparisons](#planned--dataset-comparisons-best-config-feasible-epochs)
-14. [Planned: model comparisons](#planned--model-comparisons-wikitext-103-matched-compute)
-15. [Run Details](#run-details)
+1. [Width (C): epochs = 1, mlp_expansion = 1]
+2. [Epochs: C = 512, mlp_expansion = 1]
+3. [Boolean ablations part 1: C = 512, epochs = 1, mlp_expansion = 1]
+4. [Boolean ablations part 2: C = 512, epochs = 3, mlp_expansion = 1]
+5. [Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1]
+6. [MLP expansion: C = 512, epochs = 1, optimal booleans]
+7. [Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion]
+8. [Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion]
+9. [MLP expansion = 50 + memory]
+10. [Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1]
+11. [Mixer depth + higher LR]
+12. [Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init]
+13. [Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion]
+14. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512]
+15. [Low-rank factorization in spectral mixer]
+16. [Lifting hidden multiplier]
+17. [Learning rate]
+18. [Block size (context window)]
+19. [Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels]
+20. [Post-training quantization (PTQ): inference-only, applied to best checkpoint]
+21. [PTQ: Uniform quantization (all components same bits)]
+22. [PTQ: Per-scale mixed precision quantization]
+23. [PTQ: Component isolation (quantize one component; keep the rest at 16)]
+24. [Best PTQ combination]
+25. [Run Details](#run-details)
+26. [Run Details](#run-details)
+27. [Run Details](#run-details)
 
 ---
 
@@ -87,16 +99,16 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | off | off | | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4, MLP only) |
-|   | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
-|   | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
-|   | off | on  | | 529 | [link](logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
-|   | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1713 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
-|   | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1579 | 715.23M | 24,335 MiB | 4,173 MiB | PKM+FwPKM large; -0.0172 vs baseline |
-|   | off | off | | | [link](logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
-|   | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
-|   | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
-|   | off | on  | | 1681 | [link](logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1735 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
+| 4   | off | off | | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4, MLP only) |
+| 23  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
+| 24  | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1625 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
+| 25  | off | on  | | 529 | [link](logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1726 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
+| 26  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1713 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
+| 27  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1579 | 715.23M | 24,335 MiB | 4,173 MiB | PKM+FwPKM large; -0.0172 vs baseline |
+| 28  | off | off | | | [link](logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
+| 29  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
+| 30  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
+| 31  | off | on  | | 1681 | [link](logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1735 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
 
 #### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -104,48 +116,48 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 
 | Run | mixer_depth | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | 2 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
-|   | 3 | [link](logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
-|   | 5 | [link](logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
+| 4   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
+| 32  | 2 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
+| 33  | 3 | [link](logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1718 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
+| 34  | 5 | [link](logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
 
-#### MLP exp=50 + memory (can sparse memory push past the MLP ceiling?)
+#### MLP expansion = 50 + memory
 
 | Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | off | off | | | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
-|   | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
-|   | off | on  | | 16384 | [link](logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1411 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
-|   | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
-|   | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1398 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
+| 22  | off | off | | | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
+| 35  | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
+| 36  | off | on  | | 16384 | [link](logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1411 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
+| 37  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1385 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
+| 38  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1398 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
 
-#### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion
+#### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1
 
 Reintroduces original token embedding as a learned per-channel residual at each block. Learned gamma (C,) per layer, zero-initialized. +0.01M params total.
 
 | Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | false | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | true  | [link](logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1742 | 366.59M | 18,898 MiB | 2,179 MiB | -0.0009 | +10,240 params; essentially free |
+| 4   | false | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
+| 39  | true  | [link](logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1742 | 366.59M | 18,898 MiB | 2,179 MiB | -0.0009 | +10,240 params; essentially free |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
-#### Mixer depth + higher LR: can LayerNorm-stabilized depth tolerate more aggressive learning?
+#### Mixer depth + higher LR
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 2 | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
-|   | 2 | 0.02 | [link](logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
+| 32  | 2 | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
+| 40  | 2 | 0.02 | [link](logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
 
 #### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
 
 | Run | mixer_depth | stabilizers | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 2 | false | 0.01 | | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep (already complete) |
-|   | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1719 | 471.74M | 23,428 MiB | 2,781 MiB | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
-|   | 2 | true  | 0.02 | | | 471.74M | | | | Stabilizers + 2x LR |
-|   | 5 | false | 0.01 | | NaN | 787.24M | 39,657 MiB | — | — | Diverged step 3600 (already complete) |
-|   | 5 | true  | 0.01 | | | 787.24M | | | | Can stabilizers save depth=5? |
+| 32  | 2 | false | 0.01 | | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
+| 41  | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1719 | 471.74M | 23,428 MiB | 2,781 MiB | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
+| 42  | 2 | true  | 0.02 | | | 471.74M | | | | Stabilizers + 2x LR |
+| 43  | 5 | false | 0.01 | | NaN | 787.24M | 39,657 MiB | — | — | Diverged step 3600 (already complete) |
+| 44  | 5 | true  | 0.01 | | | 787.24M | | | | Can stabilizers save depth=5? |
 
 ### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -159,7 +171,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 20 | | | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
 |   | 30 | | | | | | |
 
-### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512 & stays constant
+### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512
 
 | Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
@@ -167,8 +179,6 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 5 | | | | | | |
 |   | 9 | | | | | | Baseline (default = log2(block_size=512)) |
 |   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
-
-### Medium priority sweeps: C = 512, epochs = 1
 
 #### Low-rank factorization in spectral mixer
 
@@ -202,9 +212,9 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |   | 512  | 9 | | | | | | | Baseline |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
 
-### Dropout optimization: C = 512, 3 epochs, optimal booleans + mlp_expansion + layers + levels
+### Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels
 
-Starting from EXARCH-research's tuned dropout values (jointly optimized at 10 epochs). Testing at 3 epochs first; if overfitting persists, scale all values up conservatively.
+Starting from EXARCH-research's tuned dropout values (jointly optimized at 10 epochs). Testing at 5 epochs, but comparing against better earlier 3-epoch baseline (which was better than 5-epochs earlier due to having no dropout).
 
 | Run | Dropout values | Epochs | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Train/val gap | Notes |
 |-----|----------------|--------|--------|---------------|------------|----------------|---------------|-------|
@@ -218,7 +228,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 
 **Baseline checkpoint:** best trained model from sweeps above (TBD)
 
-#### Uniform quantization (all components same bits)
+#### PTQ: Uniform quantization (all components same bits)
 
 | Run | Bits | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|------|--------|---------------|------------------|----------------|-------|-------|
@@ -226,7 +236,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 |   | 8 | | | | | | Uniform INT8 |
 |   | 4 | | | | | | Uniform INT4 — stress test |
 
-#### Per-scale mixed precision (EXARCH's unique advantage)
+#### PTQ: Per-scale mixed precision quantization
 
 | Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
@@ -237,7 +247,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 |   | 4 | 4 | 2 | 4 | 8 | 4 | | | | | | Aggressive — minimum viable |
 |   | 8 | 4 | 2 | 4 | 16 | 4 | | | | | | Aggressive embedding |
 
-#### Component isolation (quantize one component, keep rest at 16)
+#### PTQ: Component isolation (quantize one component; keep the rest at 16)
 
 | Run | Component quantized | Bits | Folder | BPB (sliding) | Delta | Notes |
 |-----|-------------------|------|--------|---------------|-------|-------|
