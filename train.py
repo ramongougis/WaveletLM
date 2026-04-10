@@ -680,6 +680,16 @@ def train():
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
 
+    # Log mixer depth stabilizer values if enabled
+    if config.get('mixer_depth_stabilizers', False) and config.get('mixer_depth', 1) > 1:
+        logger.log(f"\n[Mixer Depth Stabilizers]")
+        for i, layer in enumerate(model.layers):
+            if hasattr(layer, 'mixer_depth_alphas'):
+                for d in range(len(layer.mixer_depth_alphas)):
+                    a = layer.mixer_depth_alphas[d].item()
+                    b = layer.mixer_depth_betas[d].item()
+                    logger.log(f"  Layer {i}, depth {d}: alpha={a:.4f}, beta={b:.4f}")
+
     # Tear down benchmark model entirely and rebuild fresh for generation
     # This ensures inference VRAM matches generate.py (clean CUDA state)
     del model, results_full, results_sw

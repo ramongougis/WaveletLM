@@ -96,7 +96,7 @@ All defaults are optimal. No boolean change improved BPB at 3 epochs. Note that 
 |   | off | off | | | [link](../logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2003 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
 |   | on  | off | 529 | | [link](../logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1988 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
 |   | on  | on  | 529 | 529 | [link](../logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1960 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
-|   | off | on  | | 1681 | | | 389.46M | | | FwPKM param-matched to PKM+FwPKM-529 (388.37M); tests stacking vs. just more params |
+|   | off | on  | | 1681 | [link](../logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1735 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
 
 #### Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
@@ -126,7 +126,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 | Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | false | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | true  | | | 366.59M | | | | +10,240 params |
+|   | true  | [link](../logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1742 | 366.59M | 18,898 MiB | 2,179 MiB | -0.0009 | +10,240 params; essentially free |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
@@ -134,8 +134,8 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 2 | 0.01 | | | 471.74M | | | | From depth sweep above |
-|   | 2 | 0.02 | | | 471.74M | | | | 2x LR; LN should absorb magnitude spikes |
+|   | 2 | 0.01 | [link](../logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
+|   | 2 | 0.02 | [link](../logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
 
 #### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
 
