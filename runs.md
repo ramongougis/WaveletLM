@@ -166,11 +166,39 @@ NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below
 |   | 5 | 0.004 | [link](logs/wikitext-103_2026-04-10_07-59-36/log.txt) | 1.2897 | 787.24M | 39,657 MiB | 4,584 MiB | +0.1146 | Stable but severely undertrained; LR too low for 1 epoch |
 |   | 10 | 0.001 | | | 1313.06M | | | | MBS=4, GA=4 to fit in VRAM; extreme depth stress test |
 
-### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
+### Layers = 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | 1  | | | | | | |
+|   | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | 17min train; 46.6 tok/s gen |
+
+> Note: The speed and results are so good that it warrants further testing various configurations of layers = 1 immediately.
+
+### Layers = 1 ablations
+
+L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min. Testing mixer depth, MLP width, and large batch sizes as substitutes for model layers.
+
+| Run | mlp_expansion | mixer_depth | lr | MBS | GA | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---------------|-------------|-----|-----|-----|--------|---------------|--------|------------|----------------|-------|
+|   | 1   | 1  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | L=1 baseline |
+|   | 100 | 1  | 0.01 | 4  | 4 | | | ~2.7B | | | | Massive MLP width |
+|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | Mixer depth as layer substitute |
+|   | 1   | 10 | 0.02 | 8  | 2 | | | | | | | Higher LR, short gradient path |
+|   | 1   | 20 | 0.02 | 8  | 2 | | | | | | | MD=20 vs L=20 comparison |
+|   | 1   | 10 | 0.04 | 32 | 1 | | | | | | | Large batch (EBS=32); LR scaled with sqrt(batch) |
+|   | 1   | 20 | 0.04 | 32 | 1 | | | | | | | Large batch + deep mixer |
+|   | 1   | 10 | 0.08 | 64 | 1 | | | | | | | Max batch; aggressive LR |
+|   | 10  | 10 | 0.01 | 8  | 2 | | | | | | | Combine MLP width + mixer depth |
+|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | PLE=true; embedding recall may matter more at L=1 |
+|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | SF=false; semantic feedback is mostly self-referential at L=1 |
+|   | 1   | 10 | 0.02 | 8  | 2 | | | | | | | C=1024; wider embedding, double frequency resolution |
+|   | 1   | 10 | 0.02 | 8  | 2 | | | | | | | block_size=2048, levels=11; max context, cheap at L=1 |
+
+### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
+
+| Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | 17min train; 46.6 tok/s gen |
 |   | 4  | | | | | | |
 |   | 10  | | | | | | |
 |   | 15  | | | | | | |
@@ -218,18 +246,6 @@ NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below
 |   | 256  | 8 | | | | | | | Half context; levels=log2(256) |
 |   | 512  | 9 | | | | | | | Baseline |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
-
-### Single-layer scaling: L=1, what compensates for lost depth?
-
-With L=1 at C=512, the model uses ~5.7 GB VRAM, leaving ~43 GB headroom. Testing whether massive MLP width or mixer depth can substitute for model layers.
-
-| Run | layers | mlp_expansion | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
-|-----|--------|---------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 1 | 1   | 1  | 0.01 | | | 67.22M | | | | From layers sweep |
-|   | 1 | 100 | 1  | 0.01 | | | ~2.7B | | | | Absurdly wide MLP; MBS=4/GA=4 if needed |
-|   | 1 | 1   | 10 | 0.01 | | | | | | | Mixer depth as layer substitute; should be stable at L=1 |
-|   | 1 | 1   | 10 | 0.02 | | | | | | | Higher LR may be safe with short gradient path |
-|   | 1 | 1   | 20 | 0.02 | | | | | | | Higher LR may be safe with short gradient path |
 
 ### Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels
 

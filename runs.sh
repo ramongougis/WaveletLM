@@ -122,6 +122,23 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
+# SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
+# =====================================================================
+
+run_with "L=1, MLP exp=100" "cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+run_with "L=1, mixer_depth=10" "cfg['layers'] = 1; cfg['mixer_depth'] = 10"
+run_with "L=1, mixer_depth=10, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['lr'] = 0.02"
+run_with "L=1, mixer_depth=20, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 20; cfg['lr'] = 0.02"
+run_with "L=1, mixer_depth=10, lr=0.04, MBS=32" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['lr'] = 0.04; cfg['micro_batch_size'] = 32; cfg['grad_accum'] = 1"
+run_with "L=1, mixer_depth=20, lr=0.04, MBS=32" "cfg['layers'] = 1; cfg['mixer_depth'] = 20; cfg['lr'] = 0.04; cfg['micro_batch_size'] = 32; cfg['grad_accum'] = 1"
+run_with "L=1, mixer_depth=10, lr=0.08, MBS=64" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['lr'] = 0.08; cfg['micro_batch_size'] = 64; cfg['grad_accum'] = 1"
+run_with "L=1, MLP=10, mixer_depth=10" "cfg['layers'] = 1; cfg['mlp_expansion'] = 10; cfg['mixer_depth'] = 10"
+run_with "L=1, mixer_depth=10, PLE=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['per_layer_embedding'] = True"
+run_with "L=1, mixer_depth=10, SF=false" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['semantic_feedback'] = False"
+run_with "L=1, mixer_depth=10, C=1024, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['C'] = 1024; cfg['lr'] = 0.02"
+run_with "L=1, mixer_depth=10, block=2048, levels=11, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['block_size'] = 2048; cfg['levels'] = 11; cfg['lr'] = 0.02"
+
+# =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
 # =====================================================================
 
@@ -160,15 +177,6 @@ run_with "LR: 0.02" "cfg['lr'] = 0.02"
 # Block size (adjust levels to match)
 run_with "Block size: 256, levels=8" "cfg['block_size'] = 256; cfg['levels'] = 8"
 run_with "Block size: 1024, levels=10" "cfg['block_size'] = 1024; cfg['levels'] = 10"
-
-# =====================================================================
-# SINGLE-LAYER SCALING (L=1, testing width and mixer depth as substitutes)
-# =====================================================================
-
-run_with "L=1, MLP exp=100" "cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
-run_with "L=1, mixer_depth=10" "cfg['layers'] = 1; cfg['mixer_depth'] = 10"
-run_with "L=1, mixer_depth=10, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['lr'] = 0.02"
-run_with "L=1, mixer_depth=20, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 20; cfg['lr'] = 0.02"
 
 # =====================================================================
 # RESET to baseline after all runs
