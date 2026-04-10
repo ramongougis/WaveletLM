@@ -181,14 +181,14 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 | Run | mlp_expansion | mixer_depth | lr | MBS | GA | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|-------------|-----|-----|-----|--------|---------------|--------|------------|----------------|-------|
 |   | 1   | 1  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | L=1 baseline |
-|   | 100 | 1  | 0.01 | 4  | 4 | | | ~2.7B | | | | Massive MLP width |
+|   | 100 | 1  | 0.01 | 4  | 4 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2469 | 119.18M | 4,324 MiB | 759 MiB | Massive MLP; -0.0708 vs L=1 baseline; 28min total |
 |   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | Mixer depth as layer substitute |
 |   | 1   | 10 | 0.02 | 8  | 2 | | | | | | | Higher LR, short gradient path |
 |   | 1   | 20 | 0.02 | 8  | 2 | | | | | | | MD=20 vs L=20 comparison |
 |   | 1   | 10 | 0.04 | 32 | 1 | | | | | | | Large batch (EBS=32); LR scaled with sqrt(batch) |
 |   | 1   | 20 | 0.04 | 32 | 1 | | | | | | | Large batch + deep mixer |
 |   | 1   | 10 | 0.08 | 64 | 1 | | | | | | | Max batch; aggressive LR |
-|   | 10  | 10 | 0.01 | 8  | 2 | | | | | | | Combine MLP width + mixer depth |
+|   | 100 | 10 | 0.01 | 8  | 2 | | | | | | | Combine MLP width + mixer depth |
 |   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | PLE=true; embedding recall may matter more at L=1 |
 |   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | SF=false; semantic feedback is mostly self-referential at L=1 |
 |   | 1   | 10 | 0.02 | 8  | 2 | | | | | | | C=1024; wider embedding, double frequency resolution |
