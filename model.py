@@ -674,6 +674,7 @@ class ExarchBlock(nn.Module):
         fwpkm_heads: int = 1,
         mixer_depth: int = 1,
         mixer_depth_stabilizers: bool = False,
+        mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
     ):
         super().__init__()
@@ -735,6 +736,7 @@ class ExarchBlock(nn.Module):
         else:
             # Depth > 1: intermediate steps get LN + bias, final step gets neither
             self.mixer_depth_stabilizers = mixer_depth_stabilizers
+            self.mixer_depth_residuals = mixer_depth_residuals
             self.mixer_depth_norms = nn.ModuleList([
                 nn.ModuleList([nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)])
                 for _ in range(mixer_depth - 1)
@@ -883,18 +885,18 @@ class ExarchBlock(nn.Module):
                 for s in range(S):
                     Xs = mixed_spec[:, :, s, :]
                     if d < self.mixer_depth - 1:
-                        # Intermediate: LN + mixer(+bias), no residual
+                        # Intermediate: LN + mixer(+bias)
                         Xs_normed = self.mixer_depth_norms[d][s](Xs)
                         if self.mixer_depth_stabilizers:
                             Xs_normed = self.mixer_depth_betas[d] * Xs_normed
                         Ys = depth_mixers[s](Xs_normed)
                         if self.mixer_depth_stabilizers:
                             Ys = self.mixer_depth_alphas[d] * Ys
-                        mixed_by_scale.append(Ys)
+                        mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
                     else:
-                        # Final: raw mixer, no LN, no bias, no residual
+                        # Final: raw mixer, no LN, no bias
                         Ys = depth_mixers[s](Xs)
-                        mixed_by_scale.append(Ys)
+                        mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
                 mixed_spec = torch.stack(mixed_by_scale, dim=2)
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
@@ -1049,6 +1051,7 @@ class ExarchLM(nn.Module):
                 fwpkm_heads=config.get("fwpkm_heads", 1),
                 mixer_depth=config.get("mixer_depth", 1),
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
+                mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
             )
             for _ in range(L)
