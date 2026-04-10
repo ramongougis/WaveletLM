@@ -75,7 +75,7 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 | 17  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | Gap widened from 1ep; MLP lifting increasingly valuable |
 | 18  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | Gap narrowed slightly from 1ep; shared lifting adapts better with more training |
 
-> **LLO tradeoff note:** `lifting_linear_only=true` costs +0.017 BPB but saves 94M params (5.5 GB training VRAM) and 36% wall time. On VRAM-constrained hardware, this headroom can fund larger `mlp_expansion`, bigger batches, or longer training — any of which may recover more than 0.017 BPB. As absolute BPB decreases, the raw delta from LLO will likely shrink while the *relative* importance of each BPB point increases. The optimal choice depends on the VRAM budget: if the freed capacity enables a higher-impact change (e.g., mlp_expansion 1→2), LLO=true wins despite the direct cost. This is a key parameter-efficiency vs. expressivity tradeoff for the paper.
+> **LLO tradeoff note:** `lifting_linear_only=true` costs +0.017 BPB but saves 94M params (5.5 GB training VRAM) and 36% wall time. On VRAM-constrained hardware, this headroom can fund larger `mlp_expansion`, bigger batches, or longer training instead.
 
 ### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1
 
