@@ -155,9 +155,16 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 |-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
 | 32  | 2 | false | 0.01 | | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
 | 41  | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1719 | 471.74M | 23,428 MiB | 2,781 MiB | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
-| 42  | 2 | true  | 0.02 | | | 471.74M | | | | Stabilizers + 2x LR |
-| 43  | 5 | false | 0.01 | | NaN | 787.24M | 39,657 MiB | — | — | Diverged step 3600 (already complete) |
-| 44  | 5 | true  | 0.01 | | | 787.24M | | | | Can stabilizers save depth=5? |
+| 42  | 2 | true  | 0.02 | [link](logs/wikitext-103_2026-04-10_07-14-48/log.txt) | NaN | 471.74M | — | — | — | Diverged step 1800 (LR=0.008); stabilizers made it worse |
+
+### Mixer depth + lower LR: can reduced LR stabilize deeper mixers?
+
+NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below this boundary.
+
+| Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 5 | 0.004 | | | 787.24M | | | | Peak LR well below 0.008 NaN threshold |
+|   | 10 | 0.001 | | | 1313.06M | | | | MBS=4, GA=4 to fit in VRAM; extreme depth stress test |
 
 ### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
 

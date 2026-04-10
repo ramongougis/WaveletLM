@@ -122,31 +122,11 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# PER-LAYER EMBEDDING (PLE)
+# MIXER DEPTH + LOWER LR (peak LR below 0.008 NaN threshold)
 # =====================================================================
 
-run_with "Per-layer embedding: true" "cfg['per_layer_embedding'] = True"
-
-# =====================================================================
-# FwPKM PARAM-MATCHED TEST: is PKM+FwPKM stacking just more params?
-# =====================================================================
-
-# FwPKM-1681 (389.46M) vs PKM+FwPKM-529 (388.37M) — near-identical params
-run_with "Memory: FwPKM only (1681 keys, param-matched)" "cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 1681"
-
-# =====================================================================
-# MIXER DEPTH + HIGHER LR
-# =====================================================================
-
-run_with "Mixer depth: 2, lr=0.02" "cfg['mixer_depth'] = 2; cfg['lr'] = 0.02"
-
-# =====================================================================
-# MIXER DEPTH STABILIZERS ABLATION
-# =====================================================================
-
-run_with "Mixer depth: 2, stabilizers=true" "cfg['mixer_depth'] = 2; cfg['mixer_depth_stabilizers'] = True"
-run_with "Mixer depth: 2, stabilizers=true, lr=0.02" "cfg['mixer_depth'] = 2; cfg['mixer_depth_stabilizers'] = True; cfg['lr'] = 0.02"
-run_with "Mixer depth: 5, stabilizers=true" "cfg['mixer_depth'] = 5; cfg['mixer_depth_stabilizers'] = True"
+run_with "Mixer depth: 5, lr=0.004" "cfg['mixer_depth'] = 5; cfg['lr'] = 0.004"
+run_with "Mixer depth: 10, lr=0.001" "cfg['mixer_depth'] = 10; cfg['lr'] = 0.001; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
 
 # =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
