@@ -126,7 +126,6 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # =====================================================================
 
 # layers=20 is baseline (Run 4), no need to rerun
-run_with "Layers: 1" "cfg['layers'] = 1"
 run_with "Layers: 4" "cfg['layers'] = 4"
 run_with "Layers: 10" "cfg['layers'] = 10"
 run_with "Layers: 15" "cfg['layers'] = 15"
@@ -161,6 +160,15 @@ run_with "LR: 0.02" "cfg['lr'] = 0.02"
 # Block size (adjust levels to match)
 run_with "Block size: 256, levels=8" "cfg['block_size'] = 256; cfg['levels'] = 8"
 run_with "Block size: 1024, levels=10" "cfg['block_size'] = 1024; cfg['levels'] = 10"
+
+# =====================================================================
+# SINGLE-LAYER SCALING (L=1, testing width and mixer depth as substitutes)
+# =====================================================================
+
+run_with "L=1, MLP exp=100" "cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+run_with "L=1, mixer_depth=10" "cfg['layers'] = 1; cfg['mixer_depth'] = 10"
+run_with "L=1, mixer_depth=10, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['lr'] = 0.02"
+run_with "L=1, mixer_depth=20, lr=0.02" "cfg['layers'] = 1; cfg['mixer_depth'] = 20; cfg['lr'] = 0.02"
 
 # =====================================================================
 # RESET to baseline after all runs

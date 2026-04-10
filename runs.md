@@ -219,6 +219,18 @@ NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below
 |   | 512  | 9 | | | | | | | Baseline |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
 
+### Single-layer scaling: L=1, what compensates for lost depth?
+
+With L=1 at C=512, the model uses ~5.7 GB VRAM, leaving ~43 GB headroom. Testing whether massive MLP width or mixer depth can substitute for model layers.
+
+| Run | layers | mlp_expansion | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|--------|---------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 1 | 1   | 1  | 0.01 | | | 67.22M | | | | From layers sweep |
+|   | 1 | 100 | 1  | 0.01 | | | ~2.7B | | | | Absurdly wide MLP; MBS=4/GA=4 if needed |
+|   | 1 | 1   | 10 | 0.01 | | | | | | | Mixer depth as layer substitute; should be stable at L=1 |
+|   | 1 | 1   | 10 | 0.02 | | | | | | | Higher LR may be safe with short gradient path |
+|   | 1 | 1   | 20 | 0.02 | | | | | | | Higher LR may be safe with short gradient path |
+
 ### Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels
 
 Starting from EXARCH-research's tuned dropout values (jointly optimized at 10 epochs). Testing at 5 epochs, but comparing against better earlier 3-epoch baseline (which was better than 5-epochs earlier due to having no dropout).
