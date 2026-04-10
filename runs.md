@@ -184,14 +184,16 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |   | 100 | 1  | 0.01 | 4  | 4 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2469 | 119.18M | 4,324 MiB | 759 MiB | Massive MLP; -0.0708 vs L=1 baseline; 28min total |
 |   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4757 | 114.54M | 7,078 MiB | 719 MiB | MD=10 no residuals; +0.1580 vs L=1 baseline; WORSE |
 |   | 1   | 10 | 0.02 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_18-42-34/log.txt) | NaN | 114.54M | — | — | — | Diverged step 4200 (LR=0.019) |
-|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | MD=2 at L=1; sweet spot at L=20, how about L=1? |
-|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | MD=2 + residuals |
-|   | 1   | 10 | 0.01 | 8  | 2 | | | 114.54M | | | | MD=10 + residuals |
-|   | 100 | 10 | 0.01 | 8  | 2 | | | | | | | Combine MLP width + mixer depth |
-|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | PLE=true; embedding recall may matter more at L=1 |
-|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | SF=false; semantic feedback is mostly self-referential at L=1 |
-|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | C=1024; wider embedding, double frequency resolution |
-|   | 1   | 10 | 0.01 | 8  | 2 | | | | | | | block_size=2048, levels=11; max context, cheap at L=1 |
+|   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_19-29-57/log.txt) | 1.3035 | 72.48M | 4,915 MiB | 478 MiB | MD=2 no residuals; -0.0142 vs L=1 baseline |
+|   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_19-49-29/log.txt) | 1.2924 | 72.48M | 4,915 MiB | 478 MiB | MD=2 + residuals; -0.0253 vs L=1 baseline |
+|   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_20-10-24/log.txt) | 1.2936 | 114.54M | 7,078 MiB | 719 MiB | MD=10 + residuals; -0.0241 vs L=1 baseline |
+|   | 100 | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_20-51-04/log.txt) | 1.5202 | 166.50M | 8,564 MiB | 1,041 MiB | MLP=100 + MD=10 no residuals; WORSE than either alone |
+|   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4391 | 114.54M | 7,082 MiB | 719 MiB | PLE=true; still worse than baseline (MD=10 no resid dominates) |
+|   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | SF=false; NaN — SF provides critical stability at L=1 |
+|   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-48-20/log.txt) | NaN | 354.92M | — | — | — | C=1024, MD=10 no resid; NaN step 4500 (LR=0.01) |
+|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | C=1024, residuals; clean comparison vs MD=2+resid at C=512 |
+|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | block_size=2048, levels=11, residuals; max context at L=1 |
+|   | 100 | 2  | 0.01 | 8  | 2 | | | | | | | (Potentially) best L=1 combo: C=1024, block=2048, levels=11, PLE, resid, MLP=100 |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 

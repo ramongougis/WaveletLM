@@ -127,14 +127,9 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
 # =====================================================================
 
-run_with "L=1, mixer_depth=2" "cfg['layers'] = 1; cfg['mixer_depth'] = 2"
-run_with "L=1, mixer_depth=2, residuals=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True"
-run_with "L=1, mixer_depth=10, residuals=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['mixer_depth_residuals'] = True"
-run_with "L=1, MLP=100, mixer_depth=10" "cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['mixer_depth'] = 10"
-run_with "L=1, mixer_depth=10, PLE=true" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['per_layer_embedding'] = True"
-run_with "L=1, mixer_depth=10, SF=false" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['semantic_feedback'] = False"
-run_with "L=1, mixer_depth=10, C=1024" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['C'] = 1024"
-run_with "L=1, mixer_depth=10, block=2048, levels=11" "cfg['layers'] = 1; cfg['mixer_depth'] = 10; cfg['block_size'] = 2048; cfg['levels'] = 11"
+run_with "L=1, MD=2, residuals, C=1024" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 1024"
+run_with "L=1, MD=2, residuals, block=2048, levels=11" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['block_size'] = 2048; cfg['levels'] = 11"
+run_with "L=1, MD=2, resid, PLE, C=1024, block=2048, levels=11, MLP=100" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 1024; cfg['block_size'] = 2048; cfg['levels'] = 11; cfg['mlp_expansion'] = 100"
 
 # =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
