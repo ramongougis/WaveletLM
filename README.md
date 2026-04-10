@@ -10,7 +10,7 @@
 
 <br>
 
-EXARCH is an attention-free language model that replaces attention with a wavelet-based spectral mixing architecture. Each block processes the input sequence using a learned lifting wavelet scheme, Fast Hadamard Transform, per-scale gated spectral mixing (SwiGLU), and inverse wavelet transform. Combined with expanded MLPs, cross-layer semantic feedback, standard product key memory, and fast weight product key memory, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache. 
+EXARCH is an attention-free language model that replaces attention with a wavelet-based spectral mixing architecture. Each block processes the input sequence using a learned lifting wavelet scheme, Fast Hadamard Transform, per-scale gated spectral mixing (SwiGLU), and inverse wavelet transform. Combined with expanded MLPs and cross-layer semantic feedback, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache. 
 
 ## Installation
 
