@@ -79,7 +79,7 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 
 ### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1
 
-All defaults are optimal with epochs = 3. No boolean change improved BPB at 3 epochs. Note that shared lifting wavelets may contribute negligibly at much higher epochs, however (>=10), and could probably be turned off then.
+All defaults are optimal with epochs = 3. No boolean change improved BPB. Note that shared lifting wavelets may contribute negligibly at much higher epochs, however. See previous note.
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
