@@ -142,7 +142,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 | Run | mixer_depth | stabilizers | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 2 | false | 0.01 | | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep (already complete) |
-|   | 2 | true  | 0.01 | | | 471.74M | | | | Stabilizers on stable config — effect on BPB? |
+|   | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1719 | 471.74M | 23,428 MiB | 2,781 MiB | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
 |   | 2 | true  | 0.02 | | | 471.74M | | | | Stabilizers + 2x LR |
 |   | 5 | false | 0.01 | | NaN | 787.24M | 39,657 MiB | — | — | Diverged step 3600 (already complete) |
 |   | 5 | true  | 0.01 | | | 787.24M | | | | Can stabilizers save depth=5? |
