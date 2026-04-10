@@ -122,13 +122,6 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# MIXER DEPTH + LOWER LR (peak LR below 0.008 NaN threshold)
-# =====================================================================
-
-run_with "Mixer depth: 5, lr=0.004" "cfg['mixer_depth'] = 5; cfg['lr'] = 0.004"
-run_with "Mixer depth: 10, lr=0.001" "cfg['mixer_depth'] = 10; cfg['lr'] = 0.001; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
-
-# =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
 # =====================================================================
 

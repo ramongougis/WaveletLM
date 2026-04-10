@@ -153,7 +153,7 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 
 | Run | mixer_depth | stabilizers | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-| 32  | 2 | false | 0.01 | | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
+| 32  | 2 | false | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1653 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
 | 41  | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1719 | 471.74M | 23,428 MiB | 2,781 MiB | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
 | 42  | 2 | true  | 0.02 | [link](logs/wikitext-103_2026-04-10_07-14-48/log.txt) | NaN | 471.74M | — | — | — | Diverged step 1800 (LR=0.008); stabilizers made it worse |
 
@@ -163,7 +163,7 @@ NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 5 | 0.004 | | | 787.24M | | | | Peak LR well below 0.008 NaN threshold |
+|   | 5 | 0.004 | [link](logs/wikitext-103_2026-04-10_07-59-36/log.txt) | 1.2897 | 787.24M | 39,657 MiB | 4,584 MiB | +0.1146 | Stable but severely undertrained; LR too low for 1 epoch |
 |   | 10 | 0.001 | | | 1313.06M | | | | MBS=4, GA=4 to fit in VRAM; extreme depth stress test |
 
 ### Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion
