@@ -128,13 +128,20 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
 # =====================================================================
 
-# Loop iterations (LoopLM) — same weights, T passes
-run_with "L=1, C=2048, MLP=20, T=4" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['loop_iterations'] = 4"
-run_with "L=1, C=2048, MLP=1, MD=2, resid, T=4" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['loop_iterations'] = 4"
+# L=1 lifting hidden mult (C=2048, MLP=20 — best L=1 config)
+run_with "L=1, C=2048, MLP=20, lifting_hidden_mult=2" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lifting_hidden_mult'] = 2"
+run_with "L=1, C=2048, MLP=20, lifting_hidden_mult=4" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lifting_hidden_mult'] = 4"
 
 # Full recipe at stable LR (MD=2 + resid)
 run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20"
 run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+
+# =====================================================================
+# LIFTING HIDDEN MULTIPLIER (L=20, C=512 baseline)
+# =====================================================================
+
+run_with "Lifting hidden mult: 2" "cfg['lifting_hidden_mult'] = 2"
+run_with "Lifting hidden mult: 4" "cfg['lifting_hidden_mult'] = 4"
 
 # =====================================================================
 # L=2 SCALING: C=2048, best recipe from L=1
@@ -169,10 +176,6 @@ run_with "Levels: 11" "cfg['levels'] = 11"
 # Low-rank factorization (0 = baseline/full rank)
 run_with "Low-rank: 4" "cfg['low_rank'] = 4"
 run_with "Low-rank: 16" "cfg['low_rank'] = 16"
-
-# Lifting hidden multiplier
-run_with "Lifting hidden mult: 2" "cfg['lifting_hidden_mult'] = 2"
-run_with "Lifting hidden mult: 4" "cfg['lifting_hidden_mult'] = 4"
 
 # Learning rate
 run_with "LR: 0.005" "cfg['lr'] = 0.005"
