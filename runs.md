@@ -206,8 +206,9 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |   | 1024 | 100 | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_02-19-23/log.txt) | 1.2517 | 411.41M | 28,847 MiB | 2,526 MiB | Kitchen sink A; PLE |
 |   | 2048 | 20  | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_03-24-37/log.txt) | NaN | 768.14M | — | — | — | Kitchen sink B; NaN step 300 |
 |   | 2048 | 20  | 2  | 0.005| 1024 | [link](logs/wikitext-103_2026-04-11_05-30-57/log.txt) | 1.2024 | 734.56M | 23,346 MiB | 4,358 MiB | LR too low; worse than C=2048 MLP=1 |
-|   | 2048 | 20  | 1  | 0.01 | 512  | | | | | | | MLP=20 at stable LR; MD=1 |
-|   | 2048 | 20  | 1  | 0.02 | 512  | | | | | | | MLP=20 + higher LR |
+|   | 2048 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | **1.1431** | 617.05M | 14,109 MiB | 3,519 MiB | **New L=1 record! Beats L=20 C=512 baseline (1.1751)** |
+|   | 2048 | 20  | 1  | 0.02 | 512  | [link](logs/wikitext-103_2026-04-11_10-04-14/log.txt) | NaN | 617.05M | — | — | — | NaN step 700 (LR=0.003); lr=0.02 too high for MLP=20 at C=2048 |
+|   | 4096 | 20  | 1  | 0.01 | 512  | | | ~2.06B | | | | C=4096; can width keep scaling? |
 |   | 2048 | 20  | 1  | 0.04 | 512  | | | | | | | Aggressive LR |
 |   | 2048 | 20  | 1  | 0.08 | 512  | | | | | | | Max LR stress test |
 |   | 2048 | 20  | 2  | 0.01 | 512  | | | ~2.2B | | | | PLE, resid; full recipe at stable LR |
