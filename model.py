@@ -202,20 +202,23 @@ class LiftingWaveletDecompose(nn.Module):
                 if init_wavelet == 'haar':
                     nn.init.eye_(predict[0].weight[:C, :])
                     if hidden_mult > 1:
-                        nn.init.zeros_(predict[0].weight[C:, :])
+                        nn.init.eye_(predict[0].weight[C:, :])
                     nn.init.zeros_(predict[0].bias)
                     nn.init.eye_(predict[3].weight[:, :C])
                     if hidden_mult > 1:
-                        nn.init.zeros_(predict[3].weight[:, C:])
+                        nn.init.eye_(predict[3].weight[:, C:])
                     nn.init.zeros_(predict[3].bias)
 
                     nn.init.eye_(update[0].weight[:C, :])
                     if hidden_mult > 1:
-                        nn.init.zeros_(update[0].weight[C:, :])
+                        nn.init.eye_(update[0].weight[C:, :])
                     nn.init.zeros_(update[0].bias)
                     nn.init.zeros_(update[3].weight)
                     update[3].weight.data[:, :C] = 0.5 * torch.eye(
                         C, device=device, dtype=dtype if dtype else torch.float32)
+                    if hidden_mult > 1:
+                        update[3].weight.data[:, C:] = 0.5 * torch.eye(
+                            C, device=device, dtype=dtype if dtype else torch.float32)
                     nn.init.zeros_(update[3].bias)
 
                 elif init_wavelet == 'zero':
@@ -1374,19 +1377,22 @@ def parameter_breakdown(model, config):
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+    W = 22  # alignment width for values
+
     print(f"\n{'='*60}")
     print(f"PARAMETER BREAKDOWN")
     print(f"{'='*60}")
-    print(f"Total parameters:     {total:>15,} ({total/1e6:.2f}M)")
-    print(f"Trainable parameters: {trainable:>15,} ({trainable/1e6:.2f}M)")
+    print(f"Total parameters:    {total:>{W},} ({total/1e6:.2f}M)")
+    if trainable != total:
+        print(f"Trainable parameters:{trainable:>{W},} ({trainable/1e6:.2f}M)")
 
     if isinstance(model, MultiNodeExarchLM):
         for i, cell in enumerate(model.cells):
             cell_params = sum(p.numel() for p in cell.parameters())
-            print(f"  Cell {i}: {cell_params:>13,} ({cell_params/1e6:.2f}M)")
+            print(f"  Cell {i}:           {cell_params:>{W},} ({cell_params/1e6:.2f}M)")
         if model.cross_cell_gating:
             gate_params = sum(p.numel() for p in model.cross_cell_gates.parameters())
-            print(f"  Cross-cell gates: {gate_params:>8,} ({gate_params/1e6:.2f}M)")
+            print(f"  Cross-cell gates: {gate_params:>{W},} ({gate_params/1e6:.2f}M)")
     elif isinstance(model, ExarchLM):
         emb_params = model.token_embedding.weight.numel()
         lm_params = sum(p.numel() for p in model.lm_head.parameters())
@@ -1395,10 +1401,10 @@ def parameter_breakdown(model, config):
 
         if model.shared_lifting_weights and hasattr(model.layers[0], 'lifting_wavelet'):
             lift_params = sum(p.numel() for p in model.layers[0].lifting_wavelet.parameters())
-            print(f"  Shared lifting:   {lift_params:>13,} ({lift_params/1e6:.2f}M)")
+            print(f"  Shared lifting:  {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
 
-        print(f"  Token embedding:  {emb_params:>13,} ({emb_params/1e6:.2f}M)")
-        print(f"  Layers (total):   {layer_params:>13,} ({layer_params/1e6:.2f}M)")
+        print(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")
+        print(f"  Layers (total):  {layer_params:>{W},} ({layer_params/1e6:.2f}M)")
 
         # Per-layer component breakdown
         block0 = model.layers[0]
@@ -1406,22 +1412,22 @@ def parameter_breakdown(model, config):
             if hasattr(block0, 'scale_mixers_by_depth'):
                 mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())
                 norm_per = sum(p.numel() for p in block0.mixer_depth_norms.parameters())
-                print(f"    Mixer (depth={block0.mixer_depth}): {mixer_per + norm_per:>9,} ({(mixer_per + norm_per)/1e6:.2f}M)")
+                print(f"    Mixer (depth={block0.mixer_depth}):{mixer_per + norm_per:>{W-2},} ({(mixer_per + norm_per)/1e6:.2f}M)")
         else:
             mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
-            print(f"    Mixer/layer:    {mixer_per:>13,} ({mixer_per/1e6:.2f}M)")
+            print(f"    Mixer/layer:   {mixer_per:>{W},} ({mixer_per/1e6:.2f}M)")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
-            print(f"    MLP/layer:      {mlp_per:>13,} ({mlp_per/1e6:.2f}M)")
+            print(f"    MLP/layer:     {mlp_per:>{W},} ({mlp_per/1e6:.2f}M)")
         if block0.pkm_enabled:
             pkm_per = sum(p.numel() for p in block0.pkm.parameters())
-            print(f"    PKM/layer:      {pkm_per:>13,} ({pkm_per/1e6:.2f}M)")
+            print(f"    PKM/layer:     {pkm_per:>{W},} ({pkm_per/1e6:.2f}M)")
         if block0.fwpkm_enabled:
             fwpkm_per = sum(p.numel() for p in block0.fwpkm.parameters())
-            print(f"    FwPKM/layer:    {fwpkm_per:>13,} ({fwpkm_per/1e6:.2f}M)")
+            print(f"    FwPKM/layer:   {fwpkm_per:>{W},} ({fwpkm_per/1e6:.2f}M)")
 
-        print(f"  LM head:          {lm_params:>13,} ({lm_params/1e6:.2f}M)")
-        print(f"  Final LayerNorm:  {ln_params:>13,} ({ln_params/1e6:.2f}M)")
+        print(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
+        print(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")
 
     print(f"{'='*60}\n")
     return total, trainable
