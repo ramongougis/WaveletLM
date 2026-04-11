@@ -127,8 +127,13 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
 # =====================================================================
 
-run_with "L=1, MD=2, resid, C=2048, block=1024, levels=10, MLP=20, lr=0.005" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 2048; cfg['block_size'] = 1024; cfg['levels'] = 10; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.005"
-run_with "L=1, MD=2, resid, C=2048, MLP=10" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 10"
+# Higher LR exploration at C=2048 (MD=1 for stability)
+run_with "L=1, MD=1, C=2048, MLP=20, lr=0.01" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20"
+run_with "L=1, MD=1, C=2048, MLP=20, lr=0.02" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.02"
+run_with "L=1, MD=1, C=2048, MLP=20, lr=0.04" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.04"
+run_with "L=1, MD=1, C=2048, MLP=20, lr=0.08" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.08"
+
+# Full recipe at stable LR (MD=2 + resid)
 run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20"
 run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
 
