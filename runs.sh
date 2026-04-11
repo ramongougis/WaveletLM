@@ -127,11 +127,16 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
 # =====================================================================
 
-run_with "L=1, MD=2, residuals, C=1024" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 1024"
-run_with "L=1, MD=2, residuals, C=2048" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 2048"
-run_with "L=1, MD=2, residuals, block=2048, levels=11" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['block_size'] = 2048; cfg['levels'] = 11"
-run_with "L=1, MD=2, resid, PLE, C=1024, block=2048, levels=11, MLP=100" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 1024; cfg['block_size'] = 2048; cfg['levels'] = 11; cfg['mlp_expansion'] = 100"
-run_with "L=1, MD=2, resid, PLE, C=2048, block=2048, levels=11, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['block_size'] = 2048; cfg['levels'] = 11; cfg['mlp_expansion'] = 20"
+run_with "L=1, MD=2, resid, C=2048, block=1024, levels=10, MLP=20, lr=0.005" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 2048; cfg['block_size'] = 1024; cfg['levels'] = 10; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.005"
+run_with "L=1, MD=2, resid, C=2048, MLP=10" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 10"
+run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20"
+run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+
+# =====================================================================
+# L=2 SCALING: C=2048, best recipe from L=1
+# =====================================================================
+
+run_with "L=2, MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384" "cfg['layers'] = 2; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
 
 # =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)

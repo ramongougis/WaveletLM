@@ -195,7 +195,17 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_00-15-26/log.txt) | **1.1660** | 541.57M | 13,453 MiB | 3,211 MiB | C=2048, resid; **-0.1517 vs L=1 baseline; approaches L=20!** |
 |   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_02-00-34/log.txt) | 1.3315 | 76.68M | 14,696 MiB | 505 MiB | block=2048, levels=11, C=512, resid; context alone doesn't help much |
 |   | 100 | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_02-19-23/log.txt) | 1.2517 | 411.41M | 28,847 MiB | 2,526 MiB | Kitchen sink A: C=1024, block=2048, levels=11, PLE, resid, MLP=100 |
-|   | 20  | 2  | 0.01 | 8  | 2 | | | ~2.2B | | | | Kitchen sink B: C=2048, block=2048, levels=11, PLE, resid, MLP=20 |
+|   | 20  | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_03-24-37/log.txt) | NaN | 768.14M | — | — | — | Kitchen sink B: C=2048, block=2048, MLP=20, PLE; NaN step 300 (LR=0.003) |
+|   | 20  | 2  | 0.005| 8  | 2 | | | | | | | C=2048, block=1024, levels=10, MLP=20, resid; lower LR for stability |
+|   | 10  | 2  | 0.01 | 8  | 2 | | | ~877M | | | | C=2048, MLP=10, resid; moderate MLP at stable LR |
+|   | 20  | 2  | 0.01 | 8  | 2 | | | ~2.2B | | | | C=2048, MLP=20, PLE, resid; full recipe at stable LR, no block size change |
+|   | 20  | 2  | 0.01 | 8  | 2 | | | ~2.3B | | | | Same + PKM+FwPKM-16384; sparse memory at high C |
+
+#### L=2 scaling: C=2048, best recipe from L=1
+
+| Run | mlp_expansion | mixer_depth | lr | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---------------|-------------|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 20 | 2 | 0.01 | 2 | | | 1.48B | ~33 GB | | MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384 |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
