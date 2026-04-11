@@ -15,20 +15,24 @@
 11. [Mixer depth + higher LR](#mixer-depth--higher-lr)
 12. [Mixer depth stabilizers ablation](#mixer-depth-stabilizers-ablation-alpha_d-beta_d-init-1d-scaled-mixer-init)
 13. [Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers-c--512-epochs--1-optimal-booleans--mlp_expansion)
-14. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
-15. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
-16. [Lifting hidden multiplier](#lifting-hidden-multiplier)
-17. [Learning rate](#learning-rate)
-18. [Block size (context window)](#block-size-context-window)
-19. [Dropout optimization](#dropout-optimization-c--512-5-epochs-optimal-booleans--mlp_expansion--layers--levels)
-20. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-21. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-22. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-23. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-24. [Best PTQ combination](#best-ptq-combination)
-25. [Section](link)
-26. [Section](link)
-27. [Section](link)
+14. [Layers = 1 ablations, part 1 (C = 512)](#layers--1-ablations-part-1-c--512)
+15. [Layers = 1 ablations, part 2 (bigger C)](#layers--1-ablations-part-2-bigger-c)
+16. [Layers = 2 scaling: C=2048, best recipe from L=1](#layers--2-scaling-c2048-best-recipe-from-l1)
+17. [Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers--1-c--512-epochs--1-optimal-booleans--mlp_expansion)
+18. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
+19. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
+20. [Lifting hidden multiplier](#lifting-hidden-multiplier)
+21. [Learning rate](#learning-rate)
+22. [Block size (context window)](#block-size-context-window)
+23. [Dropout optimization](#dropout-optimization-c--512-5-epochs-optimal-booleans--mlp_expansion--layers--levels)
+24. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+25. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+26. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+27. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+28. [Best PTQ combination](#best-ptq-combination)
+29. [Section](link)
+30. [Section](link)
+31. [Section](link)
 
 ---
 
@@ -209,7 +213,7 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |   | 2048 | 20  | 2  | 0.01 | 512  | | | ~2.2B | | | | PLE, resid; full recipe at stable LR |
 |   | 2048 | 20  | 2  | 0.01 | 512  | | | ~2.3B | | | | Same + PKM+FwPKM-16384 |
 
-#### L=2 scaling: C=2048, best recipe from L=1
+### Layers = 2 scaling: C=2048, best recipe from L=1
 
 | Run | mlp_expansion | mixer_depth | lr | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|-------------|-----|--------|--------|---------------|--------|------------|----------------|-------|
@@ -284,7 +288,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 
 **Baseline checkpoint:** best trained model from sweeps above (TBD)
 
-#### PTQ: Uniform quantization (all components same bits)
+### PTQ: Uniform quantization (all components same bits)
 
 | Run | Bits | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|------|--------|---------------|------------------|----------------|-------|-------|
@@ -292,7 +296,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 |   | 8 | | | | | | Uniform INT8 |
 |   | 4 | | | | | | Uniform INT4 — stress test |
 
-#### PTQ: Per-scale mixed precision quantization
+### PTQ: Per-scale mixed precision quantization
 
 | Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
@@ -303,7 +307,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 |   | 4 | 4 | 2 | 4 | 8 | 4 | | | | | | Aggressive — minimum viable |
 |   | 8 | 4 | 2 | 4 | 16 | 4 | | | | | | Aggressive embedding |
 
-#### PTQ: Component isolation (quantize one component; keep the rest at 16)
+### PTQ: Component isolation (quantize one component; keep the rest at 16)
 
 | Run | Component quantized | Bits | Folder | BPB (sliding) | Delta | Notes |
 |-----|-------------------|------|--------|---------------|-------|-------|
@@ -315,7 +319,7 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 |   | Embedding only | 4 | | | | |
 |   | Lifting only | 8 | | | | Lifting sensitivity |
 
-#### Best PTQ combination
+### Best PTQ combination
 
 | Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
