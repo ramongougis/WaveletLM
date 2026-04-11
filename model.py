@@ -1007,6 +1007,7 @@ class ExarchLM(nn.Module):
             print(f"[Residual] Learned alpha (init=1.0, per-block spectral+MLP)")
 
         self.per_layer_embedding = config.get("per_layer_embedding", False)
+        self.loop_iterations = config.get("loop_iterations", 1)
 
         # Stochastic depth
         self.stochastic_depth_rate = config.get("stochastic_depth_rate", 0.0)
@@ -1138,31 +1139,49 @@ class ExarchLM(nn.Module):
         else:
             current_state = None
 
-        for layer_idx, layer in enumerate(self.layers):
-            # Stochastic depth
-            if self.training and self.stochastic_depth_rate > 0:
-                if random.random() < self._drop_probs[layer_idx]:
-                    continue
+        all_logits = [] if self.loop_iterations > 1 and targets is not None else None
 
-            if self.gradient_checkpointing and self.training:
-                def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
-                    return _layer(lx, _state, token_embeddings=_ple)
-                x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
-            else:
-                x, current_state = layer(x, current_state, token_embeddings=ple)
+        for loop in range(self.loop_iterations):
+            for layer_idx, layer in enumerate(self.layers):
+                # Stochastic depth
+                if self.training and self.stochastic_depth_rate > 0:
+                    if random.random() < self._drop_probs[layer_idx]:
+                        continue
+
+                if self.gradient_checkpointing and self.training:
+                    def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
+                        return _layer(lx, _state, token_embeddings=_ple)
+                    x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
+                else:
+                    x, current_state = layer(x, current_state, token_embeddings=ple)
+
+            # Produce logits at each iteration for multi-iteration loss
+            if all_logits is not None:
+                x_ln = self.final_ln(x)
+                logits_t = self.lm_head(self.dropout_lm(x_ln))
+                all_logits.append(logits_t)
 
         # Update persistent state for next window
         if self.semantic_feedback_cross_window and current_state is not None:
             self._persistent_semantic_state = current_state[:, -1, :].detach()
             self._persistent_token_count += T
 
+        # Final logits (always from last iteration)
         x = self.final_ln(x)
         x = self.dropout_lm(x)
         logits = self.lm_head(x)
 
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1).long())
+            if self.loop_iterations == 1:
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1).long())
+            else:
+                # Average loss across all iterations (uniform weighting)
+                total_loss = sum(
+                    F.cross_entropy(lg.view(-1, lg.size(-1)), targets.view(-1).long())
+                    for lg in all_logits
+                )
+                loss = total_loss / self.loop_iterations
 
         return logits, loss
 

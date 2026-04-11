@@ -88,7 +88,8 @@ baseline = {
     "quantize_mlp_bits": 4,
     "quantize_lifting_bits": 16,
     "quantize_embedding_bits": 8,
-    "per_layer_embedding": False
+    "per_layer_embedding": False,
+    "loop_iterations": 1
 }
 '
 
@@ -127,8 +128,9 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
 # =====================================================================
 
-# C=4096 exploration
-run_with "L=1, MD=1, C=4096, MLP=20" "cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 20"
+# Loop iterations (LoopLM) — same weights, T passes
+run_with "L=1, C=2048, MLP=20, T=4" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['loop_iterations'] = 4"
+run_with "L=1, C=2048, MLP=1, MD=2, resid, T=4" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['loop_iterations'] = 4"
 
 # Full recipe at stable LR (MD=2 + resid)
 run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20"
