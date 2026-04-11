@@ -202,23 +202,22 @@ class LiftingWaveletDecompose(nn.Module):
                 if init_wavelet == 'haar':
                     nn.init.eye_(predict[0].weight[:C, :])
                     if hidden_mult > 1:
-                        nn.init.eye_(predict[0].weight[C:, :])
+                        nn.init.normal_(predict[0].weight[C:, :], std=0.01)
                     nn.init.zeros_(predict[0].bias)
                     nn.init.eye_(predict[3].weight[:, :C])
                     if hidden_mult > 1:
-                        nn.init.eye_(predict[3].weight[:, C:])
+                        nn.init.normal_(predict[3].weight[:, C:], std=0.01)
                     nn.init.zeros_(predict[3].bias)
 
                     nn.init.eye_(update[0].weight[:C, :])
                     if hidden_mult > 1:
-                        nn.init.eye_(update[0].weight[C:, :])
+                        nn.init.normal_(update[0].weight[C:, :], std=0.01)
                     nn.init.zeros_(update[0].bias)
                     nn.init.zeros_(update[3].weight)
                     update[3].weight.data[:, :C] = 0.5 * torch.eye(
                         C, device=device, dtype=dtype if dtype else torch.float32)
                     if hidden_mult > 1:
-                        update[3].weight.data[:, C:] = 0.5 * torch.eye(
-                            C, device=device, dtype=dtype if dtype else torch.float32)
+                        nn.init.normal_(update[3].weight[:, C:], std=0.01)
                     nn.init.zeros_(update[3].bias)
 
                 elif init_wavelet == 'zero':

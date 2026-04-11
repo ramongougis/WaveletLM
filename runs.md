@@ -221,7 +221,8 @@ Wider predict/update MLPs in the lifting wavelet. Tests whether more expressive 
 |-----|---------------------|------|--------|---------------|--------|------------|----------------|-------|
 |   | 1 | — | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Baseline |
 |   | 2 | zeros | [link](logs/wikitext-103_2026-04-11_14-23-32/log.txt) | — | 768.08M | — | — | Early-stopped; zero init, no improvement |
-|   | 2 | eye | | | 768.08M | | | | Identity init for extra dims |
+|   | 2 | eye | [link](logs/wikitext-103_2026-04-11_15-39-24/log.txt) | NaN | 768.08M | — | — | — | Identity init; NaN step 1300 (LR=0.003); signal too strong |
+|   | 2 | normal(0.01) | | | 768.08M | | | | Small random init for extra dims |
 |   | 4 | eye | | | | | | | |
 
 ### Loop iterations (LoopLM): L=1, C=2048, reuse same weights T times
