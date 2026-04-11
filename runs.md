@@ -210,11 +210,19 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |   | 2048 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | **1.1431** | 617.05M | 14,109 MiB | 3,519 MiB | **New L=1 record! Beats L=20 C=512 baseline (1.1751)** |
 |   | 2048 | 20  | 1  | 0.02 | 512  | [link](logs/wikitext-103_2026-04-11_10-04-14/log.txt) | NaN | 617.05M | — | — | — | NaN step 700 (LR=0.003); lr=0.02 too high for MLP=20 at C=2048 |
 |   | 4096 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_11-34-42/log.txt) | — | 2056.18M | ~33 GB | — | — | Early-stopped; diminishing returns vs C=2048 |
-|   | 2048 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_14-23-32/log.txt) | — | 768.08M | — | — | — | lifting_hidden_mult=2; zero init; early-stopped (no improvement over mult=1) |
-|   | 2048 | 20  | 1  | 0.01 | 512  | | | | | | | lifting_hidden_mult=2; wider wavelet predict/update; now uses nn.init.eye_(predict[0].weight[C:, :]) for hidden_mult > 1. |
-|   | 2048 | 20  | 1  | 0.01 | 512  | | | | | | | lifting_hidden_mult=4; nn.init.eye_(predict[0].weight[C:, :]) for hidden_mult > 1 as with the previous run|
 |   | 2048 | 20  | 2  | 0.01 | 512  | | | ~2.2B | | | | PLE, resid; full recipe at stable LR |
 |   | 2048 | 20  | 2  | 0.01 | 512  | | | ~2.3B | | | | Same + PKM+FwPKM-16384 |
+
+### Lifting hidden multiplier: L=1, C=2048, MLP=20
+
+Wider predict/update MLPs in the lifting wavelet. Tests whether more expressive local token-to-token interaction improves BPB. Identity init for extra hidden dims (nn.init.eye_) unless noted.
+
+| Run | lifting_hidden_mult | init | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---------------------|------|--------|---------------|--------|------------|----------------|-------|
+|   | 1 | — | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Baseline |
+|   | 2 | zeros | [link](logs/wikitext-103_2026-04-11_14-23-32/log.txt) | — | 768.08M | — | — | Early-stopped; zero init, no improvement |
+|   | 2 | eye | | | 768.08M | | | | Identity init for extra dims |
+|   | 4 | eye | | | | | | | |
 
 ### Loop iterations (LoopLM): L=1, C=2048, reuse same weights T times
 
