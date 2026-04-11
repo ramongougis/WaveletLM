@@ -222,8 +222,7 @@ Wider predict/update MLPs in the lifting wavelet. Tests whether more expressive 
 |   | 1 | — | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Baseline |
 |   | 2 | zeros | [link](logs/wikitext-103_2026-04-11_14-23-32/log.txt) | — | 768.08M | — | — | Early-stopped; zero init, no improvement |
 |   | 2 | eye | [link](logs/wikitext-103_2026-04-11_15-39-24/log.txt) | NaN | 768.08M | — | — | — | Identity init; NaN step 1300 (LR=0.003); signal too strong |
-|   | 2 | normal(0.01) | | | 768.08M | | | | Small random init for extra dims |
-|   | 4 | eye | | | | | | | |
+|   | 2 | normal(0.01) | [link](logs/wikitext-103_2026-04-11_17-46-16/log.txt) | 1.1428 | 768.08M | 16,989 MiB | 4,383 MiB | Stable but identical to mult=1; local expressivity not the bottleneck |
 
 ### Loop iterations (LoopLM): L=1, C=2048, reuse same weights T times
 
@@ -238,11 +237,14 @@ Same layer stack applied T times sequentially. Loss averaged across all iteratio
 | Run | C | MLP | MD | hidden mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|------|-----|-----|-----------|--------|---------------|--------|------------|----------------|-------|
 
-### Layers = 2 scaling: C=2048, best recipe from L=1
+### Optimal low-layer config: L=2, C=2048, full recipe
 
-| Run | mlp_expansion | mixer_depth | lr | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|---------------|-------------|-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | 20 | 2 | 0.01 | 2 | | | 1.48B | ~33 GB | | MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384 |
+L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384. ~1.18B params, ~21 GB estimated.
+
+| Run | Layers | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 2 | 1 | | | ~1.18B | | | | 1-epoch baseline |
+|   | 2 | 5 | | | ~1.18B | | | | Multi-epoch; expect significant improvement |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 

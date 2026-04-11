@@ -125,29 +125,14 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# SINGLE-LAYER SCALING (L=1, ~17min each — run these first!)
+# OPTIMAL LOW-LAYER CONFIG: C=2048, L=2, full recipe
 # =====================================================================
 
-# L=1 lifting hidden mult (C=2048, MLP=20 — best L=1 config)
-run_with "L=1, C=2048, MLP=20, lifting_hidden_mult=2" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lifting_hidden_mult'] = 2"
-run_with "L=1, C=2048, MLP=20, lifting_hidden_mult=4" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lifting_hidden_mult'] = 4"
+# 1 epoch baseline
+run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 1ep" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
 
-# Full recipe at stable LR (MD=2 + resid)
-run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20"
-run_with "L=1, MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384" "cfg['layers'] = 1; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
-
-# =====================================================================
-# LIFTING HIDDEN MULTIPLIER (L=20, C=512 baseline)
-# =====================================================================
-
-run_with "Lifting hidden mult: 2" "cfg['lifting_hidden_mult'] = 2"
-run_with "Lifting hidden mult: 4" "cfg['lifting_hidden_mult'] = 4"
-
-# =====================================================================
-# L=2 SCALING: C=2048, best recipe from L=1
-# =====================================================================
-
-run_with "L=2, MD=2, resid, PLE, C=2048, MLP=20, PKM+FwPKM-16384" "cfg['layers'] = 2; cfg['mixer_depth'] = 2; cfg['mixer_depth_residuals'] = True; cfg['per_layer_embedding'] = True; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+# 5 epoch run
+run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5"
 
 # =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
