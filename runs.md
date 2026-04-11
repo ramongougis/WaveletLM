@@ -17,22 +17,23 @@
 13. [Layers: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers-c--512-epochs--1-optimal-booleans--mlp_expansion)
 14. [Layers = 1 ablations, part 1 (C = 512)](#layers--1-ablations-part-1-c--512)
 15. [Layers = 1 ablations, part 2 (bigger C)](#layers--1-ablations-part-2-bigger-c)
-16. [Layers = 2 scaling: C=2048, best recipe from L=1](#layers--2-scaling-c2048-best-recipe-from-l1)
-17. [Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers--1-c--512-epochs--1-optimal-booleans--mlp_expansion)
-18. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
-19. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
-20. [Lifting hidden multiplier](#lifting-hidden-multiplier)
-21. [Learning rate](#learning-rate)
-22. [Block size (context window)](#block-size-context-window)
-23. [Dropout optimization](#dropout-optimization-c--512-5-epochs-optimal-booleans--mlp_expansion--layers--levels)
-24. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-25. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-26. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-27. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-28. [Best PTQ combination](#best-ptq-combination)
-29. [Section](link)
+16. [Lifting hidden mult with layers = 1](#lifting-hidden-mult-with-layers--1)
+17. [Layers = 2 scaling: C=2048, best recipe from L=1](#layers--2-scaling-c2048-best-recipe-from-l1)
+18. [Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers--1-c--512-epochs--1-optimal-booleans--mlp_expansion)
+19. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
+20. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
+21. [Lifting hidden multiplier](#lifting-hidden-multiplier)
+22. [Learning rate](#learning-rate)
+23. [Block size (context window)](#block-size-context-window)
+24. [Dropout optimization](#dropout-optimization-c--512-5-epochs-optimal-booleans--mlp_expansion--layers--levels)
+25. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+26. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+27. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+28. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+29. [Best PTQ combination](#best-ptq-combination)
 30. [Section](link)
 31. [Section](link)
+32. [Section](link)
 
 ---
 
@@ -223,6 +224,10 @@ Same layer stack applied T times sequentially. Loss averaged across all iteratio
 |-----|------|-----|-----|------|---|--------|---------------|--------|------------|----------------|-------|
 |   | 2048 | 20  | 1  | 0.01 | 1 | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Baseline (no looping) |
 |   | 2048 | 20  | 1  | 0.01 | 4 | [link](logs/wikitext-103_2026-04-11_13-19-59/log.txt) | — | 617.05M | 31,538 MiB | — | Early-stopped; ~0.04 val_loss gain for 3.5x compute; not worth it |
+
+### Lifting hidden mult with layers = 1
+| Run | C | MLP | MD | hidden mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|------|-----|-----|-----------|--------|---------------|--------|------------|----------------|-------|
 
 ### Layers = 2 scaling: C=2048, best recipe from L=1
 
