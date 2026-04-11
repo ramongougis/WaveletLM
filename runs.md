@@ -191,10 +191,10 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 |   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4391 | 114.54M | 7,082 MiB | 719 MiB | PLE=true; still worse than baseline (MD=10 no resid dominates) |
 |   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | SF=false; NaN — SF provides critical stability at L=1 |
 |   | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-48-20/log.txt) | NaN | 354.92M | — | — | — | C=1024, MD=10 no resid; NaN step 4500 (LR=0.01) |
-|   | 1   | 2  | 0.01 | 8  | 2 | | | ~187M | | | | C=1024, residuals (in progress) |
-|   | 1   | 2  | 0.01 | 8  | 2 | | | ~386M | | | | C=2048, residuals; double width again |
-|   | 1   | 2  | 0.01 | 8  | 2 | | | | | | | block_size=2048, levels=11, residuals; max context at L=1 |
-|   | 100 | 2  | 0.01 | 8  | 2 | | | | | | | Kitchen sink A: C=1024, block=2048, levels=11, PLE, resid, MLP=100 |
+|   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_23-37-19/log.txt) | 1.2153 | 186.90M | 7,100 MiB | 1,113 MiB | C=1024, resid; -0.1024 vs L=1 baseline; -0.0771 vs MD=2+resid C=512 |
+|   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_00-15-26/log.txt) | **1.1660** | 541.57M | 13,453 MiB | 3,211 MiB | C=2048, resid; **-0.1517 vs L=1 baseline; approaches L=20!** |
+|   | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_02-00-34/log.txt) | 1.3315 | 76.68M | 14,696 MiB | 505 MiB | block=2048, levels=11, C=512, resid; context alone doesn't help much |
+|   | 100 | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-11_02-19-23/log.txt) | 1.2517 | 411.41M | 28,847 MiB | 2,526 MiB | Kitchen sink A: C=1024, block=2048, levels=11, PLE, resid, MLP=100 |
 |   | 20  | 2  | 0.01 | 8  | 2 | | | ~2.2B | | | | Kitchen sink B: C=2048, block=2048, levels=11, PLE, resid, MLP=20 |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
