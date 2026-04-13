@@ -120,15 +120,19 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 
 ### WikiText-103 Perplexity Comparison
 
-Attention-free architectures on WikiText-103 language modeling:
-
 | Model | Type | Params | PPL |
 |-------|------|--------|-----|
+| Transformer-XL | Transformer + recurrence | 257M | ~18 |
+| GPT-2 XL | Transformer | 1.5B | ~18 |
 | Mamba-2 | SSM | 2.7B | ~13 |
 | Mamba | SSM | 1.4B | ~17 |
 | RWKV-6 | Linear RNN | 1.5B | ~18 |
 | xLSTM | Extended LSTM | 1.3B | ~18 |
 | Hyena | Long convolution | 1.4B | ~18 |
+| GPT-2 Large | Transformer | 774M | ~19 |
+| S4 | SSM | 130M | ~20 |
+| GPT-2 Medium | Transformer | 355M | ~22 |
+| RWKV-4 | Linear RNN | 430M | ~22 |
 | **EXARCH** | **Wavelet mixer** | **1.18B** | **~27**[^1] |
 | GPT-2 | Transformer | 124M | ~29 |
 
