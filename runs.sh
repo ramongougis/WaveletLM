@@ -145,6 +145,17 @@ run_with "Grok: C=128, L=2, MLP=100, PKM+FwPKM-16384, 100ep" "cfg['C'] = 128; cf
 run_with "Grok: C=128, L=2, MLP=100, PKM+FwPKM-16384, 5000ep" "cfg['C'] = 128; cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 3000; cfg['warmup_fraction'] = 0.0002"
 
 # =====================================================================
+# EXPONENTIAL PARAMETRIZATION — test on best L=1 config and NaN cases
+# =====================================================================
+
+# Best L=1 config with exp param — does mixer utilization improve?
+run_with "ExpParam: L=1, C=2048, MLP=20, 1ep" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['exp_parametrization'] = True"
+
+# Previously NaN'd configs — does exp param fix stability?
+run_with "ExpParam: L=1, C=2048, MLP=20, lr=0.02" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True"
+run_with "ExpParam: L=20, C=512, MD=5" "cfg['mixer_depth'] = 5; cfg['exp_parametrization'] = True"
+
+# =====================================================================
 # LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
 # =====================================================================
 

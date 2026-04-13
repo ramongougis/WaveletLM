@@ -255,6 +255,16 @@ L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384. ~1.18B params, ~21 GB estimated.
 |   | 128 | 2 | 100  | | | ~42M | | | | Grokking probe; warmup=0.003 |
 |   | 128 | 2 | 5000 | | | ~42M | | | | Full grokking; warmup=0.0002; early-stop once generalization achieved |
 
+### Exponential parametrization: mixer only
+
+Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether better mixer initialization/gradient dynamics improve BPB and fix NaN at previously-unstable configs.
+
+| Run | Config | exp_param | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|-----------|--------|---------------|--------|------------|----------------|-------|
+|   | L=1, C=2048, MLP=20, lr=0.01 | true | | | 617.05M | | | | vs baseline 1.1431; does mixer utilize params better? |
+|   | L=1, C=2048, MLP=20, lr=0.02 | true | | | 617.05M | | | | Previously NaN'd at step 700; can exp param fix? |
+|   | L=20, C=512, MD=5, lr=0.01 | true | | | 787.24M | | | | Previously NaN'd at step 3600; can exp param fix? |
+
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
