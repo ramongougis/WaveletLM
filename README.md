@@ -122,10 +122,10 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 
 | Model | Type | Params | PPL |
 |-------|------|--------|-----|
-| Transformer-XL | Transformer + recurrence | 257M | ~18 |
-| GPT-2 XL | Transformer | 1.5B | ~18 |
 | Mamba-2 | SSM | 2.7B | ~13 |
 | Mamba | SSM | 1.4B | ~17 |
+| Transformer-XL | Transformer + recurrence | 257M | ~18 |
+| GPT-2 XL | Transformer | 1.5B | ~18 |
 | RWKV-6 | Linear RNN | 1.5B | ~18 |
 | xLSTM | Extended LSTM | 1.3B | ~18 |
 | Hyena | Long convolution | 1.4B | ~18 |
