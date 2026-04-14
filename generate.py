@@ -17,6 +17,7 @@
 
 import argparse
 import math
+import re
 import time
 import json
 import os
@@ -423,6 +424,8 @@ def main():
     parser.add_argument("--fwpkm_chunk_size", type=int, default=64)
     parser.add_argument("--metrics", action="store_true",
                         help="Print quality metrics")
+    parser.add_argument("--clean_spacing", action="store_true",
+                        help="Fix WikiText-103 spacing artifacts (e.g., remove space before periods)")
     parser.add_argument("--n", type=int, default=1,
                         help="Number of completions to generate")
     args = parser.parse_args()
@@ -434,6 +437,7 @@ def main():
         args.top_p = 0.85
         args.repetition_penalty = 1.2
         args.metrics = True
+        args.clean_spacing = True
 
     # Resolve device
     device = torch.device(args.device if torch.cuda.is_available() or args.device != 'cuda' else 'cpu')
@@ -555,6 +559,9 @@ def main():
             metrics = None
 
         elapsed = time.time() - t0
+
+        if args.clean_spacing:
+            txt = re.sub(r' \.', '.', txt)
 
         log(txt)
         log("-" * 60)

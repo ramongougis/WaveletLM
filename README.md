@@ -74,6 +74,9 @@ python generate.py --checkpoint best_model.pt --lookahead_k 3 --lookahead_depth 
 # Best-of-N sampling
 python generate.py --checkpoint best_model.pt --best_of_n 5
 
+# Clean WikiText-103 spacing artifacts (remove space before periods)
+python generate.py --checkpoint best_model.pt --clean_spacing
+
 # Wavelet coherence monitoring
 python generate.py --checkpoint best_model.pt --wavelet_coherence
 ```
