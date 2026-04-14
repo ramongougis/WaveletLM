@@ -245,7 +245,7 @@ L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384. ~1.18B params, ~21 GB estimated.
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_00-37-11/log.txt) | **1.0865** | 1180.28M | 24,643 MiB | 6,733 MiB | **New best! No dropout; best val at epoch 3; train/val gap 1.77 by epoch 5** |
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_17-11-15/log.txt) | **1.0468** | 1180.28M | 24,883 MiB | 6,733 MiB | **1.0x dropout; new best! Val still improving at epoch 5; gap=1.00** |
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-13_09-51-55/log.txt) | **1.0319** | 1180.28M | 24,883 MiB | 6,733 MiB | **1.5x dropout; new best! Gap=0.81; val still improving at epoch 5** |
-|   | 2 | 5 | | | ~1.18B | | | | 1.5x dropout + weight_decay=1e-3 |
+|   | 2 | 5 | | | ~1.18B | | | | 2.0x dropout: emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24 |
 
 ### Grokking experiment: C=128, L=2, tiny core + massive memory
 

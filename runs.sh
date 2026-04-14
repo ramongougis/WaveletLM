@@ -129,7 +129,7 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # =====================================================================
 
 # 5 epoch + weight decay + 1.5x dropout
-run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, dropout-1.5x, WD=1e-3" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['dropout_embedding'] = 0.15; cfg['dropout_projection'] = 0.075; cfg['dropout_mixer'] = 0.075; cfg['dropout_mlp'] = 0.075; cfg['dropout_lm_head'] = 0.18; cfg['weight_decay'] = 1e-3"
+run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, dropout-2.0x" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
 
 # =====================================================================
 # EXPONENTIAL PARAMETRIZATION — test on best L=1 config and NaN cases
