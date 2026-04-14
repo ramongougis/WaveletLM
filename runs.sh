@@ -128,18 +128,8 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # OPTIMAL LOW-LAYER CONFIG: C=2048, L=2, full recipe
 # =====================================================================
 
-# 5 epoch + 1.5x dropout (scaled up for heavier regularization)
-run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, dropout-1.5x" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['dropout_embedding'] = 0.15; cfg['dropout_projection'] = 0.075; cfg['dropout_mixer'] = 0.075; cfg['dropout_mlp'] = 0.075; cfg['dropout_lm_head'] = 0.18"
-
-# =====================================================================
-# GROKKING EXPERIMENT: tiny core, massive memory, extreme epochs
-# =====================================================================
-
-# 100 epochs — test if memorization trajectory is promising
-run_with "Grok: C=128, L=2, MLP=100, PKM+FwPKM-16384, 100ep" "cfg['C'] = 128; cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 100; cfg['warmup_fraction'] = 0.003"
-
-# 1000 epochs — full grokking attempt (cancel if 100ep not promising)
-run_with "Grok: C=128, L=2, MLP=100, PKM+FwPKM-16384, 5000ep" "cfg['C'] = 128; cfg['layers'] = 1; cfg['mlp_expansion'] = 100; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 3000; cfg['warmup_fraction'] = 0.0002"
+# 5 epoch + weight decay + 1.5x dropout
+run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, dropout-1.5x, WD=1e-3" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['dropout_embedding'] = 0.15; cfg['dropout_projection'] = 0.075; cfg['dropout_mixer'] = 0.075; cfg['dropout_mlp'] = 0.075; cfg['dropout_lm_head'] = 0.18; cfg['weight_decay'] = 1e-3"
 
 # =====================================================================
 # EXPONENTIAL PARAMETRIZATION — test on best L=1 config and NaN cases

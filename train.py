@@ -488,17 +488,21 @@ def train():
 
         # Optimizer
         optimizer_name = config.get('optimizer', 'Adagrad')
+        weight_decay = config.get('weight_decay', 0.0)
         if optimizer_name == 'Adagrad':
             optimizer = torch.optim.Adagrad(
                 model.parameters(), lr=config['lr'],
-                eps=config.get('optimizer_eps', 2e-13))
+                eps=config.get('optimizer_eps', 2e-13),
+                weight_decay=weight_decay)
         elif optimizer_name == 'AdamW':
             optimizer = torch.optim.AdamW(
                 model.parameters(), lr=config['lr'],
-                eps=config.get('optimizer_eps', 1e-8))
+                eps=config.get('optimizer_eps', 1e-8),
+                weight_decay=weight_decay)
         else:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
-        logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}")
+        wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
+        logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
 
         # GradScaler for fp16 only
         use_scaler = use_amp and amp_dtype_str == 'fp16'

@@ -133,12 +133,12 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 | S4 | SSM | 130M | ~20 |
 | GPT-2 Medium | Transformer | 355M | ~22 |
 | RWKV-4 | Linear RNN | 430M | ~22 |
-| **EXARCH** | **Wavelet mixer** | **1.18B** | **~27**[^1] |
+| **EXARCH** | **Wavelet mixer** | **1.18B** | **~25**[^1] |
 | GPT-2 | Transformer | 124M | ~29 |
 
 EXARCH achieves this with only 2 layers (L=2, C=2048), no attention, no recurrence, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers with varying training setups.
 
-[^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5 epochs, 1.0x dropout. BPB=1.0468. See [training log](logs/wikitext-103_2026-04-12_17-11-15/log.txt).
+[^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5 epochs, 1.5x dropout. BPB=1.0319. See [training log](logs/wikitext-103_2026-04-13_09-51-55/log.txt).
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
