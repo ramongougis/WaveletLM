@@ -28,18 +28,19 @@
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
 25. [Block size (context window)](#block-size-context-window)
 26. [Planned: lower priority (fine-tuning)](#planned-lower-priority-fine-tuning)
-27. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-28. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-29. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-30. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-31. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-32. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-33. [Best PTQ combination](#best-ptq-combination)
-34. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-35. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
-36. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-37. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-38. [Run Details](#run-details)
+27. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
+28. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+29. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+30. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+31. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+32. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+33. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+34. [Best PTQ combination](#best-ptq-combination)
+35. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+36. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+37. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+38. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+39. [Run Details](#run-details)
 
 ---
 
@@ -280,7 +281,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 15  | [link](logs/wikitext-103_2026-04-15_13-01-46/log.txt) | 1.1816 | 287.80M | 15,098 MiB | 1,724 MiB | |
 |   | 18  | [link](logs/wikitext-103_2026-04-15_15-10-58/log.txt) | 1.1776 | 335.07M | 17,330 MiB | 1,998 MiB | |
 |   | 20 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline |
-|   | 30 | | | 524.14M | | | In progress |
+|   | 30 | [link](logs/wikitext-103_2026-04-15_17-46-01/log.txt) | 1.1642 | 524.14M | 26,257 MiB | 3,091 MiB | Slight improvement over L=20; diminishing returns |
 
 ### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512
 
@@ -288,14 +289,14 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
 |   | 1 | | | | | | |
 |   | 5 | | | | | | |
-|   | 9 | | | | | | Baseline (default = log2(block_size=512)) |
+|   | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4; default = log2(block_size=512)) |
 |   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
 
 ### Low-rank factorization in spectral mixer
 
 | Run | low_rank | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|----------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 0  | | | | | | | Baseline (full rank) |
+|   | 0  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4; full rank) |
 |   | 4  | | | | | | | Adds U·V^T perturbation (~0.8M total) |
 |   | 16 | | | | | | | Higher rank perturbation |
 
@@ -303,7 +304,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 | Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 1 | | | | | | | Baseline |
+|   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
 |   | 2 | | | | | | | Wider predict/update MLPs in wavelet lifting |
 |   | 4 | | | | | | | |
 
@@ -312,8 +313,18 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 | Run | block_size | levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|------------|--------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 256  | 8 | | | | | | | Half context; levels=log2(256) |
-|   | 512  | 9 | | | | | | | Baseline |
+|   | 512  | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
+
+### Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout
+
+Testing whether levels=1 or levels=2 can match the full levels=9 at the optimal L=2/C=2048 config. If viable, the mixer shrinks from 10 scales to 2-3, freeing massive VRAM for wider C or more layers.
+
+| Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 9 | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | 1.0247 | 1180.28M | 24,883 MiB | 6,733 MiB | Baseline (2.0x dropout best) |
+|   | 1 | | | TBD | | | | 5x fewer mixer params per layer |
+|   | 2 | | | TBD | | | | 3.3x fewer mixer params per layer |
 
 ### Planned: lower priority (fine-tuning)
 
@@ -322,6 +333,17 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 | `grad_accum` | 2 | Effective batch size (with micro_batch_size) | TBD |
 | `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
 | `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
+
+### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
+
+Testing whether ultra-wide C=4096 with exp_param (enabling lr=0.02) outperforms C=2048. MLP=10 due to VRAM constraints (MLP=20 at C=4096 exceeds 49 GB). All runs include PLE, PKM+FwPKM-16384.
+
+| Run | L | C | MLP | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---|------|-----|------|--------|---------------|--------|------------|----------------|-------|
+|   | 1 | 4096 | 10 | 0.01 | | | ~3.5B | | | | Width scaling baseline |
+|   | 2 | 4096 | 10 | 0.01 | | | ~6.7B | | | | L=2 baseline; may need MBS=2/GA=8 |
+|   | 1 | 4096 | 10 | 0.02 | | | ~3.5B | | | | Exp param + higher LR |
+|   | 2 | 4096 | 10 | 0.02 | | | ~6.7B | | | | Exp param + higher LR; may need MBS=2/GA=8 |
 
 ### Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs
 
@@ -341,8 +363,6 @@ Testing whether shared_lifting_weights and lifting_linear_only enable efficient 
 |   | true  | false | | | TBD | | | | Shared lifting; saves ~675M params |
 |   | false | true  | | | TBD | | | | Linear-only lifting; saves ~370M params |
 |   | true  | true  | | | TBD | | | | Both; maximum param savings |
-
-> Param counts TBD — run estimation on RunPod to get exact figures and confirm VRAM fit.
 
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
