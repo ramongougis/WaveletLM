@@ -28,18 +28,19 @@
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
 25. [Block size (context window)](#block-size-context-window)
 26. [Planned: lower priority (fine-tuning)](#planned-lower-priority-fine-tuning)
-27. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-28. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-29. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-30. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-31. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-32. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-33. [Best PTQ combination](#best-ptq-combination)
-34. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-35. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
-36. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-37. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-38. [Run Details](#run-details)
+27. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
+28. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+29. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+30. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+31. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+32. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+33. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+34. [Best PTQ combination](#best-ptq-combination)
+35. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+36. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+37. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+38. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+39. [Run Details](#run-details)
 
 ---
 
@@ -323,6 +324,17 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 | `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
 | `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
 
+### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
+
+Testing whether ultra-wide C=4096 with exp_param (enabling lr=0.02) outperforms C=2048. MLP=10 due to VRAM constraints (MLP=20 at C=4096 exceeds 49 GB). All runs include PLE, PKM+FwPKM-16384.
+
+| Run | L | C | MLP | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---|------|-----|------|--------|---------------|--------|------------|----------------|-------|
+|   | 1 | 4096 | 10 | 0.01 | | | ~3.5B | | | | Width scaling baseline |
+|   | 2 | 4096 | 10 | 0.01 | | | ~6.7B | | | | L=2 baseline; may need MBS=2/GA=8 |
+|   | 1 | 4096 | 10 | 0.02 | | | ~3.5B | | | | Exp param + higher LR |
+|   | 2 | 4096 | 10 | 0.02 | | | ~6.7B | | | | Exp param + higher LR; may need MBS=2/GA=8 |
+
 ### Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs
 
 Combines all proven improvements: exponential parametrization (enables lr=0.02), aggressive dropout, full recipe. Other settings match best ablation results (except layers, kept at L=2).
@@ -341,8 +353,6 @@ Testing whether shared_lifting_weights and lifting_linear_only enable efficient 
 |   | true  | false | | | TBD | | | | Shared lifting; saves ~675M params |
 |   | false | true  | | | TBD | | | | Linear-only lifting; saves ~370M params |
 |   | true  | true  | | | TBD | | | | Both; maximum param savings |
-
-> Param counts TBD — run estimation on RunPod to get exact figures and confirm VRAM fit.
 
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
