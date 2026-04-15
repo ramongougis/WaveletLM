@@ -281,7 +281,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 15  | [link](logs/wikitext-103_2026-04-15_13-01-46/log.txt) | 1.1816 | 287.80M | 15,098 MiB | 1,724 MiB | |
 |   | 18  | [link](logs/wikitext-103_2026-04-15_15-10-58/log.txt) | 1.1776 | 335.07M | 17,330 MiB | 1,998 MiB | |
 |   | 20 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline |
-|   | 30 | | | 524.14M | | | In progress |
+|   | 30 | [link](logs/wikitext-103_2026-04-15_17-46-01/log.txt) | 1.1642 | 524.14M | 26,257 MiB | 3,091 MiB | Slight improvement over L=20; diminishing returns |
 
 ### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512
 
@@ -289,14 +289,14 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
 |   | 1 | | | | | | |
 |   | 5 | | | | | | |
-|   | 9 | | | | | | Baseline (default = log2(block_size=512)) |
+|   | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4; default = log2(block_size=512)) |
 |   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
 
 ### Low-rank factorization in spectral mixer
 
 | Run | low_rank | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|----------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 0  | | | | | | | Baseline (full rank) |
+|   | 0  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4; full rank) |
 |   | 4  | | | | | | | Adds U·V^T perturbation (~0.8M total) |
 |   | 16 | | | | | | | Higher rank perturbation |
 
@@ -304,7 +304,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 | Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 1 | | | | | | | Baseline |
+|   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
 |   | 2 | | | | | | | Wider predict/update MLPs in wavelet lifting |
 |   | 4 | | | | | | | |
 
@@ -313,8 +313,18 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 | Run | block_size | levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|------------|--------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 256  | 8 | | | | | | | Half context; levels=log2(256) |
-|   | 512  | 9 | | | | | | | Baseline |
+|   | 512  | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
+
+### Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout
+
+Testing whether levels=1 or levels=2 can match the full levels=9 at the optimal L=2/C=2048 config. If viable, the mixer shrinks from 10 scales to 2-3, freeing massive VRAM for wider C or more layers.
+
+| Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | 9 | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | 1.0247 | 1180.28M | 24,883 MiB | 6,733 MiB | Baseline (2.0x dropout best) |
+|   | 1 | | | TBD | | | | 5x fewer mixer params per layer |
+|   | 2 | | | TBD | | | | 3.3x fewer mixer params per layer |
 
 ### Planned: lower priority (fine-tuning)
 
