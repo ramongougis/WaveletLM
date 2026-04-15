@@ -141,7 +141,7 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 
 \* Trained and evaluated on the same dataset (direct comparison to EXARCH).
 
-EXARCH achieves this with only 2 layers (L=2, C=2048), no attention, no recurrence, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
+EXARCH achieves this with only 2 layers (L=2, C=2048), no attention, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
 
 [^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5 epochs, 2.0x dropout. BPB=1.0247. See [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt).
 
