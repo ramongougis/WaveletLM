@@ -125,19 +125,13 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 
 | Model | Type | Trained on | Params | PPL |
 |-------|------|-----------|--------|-----|
-| Mamba-2 | SSM | The Pile (~800GB) | 2.7B | ~13[^2] |
-| Mamba | SSM | The Pile (~800GB) | 1.4B | ~17[^3] |
-| Transformer-XL* | Transformer + recurrence* | WikiText-103 (~0.5GB)* | 257M* | ~18[^4]* |
-| GPT-2 XL | Transformer | WebText (~40GB) | 1.5B | ~18[^5] |
-| RWKV-6 | Linear RNN | The Pile (~800GB) | 1.5B | ~18[^6] |
-| xLSTM | Extended LSTM | SlimPajama (~627GB) | 1.3B | ~18[^7] |
-| Hyena | Long convolution | The Pile (~800GB) | 1.4B | ~18[^8] |
-| GPT-2 Large | Transformer | WebText (~40GB) | 774M | ~19[^5] |
-| S4* | SSM* | WikiText-103 (~0.5GB)* | 130M* | ~20[^9]* |
-| GPT-2 Medium | Transformer | WebText (~40GB) | 355M | ~22[^5] |
-| RWKV-4 | Linear RNN | The Pile (~800GB) | 430M | ~22[^10] |
+| Transformer-XL* | Transformer + recurrence* | WikiText-103 (~0.5GB)* | 257M* | ~18[^2]* |
+| GPT-2 XL | Transformer | WebText (~40GB) | 1.5B | ~18[^3] |
+| GPT-2 Large | Transformer | WebText (~40GB) | 774M | ~19[^3] |
+| S4* | SSM* | WikiText-103 (~0.5GB)* | 130M* | ~20[^4]* |
+| GPT-2 Medium | Transformer | WebText (~40GB) | 355M | ~22[^3] |
 | **EXARCH** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **1.18B** | **~24**[^1] |
-| GPT-2 | Transformer | WebText (~40GB) | 124M | ~29[^5] |
+| GPT-2 | Transformer | WebText (~40GB) | 124M | ~29[^3] |
 
 \* Trained and evaluated on the same dataset (direct comparison to EXARCH).
 
@@ -153,12 +147,6 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## References
 
-[^2]: Dao & Gu. ["Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality."](https://arxiv.org/pdf/2405.21060) arXiv:2405.21060, 2024.
-[^3]: Gu & Dao. "Mamba: Linear-Time Sequence Modeling with Selective State Spaces." arXiv:2312.00752, 2023.
-[^4]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
-[^5]: Radford et al. "Language Models are Unsupervised Multitask Learners." OpenAI, 2019.
-[^6]: Peng et al. "Eagle and Finch: RWKV with Matrix-Valued States and Dynamic Recurrence." arXiv:2404.05892, 2024.
-[^7]: Beck et al. "xLSTM: Extended Long Short-Term Memory." arXiv:2405.04517, 2024.
-[^8]: Poli et al. "Hyena Hierarchy: Towards Larger Convolutional Language Models." arXiv:2302.10866, 2023.
-[^9]: Gu et al. "Efficiently Modeling Long Sequences with Structured State Spaces." arXiv:2111.00396, 2021.
-[^10]: Peng et al. "RWKV: Reinventing RNNs for the Transformer Era." arXiv:2305.13048, 2023.
+[^2]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
+[^3]: Radford et al. "Language Models are Unsupervised Multitask Learners." OpenAI, 2019.
+[^4]: Gu et al. "Efficiently Modeling Long Sequences with Structured State Spaces." arXiv:2111.00396, 2021.
