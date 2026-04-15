@@ -123,21 +123,21 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 
 ### WikiText-103 Perplexity Comparison
 
-| Model | Type | Trained on | Evaluated on | Params | PPL |
-|-------|------|-----------|-------------|--------|-----|
-| Mamba-2 | SSM | The Pile (~800GB) | WikiText-103 | 2.7B | ~13[^2] |
-| Mamba | SSM | The Pile (~800GB) | WikiText-103 | 1.4B | ~17[^3] |
-| Transformer-XL | Transformer + recurrence | WikiText-103 | WikiText-103 | 257M | ~18[^4] |
-| GPT-2 XL | Transformer | WebText (~40GB) | WikiText-103 | 1.5B | ~18[^5] |
-| RWKV-6 | Linear RNN | The Pile (~800GB) | WikiText-103 | 1.5B | ~18[^6] |
-| xLSTM | Extended LSTM | SlimPajama (~627GB) | WikiText-103 | 1.3B | ~18[^7] |
-| Hyena | Long convolution | The Pile (~800GB) | WikiText-103 | 1.4B | ~18[^8] |
-| GPT-2 Large | Transformer | WebText (~40GB) | WikiText-103 | 774M | ~19[^5] |
-| S4 | SSM | WikiText-103 | WikiText-103 | 130M | ~20[^9] |
-| GPT-2 Medium | Transformer | WebText (~40GB) | WikiText-103 | 355M | ~22[^5] |
-| RWKV-4 | Linear RNN | The Pile (~800GB) | WikiText-103 | 430M | ~22[^10] |
-| **EXARCH** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **WikiText-103** | **1.18B** | **~24**[^1] |
-| GPT-2 | Transformer | WebText (~40GB) | WikiText-103 | 124M | ~29[^5] |
+| Model | Type | Trained on | Params | PPL |
+|-------|------|-----------|--------|-----|
+| Mamba-2 | SSM | The Pile (~800GB) | 2.7B | ~13[^2] |
+| Mamba | SSM | The Pile (~800GB) | 1.4B | ~17[^3] |
+| Transformer-XL | Transformer + recurrence | WikiText-103 | 257M | ~18[^4] |
+| GPT-2 XL | Transformer | WebText (~40GB) | 1.5B | ~18[^5] |
+| RWKV-6 | Linear RNN | The Pile (~800GB) | 1.5B | ~18[^6] |
+| xLSTM | Extended LSTM | SlimPajama (~627GB) | 1.3B | ~18[^7] |
+| Hyena | Long convolution | The Pile (~800GB) | 1.4B | ~18[^8] |
+| GPT-2 Large | Transformer | WebText (~40GB) | 774M | ~19[^5] |
+| S4 | SSM | WikiText-103 | 130M | ~20[^9] |
+| GPT-2 Medium | Transformer | WebText (~40GB) | 355M | ~22[^5] |
+| RWKV-4 | Linear RNN | The Pile (~800GB) | 430M | ~22[^10] |
+| **EXARCH** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **1.18B** | **~24**[^1] |
+| GPT-2 | Transformer | WebText (~40GB) | 124M | ~29[^5] |
 
 EXARCH achieves this with only 2 layers (L=2, C=2048), no attention, no recurrence, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
 
