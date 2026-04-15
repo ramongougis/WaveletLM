@@ -14,7 +14,7 @@
 10. [Mixer depth: C = 512, epochs = 1, optimal booleans + mlp_expansion](#mixer-depth-c--512-epochs--1-optimal-booleans--mlp_expansion)
 11. [Mixer depth + higher LR](#mixer-depth--higher-lr)
 12. [Mixer depth stabilizers ablation](#mixer-depth-stabilizers-ablation-alpha_d-beta_d-init-1d-scaled-mixer-init)
-13. [Mixer depth + lower LR: can reduced LR stabilize deeper mixers?]
+13. [Mixer depth + lower LR: can reduced LR stabilize deeper mixers?](#mixer-depth--lower-lr-can-reduced-lr-stabilize-deeper-mixers)
 14. [Layers = 1: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers--1-c--512-epochs--1-optimal-booleans--mlp_expansion)
 15. [Layers = 1 ablations, part 1 (C = 512)](#layers--1-ablations-part-1-c--512)
 16. [Layers = 1 ablations, part 2 (bigger C)](#layers--1-ablations-part-2-bigger-c)
@@ -27,15 +27,19 @@
 23. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
 25. [Block size (context window)](#block-size-context-window)
-26. [Dropout optimization](#dropout-optimization-c--512-5-epochs-optimal-booleans--mlp_expansion--layers--levels)
-27. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-28. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-29. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-30. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-31. [Best PTQ combination](#best-ptq-combination)
-32. [Section](link)
-33. [Section](link)
-34. [Section](link)
+26. [Planned: lower priority (fine-tuning)](#planned-lower-priority-fine-tuning)
+27. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+28. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+29. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+30. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+31. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+32. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+33. [Best PTQ combination](#best-ptq-combination)
+34. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+35. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+36. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+37. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+38. [Run Details](#run-details)
 
 ---
 
@@ -273,10 +277,10 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 | 45  | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | 17min train; 46.6 tok/s gen |
 |   | 4  | [link](logs/wikitext-103_2026-04-15_10-53-44/log.txt) | 1.2403 | 114.49M | 6,916 MiB | 722 MiB | |
 |   | 10  | [link](logs/wikitext-103_2026-04-15_11-34-21/log.txt) | 1.1981 | 209.02M | 11,379 MiB | 1,269 MiB | |
-|   | 15  | | | | | | |
-|   | 18  | | | | | | |
-|   | 20 | | | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
-|   | 30 | | | | | | |
+|   | 15  | [link](logs/wikitext-103_2026-04-15_13-01-46/log.txt) | 1.1816 | 287.80M | 15,098 MiB | 1,724 MiB | |
+|   | 18  | [link](logs/wikitext-103_2026-04-15_15-10-58/log.txt) | 1.1776 | 335.07M | 17,330 MiB | 1,998 MiB | |
+|   | 20 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline |
+|   | 30 | | | 524.14M | | | In progress |
 
 ### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512
 
@@ -311,23 +315,34 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 512  | 9 | | | | | | | Baseline |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
 
-### Best run candidate: L=2, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs
+### Planned: lower priority (fine-tuning)
+
+| Parameter | Current | What it tests | Values |
+|-----------|---------|---------------|--------|
+| `grad_accum` | 2 | Effective batch size (with micro_batch_size) | TBD |
+| `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
+| `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
+
+### Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs
 
 Combines all proven improvements: exponential parametrization (enables lr=0.02), aggressive dropout, full recipe. Other settings match best ablation results (except layers, kept at L=2).
 
 | Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, exp_param, lr=0.02, 5ep. Dropout: emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25 (global cap of 0.25) | | | ~1.18B | | | | TODO: verify other settings match best ablation results before running |
+|   | L=10, C=2048, MLP=20, PLE, PKM+FwPKM-16384, exp_param, lr=0.02, 5ep. Dropout: emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25 (global cap of 0.25) | | | TBD | | | | TODO: verify other settings and param count on RunPod before running |
 
-### Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels
+### Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs
 
-Starting from EXARCH-research's tuned dropout values (jointly optimized at 10 epochs). Testing at 5 epochs, but comparing against better earlier 3-epoch baseline (which was better than 5-epochs earlier due to having no dropout).
+Testing whether shared_lifting_weights and lifting_linear_only enable efficient scaling to L=10 at C=2048 by dramatically reducing per-layer lifting params. All runs use the best candidate config above as baseline (exp_param, lr=0.02, ~2.5x dropout, PLE, PKM+FwPKM-16384, MLP=20).
 
-| Run | Dropout values | Epochs | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Train/val gap | Notes |
-|-----|----------------|--------|--------|---------------|------------|----------------|---------------|-------|
-|   | Baseline (all 0.0) | 3 | [link](#run-6) | 1.1169 | 18,738 MiB | 2,179 MiB | 0.43 | From epoch sweep |
-|   | emb=0.1, proj=0.05, mixer=0.05, mlp=0.05, lm_head=0.12 | 5 | | | | | |  |
-|   | 1.5×: emb=0.15, proj=0.075, mixer=0.075, mlp=0.075, lm_head=0.18 | 5 | | | | | | Only if still overfitting  |
+| Run | SLW | LLO | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|-----|-----|--------|---------------|--------|------------|----------------|-------|
+|   | false | false | | | TBD | | | | L=10 baseline above |
+|   | true  | false | | | TBD | | | | Shared lifting; saves ~675M params |
+|   | false | true  | | | TBD | | | | Linear-only lifting; saves ~370M params |
+|   | true  | true  | | | TBD | | | | Both; maximum param savings |
+
+> Param counts TBD — run estimation on RunPod to get exact figures and confirm VRAM fit.
 
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
@@ -372,23 +387,6 @@ Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scal
 |-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
 |   | | | | | | | | | | | | Best combo from above; chosen to minimize size while keeping BPB delta < 0.01 |
 
-### Planned: lower priority (fine-tuning)
-
-| Parameter | Current | What it tests | Values |
-|-----------|---------|---------------|--------|
-| `grad_accum` | 2 | Effective batch size (with micro_batch_size) | TBD |
-| `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
-| `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
-
-### Shared lifting weights at scale: 6 epochs
-
-Test whether the SLW gap continues narrowing at full training length. Gap trend: +0.0108 (1ep) → +0.0089 (3ep) → ?
-
-| Run | SLW | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Delta | Notes |
-|-----|-----|--------|---------------|--------|---------------|------------------|-------|-------|
-|   | false | | | | | | | Best config baseline (from best run below) |
-|   | true  | | | | | | | If delta < 0.003, SLW becomes default for deployment |
-
 ### Best run: optimal config, 10 epochs, seed = 1337
 
 Target config: C=1024, L=20, SLW=true, mlp_expansion=200, PKM=65536, FwPKM=65536, optimal booleans + dropout from sweeps. ~12B params. Requires B200 (192 GB HBM3e).
@@ -410,17 +408,6 @@ Target config: C=1024, L=20, SLW=true, mlp_expansion=200, PKM=65536, FwPKM=65536
 
 Mean BPB: _ ± _
 
-### Planned: dataset comparisons (best config, feasible epochs)
-
-| Dataset | HuggingFace ID | Domain | Folder | BPB (sliding) | Notes |
-|---------|---------------|--------|--------|---------------|-------|
-| WikiText-103 | `wikitext-103` | Wikipedia | | | Primary benchmark |
-| PG-19 | `pg19` | Books (long-range coherence) | | | |
-| Pile ArXiv | `pile-arxiv` | Academic/technical | | | |
-| BookCorpusOpen | `bookcorpusopen` | Fiction | | | |
-| TinyStories | `tinystories` | Simple narratives | | | Regression test |
-| OpenWebText | `openwebtext` | Web text | | | |
-
 ### Planned: model comparisons (WikiText-103, matched compute)
 
 All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset preprocessing, and same sliding window evaluation methodology. Competitors use all available optimizations (Flash Attention, torch.compile, KV cache, etc.) to ensure the comparison reflects each architecture's best-case performance.
@@ -431,6 +418,17 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 | GPT-2 | Transformer | | | | | | Flash Attention, KV cache, TurboQuant, torch.compile, fp16 | Matched compute |
 | Mamba | SSM | | | | | | Mamba CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 | RWKV | Linear attention | | | | | | Custom CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
+
+### Planned: dataset comparisons (best config, feasible epochs)
+
+| Dataset | HuggingFace ID | Domain | Folder | BPB (sliding) | Notes |
+|---------|---------------|--------|--------|---------------|-------|
+| WikiText-103 | `wikitext-103` | Wikipedia | | | Primary benchmark |
+| PG-19 | `pg19` | Books (long-range coherence) | | | |
+| Pile ArXiv | `pile-arxiv` | Academic/technical | | | |
+| BookCorpusOpen | `bookcorpusopen` | Fiction | | | |
+| TinyStories | `tinystories` | Simple narratives | | | Regression test |
+| OpenWebText | `openwebtext` | Web text | | | |
 
 ---
 
