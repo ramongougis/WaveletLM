@@ -264,15 +264,15 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |-----|--------|-----------|--------|---------------|--------|------------|----------------|-------|
 |   | L=1, C=2048, MLP=20, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_01-46-27/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Identical to baseline (1.1431); no improvement |
 |   | L=1, C=2048, MLP=20, lr=0.02 | true | [link](logs/wikitext-103_2026-04-15_03-35-54/log.txt) | **1.1347** | 617.05M | 14,109 MiB | 3,519 MiB | **Survived lr=0.02! Previously NaN'd; -0.0084 vs baseline** |
-|   | L=20, C=512, MD=5, lr=0.01 | true | | | 787.24M | | | | Previously NaN'd at step 3600; can exp param fix? |
+|   | L=20, C=512, MD=5, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_05-24-40/log.txt) | NaN | 787.24M | — | — | — | NaN at step 3600 again; exp param doesn't fix depth instability |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
 | 45  | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | 17min train; 46.6 tok/s gen |
-|   | 4  | | | | | | |
-|   | 10  | | | | | | |
+|   | 4  | [link](logs/wikitext-103_2026-04-15_10-53-44/log.txt) | 1.2403 | 114.49M | 6,916 MiB | 722 MiB | |
+|   | 10  | [link](logs/wikitext-103_2026-04-15_11-34-21/log.txt) | 1.1981 | 209.02M | 11,379 MiB | 1,269 MiB | |
 |   | 15  | | | | | | |
 |   | 18  | | | | | | |
 |   | 20 | | | | | | Baseline (from MLP sweep; VRAM-fitted mlp_expansion) |
@@ -310,6 +310,14 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 256  | 8 | | | | | | | Half context; levels=log2(256) |
 |   | 512  | 9 | | | | | | | Baseline |
 |   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
+
+### Best run candidate: L=2, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs
+
+Combines all proven improvements: exponential parametrization (enables lr=0.02), aggressive dropout, full recipe. Other settings match best ablation results (except layers, kept at L=2).
+
+| Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|-------|
+|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, exp_param, lr=0.02, 5ep. Dropout: emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25 (global cap of 0.25) | | | ~1.18B | | | | TODO: verify other settings match best ablation results before running |
 
 ### Dropout optimization: C = 512, 5 epochs, optimal booleans + mlp_expansion + layers + levels
 
