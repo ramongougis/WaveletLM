@@ -34,6 +34,110 @@ from model import ExarchLM, MultiNodeExarchLM, causal_haar_decompose, quantize_m
 # UTILITIES
 # ==============================================================================
 
+def clean_text_spacing(txt):
+    """Clean WikiText-103 spacing artifacts from generated text.
+
+    Fixes:
+    - Space before periods and semicolons
+    - Space after opening brackets, space before closing brackets
+    - Space before contraction apostrophes (e.g., "don 't" -> "don't")
+    - Quotation mark spacing using odd/even series logic
+    """
+    # 1. Periods and semicolons: remove space before
+    txt = re.sub(r' \.', '.', txt)
+    txt = re.sub(r' ;', ';', txt)
+
+    # 2. Parenthetical marks: remove space on the "open" side
+    txt = re.sub(r'\( ', '(', txt)   # space after (
+    txt = re.sub(r'\[ ', '[', txt)   # space after [
+    txt = re.sub(r'\{ ', '{', txt)   # space after {
+    txt = re.sub(r' \)', ')', txt)   # space before )
+    txt = re.sub(r' \]', ']', txt)   # space before ]
+    txt = re.sub(r' \}', '}', txt)   # space before }
+
+    # 3. Contractions: remove space before apostrophe + common particles
+    txt = re.sub(r" '(s|t|d|ll|ve|re|m|n)\b", r"'\1", txt)
+
+    # 4. Quotation marks: odd/even series logic
+    for quote_char in ['"']:
+        txt = _fix_quote_spacing(txt, quote_char)
+
+    # 5. Single quotes: only apply series logic when series has multiple quotes
+    txt = _fix_single_quote_spacing(txt)
+
+    return txt
+
+
+def _fix_quote_spacing(txt, q):
+    """Fix spacing around quote series using odd/even logic.
+
+    A 'series' is one or more quote characters possibly separated by spaces.
+    Odd series (1st, 3rd, ...): remove space after the series.
+    Even series (2nd, 4th, ...): remove space before the series.
+    """
+    escaped_q = re.escape(q)
+    # Match a series: one or more quote chars possibly separated by spaces
+    series_pattern = escaped_q + r'(?:\s*' + escaped_q + r')*'
+
+    parts = re.split(r'(' + series_pattern + r')', txt)
+    series_count = 0
+    result = []
+
+    for i, part in enumerate(parts):
+        if re.fullmatch(series_pattern, part):
+            # This is a quote series — remove internal spaces
+            cleaned_series = part.replace(' ', '')
+            series_count += 1
+
+            if series_count % 2 == 1:
+                # Odd series: remove space after (it's in the next part)
+                result.append(cleaned_series)
+                if i + 1 < len(parts) and parts[i + 1].startswith(' '):
+                    parts[i + 1] = parts[i + 1][1:]
+            else:
+                # Even series: remove space before (it's at the end of previous part)
+                if result and result[-1].endswith(' '):
+                    result[-1] = result[-1][:-1]
+                result.append(cleaned_series)
+        else:
+            result.append(part)
+
+    return ''.join(result)
+
+
+def _fix_single_quote_spacing(txt):
+    """Fix single quote spacing, distinguishing from apostrophes.
+
+    Only applies series logic to single quotes when a series contains
+    more than one quote character. Standalone single quotes adjacent to
+    contraction particles are handled by the contraction rule above.
+    """
+    # Match series of 2+ single quotes (possibly with spaces between)
+    series_pattern = r"'(?:\s*')+"
+
+    parts = re.split(r'(' + series_pattern + r')', txt)
+    series_count = 0
+    result = []
+
+    for i, part in enumerate(parts):
+        if re.fullmatch(series_pattern, part):
+            cleaned_series = part.replace(' ', '')
+            series_count += 1
+
+            if series_count % 2 == 1:
+                result.append(cleaned_series)
+                if i + 1 < len(parts) and parts[i + 1].startswith(' '):
+                    parts[i + 1] = parts[i + 1][1:]
+            else:
+                if result and result[-1].endswith(' '):
+                    result[-1] = result[-1][:-1]
+                result.append(cleaned_series)
+        else:
+            result.append(part)
+
+    return ''.join(result)
+
+
 def strip_compiled_prefix(state_dict):
     """Remove _orig_mod. prefix from torch.compile state dicts."""
     out = {}
@@ -561,7 +665,7 @@ def main():
         elapsed = time.time() - t0
 
         if args.clean_spacing:
-            txt = re.sub(r' \.', '.', txt)
+            txt = clean_text_spacing(txt)
 
         log(txt)
         log("-" * 60)

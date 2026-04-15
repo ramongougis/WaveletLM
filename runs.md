@@ -246,7 +246,7 @@ L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384. ~1.18B params, ~21 GB estimated.
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_17-11-15/log.txt) | **1.0468** | 1180.28M | 24,883 MiB | 6,733 MiB | **1.0x dropout; new best! Val still improving at epoch 5; gap=1.00** |
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-13_09-51-55/log.txt) | **1.0319** | 1180.28M | 24,883 MiB | 6,733 MiB | **1.5x dropout; new best! Gap=0.81; val still improving at epoch 5** |
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-14_06-41-17/log.txt) | — | 1180.28M | — | — | — | 1.5x dropout + WD=1e-3; early-stopped; WD too aggressive for Adagrad, training stalled |
-|   | 2 | 5 | | | ~1.18B | | | | 2.0x dropout: emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24 |
+|   | 2 | 5 | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | **1.0247** | 1180.28M | 24,883 MiB | 6,733 MiB | **2.0x dropout; new best! Gap=0.69; val improving all 5 epochs** |
 
 ### Grokking experiment: C=128, L=2, tiny core + massive memory
 
@@ -262,8 +262,8 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 | Run | Config | exp_param | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|-----------|--------|---------------|--------|------------|----------------|-------|
-|   | L=1, C=2048, MLP=20, lr=0.01 | true | | | 617.05M | | | | vs baseline 1.1431; does mixer utilize params better? |
-|   | L=1, C=2048, MLP=20, lr=0.02 | true | | | 617.05M | | | | Previously NaN'd at step 700; can exp param fix? |
+|   | L=1, C=2048, MLP=20, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_01-46-27/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Identical to baseline (1.1431); no improvement |
+|   | L=1, C=2048, MLP=20, lr=0.02 | true | [link](logs/wikitext-103_2026-04-15_03-35-54/log.txt) | **1.1347** | 617.05M | 14,109 MiB | 3,519 MiB | **Survived lr=0.02! Previously NaN'd; -0.0084 vs baseline** |
 |   | L=20, C=512, MD=5, lr=0.01 | true | | | 787.24M | | | | Previously NaN'd at step 3600; can exp param fix? |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
