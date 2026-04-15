@@ -147,9 +147,13 @@ EXARCH achieves this with only 2 layers (L=2, C=2048), no attention, and no KV c
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) for details.
+
 ## References
 
-[^2]: Dao & Gu. "Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality." arXiv:2405.21060, 2024.
+[^2]: Dao & Gu. ["Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality."](https://arxiv.org/pdf/2405.21060) arXiv:2405.21060, 2024.
 [^3]: Gu & Dao. "Mamba: Linear-Time Sequence Modeling with Selective State Spaces." arXiv:2312.00752, 2023.
 [^4]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
 [^5]: Radford et al. "Language Models are Unsupervised Multitask Learners." OpenAI, 2019.
@@ -158,7 +162,3 @@ See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark
 [^8]: Poli et al. "Hyena Hierarchy: Towards Larger Convolutional Language Models." arXiv:2302.10866, 2023.
 [^9]: Gu et al. "Efficiently Modeling Long Sequences with Structured State Spaces." arXiv:2111.00396, 2021.
 [^10]: Peng et al. "RWKV: Reinventing RNNs for the Transformer Era." arXiv:2305.13048, 2023.
-
-## License
-
-Apache License 2.0. See [LICENSE](LICENSE) for details.
