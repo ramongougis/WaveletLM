@@ -287,8 +287,12 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 | Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | 1 | | | | | | |
-|   | 5 | | | | | | |
+|   | 1 | [link](logs/wikitext-103_2026-04-15_22-17-16/log.txt) | 1.2357 | 114.51M | 7,133 MiB | 738 MiB | 3.2x fewer params, only +0.061 BPB vs baseline |
+|   | 2 | | | | | | | To be tested; bracket levels=5 downward |
+|   | 3 | | | | | | | To be tested; bracket levels=5 downward |
+|   | 4 | | | | | | | To be tested; bracket levels=5 downward |
+|   | 5 | [link](logs/wikitext-103_2026-04-15_23-05-09/log.txt) | 1.1673 | 240.55M | 12,976 MiB | 1,459 MiB | Beats baseline with 34% fewer params! |
+|   | 6 | | | | | | | To be tested; bracket levels=5 upward |
 |   | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4; default = log2(block_size=512)) |
 |   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
 
