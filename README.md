@@ -96,13 +96,11 @@ Learned Embedding (C)
 |  LayerNorm                 |
 |  Lifting Wavelet Decompose |
 |  Fast Hadamard Transform   |
-|  Gated Spectral Mixer      |  <-- per-scale SwiGLU mixing
+|  Gated Spectral Mixer      |  <-- with optional cross-scale gating
 |  Fast Hadamard (inverse)   |
 |  Learned Scale Weights     |
 |  Wavelet Reconstruct       |
-|  Residual Connection       |
 |  LayerNorm --> MLP         |
-|  Residual Connection       |
 +----------------------------+
     |
     v
@@ -113,7 +111,16 @@ LayerNorm --> LM Head --> logits
 
 **Spectral mixing** applies a Fast Hadamard Transform across channels, then mixes each wavelet scale independently through gated linear layers (SwiGLU by default), before inverting the Hadamard.
 
+**Cross-scale gating** over 5 wavelet scales (equal to the number of levels) allows for a fixed O(5²) = O(25) cost per layer regardless of context size, versus attention's O(N²) cost in sequence length.
+
 **Semantic feedback** optionally passes a causal running mean of hidden states between layers, providing cross-layer context without attention.
+
+### Optional features
+
+- **Per-Layer Embedding** — adds a learned per-channel residual of the original token embedding at each block, letting deeper blocks reach back to the input representation when relevant.
+- **Product Key Memory / Fast-Weight Product Key Memory** — sparse key-value memory modules that complement the dense MLP, providing parameter-efficient long-tail pattern storage with optional inference-time fast-weight updates.
+- **Low-Rank Factorization** — adds a rank-r perturbation `U·V^T` to the spectral mixer, expanding mixing expressivity at trivial parameter cost (rank=4 yields a measurable BPB improvement).
+- **Exponential Parametrization** — reparameterizes mixer weights through `exp()`, stabilizing training under high learning rates that would otherwise NaN.
 
 ## Multinodal
 
