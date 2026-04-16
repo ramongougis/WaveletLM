@@ -118,8 +118,11 @@ LayerNorm --> LM Head --> logits
 ### Optional features
 
 - **Per-Layer Embedding** — adds a learned per-channel residual of the original token embedding at each block, letting deeper blocks reach back to the input representation when relevant.
+
 - **Product Key Memory / Fast-Weight Product Key Memory** — sparse key-value memory modules that complement the dense MLP, providing parameter-efficient long-tail pattern storage with optional inference-time fast-weight updates.
+
 - **Low-Rank Factorization** — adds a rank-r perturbation `U·V^T` to the spectral mixer, expanding mixing expressivity at trivial parameter cost (rank=4 yields a measurable BPB improvement).
+
 - **Exponential Parametrization** — reparameterizes mixer weights through `exp()`, stabilizing training under high learning rates that would otherwise NaN.
 
 ## Multinodal
