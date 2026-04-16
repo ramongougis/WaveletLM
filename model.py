@@ -664,6 +664,7 @@ class ExarchBlock(nn.Module):
         skip_proj_out: bool = False,
         learned_residual: bool = False,
         shared_lifting_module: 'LiftingWaveletDecompose' = None,
+        untied_reconstruction: bool = False,
         use_mixer_gate: bool = True,
         mixer_gate_activation: str = "silu",
         pkm_enabled: bool = False,
@@ -702,7 +703,22 @@ class ExarchBlock(nn.Module):
                     device=device,
                     dtype=dtype,
                 )
-            self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_wavelet)
+            if untied_reconstruction:
+                # Asymmetric: reconstruction has its own predict/update networks,
+                # breaking the strict-invertibility constraint of classical wavelets.
+                self.lifting_reconstruct_wavelet = LiftingWaveletDecompose(
+                    levels=levels,
+                    C=self.Cp,
+                    hidden_mult=lifting_hidden_mult,
+                    init_wavelet=lifting_init,
+                    dropout=lifting_dropout,
+                    linear_only=lifting_linear_only,
+                    device=device,
+                    dtype=dtype,
+                )
+                self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_reconstruct_wavelet)
+            else:
+                self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_wavelet)
 
         # Decompose bypass projections
         if self.decompose_bypass:
@@ -1000,6 +1016,9 @@ class ExarchLM(nn.Module):
             lifting_params = sum(p.numel() for p in shared_lifting.parameters())
             print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params")
 
+        if config.get("untied_reconstruction", False):
+            print(f"[Lifting] Untied reconstruction: per-layer separate decompose/reconstruct weights")
+
         Cp = next_pow2(C)
         if skip_proj_out and Cp == C:
             saved = config['layers'] * (Cp * C + C)
@@ -1042,6 +1061,7 @@ class ExarchLM(nn.Module):
                 skip_proj_out=skip_proj_out,
                 learned_residual=learned_residual,
                 shared_lifting_module=shared_lifting,
+                untied_reconstruction=config.get("untied_reconstruction", False),
                 use_mixer_gate=config.get("use_mixer_gate", True),
                 mixer_gate_activation=config.get("mixer_gate_activation", "silu"),
                 pkm_enabled=config.get("pkm_enabled", False),
@@ -1617,9 +1637,13 @@ def quantize_model(model, config):
                 if mixer.use_mixer_gate:
                     mixer.gate = QuantizedLinear(mixer.gate, bits)
 
-            # Lifting wavelet
-            lifting = layer.lifting_wavelet
-            if id(lifting) not in quantized_lifting_ids:
+            # Lifting wavelet (decompose; possibly shared across layers)
+            lifting_modules = [layer.lifting_wavelet]
+            if hasattr(layer, 'lifting_reconstruct_wavelet'):
+                lifting_modules.append(layer.lifting_reconstruct_wavelet)
+            for lifting in lifting_modules:
+                if id(lifting) in quantized_lifting_ids:
+                    continue
                 quantized_lifting_ids.add(id(lifting))
                 for i, net in enumerate(lifting.predict_nets):
                     if isinstance(net, nn.Linear):

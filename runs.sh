@@ -35,6 +35,7 @@ baseline = {
     "fwpkm_chunk_size": 64,
     "wavelet_mode": "lifting",
     "shared_lifting_weights": False,
+    "untied_reconstruction": False,
     "lifting_linear_only": False,
     "lifting_hidden_mult": 1,
     "lifting_init": "haar",
