@@ -125,29 +125,10 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# LEVELS SWEEP (epochs=1, mlp_expansion=1, C=512, layers=20, block_size=512)
+# LOW-RANK FACTORIZATION (64 AND HIGHER)
 # =====================================================================
 
-# levels=9 is baseline (default = log2(block_size=512)), no need to rerun
-run_with "Levels: 2" "cfg['levels'] = 2"
-run_with "Levels: 3" "cfg['levels'] = 3"
-run_with "Levels: 4" "cfg['levels'] = 4"
-run_with "Levels: 6" "cfg['levels'] = 6"
-
-# =====================================================================
-# LOW-RANK FACTORIZATION
-# =====================================================================
-
-# Low-rank factorization (0 = baseline/full rank)
-run_with "Low-rank: 4" "cfg['low_rank'] = 4"
-run_with "Low-rank: 16" "cfg['low_rank'] = 16"
-
-# =====================================================================
-# LIFTING HIDDEN MULT
-# =====================================================================
-
-run_with "Lifting hidden mult: 2" "cfg['lifting_hidden_mult'] = 2"
-run_with "Lifting hidden mult: 4" "cfg['lifting_hidden_mult'] = 4"
+run_with "Low-rank: 64" "cfg['low_rank'] = 64"
 
 # =====================================================================
 # BLOCK SIZE
@@ -187,6 +168,13 @@ run_with "L=2, C=4096, MLP=10, lr=0.01, MBS=4/GA=4" "cfg['layers'] = 2; cfg['C']
 run_with "L=1, C=4096, MLP=10, lr=0.02, exp_param" "cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
 run_with "L=2, C=4096, MLP=10, lr=0.02, exp_param, MBS=4/GA=4" "cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
 
+# =====================================================================
+# REDUCED LEVELS AT SCALE: L=2, C=2048, 5 epochs, 2.0x dropout
+# =====================================================================
+
+run_with "Reduced levels: L=2, C=2048, levels=1, 5ep, 2.0x dropout" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['levels'] = 1; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
+run_with "Reduced levels: L=2, C=2048, levels=2, 5ep, 2.0x dropout" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['levels'] = 2; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
+run_with "Reduced levels: L=2, C=2048, levels=5, 5ep, 2.0x dropout" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['levels'] = 5; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
 
 # =====================================================================
 # RESET to baseline after all runs

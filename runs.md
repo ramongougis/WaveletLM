@@ -304,16 +304,18 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 | Run | low_rank | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|----------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 0  | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4; full rank) |
-|   | 4  | | | | | | | Adds U·V^T perturbation (~0.8M total) |
-|   | 16 | | | | | | | Higher rank perturbation |
+|   | 4  | [link](logs/wikitext-103_2026-04-16_10-43-48/log.txt) | 1.1706 | 367.40M | 18,835 MiB | 2,184 MiB | -0.0045 | Slight improvement! Worth keeping at small cost |
+|   | 16 | [link](logs/wikitext-103_2026-04-16_14-02-48/log.txt) | 1.1694 | 369.86M | 18,887 MiB | 2,196 MiB | -0.0057 | Slightly better than rank=4; small marginal gain (-0.0012) |
+|   | 64 | | | ~380M | | | | Higher rank; ~13M extra params, still cheap |
+|   | 128 | | | ~393M | | | | Contingent on rank=64; only if 64 keeps improving |
 
 ### Lifting hidden multiplier
 
 | Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
 |   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | 2 | | | | | | | Wider predict/update MLPs in wavelet lifting |
-|   | 4 | | | | | | | |
+|   | 2 | [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt) | NaN | 555.51M | — | — | — | NaN at step 2500 (LR=0.0057); wider lifting unstable at L=20. Future stability fixes (e.g., spectral norm on lifting predict/update, or scaled init for hidden dims) may make this viable. |
+| N/A | 4 | — | — | — | — | — | — | Cancelled; mult=2 already NaN'd. Revisit with stability fixes. |
 
 ### Block size (context window)
 
