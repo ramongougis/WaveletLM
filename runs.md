@@ -70,8 +70,8 @@
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------|
 | 4   | Baseline (all standard) | | [link](#run-4) | 1.1751 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB | |
-| 8   | `semantic_feedback` | false | [link](#run-8) | 1.1737 | 361.23M | 2.83h | 17,764 MiB | 2,147 MiB | -0.0014 |
-| 9   | `semantic_feedback_cross_window` | false | [link](#run-9) | 1.1748 | 366.58M | 2.62h | 18,809 MiB | 2,178 MiB | -0.0003 |
+| 8   | `decompose_bypass` | false | [link](#run-8) | 1.1737 | 361.23M | 2.83h | 17,764 MiB | 2,147 MiB | -0.0014 |
+| 9   | `decompose_bypass_cross_window` | false | [link](#run-9) | 1.1748 | 366.58M | 2.62h | 18,809 MiB | 2,178 MiB | -0.0003 |
 | 10  | `learned_residual` | false | [link](#run-10) | 1.1814 | 366.58M | 2.66h | 18,818 MiB | 2,178 MiB | +0.0063 |
 | 11  | `use_mixer_gate` | false | [link](#run-11) | 1.2009 | 314.15M | 2.45h | 16,518 MiB | 1,878 MiB | +0.0258 |
 | 12  | `skip_proj_out` | true | [link](#run-12) | 1.1835 | 361.33M | 2.60h | 18,668 MiB | 2,148 MiB | +0.0084 |
@@ -86,11 +86,11 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta (3ep) | Delta (1ep) | Notes |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------------|-------------|-------|
 | 6   | Baseline (3ep) | | [link](#run-6) | 1.1169 | 366.58M | 8.34h | 18,738 MiB | 2,179 MiB | | | |
-| 16  | `semantic_feedback` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | SF true is better. |
+| 16  | `decompose_bypass` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1179 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | DB true is better. |
 | 17  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1337 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | LLO true performs worse with more epochs. |
 | 18  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1258 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | SLW true performs better with more epochs. |
 
-> **Notes:** With epochs >= 3 `semantic_feedback=true` is best, as is `lifting_linear_only=false`. It's likely that at much higher epochs, `shared_lifting_weights=true` is best; the parameters, run time, and extreme VRAM savings (~1/2 at 3 epochs!) it saves could be better used elsewhere (larger MLP, more epochs, larger micro batch size, etc.).
+> **Notes:** With epochs >= 3 `decompose_bypass=true` is best, as is `lifting_linear_only=false`. It's likely that at much higher epochs, `shared_lifting_weights=true` is best; the parameters, run time, and extreme VRAM savings (~1/2 at 3 epochs!) it saves could be better used elsewhere (larger MLP, more epochs, larger micro batch size, etc.).
 
 ### Best Boolean ablations combination: C=512, epochs = 3, mlp_expansion = 1
 
@@ -204,7 +204,7 @@ L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min.
 | 51  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_20-10-24/log.txt) | 1.2936 | 114.54M | 7,078 MiB | 719 MiB | MD=10 + residuals; -0.0241 vs L=1 baseline |
 | 52  | 100 | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_20-51-04/log.txt) | 1.5202 | 166.50M | 8,564 MiB | 1,041 MiB | MLP=100 + MD=10 no residuals; WORSE than either alone |
 | 53  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4391 | 114.54M | 7,082 MiB | 719 MiB | PLE=true; still worse than baseline (MD=10 no resid dominates) |
-| 54  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | SF=false; NaN — SF provides critical stability at L=1 |
+| 54  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | DB=false; NaN — DB provides critical stability at L=1 |
 | 55  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-48-20/log.txt) | NaN | 354.92M | — | — | — | C=1024, MD=10 no resid; NaN step 4500 (LR=0.01) |
 
 ### Layers = 1 ablations, part 2 (bigger C)
@@ -513,8 +513,8 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
     "lifting_dropout": 0.0,
     "use_mixer_gate": true,
     "mixer_gate_activation": "silu",
-    "semantic_feedback": true,
-    "semantic_feedback_cross_window": true,
+    "decompose_bypass": true,
+    "decompose_bypass_cross_window": true,
     "learned_residual": true,
     "skip_proj_out": false,
     "stochastic_depth_rate": 0.0,
@@ -868,7 +868,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Folder:** `logs/wikitext-103_2026-04-04_13-38-15/` ([log](logs/wikitext-103_2026-04-04_13-38-15/log.txt))
 
-**Description:** C = 512, epochs = 1, `semantic_feedback` = false. Boolean ablation.
+**Description:** C = 512, epochs = 1, `decompose_bypass` = false. Boolean ablation.
 
 **Results:**
 - Best val loss: 3.6294 (epoch 1)
@@ -887,7 +887,7 @@ Metrics: MeanLogP=-1.1868 | MeanH=3.78 | D1=0.650 | D2=0.916 | D3=0.976 | Rep4=0
 
 **Folder:** `logs/wikitext-103_2026-04-04_16-31-53/` ([log](logs/wikitext-103_2026-04-04_16-31-53/log.txt))
 
-**Description:** C = 512, epochs = 1, `semantic_feedback_cross_window` = false. Boolean ablation.
+**Description:** C = 512, epochs = 1, `decompose_bypass_cross_window` = false. Boolean ablation.
 
 **Results:**
 - Best val loss: 3.6499 (epoch 1)

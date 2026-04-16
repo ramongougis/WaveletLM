@@ -455,7 +455,7 @@ class ProductKeyMemory(nn.Module):
 
 
 # ==============================================================================
-# 6. SEMANTIC FEEDBACK — Running Mean
+# 6. DECOMPOSE BYPASS — Running Mean
 # ==============================================================================
 
 @torch.compiler.disable
@@ -491,7 +491,7 @@ class ExarchBlock(nn.Module):
         dropout_mlp: float = 0.0,
         device=None,
         dtype=None,
-        semantic_feedback: bool = True,
+        decompose_bypass: bool = True,
         wavelet_mode: str = "lifting",
         lifting_hidden_mult: int = 1,
         lifting_init: str = "haar",
@@ -511,7 +511,7 @@ class ExarchBlock(nn.Module):
         self.C = C
         self.levels = levels
         self.Cp = next_pow2(C)
-        self.semantic_feedback = semantic_feedback
+        self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
@@ -532,8 +532,8 @@ class ExarchBlock(nn.Module):
                 )
             self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_wavelet)
 
-        # Semantic feedback projections
-        if self.semantic_feedback:
+        # Decompose bypass projections
+        if self.decompose_bypass:
             self.history_gains = nn.Parameter(
                 torch.zeros(self.levels + 1, self.C, device=device, dtype=dtype)
             )
@@ -603,7 +603,7 @@ class ExarchBlock(nn.Module):
         current_running_mean = None
         gate_bias_scales = None
 
-        if self.semantic_feedback:
+        if self.decompose_bypass:
             current_running_mean = _compute_running_mean(x)
 
             if prev_state is not None:
@@ -632,8 +632,8 @@ class ExarchBlock(nn.Module):
         stacked_coeffs = torch.stack(coeffs_top_down, dim=2)  # [B, T, S, Cp]
         S = self.levels + 1
 
-        # Add semantic feedback bias
-        if self.semantic_feedback and gate_bias_scales is not None:
+        # Add decompose bypass bias
+        if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
         # FHT forward
@@ -778,7 +778,7 @@ class ExarchLM(nn.Module):
                 dropout_mixer=config.get('dropout_mixer', 0.0),
                 dropout_mlp=config.get('dropout_mlp', 0.0),
                 device=device,
-                semantic_feedback=config.get("semantic_feedback", True),
+                decompose_bypass=config.get("decompose_bypass", True),
                 wavelet_mode=wavelet_mode,
                 lifting_hidden_mult=lifting_hidden_mult,
                 lifting_init=lifting_init,
@@ -806,8 +806,8 @@ class ExarchLM(nn.Module):
             self.lm_head.weight = self.token_embedding.weight
             print(f"[LM Head] Tied to token embedding")
 
-        # Cross-window semantic feedback
-        self.semantic_feedback_cross_window = config.get("semantic_feedback_cross_window", True)
+        # Cross-window decompose bypass
+        self.decompose_bypass_cross_window = config.get("decompose_bypass_cross_window", True)
         self._persistent_semantic_state = None
         self._persistent_token_count = 0
 
@@ -836,8 +836,8 @@ class ExarchLM(nn.Module):
         x = self.token_embedding(idx)  # [B, T, C]
         x = self.dropout_emb(x)
 
-        # Initialize from persistent state if cross-window feedback is enabled
-        if self.semantic_feedback_cross_window and self._persistent_semantic_state is not None:
+        # Initialize from persistent state if cross-window bypass is enabled
+        if self.decompose_bypass_cross_window and self._persistent_semantic_state is not None:
             current_state = self._persistent_semantic_state.unsqueeze(1).expand(-1, T, -1)
         else:
             current_state = None
@@ -856,7 +856,7 @@ class ExarchLM(nn.Module):
                 x, current_state = layer(x, current_state)
 
         # Update persistent state for next window
-        if self.semantic_feedback_cross_window and current_state is not None:
+        if self.decompose_bypass_cross_window and current_state is not None:
             self._persistent_semantic_state = current_state[:, -1, :].detach()
             self._persistent_token_count += T
 

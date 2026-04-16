@@ -29,7 +29,7 @@ backward gradients would conflict. Options:
 1. **Direction embedding**: a learned vector added to all positions indicating
    forward vs backward. Cheapest approach — one parameter vector.
 2. **Direction token**: prepend a special token indicating direction.
-3. **Implicit**: rely on semantic feedback / cross-window state to carry
+3. **Implicit**: rely on decompose bypass / cross-window state to carry
    directional information. Risky — may not be sufficient.
 
 ## Implementation sketch
@@ -47,7 +47,7 @@ if config.get('bidirectional_training', False):
 
 - Does the model need an explicit direction signal, or can it learn direction implicitly?
 - Should the proportion be 50/50, or should forward be weighted more heavily?
-- How does this interact with semantic_feedback_cross_window? Cross-window state from
+- How does this interact with decompose_bypass_cross_window? Cross-window state from
   a forward pass would be incorrect context for a backward pass.
 - Should generation always be forward-only, or can backward generation be useful?
 - Does this help more at L=1 (limited receptive field) vs L=20 (already good context)?

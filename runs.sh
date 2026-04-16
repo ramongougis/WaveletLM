@@ -44,8 +44,8 @@ baseline = {
     "mixer_depth": 1,
     "mixer_depth_stabilizers": False,
     "mixer_depth_residuals": False,
-    "semantic_feedback": True,
-    "semantic_feedback_cross_window": True,
+    "decompose_bypass": True,
+    "decompose_bypass_cross_window": True,
     "learned_residual": True,
     "skip_proj_out": False,
     "stochastic_depth_rate": 0.0,
@@ -123,12 +123,6 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
     git pull --no-edit
     git push
 }
-
-# =====================================================================
-# LOW-RANK FACTORIZATION (64 AND HIGHER)
-# =====================================================================
-
-run_with "Low-rank: 64" "cfg['low_rank'] = 64"
 
 # =====================================================================
 # BLOCK SIZE

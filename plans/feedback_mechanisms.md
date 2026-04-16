@@ -3,13 +3,13 @@
 ## Summary
 
 EXARCH currently has no true feedback. The mechanism formerly called "semantic
-feedback" (now **Cumulative Mean Bias / CMB**) is forward-propagated state, not
-feedback — layer N's running mean biases layer N+1, never the other way around.
+feedback" (now **Decompose Bypass/DB**) is forward-propagated state, not
+feedback: layer N's running mean biases layer N+1, never the other way around.
 
 This plan introduces three optional feedback mechanisms, each implementable as a
 config flag for clean Boolean ablations. They are intended to run **after** the
 [wavelet & mixer augmentations](wavelet_and_mixer_augmentations.md) round, since
-those are cheaper changes with more predictable wins, and the best CMB+mixer
+those are cheaper changes with more predictable wins, and the best DB + mixer
 combo will define the baseline these feedback mechanisms test against.
 
 ## Status: Implementation candidate (post-wavelet/mixer round)
@@ -196,7 +196,7 @@ else:
         h, prev_state = block(h, prev_state, ...)
 ```
 
-CMB carries naturally between iterations via `prev_state`.
+DB carries naturally between iterations via `prev_state`.
 
 ### Why this might help
 
@@ -233,9 +233,9 @@ Total ~half a day for stale modes, ~1.5 days including two-pass cross-time.
 
 ## Open questions
 
-- **Does CMB become redundant under any of these?** Iterative refinement and
-  looped blocks both already propagate context across passes; CMB might be
-  subsumed. Worth ablating CMB-off when these are on.
+- **Does DB become redundant under any of these?** Iterative refinement and
+  looped blocks both already propagate context across passes; DB might be
+  subsumed. Worth ablating DB-off when these are on.
 - **Inference cost vs. quality:** iterative refinement at K=2 doubles inference
   time. Acceptable for benchmark/quality runs, painful for serving. Worth a
   separate "inference-mode K=1, training-mode K=2" experiment.
