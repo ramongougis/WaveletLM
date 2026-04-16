@@ -185,6 +185,8 @@ class LiftingWaveletDecompose(nn.Module):
                     nn.init.zeros_(predict.bias)
                     nn.init.zeros_(update.weight)
                     nn.init.zeros_(update.bias)
+                elif init_wavelet == 'random':
+                    pass  # use default torch init (Kaiming uniform); diversity for multi-basis
             else:
                 predict = nn.Sequential(
                     nn.Linear(C, hidden_dim, device=device, dtype=dtype),
@@ -225,6 +227,8 @@ class LiftingWaveletDecompose(nn.Module):
                     nn.init.zeros_(predict[3].bias)
                     nn.init.zeros_(update[3].weight)
                     nn.init.zeros_(update[3].bias)
+                elif init_wavelet == 'random':
+                    pass  # use default torch init; diversity for multi-basis
 
             self.predict_nets.append(predict)
             self.update_nets.append(update)
@@ -271,6 +275,65 @@ class LiftingWaveletReconstruct(nn.Module):
             update = self.decompose.update_nets[level](detail)
             cur = cur * self.sqrt2 - update
         return cur
+
+
+class MultiBasisLiftingWavelet(nn.Module):
+    """K parallel learnable lifting wavelets with per-scale learned blending.
+
+    Each constituent wavelet runs in parallel; outputs are blended scale-by-scale
+    via softmax(basis_weights). Init biases the softmax toward wavelet 0 so
+    initial behavior matches a single wavelet (other bases learn into use).
+    """
+
+    def __init__(self, levels: int, C: int, hidden_mult: int, inits: List[str],
+                 dropout: float, linear_only: bool, device=None, dtype=None):
+        super().__init__()
+        self.K = len(inits)
+        self.levels = levels
+        self.wavelets = nn.ModuleList([
+            LiftingWaveletDecompose(
+                levels=levels, C=C, hidden_mult=hidden_mult,
+                init_wavelet=init, dropout=dropout, linear_only=linear_only,
+                device=device, dtype=dtype,
+            ) for init in inits
+        ])
+        self.basis_weights = nn.Parameter(
+            torch.zeros(self.K, levels + 1, device=device, dtype=dtype)
+        )
+        with torch.no_grad():
+            self.basis_weights.data[0, :] = 5.0  # softmax favors wavelet 0 at start
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        outs = [w(x) for w in self.wavelets]
+        weights = F.softmax(self.basis_weights, dim=0)  # (K, levels+1)
+        approx = sum(weights[k, 0] * outs[k][0] for k in range(self.K))
+        num_levels = len(outs[0][1])
+        details = [
+            sum(weights[k, lvl + 1] * outs[k][1][lvl] for k in range(self.K))
+            for lvl in range(num_levels)
+        ]
+        return approx, details
+
+
+class MultiBasisLiftingReconstruct(nn.Module):
+    """K parallel reconstruction paths blended with the multi-basis softmax weights.
+
+    Each constituent wavelet's reconstruct is applied to the (mixer-processed)
+    coefficients, then outputs are blended with the same softmax over basis_weights
+    as decomposition (using the approx-level row, since reconstruction starts from approx).
+    """
+
+    def __init__(self, multi_basis: MultiBasisLiftingWavelet):
+        super().__init__()
+        self.multi_basis = multi_basis  # weight source (no extra params)
+        self.reconstructs = nn.ModuleList([
+            LiftingWaveletReconstruct(w) for w in multi_basis.wavelets
+        ])
+
+    def forward(self, approx: torch.Tensor, details: List[torch.Tensor]) -> torch.Tensor:
+        outs = [r(approx, details) for r in self.reconstructs]
+        weights = F.softmax(self.multi_basis.basis_weights, dim=0)
+        return sum(weights[k, 0] * outs[k] for k in range(self.multi_basis.K))
 
 
 # ==============================================================================
@@ -324,10 +387,11 @@ class GatedSpectralMixer(nn.Module):
                 nn.init.normal_(self.U, std=0.01)
                 nn.init.normal_(self.V, std=0.01)
 
-    def forward(self, X_spec: torch.Tensor):
+    def forward(self, X_spec: torch.Tensor, gate_input: torch.Tensor = None):
         signal = self.mixer(X_spec)
         if self.use_mixer_gate:
-            out = signal * self.gate_activation(self.gate(X_spec))
+            gi = gate_input if gate_input is not None else X_spec
+            out = signal * self.gate_activation(self.gate(gi))
         else:
             out = signal
         if self.U is not None:
@@ -336,6 +400,43 @@ class GatedSpectralMixer(nn.Module):
         if self.bias is not None:
             out = out + self.bias
         return out
+
+
+class PerScaleMixer(nn.Module):
+    """Wraps GatedSpectralMixer with Cp <-> width projections for asymmetric
+    per-scale capacity. When width == Cp, projections are skipped (no overhead)."""
+
+    def __init__(self, Cp: int, width: int, num_blocks: int = 1, rank: int = 4,
+                 eps: float = 1e-3, use_mixer_gate: bool = True,
+                 mixer_gate_activation: str = "sigmoid", add_bias: bool = False,
+                 device=None, dtype=None):
+        super().__init__()
+        self.Cp = Cp
+        self.width = width
+        if width != Cp:
+            self.proj_in = nn.Linear(Cp, width, bias=False, device=device, dtype=dtype)
+            self.proj_out = nn.Linear(width, Cp, bias=False, device=device, dtype=dtype)
+            with torch.no_grad():
+                nn.init.normal_(self.proj_in.weight, std=1.0 / math.sqrt(Cp))
+                nn.init.normal_(self.proj_out.weight, std=1.0 / math.sqrt(width))
+        else:
+            self.proj_in = None
+            self.proj_out = None
+        self.mixer = GatedSpectralMixer(
+            Cp=width, num_blocks=num_blocks, rank=rank, eps=eps,
+            use_mixer_gate=use_mixer_gate, mixer_gate_activation=mixer_gate_activation,
+            add_bias=add_bias, device=device, dtype=dtype,
+        )
+
+    def forward(self, X: torch.Tensor, gate_input: torch.Tensor = None):
+        if self.proj_in is not None:
+            X = self.proj_in(X)
+            if gate_input is not None:
+                gate_input = self.proj_in(gate_input)
+        Y = self.mixer(X, gate_input=gate_input)
+        if self.proj_out is not None:
+            Y = self.proj_out(Y)
+        return Y
 
 
 # ==============================================================================
@@ -665,6 +766,10 @@ class ExarchBlock(nn.Module):
         learned_residual: bool = False,
         shared_lifting_module: 'LiftingWaveletDecompose' = None,
         untied_reconstruction: bool = False,
+        multi_basis_lifting: bool = False,
+        multi_basis_inits: List[str] = None,
+        cross_scale_gating: bool = False,
+        per_scale_mixer_widths: List[float] = None,
         use_mixer_gate: bool = True,
         mixer_gate_activation: str = "silu",
         pkm_enabled: bool = False,
@@ -690,7 +795,17 @@ class ExarchBlock(nn.Module):
 
         # Wavelet decomposition
         if wavelet_mode == "lifting":
-            if shared_lifting_module is not None:
+            if multi_basis_lifting and shared_lifting_module is not None:
+                raise ValueError("multi_basis_lifting is incompatible with shared_lifting_weights")
+
+            if multi_basis_lifting:
+                inits = multi_basis_inits if multi_basis_inits else ["haar", "random"]
+                self.lifting_wavelet = MultiBasisLiftingWavelet(
+                    levels=levels, C=self.Cp, hidden_mult=lifting_hidden_mult,
+                    inits=inits, dropout=lifting_dropout,
+                    linear_only=lifting_linear_only, device=device, dtype=dtype,
+                )
+            elif shared_lifting_module is not None:
                 self.lifting_wavelet = shared_lifting_module
             else:
                 self.lifting_wavelet = LiftingWaveletDecompose(
@@ -703,22 +818,35 @@ class ExarchBlock(nn.Module):
                     device=device,
                     dtype=dtype,
                 )
+
             if untied_reconstruction:
                 # Asymmetric: reconstruction has its own predict/update networks,
                 # breaking the strict-invertibility constraint of classical wavelets.
-                self.lifting_reconstruct_wavelet = LiftingWaveletDecompose(
-                    levels=levels,
-                    C=self.Cp,
-                    hidden_mult=lifting_hidden_mult,
-                    init_wavelet=lifting_init,
-                    dropout=lifting_dropout,
-                    linear_only=lifting_linear_only,
-                    device=device,
-                    dtype=dtype,
-                )
-                self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_reconstruct_wavelet)
+                if multi_basis_lifting:
+                    inits = multi_basis_inits if multi_basis_inits else ["haar", "random"]
+                    self.lifting_reconstruct_wavelet = MultiBasisLiftingWavelet(
+                        levels=levels, C=self.Cp, hidden_mult=lifting_hidden_mult,
+                        inits=inits, dropout=lifting_dropout,
+                        linear_only=lifting_linear_only, device=device, dtype=dtype,
+                    )
+                    self.lifting_reconstruct = MultiBasisLiftingReconstruct(self.lifting_reconstruct_wavelet)
+                else:
+                    self.lifting_reconstruct_wavelet = LiftingWaveletDecompose(
+                        levels=levels,
+                        C=self.Cp,
+                        hidden_mult=lifting_hidden_mult,
+                        init_wavelet=lifting_init,
+                        dropout=lifting_dropout,
+                        linear_only=lifting_linear_only,
+                        device=device,
+                        dtype=dtype,
+                    )
+                    self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_reconstruct_wavelet)
             else:
-                self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_wavelet)
+                if multi_basis_lifting:
+                    self.lifting_reconstruct = MultiBasisLiftingReconstruct(self.lifting_wavelet)
+                else:
+                    self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_wavelet)
 
         # Decompose bypass projections
         if self.decompose_bypass:
@@ -739,18 +867,45 @@ class ExarchBlock(nn.Module):
         S = levels + 1
         self.mixer_depth = mixer_depth
 
+        # Cross-scale gating (routing mode): learned (S, S) routing matrix that
+        # mixes scales' inputs before each per-scale gate. Init to identity so
+        # behavior matches today's per-scale gating at start.
+        self.cross_scale_gating = cross_scale_gating
+        if cross_scale_gating:
+            self.scale_routing = nn.Parameter(
+                torch.eye(S, device=device, dtype=dtype)
+            )
+
         if mixer_depth == 1:
-            # Exactly today's code — single set of mixers, no LN, no bias
-            self.scale_mixers = nn.ModuleList([
-                GatedSpectralMixer(
-                    Cp=self.Cp, num_blocks=1, rank=low_rank,
-                    use_mixer_gate=use_mixer_gate,
-                    mixer_gate_activation=mixer_gate_activation,
-                    add_bias=False,
-                    device=device, dtype=dtype,
-                )
-                for _ in range(S)
-            ])
+            if per_scale_mixer_widths is not None:
+                if len(per_scale_mixer_widths) != S:
+                    raise ValueError(
+                        f"per_scale_mixer_widths must have length S={S}, "
+                        f"got {len(per_scale_mixer_widths)}"
+                    )
+                widths = [max(1, int(self.Cp * w)) for w in per_scale_mixer_widths]
+                self.scale_mixers = nn.ModuleList([
+                    PerScaleMixer(
+                        Cp=self.Cp, width=widths[s], num_blocks=1, rank=low_rank,
+                        use_mixer_gate=use_mixer_gate,
+                        mixer_gate_activation=mixer_gate_activation,
+                        add_bias=False,
+                        device=device, dtype=dtype,
+                    )
+                    for s in range(S)
+                ])
+            else:
+                # Exactly today's code — single set of mixers, no LN, no bias
+                self.scale_mixers = nn.ModuleList([
+                    GatedSpectralMixer(
+                        Cp=self.Cp, num_blocks=1, rank=low_rank,
+                        use_mixer_gate=use_mixer_gate,
+                        mixer_gate_activation=mixer_gate_activation,
+                        add_bias=False,
+                        device=device, dtype=dtype,
+                    )
+                    for _ in range(S)
+                ])
         else:
             # Depth > 1: intermediate steps get LN + bias, final step gets neither
             self.mixer_depth_stabilizers = mixer_depth_stabilizers
@@ -889,10 +1044,16 @@ class ExarchBlock(nn.Module):
 
         # Per-scale spectral mixing (with optional depth stacking)
         if self.mixer_depth == 1:
+            if self.cross_scale_gating:
+                routed_gate_input = torch.einsum(
+                    'rs,btsd->btrd', self.scale_routing, stacked_spec)
+            else:
+                routed_gate_input = None
             mixed_by_scale = []
             for s in range(S):
                 Xs = stacked_spec[:, :, s, :]
-                Ys = self.scale_mixers[s](Xs)
+                Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
+                Ys = self.scale_mixers[s](Xs, gate_input=Gs)
                 mixed_by_scale.append(Ys)
             mixed_spec = torch.stack(mixed_by_scale, dim=2)
         else:
@@ -1019,6 +1180,17 @@ class ExarchLM(nn.Module):
         if config.get("untied_reconstruction", False):
             print(f"[Lifting] Untied reconstruction: per-layer separate decompose/reconstruct weights")
 
+        if config.get("cross_scale_gating", False):
+            print(f"[Mixer] Cross-scale gating (routing): learned (S, S) routing matrix per layer, init to identity")
+
+        if config.get("multi_basis_lifting", False):
+            inits = config.get("multi_basis_inits", None) or ["haar", "random"]
+            print(f"[Lifting] Multi-basis lifting: K={len(inits)} parallel wavelets per layer, inits={inits}")
+
+        if config.get("per_scale_mixer_widths", None) is not None:
+            widths = config["per_scale_mixer_widths"]
+            print(f"[Mixer] Per-scale widths: multipliers={widths}")
+
         Cp = next_pow2(C)
         if skip_proj_out and Cp == C:
             saved = config['layers'] * (Cp * C + C)
@@ -1062,6 +1234,10 @@ class ExarchLM(nn.Module):
                 learned_residual=learned_residual,
                 shared_lifting_module=shared_lifting,
                 untied_reconstruction=config.get("untied_reconstruction", False),
+                multi_basis_lifting=config.get("multi_basis_lifting", False),
+                multi_basis_inits=config.get("multi_basis_inits", None),
+                cross_scale_gating=config.get("cross_scale_gating", False),
+                per_scale_mixer_widths=config.get("per_scale_mixer_widths", None),
                 use_mixer_gate=config.get("use_mixer_gate", True),
                 mixer_gate_activation=config.get("mixer_gate_activation", "silu"),
                 pkm_enabled=config.get("pkm_enabled", False),
@@ -1630,17 +1806,28 @@ def quantize_model(model, config):
 
         # --- Per-layer ---
         for layer in cell.layers:
-            # Mixer (per-scale)
-            for s, mixer in enumerate(layer.scale_mixers):
+            # Mixer (per-scale); unwrap PerScaleMixer to reach the inner GatedSpectralMixer
+            for s, scale_mod in enumerate(layer.scale_mixers):
                 bits = _get_mixer_bits(s, config)
-                mixer.mixer = QuantizedLinear(mixer.mixer, bits)
-                if mixer.use_mixer_gate:
-                    mixer.gate = QuantizedLinear(mixer.gate, bits)
+                inner = scale_mod.mixer if isinstance(scale_mod, PerScaleMixer) else scale_mod
+                inner.mixer = QuantizedLinear(inner.mixer, bits)
+                if inner.use_mixer_gate:
+                    inner.gate = QuantizedLinear(inner.gate, bits)
+                if isinstance(scale_mod, PerScaleMixer) and scale_mod.proj_in is not None:
+                    scale_mod.proj_in = QuantizedLinear(scale_mod.proj_in, bits)
+                    scale_mod.proj_out = QuantizedLinear(scale_mod.proj_out, bits)
 
-            # Lifting wavelet (decompose; possibly shared across layers)
-            lifting_modules = [layer.lifting_wavelet]
+            # Lifting wavelet (decompose; possibly shared across layers; possibly multi-basis)
+            lifting_roots = [layer.lifting_wavelet]
             if hasattr(layer, 'lifting_reconstruct_wavelet'):
-                lifting_modules.append(layer.lifting_reconstruct_wavelet)
+                lifting_roots.append(layer.lifting_reconstruct_wavelet)
+            # Flatten multi-basis wrappers into their constituent wavelets
+            lifting_modules = []
+            for root in lifting_roots:
+                if isinstance(root, MultiBasisLiftingWavelet):
+                    lifting_modules.extend(root.wavelets)
+                else:
+                    lifting_modules.append(root)
             for lifting in lifting_modules:
                 if id(lifting) in quantized_lifting_ids:
                     continue

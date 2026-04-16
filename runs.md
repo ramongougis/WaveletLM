@@ -26,24 +26,25 @@
 22. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
 23. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
-25. [Block size (context window)](#block-size-context-window)
-26. [Grad accum: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-accum-c--512-epochs--1-optimal-booleans--mlp_expansion)
-27. [Warmup fraction: C = 512, epochs = 1, optimal booleans + mlp_expansion](#warmup-fraction-c--512-epochs--1-optimal-booleans--mlp_expansion)
-28. [Grad clip: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-clip-c--512-epochs--1-optimal-booleans--mlp_expansion)
-29. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
-30. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
-31. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-32. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-33. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-34. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-35. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-36. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-37. [Best PTQ combination](#best-ptq-combination)
-38. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-39. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
-40. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-41. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-42. [Run Details](#run-details)
+25. [Boolean ablations part 3: C=2048, L=2, epochs=1 wide & shallow model](#boolean-ablations-part-3-c2048-l2-epochs1-wide--shallow-model)
+26. [Block size (context window)](#block-size-context-window)
+27. [Grad accum: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-accum-c--512-epochs--1-optimal-booleans--mlp_expansion)
+28. [Warmup fraction: C = 512, epochs = 1, optimal booleans + mlp_expansion](#warmup-fraction-c--512-epochs--1-optimal-booleans--mlp_expansion)
+29. [Grad clip: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-clip-c--512-epochs--1-optimal-booleans--mlp_expansion)
+30. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
+31. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
+32. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+33. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+34. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+35. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+36. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+37. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+38. [Best PTQ combination](#best-ptq-combination)
+39. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+40. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+42. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+43. [Run Details](#run-details)
 
 ---
 
@@ -316,6 +317,18 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 1 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
 |   | 2 | [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt) | NaN | 555.51M | — | — | — | NaN at step 2500 (LR=0.0057); wider lifting unstable at L=20. Future stability fixes (e.g., spectral norm on lifting predict/update, or scaled init for hidden dims) may make this viable. |
 | N/A | 4 | — | — | — | — | — | — | Cancelled; mult=2 already NaN'd. Revisit with stability fixes. |
+
+### Boolean ablations part 3: C=2048, L=2, epochs=1 wide & shallow model
+
+Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md) and [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md) against the 1-epoch C=2048/L=2 baseline. Each feature tested individually at 1 epoch; winners (positive delta) stack into the 5-epoch best-combo run without per-feature 5-epoch confirmation.
+
+| Run | Feature | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|---------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | Baseline (untouched) | [link](logs/wikitext-103_2026-04-11_21-09-05/log.txt) | 1.1133 | 1180.28M | 24,643 MiB | 6,733 MiB | | C=2048, L=2, MLP=20, PLE, PKM+FwPKM-16384, 1 epoch, lr=0.01 |
+|   | Untied reconstruction | | | ~1200M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
+|   | Cross-scale gating (routing) | | | ~1180M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
+|   | Multi-basis lifting (haar+random) | | | ~1330M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
+|   | Per-scale mixer widths [1×3, 0.5×3, 0.25×4] | | | ~1100M | | | | Plan W4: starve fine scales (formalizes levels=5 finding); coarse scales keep full Cp |
 
 ### Block size (context window)
 

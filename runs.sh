@@ -36,6 +36,10 @@ baseline = {
     "wavelet_mode": "lifting",
     "shared_lifting_weights": False,
     "untied_reconstruction": False,
+    "multi_basis_lifting": False,
+    "multi_basis_inits": ["haar", "random"],
+    "cross_scale_gating": False,
+    "per_scale_mixer_widths": None,
     "lifting_linear_only": False,
     "lifting_hidden_mult": 1,
     "lifting_init": "haar",
@@ -124,6 +128,17 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
     git pull --no-edit
     git push
 }
+
+# =====================================================================
+# BOOLEAN ABLATIONS PART 3: C=2048, L=2, EP=1 WIDE & SHALLOW MODEL
+# =====================================================================
+
+WIDE_SHALLOW="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+
+run_with "W&S: untied reconstruction" "$WIDE_SHALLOW; cfg['untied_reconstruction'] = True"
+run_with "W&S: cross-scale gating (routing)" "$WIDE_SHALLOW; cfg['cross_scale_gating'] = True"
+run_with "W&S: multi-basis lifting (haar+random)" "$WIDE_SHALLOW; cfg['multi_basis_lifting'] = True; cfg['multi_basis_inits'] = ['haar', 'random']"
+run_with "W&S: per-scale mixer widths (1,1,1,.5,.5,.5,.25,.25,.25,.25)" "$WIDE_SHALLOW; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]"
 
 # =====================================================================
 # BLOCK SIZE
