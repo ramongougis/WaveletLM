@@ -125,54 +125,68 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
-# OPTIMAL LOW-LAYER CONFIG: C=2048, L=2, full recipe
-# =====================================================================
-
-# 5 epoch + weight decay + 1.5x dropout
-run_with "L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, dropout-2.0x" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
-
-# =====================================================================
-# EXPONENTIAL PARAMETRIZATION — test on best L=1 config and NaN cases
-# =====================================================================
-
-# Best L=1 config with exp param — does mixer utilization improve?
-run_with "ExpParam: L=1, C=2048, MLP=20, 1ep" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['exp_parametrization'] = True"
-
-# Previously NaN'd configs — does exp param fix stability?
-run_with "ExpParam: L=1, C=2048, MLP=20, lr=0.02" "cfg['layers'] = 1; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True"
-run_with "ExpParam: L=20, C=512, MD=5" "cfg['mixer_depth'] = 5; cfg['exp_parametrization'] = True"
-
-# =====================================================================
-# LAYERS SWEEP (epochs=1, mlp_expansion=1, C=512, levels=9)
-# =====================================================================
-
-# layers=20 is baseline (Run 4), no need to rerun
-run_with "Layers: 4" "cfg['layers'] = 4"
-run_with "Layers: 10" "cfg['layers'] = 10"
-run_with "Layers: 15" "cfg['layers'] = 15"
-run_with "Layers: 18" "cfg['layers'] = 18"
-run_with "Layers: 30" "cfg['layers'] = 30"
-
-# =====================================================================
 # LEVELS SWEEP (epochs=1, mlp_expansion=1, C=512, layers=20, block_size=512)
 # =====================================================================
 
 # levels=9 is baseline (default = log2(block_size=512)), no need to rerun
-run_with "Levels: 1" "cfg['levels'] = 1"
-run_with "Levels: 5" "cfg['levels'] = 5"
-run_with "Levels: 11" "cfg['levels'] = 11"
+run_with "Levels: 2" "cfg['levels'] = 2"
+run_with "Levels: 3" "cfg['levels'] = 3"
+run_with "Levels: 4" "cfg['levels'] = 4"
+run_with "Levels: 6" "cfg['levels'] = 6"
 
 # =====================================================================
-# MEDIUM PRIORITY SWEEPS
+# LOW-RANK FACTORIZATION
 # =====================================================================
 
 # Low-rank factorization (0 = baseline/full rank)
 run_with "Low-rank: 4" "cfg['low_rank'] = 4"
 run_with "Low-rank: 16" "cfg['low_rank'] = 16"
 
+# =====================================================================
+# LIFTING HIDDEN MULT
+# =====================================================================
+
+run_with "Lifting hidden mult: 2" "cfg['lifting_hidden_mult'] = 2"
+run_with "Lifting hidden mult: 4" "cfg['lifting_hidden_mult'] = 4"
+
+# =====================================================================
+# BLOCK SIZE
+# =====================================================================
+
 # Block size (adjust levels to match)
 run_with "Block size: 256, levels=8" "cfg['block_size'] = 256; cfg['levels'] = 8"
 run_with "Block size: 1024, levels=10" "cfg['block_size'] = 1024; cfg['levels'] = 10"
+
+# =====================================================================
+# GRAD ACCUM
+# =====================================================================
+
+run_with "Grad accum: 1 (batch=8)" "cfg['grad_accum'] = 1"
+run_with "Grad accum: 4 (batch=32)" "cfg['grad_accum'] = 4"
+
+# =====================================================================
+# WARMUP FRACTION
+# =====================================================================
+
+run_with "Warmup fraction: 0.1" "cfg['warmup_fraction'] = 0.1"
+run_with "Warmup fraction: 0.5" "cfg['warmup_fraction'] = 0.5"
+
+# =====================================================================
+# GRAD CLIP
+# =====================================================================
+
+run_with "Grad clip: 0.5" "cfg['grad_clip'] = 0.5"
+run_with "Grad clip: 2.0" "cfg['grad_clip'] = 2.0"
+
+# =====================================================================
+# C=4096 WIDTH SCALING
+# =====================================================================
+
+run_with "L=1, C=4096, MLP=10, lr=0.01" "cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+run_with "L=2, C=4096, MLP=10, lr=0.01, MBS=4/GA=4" "cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+run_with "L=1, C=4096, MLP=10, lr=0.02, exp_param" "cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+run_with "L=2, C=4096, MLP=10, lr=0.02, exp_param, MBS=4/GA=4" "cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+
 
 # =====================================================================
 # RESET to baseline after all runs

@@ -27,20 +27,23 @@
 23. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
 25. [Block size (context window)](#block-size-context-window)
-26. [Planned: lower priority (fine-tuning)](#planned-lower-priority-fine-tuning)
-27. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
-28. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-29. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-30. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-31. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-32. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-33. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-34. [Best PTQ combination](#best-ptq-combination)
-35. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-36. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
-37. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-38. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-39. [Run Details](#run-details)
+26. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
+27. [Grad accum: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-accum-c--512-epochs--1-optimal-booleans--mlp_expansion)
+28. [Warmup fraction: C = 512, epochs = 1, optimal booleans + mlp_expansion](#warmup-fraction-c--512-epochs--1-optimal-booleans--mlp_expansion)
+29. [Grad clip: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-clip-c--512-epochs--1-optimal-booleans--mlp_expansion)
+30. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
+31. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+32. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+33. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+34. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+35. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+36. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+37. [Best PTQ combination](#best-ptq-combination)
+38. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+39. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+40. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+41. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+42. [Run Details](#run-details)
 
 ---
 
@@ -294,7 +297,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 5 | [link](logs/wikitext-103_2026-04-15_23-05-09/log.txt) | 1.1673 | 240.55M | 12,976 MiB | 1,459 MiB | Beats baseline with 34% fewer params! |
 |   | 6 | | | | | | | To be tested; bracket levels=5 upward |
 |   | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4; default = log2(block_size=512)) |
-|   | 11 | | | | | | Beyond log2(block_size=512); expect no further gain |
+|   | 11 | [link](logs/wikitext-103_2026-04-16_01-02-33/log.txt) | 1.1801 | 429.60M | 21,739 MiB | 2,541 MiB | Worse than levels=5; confirms diminishing returns past 5 |
 
 ### Low-rank factorization in spectral mixer
 
@@ -330,13 +333,29 @@ Testing whether levels=1 or levels=2 can match the full levels=9 at the optimal 
 |   | 1 | | | TBD | | | | 5x fewer mixer params per layer |
 |   | 2 | | | TBD | | | | 3.3x fewer mixer params per layer |
 
-### Planned: lower priority (fine-tuning)
+### Grad accum: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
-| Parameter | Current | What it tests | Values |
-|-----------|---------|---------------|--------|
-| `grad_accum` | 2 | Effective batch size (with micro_batch_size) | TBD |
-| `warmup_fraction` | 0.3 | Warmup duration; could be too long or too short | TBD |
-| `grad_clip` | 1.0 | Gradient clipping threshold | TBD |
+| Run | grad_accum | Effective batch | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|-----------|----------------|--------|---------------|--------|------------|----------------|-------|
+|   | 1 | 8  | | | 366.58M | | | | Smaller effective batch |
+|   | 2 | 16 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
+|   | 4 | 32 | | | 366.58M | | | | Larger effective batch |
+
+### Warmup fraction: C = 512, epochs = 1, optimal booleans + mlp_expansion
+
+| Run | warmup_fraction | Warmup steps | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|-----------------|--------------|--------|---------------|--------|------------|----------------|-------|
+|   | 0.1 | 1461 | | | 366.58M | | | | Short warmup |
+|   | 0.3 | 4384 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
+|   | 0.5 | 7307 | | | 366.58M | | | | Long warmup |
+
+### Grad clip: C = 512, epochs = 1, optimal booleans + mlp_expansion
+
+| Run | grad_clip | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|-----------|--------|---------------|--------|------------|----------------|-------|
+|   | 0.5 | | | 366.58M | | | | Tighter clipping |
+|   | 1.0 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
+|   | 2.0 | | | 366.58M | | | | Looser clipping |
 
 ### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
 
@@ -344,6 +363,8 @@ Testing whether ultra-wide C=4096 with exp_param (enabling lr=0.02) outperforms 
 
 | Run | L | C | MLP | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---|------|-----|------|--------|---------------|--------|------------|----------------|-------|
+|   | 1 | 2048 | 20 | 0.01 | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | C=2048 baseline for L=1 comparison |
+|   | 2 | 2048 | 20 | 0.01 | [link](logs/wikitext-103_2026-04-11_21-09-05/log.txt) | 1.1133 | 1180.28M | 24,643 MiB | 6,733 MiB | C=2048 baseline for L=2 comparison |
 |   | 1 | 4096 | 10 | 0.01 | | | ~3.5B | | | | Width scaling baseline |
 |   | 2 | 4096 | 10 | 0.01 | | | ~6.7B | | | | L=2 baseline; may need MBS=2/GA=8 |
 |   | 1 | 4096 | 10 | 0.02 | | | ~3.5B | | | | Exp param + higher LR |
@@ -372,13 +393,13 @@ Testing whether shared_lifting_weights and lifting_linear_only enable efficient 
 
 Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scales (high-level semantics) get more bits; fine scales (local detail) tolerate aggressive quantization. All runs use the same trained checkpoint — no retraining needed.
 
-**Baseline checkpoint:** best trained model from sweeps above (TBD)
+**Baseline checkpoint:** L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, 2.0x dropout. BPB 1.0247. See [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt).
 
 ### PTQ: Uniform quantization (all components same bits)
 
 | Run | Bits | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|------|--------|---------------|------------------|----------------|-------|-------|
-|   | 16 (baseline) | | | | | | No quantization |
+|   | 16 (baseline) | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | 1.0247 | ~2,250 MiB (fp16) | 6,733 MiB | | No quantization; 2.0x dropout best run |
 |   | 8 | | | | | | Uniform INT8 |
 |   | 4 | | | | | | Uniform INT4 — stress test |
 
