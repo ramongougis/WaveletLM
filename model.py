@@ -201,7 +201,13 @@ class LiftingWaveletDecompose(nn.Module):
                     nn.init.zeros_(update.weight)
                     nn.init.zeros_(update.bias)
                 elif init_wavelet == 'random':
-                    pass  # use default torch init (Kaiming uniform); diversity for multi-basis
+                    # Small-std random init for multi-basis diversity. Default Kaiming
+                    # can cause NaN through the signal path in multi-basis mode; a tighter
+                    # std with zero bias keeps the second wavelet's contribution bounded.
+                    nn.init.normal_(predict.weight, std=0.01)
+                    nn.init.zeros_(predict.bias)
+                    nn.init.normal_(update.weight, std=0.01)
+                    nn.init.zeros_(update.bias)
             else:
                 predict = nn.Sequential(
                     nn.Linear(C, hidden_dim, device=device, dtype=dtype),
@@ -243,7 +249,16 @@ class LiftingWaveletDecompose(nn.Module):
                     nn.init.zeros_(update[3].weight)
                     nn.init.zeros_(update[3].bias)
                 elif init_wavelet == 'random':
-                    pass  # use default torch init; diversity for multi-basis
+                    # Small-std random init for multi-basis diversity; see comment above.
+                    # Targets both Linear layers in the Sequential (predict[0] and predict[3]).
+                    nn.init.normal_(predict[0].weight, std=0.01)
+                    nn.init.zeros_(predict[0].bias)
+                    nn.init.normal_(predict[3].weight, std=0.01)
+                    nn.init.zeros_(predict[3].bias)
+                    nn.init.normal_(update[0].weight, std=0.01)
+                    nn.init.zeros_(update[0].bias)
+                    nn.init.normal_(update[3].weight, std=0.01)
+                    nn.init.zeros_(update[3].bias)
 
             if stab_lifting_level_scaling:
                 # Damp higher-level (longer-range) interactions where signal-to-noise
@@ -346,7 +361,12 @@ class MultiBasisLiftingWavelet(nn.Module):
             torch.zeros(self.K, levels + 1, device=device, dtype=dtype)
         )
         with torch.no_grad():
-            self.basis_weights.data[0, :] = 5.0  # softmax favors wavelet 0 at start
+            # Strong bias toward wavelet 0 at init so other bases have negligible
+            # contribution early — they earn their weight only as gradient descent
+            # accumulates evidence they help. Raised from 5.0 to 10.0 after the
+            # first multi-basis run NaN'd at step 1800 (LR=4.10e-03); 10.0 gives
+            # softmax weight ~0.99995 on wavelet 0 initially (vs ~0.993 at 5.0).
+            self.basis_weights.data[0, :] = 10.0
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         outs = [w(x) for w in self.wavelets]

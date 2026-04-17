@@ -340,9 +340,9 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 
 | Run | Feature | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | New baseline probe (must beat 1.1133) | | | ~840M | | | | levels=5, lr=0.01, low_rank=4, PLE only. Old baseline at 1.1133 ([link](logs/wikitext-103_2026-04-11_21-09-05/log.txt), levels=9/lr=0.01, with PKM+FwPKM) for reference. exp_param+lr=0.02 NaN'd ([link](logs/wikitext-103_2026-04-17_00-27-55/log.txt)) — defer until stable_parametrization is validated |
-|   | Untied reconstruction | | | ~860M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
-|   | Cross-scale gating (routing) | | | ~840M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
+|   | New baseline probe | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1173 | 827.03M | 18,016 MiB | 12,679 MiB | **+0.0040** | 30% faster (2.40h vs 3.42h) and 30% smaller than old baseline for +0.004 BPB. lr=0.01 fallback after lr=0.02+exp_param NaN'd ([link](logs/wikitext-103_2026-04-17_00-27-55/log.txt)); defer until stab_spectral_norm is validated. |
+|   | Untied reconstruction | [link](logs/wikitext-103_2026-04-17_06-20-21/log.txt) | 1.1173 | 994.88M | 19,777 MiB | 14,440 MiB | **+0.0000** | Exact tie at +168M (+20%) and +3% time. One wavelet copy suffices. **Dropped** from best-run. |
+|   | Cross-scale gating (routing) | [link](logs/wikitext-103_2026-04-17_08-51-44/log.txt) | **1.1166** | 827.03M (+72) | 18,400 MiB | 12,679 MiB | **-0.0007** | Small consistent win; best val -0.0042. Essentially free (+72 params, +2.5% time). **Keep** for best-run. |
 |   | Multi-basis lifting (haar+random) | | | ~960M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
 |   | Per-scale mixer widths [1×3, 0.5×3] | | | ~790M | | | | Plan W4: starve fine 3 of 6 scales (S = levels+1 = 6); coarse scales keep full Cp |
 |   | Looped blocks (K=8 shared) | | | ~360M | | | | Plan F1: 1 shared block applied 8 times; ~½ params of L=2 stacked, more compute |
@@ -363,6 +363,7 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 |   | mixer_depth=5 (was [Run 39](#run-39): NaN step 3600) | master | | | ~787M | Canonical depth-stack NaN; exp_param previously failed to fix |
 |   | lifting_hidden_mult=2 (was [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt): NaN step 2500) | master | | | ~556M | Wider lifting at L=20; recent NaN |
 |   | C=2048, lr=0.02 (was [Run 63](#run-63): NaN step 700) | master | | | ~617M | Width × LR NaN; survived only with exp_param previously |
+|   | new baseline + lr=0.02 + exp_param (NaN'd [link](logs/wikitext-103_2026-04-17_00-27-55/log.txt) step 4000, LR=1.82e-02) | master | | | 827.03M | If rescued, unlocks lr=0.02 at the new baseline — likely the biggest latent BPB win (L=1 previously showed -0.0084 at lr=0.02+exp_param). Primary target for `stab_spectral_norm`. |
 
 ### New Baseline Boolean ablations part 4: Compatibility tests (sub-features at the new baseline)
 
