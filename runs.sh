@@ -163,7 +163,7 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # lr=0.02 + exp_param combo later when stable_parametrization features are
 # proven, since spectral_norm should provide the additional signal damping needed.
 
-run_with "New baseline probe (levels=5, exp_param, lr=0.02, low_rank=4)" "$NEW_BASELINE"
+run_with "New baseline probe (levels=5, lr=0.01, low_rank=4)" "$NEW_BASELINE"
 
 # =====================================================================
 # BOOLEAN ABLATIONS PART 3: C=2048, L=2, EP=1 WIDE & SHALLOW MODEL
