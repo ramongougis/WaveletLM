@@ -324,29 +324,29 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 ### New Baseline
 
-The baseline used for all subsequent ablations. Combines proven wins (exp_param + lr=0.02; levels=5; low_rank=4) on top of the wide & shallow config. Halves per-epoch runtime vs the previous C=512/L=20 baseline.
+The baseline used for all 1-epoch screening ablations. Combines proven wins (exp_param + lr=0.02; levels=5; low_rank=4) on top of the wide & shallow config. Halves per-epoch runtime vs the previous C=512/L=20 baseline. **PKM and FwPKM are intentionally OFF** during screening — they get re-introduced for the final 5-epoch best-run candidate (saves ~10-15% time and ~150M params per 1-epoch run).
 
-**Config:** L=2, C=2048, MLP=20, levels=5, PLE, PKM+FwPKM-16384, exp_param=true, lr=0.02, low_rank=4
+**Config:** L=2, C=2048, MLP=20, levels=5, **PLE**, exp_param=true, lr=0.02, low_rank=4
 
 | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |--------|---------------|--------|------------|----------------|-------|
-| TBD (probe pending) | TBD | ~990M | TBD | TBD | Must beat 1.1133 ([old baseline](logs/wikitext-103_2026-04-11_21-09-05/log.txt): levels=9, lr=0.01) |
+| TBD (probe pending) | TBD | ~840M | TBD | TBD | Must beat 1.1133 ([old baseline](logs/wikitext-103_2026-04-11_21-09-05/log.txt): levels=9, lr=0.01, with PKM+FwPKM-16384) |
 
 ### New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model
 
-Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md), [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md), and [`plans/wavelet_crawl.md`](plans/wavelet_crawl.md) against the **new baseline** (C=2048/L=2/MLP=20/PLE/PKM+FwPKM-16384 + **levels=5, exp_param, lr=0.02, low_rank=4**). Folds in proven wins (exp_param + lr=0.02 enables higher LR safely; levels=5 from the L=20 finding; low_rank=4 = -0.0045 BPB at trivial cost). Halves runtime per epoch via fewer wavelet levels. Each feature tested individually at 1 epoch; winners stack into the 5-epoch best-combo run.
+Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md), [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md), and [`plans/wavelet_crawl.md`](plans/wavelet_crawl.md) against the **new baseline** (C=2048/L=2/MLP=20/PLE + **levels=5, exp_param, lr=0.02, low_rank=4**). Folds in proven wins (exp_param + lr=0.02 enables higher LR safely; levels=5 from the L=20 finding; low_rank=4 = -0.0045 BPB at trivial cost). Halves runtime per epoch via fewer wavelet levels. PKM/FwPKM deferred to the final 5-epoch best run. Each feature tested individually at 1 epoch; winners stack into the 5-epoch best-combo run.
 
 | Run | Feature | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | New baseline probe (must beat 1.1133) | | | ~990M | | | | levels=5, exp_param, lr=0.02, low_rank=4. Old baseline at 1.1133 ([link](logs/wikitext-103_2026-04-11_21-09-05/log.txt), levels=9/lr=0.01) for reference |
-|   | Untied reconstruction | | | ~1010M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
-|   | Cross-scale gating (routing) | | | ~990M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
-|   | Multi-basis lifting (haar+random) | | | ~1110M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
-|   | Per-scale mixer widths [1×3, 0.5×3] | | | ~940M | | | | Plan W4: starve fine 3 of 6 scales (S = levels+1 = 6); coarse scales keep full Cp |
-|   | Looped blocks (K=8 shared) | | | ~430M | | | | Plan F1: 1 shared block applied 8 times; ~½ params of L=2 stacked, more compute |
-|   | Iterative refinement (K=2, final loss) | | | ~995M | | | | Plan F2: full forward × 2; 2nd pass uses 1st pass's hidden state as priming bias |
-|   | Cross-time feedback (stale) | | | ~995M | | | | Plan F3: layer N at time t reads layer N+1's prev-step output, shifted by 1 |
-|   | Wavelet crawl (K=3) | | | ~990M | | | | plans/wavelet_crawl.md: learned soft-mixed dilations around base 2^l per level |
+|   | New baseline probe (must beat 1.1133) | | | ~840M | | | | levels=5, exp_param, lr=0.02, low_rank=4, PLE only. Old baseline at 1.1133 ([link](logs/wikitext-103_2026-04-11_21-09-05/log.txt), levels=9/lr=0.01, with PKM+FwPKM) for reference |
+|   | Untied reconstruction | | | ~860M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
+|   | Cross-scale gating (routing) | | | ~840M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
+|   | Multi-basis lifting (haar+random) | | | ~960M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
+|   | Per-scale mixer widths [1×3, 0.5×3] | | | ~790M | | | | Plan W4: starve fine 3 of 6 scales (S = levels+1 = 6); coarse scales keep full Cp |
+|   | Looped blocks (K=8 shared) | | | ~360M | | | | Plan F1: 1 shared block applied 8 times; ~½ params of L=2 stacked, more compute |
+|   | Iterative refinement (K=2, final loss) | | | ~845M | | | | Plan F2: full forward × 2; 2nd pass uses 1st pass's hidden state as priming bias |
+|   | Cross-time feedback (stale) | | | ~845M | | | | Plan F3: layer N at time t reads layer N+1's prev-step output, shifted by 1 |
+|   | Wavelet crawl (K=3) | | | ~840M | | | | plans/wavelet_crawl.md: learned soft-mixed dilations around base 2^l per level |
 
 ### New Baseline Boolean ablations part 2: Stable parametrization
 
@@ -368,13 +368,13 @@ Each sub-feature run individually against the new baseline (probe BPB TBD from P
 
 | Run | Stab flag | Folder | BPB (sliding) | Params | Delta vs probe | Notes |
 |-----|-----------|--------|---------------|--------|----------------|-------|
-|   | master (all 6) | | | ~990M | | Combined effect of all sub-features |
-|   | spectral_norm | | | ~990M | | Constrains ‖mixer.W‖₂=1 (highest priority for NaN fix) |
-|   | ff_scaling | | | ~990M | | FF final layer × 1/√(hidden_dim) instead of 0.02 |
-|   | embed_scaling | | | ~990M | | Embedding output × √C |
-|   | proj_out_scaling | | | ~990M | | proj_out × 1/√(C·L) instead of 1e-3 |
-|   | mixer_eps_scaling | | | ~990M | | mixer eps = eps/√Cp (refinement) |
-|   | lifting_level_scaling | | | ~990M | | Per-level lifting init damping by 1/(1+0.1·level) |
+|   | master (all 6) | | | ~840M | | Combined effect of all sub-features |
+|   | spectral_norm | | | ~840M | | Constrains ‖mixer.W‖₂=1 (highest priority for NaN fix) |
+|   | ff_scaling | | | ~840M | | FF final layer × 1/√(hidden_dim) instead of 0.02 |
+|   | embed_scaling | | | ~840M | | Embedding output × √C |
+|   | proj_out_scaling | | | ~840M | | proj_out × 1/√(C·L) instead of 1e-3 |
+|   | mixer_eps_scaling | | | ~840M | | mixer eps = eps/√Cp (refinement) |
+|   | lifting_level_scaling | | | ~840M | | Per-level lifting init damping by 1/(1+0.1·level) |
 
 ### Block size (context window) — at new baseline
 
@@ -382,33 +382,33 @@ Each sub-feature run individually against the new baseline (probe BPB TBD from P
 
 | Run | block_size | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 256  | | | ~990M | | | | Half context |
-|   | 512  | TBD | TBD | ~990M | TBD | TBD | | Baseline (new baseline probe) |
-|   | 1024 | | | ~990M | | | | Double context; ~2x VRAM |
+|   | 256  | | | ~840M | | | | Half context |
+|   | 512  | TBD | TBD | ~840M | TBD | TBD | | Baseline (new baseline probe) |
+|   | 1024 | | | ~840M | | | | Double context; ~2x VRAM |
 
 ### Grad accum — at new baseline
 
 | Run | grad_accum | Effective batch | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | 1 | 8  | | | ~990M | | | Smaller effective batch |
-|   | 2 | 16 | TBD | TBD | ~990M | TBD | TBD | Baseline (new baseline probe) |
-|   | 4 | 32 | | | ~990M | | | Larger effective batch |
+|   | 1 | 8  | | | ~840M | | | Smaller effective batch |
+|   | 2 | 16 | TBD | TBD | ~840M | TBD | TBD | Baseline (new baseline probe) |
+|   | 4 | 32 | | | ~840M | | | Larger effective batch |
 
 ### Warmup fraction — at new baseline
 
 | Run | warmup_fraction | Warmup steps | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----------------|--------------|--------|---------------|--------|------------|----------------|-------|
-|   | 0.1 | TBD | | | ~990M | | | Short warmup |
-|   | 0.3 | TBD | TBD | TBD | ~990M | TBD | TBD | Baseline (new baseline probe) |
-|   | 0.5 | TBD | | | ~990M | | | Long warmup |
+|   | 0.1 | TBD | | | ~840M | | | Short warmup |
+|   | 0.3 | TBD | TBD | TBD | ~840M | TBD | TBD | Baseline (new baseline probe) |
+|   | 0.5 | TBD | | | ~840M | | | Long warmup |
 
 ### Grad clip — at new baseline
 
 | Run | grad_clip | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----------|--------|---------------|--------|------------|----------------|-------|
-|   | 0.5 | | | ~990M | | | Tighter clipping |
-|   | 1.0 | TBD | TBD | ~990M | TBD | TBD | Baseline (new baseline probe) |
-|   | 2.0 | | | ~990M | | | Looser clipping |
+|   | 0.5 | | | ~840M | | | Tighter clipping |
+|   | 1.0 | TBD | TBD | ~840M | TBD | TBD | Baseline (new baseline probe) |
+|   | 2.0 | | | ~840M | | | Looser clipping |
 
 ### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
 
