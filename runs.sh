@@ -173,7 +173,7 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 
 # run_with "W&S: untied reconstruction" "$NEW_BASELINE; cfg['untied_reconstruction'] = True"
 # run_with "W&S: cross-scale gating (routing)" "$NEW_BASELINE; cfg['cross_scale_gating'] = True"
-run_with "W&S: multi-basis lifting (haar+random)" "$NEW_BASELINE; cfg['multi_basis_lifting'] = True; cfg['multi_basis_inits'] = ['haar', 'random']"
+# run_with "W&S: multi-basis lifting (haar+random)" "$NEW_BASELINE; cfg['multi_basis_lifting'] = True; cfg['multi_basis_inits'] = ['haar', 'random']"
 run_with "W&S: per-scale mixer widths (1,1,1,.5,.5,.5)" "$NEW_BASELINE; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]"
 
 # --- Feedback mechanisms (plans/feedback_mechanisms.md) ---
