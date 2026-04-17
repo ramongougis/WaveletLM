@@ -154,10 +154,14 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # point for all Part 3 ablations below.
 # =====================================================================
 
-NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['levels'] = 5; cfg['exp_parametrization'] = True; cfg['lr'] = 0.02; cfg['low_rank'] = 4"
+NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['levels'] = 5; cfg['lr'] = 0.01; cfg['low_rank'] = 4"
 # Note: PKM and FwPKM are intentionally OFF here. They get re-introduced for
 # the final 5-epoch best-run candidate (with 2.0x+ dropout). Keeping them off
 # during 1-epoch screening saves ~10-15% training time and ~150M params.
+# Note: exp_parametrization + lr=0.02 NaN'd at L=2 (logs/.../2026-04-17_00-27-55,
+# step 4000 LR=1.82e-02). Reverted to lr=0.01 without exp_param. Re-test the
+# lr=0.02 + exp_param combo later when stable_parametrization features are
+# proven, since spectral_norm should provide the additional signal damping needed.
 
 run_with "New baseline probe (levels=5, exp_param, lr=0.02, low_rank=4)" "$NEW_BASELINE"
 

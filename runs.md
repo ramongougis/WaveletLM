@@ -324,9 +324,11 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 ### New Baseline
 
-The baseline used for all 1-epoch screening ablations. Combines proven wins (exp_param + lr=0.02; levels=5; low_rank=4) on top of the wide & shallow config. Halves per-epoch runtime vs the previous C=512/L=20 baseline. **PKM and FwPKM are intentionally OFF** during screening — they get re-introduced for the final 5-epoch best-run candidate (saves ~10-15% time and ~150M params per 1-epoch run).
+The baseline used for all 1-epoch screening ablations. Combines proven wins (levels=5; low_rank=4) on top of the wide & shallow config. Halves per-epoch runtime vs the previous C=512/L=20 baseline. **PKM and FwPKM are intentionally OFF** during screening — they get re-introduced for the final 5-epoch best-run candidate (saves ~10-15% time and ~150M params per 1-epoch run).
 
-**Config:** L=2, C=2048, MLP=20, levels=5, **PLE**, exp_param=true, lr=0.02, low_rank=4
+**Config:** L=2, C=2048, MLP=20, levels=5, **PLE**, lr=0.01, low_rank=4
+
+> **Note:** exp_param + lr=0.02 NaN'd at this config ([logs/.../2026-04-17_00-27-55](logs/wikitext-103_2026-04-17_00-27-55/log.txt), step 4000 LR=1.82e-02). Worked at L=1 previously but L=2 doubles residual signal accumulation. Re-test once stable_parametrization (spectral_norm in particular) is validated.
 
 | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |--------|---------------|--------|------------|----------------|-------|
@@ -334,11 +336,11 @@ The baseline used for all 1-epoch screening ablations. Combines proven wins (exp
 
 ### New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model
 
-Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md), [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md), and [`plans/wavelet_crawl.md`](plans/wavelet_crawl.md) against the **new baseline** (C=2048/L=2/MLP=20/PLE + **levels=5, exp_param, lr=0.02, low_rank=4**). Folds in proven wins (exp_param + lr=0.02 enables higher LR safely; levels=5 from the L=20 finding; low_rank=4 = -0.0045 BPB at trivial cost). Halves runtime per epoch via fewer wavelet levels. PKM/FwPKM deferred to the final 5-epoch best run. Each feature tested individually at 1 epoch; winners stack into the 5-epoch best-combo run.
+Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md), [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md), and [`plans/wavelet_crawl.md`](plans/wavelet_crawl.md) against the **new baseline** (C=2048/L=2/MLP=20/PLE + **levels=5, lr=0.01, low_rank=4**). Folds in proven wins (levels=5 from the L=20 finding; low_rank=4 = -0.0045 BPB at trivial cost). Halves runtime per epoch via fewer wavelet levels. PKM/FwPKM deferred to the final 5-epoch best run; exp_param + lr=0.02 deferred until stable_parametrization is validated. Each feature tested individually at 1 epoch; winners stack into the 5-epoch best-combo run.
 
 | Run | Feature | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | New baseline probe (must beat 1.1133) | | | ~840M | | | | levels=5, exp_param, lr=0.02, low_rank=4, PLE only. Old baseline at 1.1133 ([link](logs/wikitext-103_2026-04-11_21-09-05/log.txt), levels=9/lr=0.01, with PKM+FwPKM) for reference |
+|   | New baseline probe (must beat 1.1133) | | | ~840M | | | | levels=5, lr=0.01, low_rank=4, PLE only. Old baseline at 1.1133 ([link](logs/wikitext-103_2026-04-11_21-09-05/log.txt), levels=9/lr=0.01, with PKM+FwPKM) for reference. exp_param+lr=0.02 NaN'd ([link](logs/wikitext-103_2026-04-17_00-27-55/log.txt)) — defer until stable_parametrization is validated |
 |   | Untied reconstruction | | | ~860M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
 |   | Cross-scale gating (routing) | | | ~840M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
 |   | Multi-basis lifting (haar+random) | | | ~960M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
