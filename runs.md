@@ -442,7 +442,7 @@ Combines all proven improvements: exponential parametrization (enables lr=0.02),
 
 | Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | L=10, C=2048, MLP=20, PLE, PKM+FwPKM-16384, exp_param, lr=0.02, 5ep. Dropout: emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25 (global cap of 0.25), possibly levels=5 | | | TBD | | | | TODO: verify other settings and param count on RunPod before running |
+|   | L=10, C=2048, MLP=20, PLE, PKM+FwPKM-16384, **untied_reconstruction**, exp_param, lr=0.02, 5ep. Dropout: emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25 (global cap of 0.25), possibly levels=5 | | | TBD | | | | TODO: verify other settings and param count on RunPod before running. **Untied reconstruction included based on 1-epoch screening showing narrowing val gap + train loss already below baseline at step 7100 — classic signature of extra capacity needing more training + dropout to pay off.** |
 
 ### Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs
 

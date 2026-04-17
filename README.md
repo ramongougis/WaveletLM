@@ -107,13 +107,17 @@ Learned Embedding (C)
 LayerNorm --> LM Head --> logits
 ```
 
-**Wavelet decomposition** uses a learnable lifting scheme (predict/update networks initialized to Haar wavelets) that decomposes the sequence into multi-scale coefficients, capturing both coarse structure and fine detail at each position.
+### Key Components
 
-**Spectral mixing** applies a Fast Hadamard Transform across channels, then mixes each wavelet scale independently through gated linear layers (SwiGLU by default), before inverting the Hadamard.
+- **Learnable lifting wavelet decomposition** — predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block. Unlike fixed classical wavelets, these are trained end-to-end with the model, letting the decomposition specialize to language structure while causality is preserved through zero-padded dilation.
 
-**Cross-scale gating** over 5 wavelet scales (equal to the number of levels) allows for a fixed O(5²) = O(25) cost per layer regardless of context size, versus attention's O(N²) cost in sequence length.
+- **Fast Hadamard Transform (FHT)** — a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length — no quadratic blow-up regardless of context size, and no KV cache at inference.
 
-**Decompose bypass** optionally passes a causal running mean of hidden states between layers, providing cross-layer context without attention.
+- **Per-scale gated spectral mixer (SwiGLU)** — mixes each wavelet scale independently in Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size — versus attention's O(N²) in sequence length.
+
+- **Expanded MLP (expansion ≥ 20)** — the model's primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. MLP expansion is a monotonic contributor to BPB in our ablations, taking on much of the memorization role that attention plays in Transformer architectures.
+
+- **Decompose bypass** — a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose wavelet coefficients. Provides cross-layer global context at O(C) cost per token, with no attention required.
 
 ### Optional features
 
@@ -124,6 +128,8 @@ LayerNorm --> LM Head --> logits
 - **Low-Rank Factorization** — adds a rank-r perturbation `U·V^T` to the spectral mixer, expanding mixing expressivity at trivial parameter cost (rank=4 yields a measurable BPB improvement).
 
 - **Exponential Parametrization** — reparameterizes mixer weights through `exp()`, stabilizing training under high learning rates that would otherwise NaN.
+
+- **Cross-scale gating (routing mode)** — a learned (S, S) routing matrix that mixes per-scale inputs before each gate, enabling conditional cross-scale interactions (e.g., "when scale 0 shows pattern X, modulate scale 4's processing"). Initialized to identity so it begins as a no-op and only contributes what it learns.
 
 ## Multinodal
 
