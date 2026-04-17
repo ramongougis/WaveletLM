@@ -40,6 +40,22 @@ baseline = {
     "multi_basis_inits": ["haar", "random"],
     "cross_scale_gating": False,
     "per_scale_mixer_widths": None,
+    "stable_parametrization": False,
+    "stab_spectral_norm": False,
+    "stab_ff_scaling": False,
+    "stab_embed_scaling": False,
+    "stab_proj_out_scaling": False,
+    "stab_mixer_eps_scaling": False,
+    "stab_lifting_level_scaling": False,
+    "looped_blocks": False,
+    "looped_blocks_count": 8,
+    "iterative_refinement": False,
+    "iterative_refinement_passes": 2,
+    "iterative_refinement_loss": "final",
+    "cross_time_feedback": False,
+    "cross_time_feedback_mode": "stale",
+    "wavelet_crawl": False,
+    "wavelet_crawl_k": 3,
     "lifting_linear_only": False,
     "lifting_hidden_mult": 1,
     "lifting_init": "haar",
@@ -130,61 +146,117 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 }
 
 # =====================================================================
+# NEW BASELINE PROBE: levels=5, exp_param, lr=0.02, low_rank=4
+# Tests whether this trio (proven wins) folded into the W&S config beats
+# the previous 1-epoch baseline (BPB 1.1133, levels=9, lr=0.01, no exp_param,
+# low_rank=0). Halves runtime per epoch via fewer wavelet levels.
+# Probe runs first; if BPB beats 1.1133, this becomes the comparison
+# point for all Part 3 ablations below.
+# =====================================================================
+
+NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['levels'] = 5; cfg['exp_parametrization'] = True; cfg['lr'] = 0.02; cfg['low_rank'] = 4"
+
+run_with "New baseline probe (levels=5, exp_param, lr=0.02, low_rank=4)" "$NEW_BASELINE"
+
+# =====================================================================
 # BOOLEAN ABLATIONS PART 3: C=2048, L=2, EP=1 WIDE & SHALLOW MODEL
+# Each ablation = NEW_BASELINE + one feature flag. Compares against the
+# baseline probe above.
 # =====================================================================
 
-WIDE_SHALLOW="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
+run_with "W&S: untied reconstruction" "$NEW_BASELINE; cfg['untied_reconstruction'] = True"
+run_with "W&S: cross-scale gating (routing)" "$NEW_BASELINE; cfg['cross_scale_gating'] = True"
+run_with "W&S: multi-basis lifting (haar+random)" "$NEW_BASELINE; cfg['multi_basis_lifting'] = True; cfg['multi_basis_inits'] = ['haar', 'random']"
+run_with "W&S: per-scale mixer widths (1,1,1,.5,.5,.5)" "$NEW_BASELINE; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]"
 
-run_with "W&S: untied reconstruction" "$WIDE_SHALLOW; cfg['untied_reconstruction'] = True"
-run_with "W&S: cross-scale gating (routing)" "$WIDE_SHALLOW; cfg['cross_scale_gating'] = True"
-run_with "W&S: multi-basis lifting (haar+random)" "$WIDE_SHALLOW; cfg['multi_basis_lifting'] = True; cfg['multi_basis_inits'] = ['haar', 'random']"
-run_with "W&S: per-scale mixer widths (1,1,1,.5,.5,.5,.25,.25,.25,.25)" "$WIDE_SHALLOW; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]"
+# --- Feedback mechanisms (plans/feedback_mechanisms.md) ---
+run_with "W&S: looped blocks (K=8 shared)" "$NEW_BASELINE; cfg['looped_blocks'] = True; cfg['looped_blocks_count'] = 8"
+run_with "W&S: iterative refinement (K=2, final loss)" "$NEW_BASELINE; cfg['iterative_refinement'] = True; cfg['iterative_refinement_passes'] = 2; cfg['iterative_refinement_loss'] = 'final'"
+run_with "W&S: cross-time feedback (stale)" "$NEW_BASELINE; cfg['cross_time_feedback'] = True; cfg['cross_time_feedback_mode'] = 'stale'"
 
-# =====================================================================
-# BLOCK SIZE
-# =====================================================================
+# --- Wavelet crawl (plans/wavelet_crawl.md) ---
+run_with "W&S: wavelet crawl (K=3)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 3"
 
-# Block size (adjust levels to match)
-run_with "Block size: 256, levels=8" "cfg['block_size'] = 256; cfg['levels'] = 8"
-run_with "Block size: 1024, levels=10" "cfg['block_size'] = 1024; cfg['levels'] = 10"
-
-# =====================================================================
-# GRAD ACCUM
-# =====================================================================
-
-run_with "Grad accum: 1 (batch=8)" "cfg['grad_accum'] = 1"
-run_with "Grad accum: 4 (batch=32)" "cfg['grad_accum'] = 4"
+# --- Lifting efficiency probes (param/compute savings; quality impact unknown) ---
+run_with "W&S: shared_lifting_weights" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True"
+run_with "W&S: lifting_linear_only" "$NEW_BASELINE; cfg['lifting_linear_only'] = True"
+run_with "W&S: shared_lifting + linear_only" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True; cfg['lifting_linear_only'] = True"
 
 # =====================================================================
-# WARMUP FRACTION
+# BOOLEAN ABLATIONS PART 4: STABLE PARAMETRIZATION (vs KNOWN NaN CONFIGS)
+# Tests whether stable_parametrization rescues configs that previously NaN'd.
+# Each row pairs a known-unstable config with stable_parametrization=True.
+# Reference NaN runs:
+#   - mixer_depth=5 at L=20:           Run 39, NaN step 3600 (LR=0.008)
+#   - lifting_hidden_mult=2 at L=20:   logs/...2026-04-16_17-23-50, NaN step 2500
+#   - C=2048, lr=0.02 at L=20, MLP=1:  Run 63, NaN step 700 (LR=0.003)
 # =====================================================================
 
-run_with "Warmup fraction: 0.1" "cfg['warmup_fraction'] = 0.1"
-run_with "Warmup fraction: 0.5" "cfg['warmup_fraction'] = 0.5"
+run_with "Stab: vs mixer_depth=5 NaN (was Run 39)" "cfg['mixer_depth'] = 5; cfg['stable_parametrization'] = True"
+run_with "Stab: vs lifting_hidden_mult=2 NaN" "cfg['lifting_hidden_mult'] = 2; cfg['stable_parametrization'] = True"
+run_with "Stab: vs C=2048 lr=0.02 NaN (was Run 63)" "cfg['C'] = 2048; cfg['lr'] = 0.02; cfg['stable_parametrization'] = True"
+
+# --- Compatibility tests: stab sub-features at the stable W&S baseline ---
+# Verifies each sub-feature runs without breakage at a known-stable config and
+# measures its standalone effect on BPB (positive delta = useful, ~0 = neutral,
+# negative = harmful at this config but may still rescue unstable ones).
+
+run_with "W&S+Stab: master (all 6)" "$NEW_BASELINE; cfg['stable_parametrization'] = True"
+run_with "W&S+Stab: spectral_norm" "$NEW_BASELINE; cfg['stab_spectral_norm'] = True"
+run_with "W&S+Stab: ff_scaling" "$NEW_BASELINE; cfg['stab_ff_scaling'] = True"
+run_with "W&S+Stab: embed_scaling" "$NEW_BASELINE; cfg['stab_embed_scaling'] = True"
+run_with "W&S+Stab: proj_out_scaling" "$NEW_BASELINE; cfg['stab_proj_out_scaling'] = True"
+run_with "W&S+Stab: mixer_eps_scaling" "$NEW_BASELINE; cfg['stab_mixer_eps_scaling'] = True"
+run_with "W&S+Stab: lifting_level_scaling" "$NEW_BASELINE; cfg['stab_lifting_level_scaling'] = True"
 
 # =====================================================================
-# GRAD CLIP
+# BLOCK SIZE — at NEW_BASELINE (levels=5 supports any block_size >= 32)
 # =====================================================================
 
-run_with "Grad clip: 0.5" "cfg['grad_clip'] = 0.5"
-run_with "Grad clip: 2.0" "cfg['grad_clip'] = 2.0"
+run_with "Block size: 256" "$NEW_BASELINE; cfg['block_size'] = 256"
+run_with "Block size: 1024" "$NEW_BASELINE; cfg['block_size'] = 1024"
 
 # =====================================================================
-# C=4096 WIDTH SCALING
+# GRAD ACCUM — at NEW_BASELINE
 # =====================================================================
 
-run_with "L=1, C=4096, MLP=10, lr=0.01" "cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
-run_with "L=2, C=4096, MLP=10, lr=0.01, MBS=4/GA=4" "cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
-run_with "L=1, C=4096, MLP=10, lr=0.02, exp_param" "cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384"
-run_with "L=2, C=4096, MLP=10, lr=0.02, exp_param, MBS=4/GA=4" "cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+run_with "Grad accum: 1 (batch=8)" "$NEW_BASELINE; cfg['grad_accum'] = 1"
+run_with "Grad accum: 4 (batch=32)" "$NEW_BASELINE; cfg['grad_accum'] = 4"
 
 # =====================================================================
-# REDUCED LEVELS AT SCALE: L=2, C=2048, 5 epochs, 2.0x dropout
+# WARMUP FRACTION — at NEW_BASELINE
 # =====================================================================
 
-run_with "Reduced levels: L=2, C=2048, levels=1, 5ep, 2.0x dropout" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['levels'] = 1; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
-run_with "Reduced levels: L=2, C=2048, levels=2, 5ep, 2.0x dropout" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['levels'] = 2; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
-run_with "Reduced levels: L=2, C=2048, levels=5, 5ep, 2.0x dropout" "cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; cfg['epochs'] = 5; cfg['levels'] = 5; cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
+run_with "Warmup fraction: 0.1" "$NEW_BASELINE; cfg['warmup_fraction'] = 0.1"
+run_with "Warmup fraction: 0.5" "$NEW_BASELINE; cfg['warmup_fraction'] = 0.5"
+
+# =====================================================================
+# GRAD CLIP — at NEW_BASELINE
+# =====================================================================
+
+run_with "Grad clip: 0.5" "$NEW_BASELINE; cfg['grad_clip'] = 0.5"
+run_with "Grad clip: 2.0" "$NEW_BASELINE; cfg['grad_clip'] = 2.0"
+
+# =====================================================================
+# C=4096 WIDTH SCALING — at NEW_BASELINE (lr=0.02 + exp_param baked in)
+# Drops the prior lr=0.01 controls since lr=0.02+exp_param is now standard.
+# =====================================================================
+
+run_with "C=4096: L=1, MLP=10" "$NEW_BASELINE; cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10"
+run_with "C=4096: L=2, MLP=10, MBS=4/GA=4" "$NEW_BASELINE; cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+
+# =====================================================================
+# REDUCED LEVELS AT SCALE — at NEW_BASELINE, 5 epochs, 2.0x dropout
+# Tests whether levels<5 still wins at L=2/C=2048 now that NEW_BASELINE
+# already has levels=5 (from the L=20 finding). The levels=5 entry is
+# the canonical 5-epoch best-run candidate.
+# =====================================================================
+
+DROPOUT_2X="cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
+
+run_with "5ep+2.0x dropout: levels=1" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 1; $DROPOUT_2X"
+run_with "5ep+2.0x dropout: levels=2" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 2; $DROPOUT_2X"
+run_with "5ep+2.0x dropout: levels=5 (5-epoch best candidate)" "$NEW_BASELINE; cfg['epochs'] = 5; $DROPOUT_2X"
 
 # =====================================================================
 # RESET to baseline after all runs

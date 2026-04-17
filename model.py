@@ -155,6 +155,9 @@ class LiftingWaveletDecompose(nn.Module):
         linear_only: bool = False,
         device=None,
         dtype=None,
+        stab_lifting_level_scaling: bool = False,
+        wavelet_crawl: bool = False,
+        wavelet_crawl_k: int = 3,
     ):
         super().__init__()
         self.levels = levels
@@ -162,6 +165,18 @@ class LiftingWaveletDecompose(nn.Module):
         self.hidden_mult = hidden_mult
         self.init_wavelet = init_wavelet
         self.linear_only = linear_only
+        self.wavelet_crawl = wavelet_crawl
+        self.wavelet_crawl_k = wavelet_crawl_k
+        if wavelet_crawl:
+            if wavelet_crawl_k % 2 != 1:
+                raise ValueError(f"wavelet_crawl_k must be odd, got {wavelet_crawl_k}")
+            # Logits over K candidate dilations centered at base 2^level
+            # Init biases the softmax toward the center (= today's behavior at start)
+            self.dilation_logits = nn.Parameter(
+                torch.zeros(levels, wavelet_crawl_k, device=device, dtype=dtype)
+            )
+            with torch.no_grad():
+                self.dilation_logits.data[:, wavelet_crawl_k // 2] = 5.0
 
         hidden_dim = C * hidden_mult
 
@@ -230,6 +245,18 @@ class LiftingWaveletDecompose(nn.Module):
                 elif init_wavelet == 'random':
                     pass  # use default torch init; diversity for multi-basis
 
+            if stab_lifting_level_scaling:
+                # Damp higher-level (longer-range) interactions where signal-to-noise
+                # is weaker. Equivalent to predict_scale = update_scale = 1/(1 + 0.1*l).
+                lvl_scale = 1.0 / (1.0 + level * 0.1)
+                with torch.no_grad():
+                    if linear_only:
+                        predict.weight.data.mul_(lvl_scale)
+                        update.weight.data.mul_(lvl_scale)
+                    else:
+                        predict[3].weight.data.mul_(lvl_scale)
+                        update[3].weight.data.mul_(lvl_scale)
+
             self.predict_nets.append(predict)
             self.update_nets.append(update)
 
@@ -240,11 +267,25 @@ class LiftingWaveletDecompose(nn.Module):
         cur = x
 
         for level in range(self.levels):
-            dilation = 1 << level
-            padded = F.pad(cur, (0, 0, dilation, 0))
+            base_dilation = 1 << level
+            T = cur.shape[1]
+
+            if self.wavelet_crawl:
+                K = self.wavelet_crawl_k
+                offsets = [max(1, base_dilation + (k - K // 2)) for k in range(K)]
+                weights = F.softmax(self.dilation_logits[level], dim=0)
+                max_d = max(offsets)
+                padded = F.pad(cur, (0, 0, max_d, 0))
+                # Sum_k w_k * cur shifted-back-by-offsets[k]
+                odd = sum(
+                    weights[k] * padded[:, max_d - offsets[k]:max_d - offsets[k] + T, :]
+                    for k in range(K)
+                )
+            else:
+                padded = F.pad(cur, (0, 0, base_dilation, 0))
+                odd = padded[:, :-base_dilation, :]
 
             even = cur
-            odd = padded[:, :-dilation, :]
 
             predicted = self.predict_nets[level](even)
             detail = (odd - predicted) * self.inv_sqrt2
@@ -286,7 +327,9 @@ class MultiBasisLiftingWavelet(nn.Module):
     """
 
     def __init__(self, levels: int, C: int, hidden_mult: int, inits: List[str],
-                 dropout: float, linear_only: bool, device=None, dtype=None):
+                 dropout: float, linear_only: bool, device=None, dtype=None,
+                 stab_lifting_level_scaling: bool = False,
+                 wavelet_crawl: bool = False, wavelet_crawl_k: int = 3):
         super().__init__()
         self.K = len(inits)
         self.levels = levels
@@ -295,6 +338,8 @@ class MultiBasisLiftingWavelet(nn.Module):
                 levels=levels, C=C, hidden_mult=hidden_mult,
                 init_wavelet=init, dropout=dropout, linear_only=linear_only,
                 device=device, dtype=dtype,
+                stab_lifting_level_scaling=stab_lifting_level_scaling,
+                wavelet_crawl=wavelet_crawl, wavelet_crawl_k=wavelet_crawl_k,
             ) for init in inits
         ])
         self.basis_weights = nn.Parameter(
@@ -351,10 +396,14 @@ _MIXER_GATE_ACTIVATIONS = {
 class GatedSpectralMixer(nn.Module):
     def __init__(self, Cp: int, num_blocks: int, rank: int = 4, eps: float = 1e-3,
                  use_mixer_gate: bool = True, mixer_gate_activation: str = "sigmoid",
-                 add_bias: bool = False, device=None, dtype=None):
+                 add_bias: bool = False, device=None, dtype=None,
+                 stab_spectral_norm: bool = False,
+                 stab_mixer_eps_scaling: bool = False):
         super().__init__()
         self.Cp = Cp
         self.use_mixer_gate = use_mixer_gate
+        if stab_mixer_eps_scaling:
+            eps = eps / math.sqrt(Cp)
         self.mixer = nn.Linear(Cp, Cp, bias=False, device=device, dtype=dtype)
         if use_mixer_gate:
             if mixer_gate_activation not in _MIXER_GATE_ACTIVATIONS:
@@ -376,6 +425,11 @@ class GatedSpectralMixer(nn.Module):
             self.bias = None
 
         self.reset_parameters(eps)
+
+        if stab_spectral_norm:
+            # Constrain mixer to ||W||_2 = 1 (largest singular value); prevents
+            # signal amplification through the mixer that drove NaN at depth/LR.
+            self.mixer = nn.utils.spectral_norm(self.mixer)
 
     def reset_parameters(self, eps=1e-3):
         with torch.no_grad():
@@ -409,7 +463,9 @@ class PerScaleMixer(nn.Module):
     def __init__(self, Cp: int, width: int, num_blocks: int = 1, rank: int = 4,
                  eps: float = 1e-3, use_mixer_gate: bool = True,
                  mixer_gate_activation: str = "sigmoid", add_bias: bool = False,
-                 device=None, dtype=None):
+                 device=None, dtype=None,
+                 stab_spectral_norm: bool = False,
+                 stab_mixer_eps_scaling: bool = False):
         super().__init__()
         self.Cp = Cp
         self.width = width
@@ -426,6 +482,8 @@ class PerScaleMixer(nn.Module):
             Cp=width, num_blocks=num_blocks, rank=rank, eps=eps,
             use_mixer_gate=use_mixer_gate, mixer_gate_activation=mixer_gate_activation,
             add_bias=add_bias, device=device, dtype=dtype,
+            stab_spectral_norm=stab_spectral_norm,
+            stab_mixer_eps_scaling=stab_mixer_eps_scaling,
         )
 
     def forward(self, X: torch.Tensor, gate_input: torch.Tensor = None):
@@ -444,7 +502,8 @@ class PerScaleMixer(nn.Module):
 # ==============================================================================
 
 class FeedForward(nn.Module):
-    def __init__(self, C, expansion=2, dropout_mlp=0.0, hidden_layers=2):
+    def __init__(self, C, expansion=2, dropout_mlp=0.0, hidden_layers=2,
+                 stab_ff_scaling: bool = False):
         super().__init__()
         hidden_dim = C * expansion
         layers = []
@@ -459,7 +518,12 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(*layers)
         final_linear = self.net[-2]
         with torch.no_grad():
-            final_linear.weight.mul_(0.02)
+            if stab_ff_scaling:
+                # Xavier-like: keep variance constant regardless of hidden_dim.
+                # Replaces fixed 0.02 which doesn't scale with MLP expansion.
+                final_linear.weight.mul_(1.0 / math.sqrt(hidden_dim))
+            else:
+                final_linear.weight.mul_(0.02)
             final_linear.bias.zero_()
 
     def forward(self, x):
@@ -770,6 +834,14 @@ class ExarchBlock(nn.Module):
         multi_basis_inits: List[str] = None,
         cross_scale_gating: bool = False,
         per_scale_mixer_widths: List[float] = None,
+        num_layers: int = 1,
+        stab_spectral_norm: bool = False,
+        stab_ff_scaling: bool = False,
+        stab_proj_out_scaling: bool = False,
+        stab_mixer_eps_scaling: bool = False,
+        stab_lifting_level_scaling: bool = False,
+        wavelet_crawl: bool = False,
+        wavelet_crawl_k: int = 3,
         use_mixer_gate: bool = True,
         mixer_gate_activation: str = "silu",
         pkm_enabled: bool = False,
@@ -804,6 +876,9 @@ class ExarchBlock(nn.Module):
                     levels=levels, C=self.Cp, hidden_mult=lifting_hidden_mult,
                     inits=inits, dropout=lifting_dropout,
                     linear_only=lifting_linear_only, device=device, dtype=dtype,
+                    stab_lifting_level_scaling=stab_lifting_level_scaling,
+                    wavelet_crawl=wavelet_crawl,
+                    wavelet_crawl_k=wavelet_crawl_k,
                 )
             elif shared_lifting_module is not None:
                 self.lifting_wavelet = shared_lifting_module
@@ -817,6 +892,9 @@ class ExarchBlock(nn.Module):
                     linear_only=lifting_linear_only,
                     device=device,
                     dtype=dtype,
+                    stab_lifting_level_scaling=stab_lifting_level_scaling,
+                    wavelet_crawl=wavelet_crawl,
+                    wavelet_crawl_k=wavelet_crawl_k,
                 )
 
             if untied_reconstruction:
@@ -840,6 +918,7 @@ class ExarchBlock(nn.Module):
                         linear_only=lifting_linear_only,
                         device=device,
                         dtype=dtype,
+                        stab_lifting_level_scaling=stab_lifting_level_scaling,
                     )
                     self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_reconstruct_wavelet)
             else:
@@ -891,6 +970,8 @@ class ExarchBlock(nn.Module):
                         mixer_gate_activation=mixer_gate_activation,
                         add_bias=False,
                         device=device, dtype=dtype,
+                        stab_spectral_norm=stab_spectral_norm,
+                        stab_mixer_eps_scaling=stab_mixer_eps_scaling,
                     )
                     for s in range(S)
                 ])
@@ -903,6 +984,8 @@ class ExarchBlock(nn.Module):
                         mixer_gate_activation=mixer_gate_activation,
                         add_bias=False,
                         device=device, dtype=dtype,
+                        stab_spectral_norm=stab_spectral_norm,
+                        stab_mixer_eps_scaling=stab_mixer_eps_scaling,
                     )
                     for _ in range(S)
                 ])
@@ -922,6 +1005,8 @@ class ExarchBlock(nn.Module):
                         use_mixer_gate=use_mixer_gate,
                         mixer_gate_activation=mixer_gate_activation,
                         add_bias=(d < mixer_depth - 1),
+                        stab_spectral_norm=stab_spectral_norm,
+                        stab_mixer_eps_scaling=stab_mixer_eps_scaling,
                         device=device, dtype=dtype,
                     )
                     for _ in range(S)
@@ -951,7 +1036,12 @@ class ExarchBlock(nn.Module):
         if not self.skip_proj_out:
             self.proj_out = nn.Linear(self.Cp, self.C)
             with torch.no_grad():
-                self.proj_out.weight.mul_(1e-3)
+                if stab_proj_out_scaling:
+                    # GPT-2-style residual scaling: 1/sqrt(C * num_layers) keeps
+                    # the residual stream from growing through L layers.
+                    self.proj_out.weight.mul_(1.0 / math.sqrt(self.C * num_layers))
+                else:
+                    self.proj_out.weight.mul_(1e-3)
                 self.proj_out.bias.zero_()
 
         self.learned_residual = learned_residual
@@ -969,7 +1059,8 @@ class ExarchBlock(nn.Module):
         self.use_mlp = mlp_expansion > 0
         if self.use_mlp:
             self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
-                                    dropout_mlp=dropout_mlp, hidden_layers=mlp_layers)
+                                    dropout_mlp=dropout_mlp, hidden_layers=mlp_layers,
+                                    stab_ff_scaling=stab_ff_scaling)
 
         self.pkm_enabled = pkm_enabled
         if pkm_enabled:
@@ -1173,6 +1264,12 @@ class ExarchLM(nn.Module):
                 dropout=lifting_dropout,
                 linear_only=lifting_linear_only,
                 device=device,
+                stab_lifting_level_scaling=(
+                    config.get("stable_parametrization", False)
+                    or config.get("stab_lifting_level_scaling", False)
+                ),
+                wavelet_crawl=config.get("wavelet_crawl", False),
+                wavelet_crawl_k=config.get("wavelet_crawl_k", 3),
             )
             lifting_params = sum(p.numel() for p in shared_lifting.parameters())
             print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params")
@@ -1191,6 +1288,37 @@ class ExarchLM(nn.Module):
             widths = config["per_scale_mixer_widths"]
             print(f"[Mixer] Per-scale widths: multipliers={widths}")
 
+        # Resolve stable parametrization flags (master OR individual)
+        sp_master = config.get("stable_parametrization", False)
+        stab_spectral_norm = sp_master or config.get("stab_spectral_norm", False)
+        stab_ff_scaling = sp_master or config.get("stab_ff_scaling", False)
+        stab_embed_scaling = sp_master or config.get("stab_embed_scaling", False)
+        stab_proj_out_scaling = sp_master or config.get("stab_proj_out_scaling", False)
+        stab_mixer_eps_scaling = sp_master or config.get("stab_mixer_eps_scaling", False)
+        stab_lifting_level_scaling = sp_master or config.get("stab_lifting_level_scaling", False)
+        self.stab_embed_scaling = stab_embed_scaling
+        self._embed_scale = math.sqrt(C) if stab_embed_scaling else 1.0
+        any_stab = any([
+            stab_spectral_norm, stab_ff_scaling, stab_embed_scaling,
+            stab_proj_out_scaling, stab_mixer_eps_scaling, stab_lifting_level_scaling,
+        ])
+        if config.get("wavelet_crawl", False):
+            K = config.get("wavelet_crawl_k", 3)
+            print(f"[Lifting] Wavelet crawl: learned dilation mixing K={K} per level")
+
+        if any_stab:
+            active = [
+                name for name, on in [
+                    ("spectral_norm", stab_spectral_norm),
+                    ("ff_scaling", stab_ff_scaling),
+                    ("embed_scaling", stab_embed_scaling),
+                    ("proj_out_scaling", stab_proj_out_scaling),
+                    ("mixer_eps_scaling", stab_mixer_eps_scaling),
+                    ("lifting_level_scaling", stab_lifting_level_scaling),
+                ] if on
+            ]
+            print(f"[StableParam] Active: {active}")
+
         Cp = next_pow2(C)
         if skip_proj_out and Cp == C:
             saved = config['layers'] * (Cp * C + C)
@@ -1202,6 +1330,22 @@ class ExarchLM(nn.Module):
         self.per_layer_embedding = config.get("per_layer_embedding", False)
         self.loop_iterations = config.get("loop_iterations", 1)
 
+        # Feedback mechanisms (mutually-exclusive in some combos)
+        self.looped_blocks = config.get("looped_blocks", False)
+        self.looped_blocks_count = config.get("looped_blocks_count", 8)
+        self.iterative_refinement = config.get("iterative_refinement", False)
+        self.iterative_refinement_passes = config.get("iterative_refinement_passes", 2)
+        self.iterative_refinement_loss = config.get("iterative_refinement_loss", "final")
+        self.cross_time_feedback = config.get("cross_time_feedback", False)
+        self.cross_time_feedback_mode = config.get("cross_time_feedback_mode", "stale")
+        if self.cross_time_feedback and self.looped_blocks:
+            raise ValueError("cross_time_feedback is incompatible with looped_blocks "
+                             "(no N+1 to read from with a single shared block)")
+        if self.cross_time_feedback and self.cross_time_feedback_mode == "two_pass":
+            raise NotImplementedError(
+                "cross_time_feedback two_pass mode requires train.py changes; "
+                "use 'stale' mode for now")
+
         # Stochastic depth
         self.stochastic_depth_rate = config.get("stochastic_depth_rate", 0.0)
         L = config['layers']
@@ -1212,7 +1356,14 @@ class ExarchLM(nn.Module):
         else:
             self._drop_probs = [0.0] * L
 
-        # Build layers
+        # Build layers (or single shared block for looped_blocks)
+        effective_layer_count = (
+            self.looped_blocks_count if self.looped_blocks else L
+        )
+        self.effective_layer_count = effective_layer_count
+        if self.looped_blocks:
+            print(f"[Looped] Single shared ExarchBlock applied {effective_layer_count} times")
+        layer_build_count = 1 if self.looped_blocks else L
         self.layers = nn.ModuleList([
             ExarchBlock(
                 C,
@@ -1238,6 +1389,14 @@ class ExarchLM(nn.Module):
                 multi_basis_inits=config.get("multi_basis_inits", None),
                 cross_scale_gating=config.get("cross_scale_gating", False),
                 per_scale_mixer_widths=config.get("per_scale_mixer_widths", None),
+                num_layers=L,
+                stab_spectral_norm=stab_spectral_norm,
+                stab_ff_scaling=stab_ff_scaling,
+                stab_proj_out_scaling=stab_proj_out_scaling,
+                stab_mixer_eps_scaling=stab_mixer_eps_scaling,
+                stab_lifting_level_scaling=stab_lifting_level_scaling,
+                wavelet_crawl=config.get("wavelet_crawl", False),
+                wavelet_crawl_k=config.get("wavelet_crawl_k", 3),
                 use_mixer_gate=config.get("use_mixer_gate", True),
                 mixer_gate_activation=config.get("mixer_gate_activation", "silu"),
                 pkm_enabled=config.get("pkm_enabled", False),
@@ -1253,8 +1412,28 @@ class ExarchLM(nn.Module):
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
             )
-            for _ in range(L)
+            for _ in range(layer_build_count)
         ])
+
+        # Iterative refinement: priming projection from prior pass's hidden state
+        if self.iterative_refinement:
+            self.priming_proj = nn.Linear(C, C, bias=False)
+            with torch.no_grad():
+                nn.init.zeros_(self.priming_proj.weight)  # start as no-op
+            print(f"[IterRefine] {self.iterative_refinement_passes} passes, "
+                  f"loss={self.iterative_refinement_loss}")
+
+        # Cross-time feedback: per-layer projection of stored prev-step layer outputs
+        if self.cross_time_feedback:
+            # Layer 0..L-2 each read layer N+1's prev output; deepest layer has nothing to read
+            self.cross_time_projs = nn.ModuleList([
+                nn.Linear(C, C, bias=False) for _ in range(L - 1)
+            ])
+            for proj in self.cross_time_projs:
+                with torch.no_grad():
+                    nn.init.zeros_(proj.weight)  # start as no-op
+            self._prev_layer_outputs = [None] * L
+            print(f"[CrossTime] stale-mode feedback active across {L-1} cross-layer projections")
 
         # Final LN and LM head
         self.final_ln = nn.LayerNorm(C)
@@ -1312,7 +1491,10 @@ class ExarchLM(nn.Module):
 
     def _forward_embed(self, idx):
         """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""
-        return self.dropout_emb(self.token_embedding(idx))
+        emb = self.token_embedding(idx)
+        if self.stab_embed_scaling:
+            emb = emb * self._embed_scale
+        return self.dropout_emb(emb)
 
     def _forward_head(self, x, targets=None):
         """Final LN, LM head, and loss. Used by MultiNodeExarchLM lockstep forward."""
@@ -1328,6 +1510,8 @@ class ExarchLM(nn.Module):
         B, T = idx.shape
 
         tok_emb = self.token_embedding(idx)  # [B, T, C]
+        if self.stab_embed_scaling:
+            tok_emb = tok_emb * self._embed_scale
         x = self.dropout_emb(tok_emb)
         ple = tok_emb if self.per_layer_embedding else None
 
@@ -1339,25 +1523,64 @@ class ExarchLM(nn.Module):
 
         all_logits = [] if self.loop_iterations > 1 and targets is not None else None
 
-        for loop in range(self.loop_iterations):
-            for layer_idx, layer in enumerate(self.layers):
-                # Stochastic depth
-                if self.training and self.stochastic_depth_rate > 0:
-                    if random.random() < self._drop_probs[layer_idx]:
-                        continue
+        # Effective number of block applications per pass (looped vs stacked)
+        eff_count = self.effective_layer_count
+        get_layer = (lambda i: self.layers[0]) if self.looped_blocks else (lambda i: self.layers[i])
 
-                if self.gradient_checkpointing and self.training:
-                    def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
-                        return _layer(lx, _state, token_embeddings=_ple)
-                    x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
-                else:
-                    x, current_state = layer(x, current_state, token_embeddings=ple)
+        # Iterative refinement: K passes through the stack with priming bias
+        ir_passes = self.iterative_refinement_passes if self.iterative_refinement else 1
+        ir_logits = [] if (self.iterative_refinement
+                           and self.iterative_refinement_loss == "all_passes"
+                           and targets is not None) else None
+        priming = None
+        x_orig = x
 
-            # Produce logits at each iteration for multi-iteration loss
-            if all_logits is not None:
+        for ir in range(ir_passes):
+            if ir > 0:
+                # Inject prior pass's final hidden state as priming bias
+                x = x_orig + self.priming_proj(priming)
+
+            for loop in range(self.loop_iterations):
+                for layer_idx in range(eff_count):
+                    layer = get_layer(layer_idx)
+
+                    # Stochastic depth (only meaningful in stacked mode)
+                    if (not self.looped_blocks and self.training
+                            and self.stochastic_depth_rate > 0):
+                        if random.random() < self._drop_probs[layer_idx]:
+                            continue
+
+                    # Cross-time feedback: read prev step's deeper-layer output, project, shift right
+                    if (self.cross_time_feedback and self.training
+                            and layer_idx < eff_count - 1):
+                        stale = self._prev_layer_outputs[layer_idx + 1]
+                        if stale is not None and stale.shape == x.shape:
+                            shifted = F.pad(stale, (0, 0, 1, -1))  # causal shift by 1
+                            x = x + self.cross_time_projs[layer_idx](shifted)
+
+                    if self.gradient_checkpointing and self.training:
+                        def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
+                            return _layer(lx, _state, token_embeddings=_ple)
+                        x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
+                    else:
+                        x, current_state = layer(x, current_state, token_embeddings=ple)
+
+                    # Store this layer's output for next training step's cross-time read
+                    if self.cross_time_feedback and self.training:
+                        self._prev_layer_outputs[layer_idx] = x.detach()
+
+                # Produce logits at each loop iteration for multi-iteration loss
+                if all_logits is not None:
+                    x_ln = self.final_ln(x)
+                    logits_t = self.lm_head(self.dropout_lm(x_ln))
+                    all_logits.append(logits_t)
+
+            # End of an IR pass: stash hidden state for next pass's priming
+            if self.iterative_refinement and ir < ir_passes - 1:
+                priming = x.detach()
+            if ir_logits is not None:
                 x_ln = self.final_ln(x)
-                logits_t = self.lm_head(self.dropout_lm(x_ln))
-                all_logits.append(logits_t)
+                ir_logits.append(self.lm_head(self.dropout_lm(x_ln)))
 
         # Update persistent state for next window
         if self.decompose_bypass_cross_window and current_state is not None:
@@ -1371,7 +1594,14 @@ class ExarchLM(nn.Module):
 
         loss = None
         if targets is not None:
-            if self.loop_iterations == 1:
+            if ir_logits is not None:
+                # Iterative refinement, all_passes loss: average over passes
+                total_loss = sum(
+                    F.cross_entropy(lg.view(-1, lg.size(-1)), targets.view(-1).long())
+                    for lg in ir_logits
+                )
+                loss = total_loss / len(ir_logits)
+            elif self.loop_iterations == 1:
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1).long())
             else:
                 # Average loss across all iterations (uniform weighting)

@@ -26,25 +26,29 @@
 22. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
 23. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
-25. [Boolean ablations part 3: C=2048, L=2, epochs=1 wide & shallow model](#boolean-ablations-part-3-c2048-l2-epochs1-wide--shallow-model)
-26. [Block size (context window)](#block-size-context-window)
-27. [Grad accum: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-accum-c--512-epochs--1-optimal-booleans--mlp_expansion)
-28. [Warmup fraction: C = 512, epochs = 1, optimal booleans + mlp_expansion](#warmup-fraction-c--512-epochs--1-optimal-booleans--mlp_expansion)
-29. [Grad clip: C = 512, epochs = 1, optimal booleans + mlp_expansion](#grad-clip-c--512-epochs--1-optimal-booleans--mlp_expansion)
-30. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
-31. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
-32. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-33. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-34. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-35. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-36. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-37. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-38. [Best PTQ combination](#best-ptq-combination)
-39. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-40. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
-41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-42. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-43. [Run Details](#run-details)
+25. [New Baseline](#new-baseline)
+26. [New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model](#new-baseline-boolean-ablations-part-1-c2048-l2-epochs1-wide--shallow-model)
+27. [New Baseline Boolean ablations part 2: Stable parametrization](#new-baseline-boolean-ablations-part-2-stable-parametrization)
+28. [New Baseline Boolean ablations part 3: Rescue tests (vs known NaN configs)](#new-baseline-boolean-ablations-part-3-rescue-tests-vs-known-nan-configs)
+29. [New Baseline Boolean ablations part 4: Compatibility tests (sub-features at the new baseline)](#new-baseline-boolean-ablations-part-4-compatibility-tests-sub-features-at-the-new-baseline)
+30. [Block size (context window) — at new baseline](#block-size-context-window--at-new-baseline)
+31. [Grad accum — at new baseline](#grad-accum--at-new-baseline)
+32. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
+33. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
+34. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
+35. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
+36. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+37. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+38. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+39. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+40. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+41. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+42. [Best PTQ combination](#best-ptq-combination)
+43. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+44. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+45. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+46. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+47. [Run Details](#run-details)
 
 ---
 
@@ -271,7 +275,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 | Run | Config | exp_param | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|-----------|--------|---------------|--------|------------|----------------|-------|
-|   | L=1, C=2048, MLP=20, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_01-46-27/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Identical to baseline (1.1431); no improvement |
+|   | L=1, C=2048, MLP=20, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_01-46-27/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | Identical to baseline ([Run 62](logs/wikitext-103_2026-04-11_08-13-12/log.txt): 1.1431); no improvement at lr=0.01 |
 |   | L=1, C=2048, MLP=20, lr=0.02 | true | [link](logs/wikitext-103_2026-04-15_03-35-54/log.txt) | **1.1347** | 617.05M | 14,109 MiB | 3,519 MiB | **Survived lr=0.02! Previously NaN'd; -0.0084 vs baseline** |
 |   | L=20, C=512, MD=5, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_05-24-40/log.txt) | NaN | 787.24M | — | — | — | NaN at step 3600 again; exp param doesn't fix depth instability |
 
@@ -318,49 +322,93 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 2 | [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt) | NaN | 555.51M | — | — | — | NaN at step 2500 (LR=0.0057); wider lifting unstable at L=20. Future stability fixes (e.g., spectral norm on lifting predict/update, or scaled init for hidden dims) may make this viable. |
 | N/A | 4 | — | — | — | — | — | — | Cancelled; mult=2 already NaN'd. Revisit with stability fixes. |
 
-### Boolean ablations part 3: C=2048, L=2, epochs=1 wide & shallow model
+### New Baseline
 
-Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md) and [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md) against the 1-epoch C=2048/L=2 baseline. Each feature tested individually at 1 epoch; winners (positive delta) stack into the 5-epoch best-combo run without per-feature 5-epoch confirmation.
+The baseline used for all subsequent ablations. Combines proven wins (exp_param + lr=0.02; levels=5; low_rank=4) on top of the wide & shallow config. Halves per-epoch runtime vs the previous C=512/L=20 baseline.
+
+**Config:** L=2, C=2048, MLP=20, levels=5, PLE, PKM+FwPKM-16384, exp_param=true, lr=0.02, low_rank=4
+
+| Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|--------|---------------|--------|------------|----------------|-------|
+| TBD (probe pending) | TBD | ~990M | TBD | TBD | Must beat 1.1133 ([old baseline](logs/wikitext-103_2026-04-11_21-09-05/log.txt): levels=9, lr=0.01) |
+
+### New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model
+
+Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and_mixer_augmentations.md`](plans/wavelet_and_mixer_augmentations.md), [`plans/feedback_mechanisms.md`](plans/feedback_mechanisms.md), and [`plans/wavelet_crawl.md`](plans/wavelet_crawl.md) against the **new baseline** (C=2048/L=2/MLP=20/PLE/PKM+FwPKM-16384 + **levels=5, exp_param, lr=0.02, low_rank=4**). Folds in proven wins (exp_param + lr=0.02 enables higher LR safely; levels=5 from the L=20 finding; low_rank=4 = -0.0045 BPB at trivial cost). Halves runtime per epoch via fewer wavelet levels. Each feature tested individually at 1 epoch; winners stack into the 5-epoch best-combo run.
 
 | Run | Feature | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | Baseline (untouched) | [link](logs/wikitext-103_2026-04-11_21-09-05/log.txt) | 1.1133 | 1180.28M | 24,643 MiB | 6,733 MiB | | C=2048, L=2, MLP=20, PLE, PKM+FwPKM-16384, 1 epoch, lr=0.01 |
-|   | Untied reconstruction | | | ~1200M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
-|   | Cross-scale gating (routing) | | | ~1180M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
-|   | Multi-basis lifting (haar+random) | | | ~1330M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
-|   | Per-scale mixer widths [1×3, 0.5×3, 0.25×4] | | | ~1100M | | | | Plan W4: starve fine scales (formalizes levels=5 finding); coarse scales keep full Cp |
+|   | New baseline probe (must beat 1.1133) | | | ~990M | | | | levels=5, exp_param, lr=0.02, low_rank=4. Old baseline at 1.1133 ([link](logs/wikitext-103_2026-04-11_21-09-05/log.txt), levels=9/lr=0.01) for reference |
+|   | Untied reconstruction | | | ~1010M | | | | Plan W1: per-layer separate decompose/reconstruct lifting weights (~+10M/layer) |
+|   | Cross-scale gating (routing) | | | ~990M | | | | Plan W3: learned (S, S) routing matrix mixes scales before each per-scale gate; init to identity |
+|   | Multi-basis lifting (haar+random) | | | ~1110M | | | | Plan W2: K=2 parallel learnable lifting wavelets, softmax-blended per scale; ~2x lifting params |
+|   | Per-scale mixer widths [1×3, 0.5×3] | | | ~940M | | | | Plan W4: starve fine 3 of 6 scales (S = levels+1 = 6); coarse scales keep full Cp |
+|   | Looped blocks (K=8 shared) | | | ~430M | | | | Plan F1: 1 shared block applied 8 times; ~½ params of L=2 stacked, more compute |
+|   | Iterative refinement (K=2, final loss) | | | ~995M | | | | Plan F2: full forward × 2; 2nd pass uses 1st pass's hidden state as priming bias |
+|   | Cross-time feedback (stale) | | | ~995M | | | | Plan F3: layer N at time t reads layer N+1's prev-step output, shifted by 1 |
+|   | Wavelet crawl (K=3) | | | ~990M | | | | plans/wavelet_crawl.md: learned soft-mixed dilations around base 2^l per level |
 
-### Block size (context window)
+### New Baseline Boolean ablations part 2: Stable parametrization
 
-| Run | block_size | levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
-|-----|------------|--------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 256  | 8 | | | | | | | Half context; levels=log2(256) |
-|   | 512  | 9 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-|   | 1024 | 10 | | | | | | | Double context; ~2x VRAM |
+Tests of the 6 stability fixes from [`plans/stable_parametrization.md`](plans/stable_parametrization.md): spectral norm on mixer, FF sqrt(hidden_dim) scaling, embed sqrt(C) scaling, proj_out sqrt(C×L) scaling, mixer eps scaling, level-dependent lifting init. Master flag `stable_parametrization=True` enables all 6; each individual flag is also independently togglable.
 
-### Grad accum: C = 512, epochs = 1, optimal booleans + mlp_expansion
+### New Baseline Boolean ablations part 3: Rescue tests (vs known NaN configs)
+
+If the master flag rescues a previously-NaN config, follow up with per-feature ablation to identify the load-bearing fix.
+
+| Run | NaN config under test | Stab flags | Folder | BPB (sliding) | Params | Notes |
+|-----|----------------------|-----------|--------|---------------|--------|-------|
+|   | mixer_depth=5 (was [Run 39](#run-39): NaN step 3600) | master | | | ~787M | Canonical depth-stack NaN; exp_param previously failed to fix |
+|   | lifting_hidden_mult=2 (was [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt): NaN step 2500) | master | | | ~556M | Wider lifting at L=20; recent NaN |
+|   | C=2048, lr=0.02 (was [Run 63](#run-63): NaN step 700) | master | | | ~617M | Width × LR NaN; survived only with exp_param previously |
+
+### New Baseline Boolean ablations part 4: Compatibility tests (sub-features at the new baseline)
+
+Each sub-feature run individually against the new baseline (probe BPB TBD from Part 3) to verify it runs without breakage and measure standalone effect. Positive delta = useful at stable config (could go in best combo); ~0 = neutral (still a rescue tool for unstable configs); negative = harmful here but may still rescue NaN configs.
+
+| Run | Stab flag | Folder | BPB (sliding) | Params | Delta vs probe | Notes |
+|-----|-----------|--------|---------------|--------|----------------|-------|
+|   | master (all 6) | | | ~990M | | Combined effect of all sub-features |
+|   | spectral_norm | | | ~990M | | Constrains ‖mixer.W‖₂=1 (highest priority for NaN fix) |
+|   | ff_scaling | | | ~990M | | FF final layer × 1/√(hidden_dim) instead of 0.02 |
+|   | embed_scaling | | | ~990M | | Embedding output × √C |
+|   | proj_out_scaling | | | ~990M | | proj_out × 1/√(C·L) instead of 1e-3 |
+|   | mixer_eps_scaling | | | ~990M | | mixer eps = eps/√Cp (refinement) |
+|   | lifting_level_scaling | | | ~990M | | Per-level lifting init damping by 1/(1+0.1·level) |
+
+### Block size (context window) — at new baseline
+
+`levels=5` from the new baseline supports any `block_size >= 32`, so no `levels` adjustment is needed when changing context length.
+
+| Run | block_size | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
+|-----|------------|--------|---------------|--------|------------|----------------|-------|-------|
+|   | 256  | | | ~990M | | | | Half context |
+|   | 512  | TBD | TBD | ~990M | TBD | TBD | | Baseline (new baseline probe) |
+|   | 1024 | | | ~990M | | | | Double context; ~2x VRAM |
+
+### Grad accum — at new baseline
 
 | Run | grad_accum | Effective batch | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | 1 | 8  | | | 366.58M | | | | Smaller effective batch |
-|   | 2 | 16 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
-|   | 4 | 32 | | | 366.58M | | | | Larger effective batch |
+|   | 1 | 8  | | | ~990M | | | Smaller effective batch |
+|   | 2 | 16 | TBD | TBD | ~990M | TBD | TBD | Baseline (new baseline probe) |
+|   | 4 | 32 | | | ~990M | | | Larger effective batch |
 
-### Warmup fraction: C = 512, epochs = 1, optimal booleans + mlp_expansion
+### Warmup fraction — at new baseline
 
 | Run | warmup_fraction | Warmup steps | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----------------|--------------|--------|---------------|--------|------------|----------------|-------|
-|   | 0.1 | 1461 | | | 366.58M | | | | Short warmup |
-|   | 0.3 | 4384 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
-|   | 0.5 | 7307 | | | 366.58M | | | | Long warmup |
+|   | 0.1 | TBD | | | ~990M | | | Short warmup |
+|   | 0.3 | TBD | TBD | TBD | ~990M | TBD | TBD | Baseline (new baseline probe) |
+|   | 0.5 | TBD | | | ~990M | | | Long warmup |
 
-### Grad clip: C = 512, epochs = 1, optimal booleans + mlp_expansion
+### Grad clip — at new baseline
 
 | Run | grad_clip | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----------|--------|---------------|--------|------------|----------------|-------|
-|   | 0.5 | | | 366.58M | | | | Tighter clipping |
-|   | 1.0 | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
-|   | 2.0 | | | 366.58M | | | | Looser clipping |
+|   | 0.5 | | | ~990M | | | Tighter clipping |
+|   | 1.0 | TBD | TBD | ~990M | TBD | TBD | Baseline (new baseline probe) |
+|   | 2.0 | | | ~990M | | | Looser clipping |
 
 ### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
 
