@@ -154,7 +154,11 @@ json.dump(cfg, open('config.json', 'w'), indent=4)
 # point for all Part 3 ablations below.
 # =====================================================================
 
-NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['levels'] = 5; cfg['lr'] = 0.01; cfg['low_rank'] = 4"
+NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg['per_layer_embedding'] = True; cfg['levels'] = 5; cfg['lr'] = 0.01; cfg['low_rank'] = 4; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]"
+# Note: per_scale_mixer_widths promoted into NEW_BASELINE after screening result
+# (logs/wikitext-103_2026-04-17_14-23-49, BPB 1.1168, -23% epoch time). All
+# subsequent Part 3/4 runs now include PSW. Reference BPB for comparisons
+# shifts from 1.1173 → 1.1168.
 # Note: PKM and FwPKM are intentionally OFF here. They get re-introduced for
 # the final 5-epoch best-run candidate (with 2.0x+ dropout). Keeping them off
 # during 1-epoch screening saves ~10-15% training time and ~150M params.
@@ -174,7 +178,8 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # run_with "W&S: untied reconstruction" "$NEW_BASELINE; cfg['untied_reconstruction'] = True"
 # run_with "W&S: cross-scale gating (routing)" "$NEW_BASELINE; cfg['cross_scale_gating'] = True"
 # run_with "W&S: multi-basis lifting (haar+random)" "$NEW_BASELINE; cfg['multi_basis_lifting'] = True; cfg['multi_basis_inits'] = ['haar', 'random']"
-run_with "W&S: per-scale mixer widths (1,1,1,.5,.5,.5)" "$NEW_BASELINE; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]"
+# run_with "W&S: per-scale mixer widths (1,1,1,.5,.5,.5)" "$NEW_BASELINE; cfg['per_scale_mixer_widths'] = [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]"
+# ^ Now part of NEW_BASELINE; completed 2026-04-17_14-23-49 (BPB 1.1168, -23% time).
 
 # --- Feedback mechanisms (plans/feedback_mechanisms.md) ---
 run_with "W&S: looped blocks (K=8 shared)" "$NEW_BASELINE; cfg['looped_blocks'] = True; cfg['looped_blocks_count'] = 8"
@@ -262,8 +267,8 @@ run_with "C=4096: L=2, MLP=10, MBS=4/GA=4" "$NEW_BASELINE; cfg['layers'] = 2; cf
 
 DROPOUT_2X="cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
 
-run_with "5ep+2.0x dropout: levels=1" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 1; $DROPOUT_2X"
-run_with "5ep+2.0x dropout: levels=2" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 2; $DROPOUT_2X"
+run_with "5ep+2.0x dropout: levels=1" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 1; cfg['per_scale_mixer_widths'] = None; $DROPOUT_2X"
+run_with "5ep+2.0x dropout: levels=2" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 2; cfg['per_scale_mixer_widths'] = None; $DROPOUT_2X"
 run_with "5ep+2.0x dropout: levels=5 (5-epoch best candidate)" "$NEW_BASELINE; cfg['epochs'] = 5; $DROPOUT_2X"
 
 # =====================================================================
