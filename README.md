@@ -109,7 +109,7 @@ LayerNorm --> LM Head --> logits
 
 ### Key Components
 
-- **Learnable lifting wavelet decomposition** — predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block. Unlike fixed classical wavelets, these are trained end-to-end with the model, letting the decomposition specialize to language structure while causality is preserved through zero-padded dilation.
+- **Learnable lifting wavelet decomposition** — predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block. Unlike fixed classical wavelets, these are trained end-to-end with the model, letting the decomposition specialize to language structure while causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient — untying them yields no BPB improvement, suggesting the wavelet acts as a well-conditioned multi-scale feature extractor whose inverse passes through cleanly, while the mixer and MLP between them carry the learned transformation.
 
 - **Fast Hadamard Transform (FHT)** — a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length — no quadratic blow-up regardless of context size, and no KV cache at inference.
 
