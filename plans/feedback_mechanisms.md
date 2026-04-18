@@ -22,7 +22,9 @@ All features designed to be:
 
 ---
 
-## Feature 1: Cross-time recurrence (causal top-down)
+## Feature 1: Cross-time recurrence (causal top-down) — REMOVED 2026-04-18
+
+**Status:** Implemented in stale mode, NaN'd once (pre-gate), then removed before re-run. Fundamental issues: (1) shuffled-batch coupling means "stale layer N+1 output" is from an unrelated text fragment — random noise rather than meaningful memory; (2) train/inference asymmetry (bias only fires during training) builds in a generation-time degradation. Two-pass mode never implemented. Verdict: structurally similar to iterative refinement (projection + gate) with the same train/test mismatch, plus the additional cross-batch coupling issue. Architecturally a dead end for a feedforward LM trained on shuffled chunks.
 
 ### What
 
@@ -77,7 +79,9 @@ slightly-delayed state shapes layer N's current processing.
 
 ---
 
-## Feature 2: Iterative refinement (predictive coding)
+## Feature 2: Iterative refinement (predictive coding) — REMOVED 2026-04-18
+
+**Status:** Implemented, NaN'd twice (with and without priming gate fix), removed from model.py. Kept here for historical reference; do not re-implement without addressing the underlying instability AND a stronger architectural justification than "weaker form of looped blocks." Verdict: 2× compute is better spent on additional epochs.
 
 ### What
 

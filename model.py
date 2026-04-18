@@ -1362,21 +1362,9 @@ class ExarchLM(nn.Module):
         self.per_layer_embedding = config.get("per_layer_embedding", False)
         self.loop_iterations = config.get("loop_iterations", 1)
 
-        # Feedback mechanisms (mutually-exclusive in some combos)
+        # Feedback mechanisms
         self.looped_blocks = config.get("looped_blocks", False)
         self.looped_blocks_count = config.get("looped_blocks_count", 8)
-        self.iterative_refinement = config.get("iterative_refinement", False)
-        self.iterative_refinement_passes = config.get("iterative_refinement_passes", 2)
-        self.iterative_refinement_loss = config.get("iterative_refinement_loss", "final")
-        self.cross_time_feedback = config.get("cross_time_feedback", False)
-        self.cross_time_feedback_mode = config.get("cross_time_feedback_mode", "stale")
-        if self.cross_time_feedback and self.looped_blocks:
-            raise ValueError("cross_time_feedback is incompatible with looped_blocks "
-                             "(no N+1 to read from with a single shared block)")
-        if self.cross_time_feedback and self.cross_time_feedback_mode == "two_pass":
-            raise NotImplementedError(
-                "cross_time_feedback two_pass mode requires train.py changes; "
-                "use 'stale' mode for now")
 
         # Stochastic depth
         self.stochastic_depth_rate = config.get("stochastic_depth_rate", 0.0)
@@ -1447,32 +1435,6 @@ class ExarchLM(nn.Module):
             for _ in range(layer_build_count)
         ])
 
-        # Iterative refinement: priming projection from prior pass's hidden state
-        if self.iterative_refinement:
-            self.priming_proj = nn.Linear(C, C, bias=False)
-            with torch.no_grad():
-                nn.init.zeros_(self.priming_proj.weight)  # start as no-op
-            print(f"[IterRefine] {self.iterative_refinement_passes} passes, "
-                  f"loss={self.iterative_refinement_loss}")
-
-        # Cross-time feedback: per-layer projection of stored prev-step layer outputs
-        if self.cross_time_feedback:
-            # Layer 0..L-2 each read layer N+1's prev output; deepest layer has nothing to read
-            self.cross_time_projs = nn.ModuleList([
-                nn.Linear(C, C, bias=False) for _ in range(L - 1)
-            ])
-            for proj in self.cross_time_projs:
-                with torch.no_grad():
-                    nn.init.zeros_(proj.weight)  # start as no-op
-            # Learnable scalar gates per layer, init to 0. Bound the projection's
-            # contribution while it learns; prevents Adagrad from blowing up the
-            # zero-init projection in the first few steps.
-            self.cross_time_gates = nn.ParameterList([
-                nn.Parameter(torch.zeros(1)) for _ in range(L - 1)
-            ])
-            self._prev_layer_outputs = [None] * L
-            print(f"[CrossTime] stale-mode feedback active across {L-1} cross-layer projections (gated)")
-
         # Final LN and LM head
         self.final_ln = nn.LayerNorm(C)
         self.lm_head = nn.Linear(C, vocab_size, bias=False)
@@ -1527,23 +1489,6 @@ class ExarchLM(nn.Module):
                 layer._cache_h2 = False
                 layer._cached_h2 = None
 
-    @torch.compiler.disable
-    def _cross_time_read(self, x, layer_idx):
-        """Read prev step's layer N+1 output, project + gate, return bias to add to x.
-        Decorated with compiler.disable so Python list mutations on
-        self._prev_layer_outputs are reliably observed (compiled graphs may
-        otherwise silently miss the writes)."""
-        stale = self._prev_layer_outputs[layer_idx + 1]
-        if stale is None or stale.shape != x.shape:
-            return None
-        shifted = F.pad(stale, (0, 0, 1, -1))
-        return self.cross_time_projs[layer_idx](shifted) * self.cross_time_gates[layer_idx]
-
-    @torch.compiler.disable
-    def _cross_time_store(self, x, layer_idx):
-        """Stash layer output for next step's cross-time read."""
-        self._prev_layer_outputs[layer_idx] = x.detach()
-
     def _forward_embed(self, idx):
         """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""
         emb = self.token_embedding(idx)
@@ -1570,15 +1515,11 @@ class ExarchLM(nn.Module):
         x = self.dropout_emb(tok_emb)
         ple = tok_emb if self.per_layer_embedding else None
 
-        # Initialize from persistent state if cross-window bypass is enabled.
-        # Capture as `initial_state` so iterative refinement can RESET to this
-        # value at the start of each IR pass (otherwise pass 1 inherits pass 0's
-        # accumulated current_state, causing slow drift to NaN).
+        # Initialize from persistent state if cross-window bypass is enabled
         if self.decompose_bypass_cross_window and self._persistent_semantic_state is not None:
-            initial_state = self._persistent_semantic_state.unsqueeze(1).expand(-1, T, -1)
+            current_state = self._persistent_semantic_state.unsqueeze(1).expand(-1, T, -1)
         else:
-            initial_state = None
-        current_state = initial_state
+            current_state = None
 
         all_logits = [] if self.loop_iterations > 1 and targets is not None else None
 
@@ -1586,63 +1527,28 @@ class ExarchLM(nn.Module):
         eff_count = self.effective_layer_count
         get_layer = (lambda i: self.layers[0]) if self.looped_blocks else (lambda i: self.layers[i])
 
-        # Iterative refinement: K passes through the stack with priming bias
-        ir_passes = self.iterative_refinement_passes if self.iterative_refinement else 1
-        ir_logits = [] if (self.iterative_refinement
-                           and self.iterative_refinement_loss == "all_passes"
-                           and targets is not None) else None
-        priming = None
-        x_orig = x
+        for loop in range(self.loop_iterations):
+            for layer_idx in range(eff_count):
+                layer = get_layer(layer_idx)
 
-        for ir in range(ir_passes):
-            if ir > 0:
-                # Inject prior pass's final hidden state as priming bias
-                x = x_orig + self.priming_proj(priming)
-                # Reset cross-window state — each pass starts from the same initial
-                # state, not from the accumulated state of the previous pass.
-                current_state = initial_state
+                # Stochastic depth (only meaningful in stacked mode)
+                if (not self.looped_blocks and self.training
+                        and self.stochastic_depth_rate > 0):
+                    if random.random() < self._drop_probs[layer_idx]:
+                        continue
 
-            for loop in range(self.loop_iterations):
-                for layer_idx in range(eff_count):
-                    layer = get_layer(layer_idx)
+                if self.gradient_checkpointing and self.training:
+                    def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
+                        return _layer(lx, _state, token_embeddings=_ple)
+                    x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
+                else:
+                    x, current_state = layer(x, current_state, token_embeddings=ple)
 
-                    # Stochastic depth (only meaningful in stacked mode)
-                    if (not self.looped_blocks and self.training
-                            and self.stochastic_depth_rate > 0):
-                        if random.random() < self._drop_probs[layer_idx]:
-                            continue
-
-                    # Cross-time feedback: read prev step's deeper-layer output, project, shift right.
-                    # Helper is @torch.compiler.disable to ensure buffer mutations are reliably visible.
-                    if (self.cross_time_feedback and self.training
-                            and layer_idx < eff_count - 1):
-                        bias = self._cross_time_read(x, layer_idx)
-                        if bias is not None:
-                            x = x + bias
-
-                    if self.gradient_checkpointing and self.training:
-                        def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
-                            return _layer(lx, _state, token_embeddings=_ple)
-                        x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
-                    else:
-                        x, current_state = layer(x, current_state, token_embeddings=ple)
-
-                    # Store this layer's output for next training step's cross-time read
-                    if self.cross_time_feedback and self.training:
-                        self._cross_time_store(x, layer_idx)
-
-                # Produce logits at each loop iteration for multi-iteration loss
-                if all_logits is not None:
-                    x_ln = self.final_ln(x)
-                    logits_t = self.lm_head(self.dropout_lm(x_ln))
-                    all_logits.append(logits_t)
-
-            # End of an IR pass: stash hidden state for next pass's priming
-            if self.iterative_refinement and ir < ir_passes - 1:
-                priming = x.detach()
-            if ir_logits is not None:
+            # Produce logits at each loop iteration for multi-iteration loss
+            if all_logits is not None:
                 x_ln = self.final_ln(x)
-                ir_logits.append(self.lm_head(self.dropout_lm(x_ln)))
+                logits_t = self.lm_head(self.dropout_lm(x_ln))
+                all_logits.append(logits_t)
 
         # Update persistent state for next window
         if self.decompose_bypass_cross_window and current_state is not None:
@@ -1656,14 +1562,7 @@ class ExarchLM(nn.Module):
 
         loss = None
         if targets is not None:
-            if ir_logits is not None:
-                # Iterative refinement, all_passes loss: average over passes
-                total_loss = sum(
-                    F.cross_entropy(lg.view(-1, lg.size(-1)), targets.view(-1).long())
-                    for lg in ir_logits
-                )
-                loss = total_loss / len(ir_logits)
-            elif self.loop_iterations == 1:
+            if self.loop_iterations == 1:
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1).long())
             else:
                 # Average loss across all iterations (uniform weighting)

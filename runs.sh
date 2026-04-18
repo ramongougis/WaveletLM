@@ -49,11 +49,6 @@ baseline = {
     "stab_lifting_level_scaling": False,
     "looped_blocks": False,
     "looped_blocks_count": 8,
-    "iterative_refinement": False,
-    "iterative_refinement_passes": 2,
-    "iterative_refinement_loss": "final",
-    "cross_time_feedback": False,
-    "cross_time_feedback_mode": "stale",
     "wavelet_crawl": False,
     "wavelet_crawl_k": 3,
     "lifting_linear_only": False,
@@ -183,11 +178,14 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 
 # --- Feedback mechanisms (plans/feedback_mechanisms.md) ---
 # run_with "W&S: looped blocks (K=8 shared)" "$NEW_BASELINE; cfg['looped_blocks'] = True; cfg['looped_blocks_count'] = 8"
-run_with "W&S: iterative refinement (K=2, final loss)" "$NEW_BASELINE; cfg['iterative_refinement'] = True; cfg['iterative_refinement_passes'] = 2; cfg['iterative_refinement_loss'] = 'final'"
-run_with "W&S: cross-time feedback (stale)" "$NEW_BASELINE; cfg['cross_time_feedback'] = True; cfg['cross_time_feedback_mode'] = 'stale'"
+# All three feedback mechanisms removed:
+#   - Looped blocks: worked (-0.0039 BPB) but 3x training time; better to train more epochs.
+#   - Iterative refinement: NaN'd twice, weaker variant of looped blocks.
+#   - Cross-time feedback: random-batch coupling = noise, train/inference asymmetry.
 
 # --- Wavelet crawl (plans/wavelet_crawl.md) ---
 run_with "W&S: wavelet crawl (K=3)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 3"
+run_with "W&S: wavelet crawl (K=5)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 5"
 
 # --- Lifting efficiency probes (param/compute savings; quality impact unknown) ---
 run_with "W&S: shared_lifting_weights" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True"

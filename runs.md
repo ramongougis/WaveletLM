@@ -346,10 +346,9 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 |   | Multi-basis lifting (haar+random, attempt 1) | [link](logs/wikitext-103_2026-04-17_11-21-47/log.txt) | NaN | 994.88M | — | — | — | Default Kaiming random init + basis_weights[0]=5.0. **NaN at step 1800, LR=4.10e-03** (well below peak 0.01). |
 |   | Multi-basis lifting (haar+random, attempt 2) | [link](logs/wikitext-103_2026-04-17_13-25-19/log.txt) | NaN | 994.88M | — | — | — | Tightened: random init `N(0, 0.01²)` with zero bias, basis_weights[0]=10.0 (softmax ~0.99995 on haar at init). **NaN at step 3400, LR=7.75e-03** — fixes roughly doubled LR tolerance (step 1800→3400, LR 0.0041→0.0078) but didn't fully solve. Deferred until stable_parametrization validated (spectral_norm on mixer is the likely fix). |
 |   | Per-scale mixer widths [1×3, 0.5×3] | [link](logs/wikitext-103_2026-04-17_14-23-49/log.txt) | **1.1168** | ~815M | 17,847 MiB | 12,509 MiB | **-0.0005** | Tiny BPB improvement AND **23% faster** (1.85h vs 2.40h), -1% VRAM. Starving fine scales produces less overfitting — best val +0.0054 but final BPB better. **Keep** for best-run. |
-|   | Looped blocks (K=8 shared) | [link](logs/wikitext-103_2026-04-17_19-47-45/log.txt) | **1.1129** | ~360M | 29,367 MiB | 8,459 MiB | **-0.0039** | Best BPB win so far, but with **3×** the training time (5.6h vs 1.85h baseline). Better to just train longer. |
-|   | Iterative refinement (K=2, final loss) | | | ~845M | | | | Plan F2: full forward × 2; 2nd pass uses 1st pass's hidden state as priming bias |
-|   | Cross-time feedback (stale) | | | ~845M | | | | Plan F3: layer N at time t reads layer N+1's prev-step output, shifted by 1 |
-|   | Wavelet crawl (K=3) | | | ~840M | | | | plans/wavelet_crawl.md: learned soft-mixed dilations around base 2^l per level |
+|   | Looped blocks (K=8 shared) | [link](logs/wikitext-103_2026-04-17_19-47-45/log.txt) | 1.1129 | ~360M | 29,367 MiB | 8,459 MiB | -0.0039 | **Inefficient** with 3× the training time (5.6h vs 1.85h baseline). Better to just train longer. |
+|   | Wavelet crawl (K=3) | | | ~840M | | | | plans/wavelet_crawl.md: learned soft-mixed dilations around base 2^l per level (±1 search radius) |
+|   | Wavelet crawl (K=5) | | | ~840M | | | | Same as K=3 but ±2 search radius — wider exploration of non-power-of-2 dilations. |
 
 ### New Baseline Boolean ablations part 2: Stable parametrization
 
