@@ -184,8 +184,8 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 #   - Cross-time feedback: random-batch coupling = noise, train/inference asymmetry.
 
 # --- Wavelet crawl (plans/wavelet_crawl.md) ---
-run_with "W&S: wavelet crawl (K=3)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 3"
-run_with "W&S: wavelet crawl (K=5)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 5"
+# run_with "W&S: wavelet crawl (K=3)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 3"
+# run_with "W&S: wavelet crawl (K=5)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 5"
 
 # --- Lifting efficiency probes (param/compute savings; quality impact unknown) ---
 run_with "W&S: shared_lifting_weights" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True"
