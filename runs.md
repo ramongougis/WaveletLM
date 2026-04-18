@@ -352,19 +352,13 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 |   | Lifting linear-only (LLO) | [link](logs/wikitext-103_2026-04-18_11-37-14/log.txt) | 1.1261 | ~790M | 15,766 MiB | 11,388 MiB | **+0.0093** | Replaces predict/update Sequentials (Linear→GELU→Dropout→Linear) with single Linears. Significant BPB regression — the GELU nonlinearity matters. **Drop** despite -11% time / -12% train VRAM savings. |
 |   | SLW + LLO combined | [link](logs/wikitext-103_2026-04-18_13-17-47/log.txt) | 1.1229 | ~720M | 15,286 MiB | — | **+0.0061** | LLO dominates the combo. SLW partially offsets but not enough. Fastest run yet (1.59h, -14%) and smallest VRAM, but BPB regression kills it. **Drop.** |
 
-### New Baseline Boolean ablations part 2: Stable parametrization
+### New Baseline Boolean ablations part 2: Stable parametrization — SKIPPED
 
-Tests of the 6 stability fixes from [`plans/stable_parametrization.md`](plans/stable_parametrization.md): spectral norm on mixer, FF sqrt(hidden_dim) scaling, embed sqrt(C) scaling, proj_out sqrt(C×L) scaling, mixer eps scaling, level-dependent lifting init. Master flag `stable_parametrization=True` enables all 6; each individual flag is also independently togglable. Each sub-feature is run individually against the new baseline (BPB 1.1168) to verify it runs without breakage and measure its standalone effect. Positive delta = useful at stable config (candidate for best-run); ~0 = neutral (still a rescue tool for unstable configs); negative = harmful here but may still rescue NaN configs.
+Six stability fixes from [`plans/stable_parametrization.md`](plans/stable_parametrization.md) were implemented (spectral norm on mixer, FF √(hidden_dim) scaling, embed √C scaling, proj_out √(C·L) scaling, mixer eps scaling, level-dependent lifting init) but **not evaluated individually.**
 
-| Run | Stab flag | Folder | BPB (sliding) | Params | Δ vs 1.1168 | Notes |
-|-----|-----------|--------|---------------|--------|-------------|-------|
-|   | master (all 6) | | | ~840M | | Combined effect of all sub-features |
-|   | spectral_norm | | | ~840M | | Constrains ‖mixer.W‖₂=1 (highest priority for NaN fix) |
-|   | ff_scaling | | | ~840M | | FF final layer × 1/√(hidden_dim) instead of 0.02 |
-|   | embed_scaling | | | ~840M | | Embedding output × √C |
-|   | proj_out_scaling | | | ~840M | | proj_out × 1/√(C·L) instead of 1e-3 |
-|   | mixer_eps_scaling | | | ~840M | | mixer eps = eps/√Cp (refinement) |
-|   | lifting_level_scaling | | | ~840M | | Per-level lifting init damping by 1/(1+0.1·level) |
+**Reason:** the master bundle performed *worse* than the unmodified configs in every rescue test attempted (see Part 3). Most notably, the lr=0.02+exp_param rescue NaN'd at step 3200 with stab, versus step 4000 without it — i.e. the stability features *accelerated* the failure rather than preventing it. This strongly suggests a bug in at least one of the implementations (likely `stab_proj_out_scaling`, whose `1/√(C·L)` formula produces a residual-stream contribution ~15× larger than the original `1e-3` at the new baseline).
+
+With the final 5-epoch best run committed to `lr=0.01` (which is stable without any stab flags), diagnosing the specific bug is no longer release-critical. The code is retained in the repo for future work; the individual-flag ablations are skipped to conserve compute budget. Any researcher wanting to revisit can enable the flags individually via the config.
 
 ### New Baseline Boolean ablations part 3: Rescue tests (vs known NaN configs)
 
