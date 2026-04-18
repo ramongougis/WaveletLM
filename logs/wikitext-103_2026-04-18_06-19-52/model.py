@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# WaveletLM - Exclusively Attentionless Reasoning with Causal Harmonics
+# WaveletLM
 # model.py
 
 import os

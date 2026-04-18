@@ -2,8 +2,6 @@
   <img src="assets/waveletlm-header.svg" alt="WaveletLM" width="90%"/>
 </p>
 
-<h3 align="center"><b>Exclusively Attentionless Reasoning with Causal Harmonics</b></h3>
-
 <br>
 
 ---
