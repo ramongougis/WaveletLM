@@ -211,20 +211,20 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # run_with "Stab: vs mixer_depth=5 NaN (was Run 39)" "cfg['mixer_depth'] = 5; cfg['stable_parametrization'] = True"
 # run_with "Stab: vs lifting_hidden_mult=2 NaN" "cfg['lifting_hidden_mult'] = 2; cfg['stable_parametrization'] = True"
 # run_with "Stab: vs C=2048 lr=0.02 NaN (was Run 63)" "cfg['C'] = 2048; cfg['lr'] = 0.02; cfg['stable_parametrization'] = True"
-run_with "Stab: vs new-baseline+lr=0.02+exp_param NaN" "$NEW_BASELINE; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['stable_parametrization'] = True"
+# run_with "Stab: vs new-baseline+lr=0.02+exp_param NaN" "$NEW_BASELINE; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['stable_parametrization'] = True"
 
 # --- Compatibility tests: stab sub-features at the stable W&S baseline ---
 # Verifies each sub-feature runs without breakage at a known-stable config and
 # measures its standalone effect on BPB (positive delta = useful, ~0 = neutral,
 # negative = harmful at this config but may still rescue unstable ones).
 
-run_with "W&S+Stab: master (all 6)" "$NEW_BASELINE; cfg['stable_parametrization'] = True"
-run_with "W&S+Stab: spectral_norm" "$NEW_BASELINE; cfg['stab_spectral_norm'] = True"
-run_with "W&S+Stab: ff_scaling" "$NEW_BASELINE; cfg['stab_ff_scaling'] = True"
-run_with "W&S+Stab: embed_scaling" "$NEW_BASELINE; cfg['stab_embed_scaling'] = True"
-run_with "W&S+Stab: proj_out_scaling" "$NEW_BASELINE; cfg['stab_proj_out_scaling'] = True"
-run_with "W&S+Stab: mixer_eps_scaling" "$NEW_BASELINE; cfg['stab_mixer_eps_scaling'] = True"
-run_with "W&S+Stab: lifting_level_scaling" "$NEW_BASELINE; cfg['stab_lifting_level_scaling'] = True"
+# run_with "W&S+Stab: master (all 6)" "$NEW_BASELINE; cfg['stable_parametrization'] = True"
+# run_with "W&S+Stab: spectral_norm" "$NEW_BASELINE; cfg['stab_spectral_norm'] = True"
+# run_with "W&S+Stab: ff_scaling" "$NEW_BASELINE; cfg['stab_ff_scaling'] = True"
+# run_with "W&S+Stab: embed_scaling" "$NEW_BASELINE; cfg['stab_embed_scaling'] = True"
+# run_with "W&S+Stab: proj_out_scaling" "$NEW_BASELINE; cfg['stab_proj_out_scaling'] = True"
+# run_with "W&S+Stab: mixer_eps_scaling" "$NEW_BASELINE; cfg['stab_mixer_eps_scaling'] = True"
+# run_with "W&S+Stab: lifting_level_scaling" "$NEW_BASELINE; cfg['stab_lifting_level_scaling'] = True"
 
 # =====================================================================
 # BLOCK SIZE — at NEW_BASELINE (levels=5 supports any block_size >= 32)
