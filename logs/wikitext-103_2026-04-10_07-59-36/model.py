@@ -1532,7 +1532,7 @@ def _compute_module_mib(module):
 
 
 def quantize_model(model, config):
-    """Apply post-training quantization to an WaveletLM or MultiNodeWaveletLM.
+    """Apply post-training quantization to a WaveletLM or MultiNodeWaveletLM.
 
     Replaces nn.Linear and nn.Embedding modules with quantized versions
     based on config settings. Small parameters (LayerNorm, scalars, scale_weights)
