@@ -182,7 +182,7 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # ^ Now part of NEW_BASELINE; completed 2026-04-17_14-23-49 (BPB 1.1168, -23% time).
 
 # --- Feedback mechanisms (plans/feedback_mechanisms.md) ---
-run_with "W&S: looped blocks (K=8 shared)" "$NEW_BASELINE; cfg['looped_blocks'] = True; cfg['looped_blocks_count'] = 8"
+# run_with "W&S: looped blocks (K=8 shared)" "$NEW_BASELINE; cfg['looped_blocks'] = True; cfg['looped_blocks_count'] = 8"
 run_with "W&S: iterative refinement (K=2, final loss)" "$NEW_BASELINE; cfg['iterative_refinement'] = True; cfg['iterative_refinement_passes'] = 2; cfg['iterative_refinement_loss'] = 'final'"
 run_with "W&S: cross-time feedback (stale)" "$NEW_BASELINE; cfg['cross_time_feedback'] = True; cfg['cross_time_feedback_mode'] = 'stale'"
 

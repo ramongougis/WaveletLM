@@ -22,7 +22,7 @@
 18. [Loop iterations (LoopLM): L=1, C=2048, reuse same weights T times](#loop-iterations-looplm-l1-c2048-reuse-same-weights-t-times)
 19. [Optimal low-layer config: L=2, C=2048, full recipe](#optimal-low-layer-config-l2-c2048-full-recipe)
 20. [Grokking experiment: C=128, L=2, tiny core + massive memory](#grokking-experiment-c128-l2-tiny-core--massive-memory)
-21. [Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion](#layers--1-c--512-epochs--1-optimal-booleans--mlp_expansion)
+21. [Layers > 1: C = 512, epochs = 1, optimal booleans with mlp_expansion](#layers--1-c--512-epochs--1-optimal-booleans-with-mlp_expansion)
 22. [Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers](#levels-c--512-epochs--1-optimal-booleans--mlp_expansion--layers-block_size--512)
 23. [Low-rank factorization in spectral mixer](#low-rank-factorization-in-spectral-mixer)
 24. [Lifting hidden multiplier](#lifting-hidden-multiplier)
@@ -279,7 +279,7 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | L=1, C=2048, MLP=20, lr=0.02 | true | [link](logs/wikitext-103_2026-04-15_03-35-54/log.txt) | **1.1347** | 617.05M | 14,109 MiB | 3,519 MiB | **Survived lr=0.02! Previously NaN'd; -0.0084 vs baseline** |
 |   | L=20, C=512, MD=5, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_05-24-40/log.txt) | NaN | 787.24M | — | — | — | NaN at step 3600 again; exp param doesn't fix depth instability |
 
-### Layers > 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
+### Layers > 1: C = 512, epochs = 1, optimal booleans with mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
@@ -346,7 +346,7 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 |   | Multi-basis lifting (haar+random, attempt 1) | [link](logs/wikitext-103_2026-04-17_11-21-47/log.txt) | NaN | 994.88M | — | — | — | Default Kaiming random init + basis_weights[0]=5.0. **NaN at step 1800, LR=4.10e-03** (well below peak 0.01). |
 |   | Multi-basis lifting (haar+random, attempt 2) | [link](logs/wikitext-103_2026-04-17_13-25-19/log.txt) | NaN | 994.88M | — | — | — | Tightened: random init `N(0, 0.01²)` with zero bias, basis_weights[0]=10.0 (softmax ~0.99995 on haar at init). **NaN at step 3400, LR=7.75e-03** — fixes roughly doubled LR tolerance (step 1800→3400, LR 0.0041→0.0078) but didn't fully solve. Deferred until stable_parametrization validated (spectral_norm on mixer is the likely fix). |
 |   | Per-scale mixer widths [1×3, 0.5×3] | [link](logs/wikitext-103_2026-04-17_14-23-49/log.txt) | **1.1168** | ~815M | 17,847 MiB | 12,509 MiB | **-0.0005** | Tiny BPB improvement AND **23% faster** (1.85h vs 2.40h), -1% VRAM. Starving fine scales produces less overfitting — best val +0.0054 but final BPB better. **Keep** for best-run. |
-|   | Looped blocks (K=8 shared) | | | ~360M | | | | Plan F1: 1 shared block applied 8 times; ~½ params of L=2 stacked, more compute |
+|   | Looped blocks (K=8 shared) | [link](logs/wikitext-103_2026-04-17_19-47-45/log.txt) | **1.1129** | ~360M | 29,367 MiB | 8,459 MiB | **-0.0039** | Best BPB win so far, but with **3×** the training time (5.6h vs 1.85h baseline). Better to just train longer. |
 |   | Iterative refinement (K=2, final loss) | | | ~845M | | | | Plan F2: full forward × 2; 2nd pass uses 1st pass's hidden state as priming bias |
 |   | Cross-time feedback (stale) | | | ~845M | | | | Plan F3: layer N at time t reads layer N+1's prev-step output, shifted by 1 |
 |   | Wavelet crawl (K=3) | | | ~840M | | | | plans/wavelet_crawl.md: learned soft-mixed dilations around base 2^l per level |

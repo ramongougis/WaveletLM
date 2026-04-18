@@ -170,13 +170,25 @@ class LiftingWaveletDecompose(nn.Module):
         if wavelet_crawl:
             if wavelet_crawl_k % 2 != 1:
                 raise ValueError(f"wavelet_crawl_k must be odd, got {wavelet_crawl_k}")
-            # Logits over K candidate dilations centered at base 2^level
-            # Init biases the softmax toward the center (= today's behavior at start)
+            # Precompute K distinct positive-integer offsets per level. At level 0
+            # base_dilation=1 and a symmetric ±half spread would underflow into 0,
+            # so we shift the window upward to keep all K offsets distinct and >=1.
+            # The init biases the softmax toward whichever offset == base_dilation.
+            half = wavelet_crawl_k // 2
+            self._crawl_offsets = []
+            base_idx_per_level = []
+            for level in range(levels):
+                base = 1 << level
+                min_off = max(1, base - half)
+                offsets = list(range(min_off, min_off + wavelet_crawl_k))
+                self._crawl_offsets.append(offsets)
+                base_idx_per_level.append(offsets.index(base))
             self.dilation_logits = nn.Parameter(
                 torch.zeros(levels, wavelet_crawl_k, device=device, dtype=dtype)
             )
             with torch.no_grad():
-                self.dilation_logits.data[:, wavelet_crawl_k // 2] = 5.0
+                for level, base_idx in enumerate(base_idx_per_level):
+                    self.dilation_logits.data[level, base_idx] = 5.0
 
         hidden_dim = C * hidden_mult
 
@@ -287,9 +299,9 @@ class LiftingWaveletDecompose(nn.Module):
 
             if self.wavelet_crawl:
                 K = self.wavelet_crawl_k
-                offsets = [max(1, base_dilation + (k - K // 2)) for k in range(K)]
+                offsets = self._crawl_offsets[level]  # K distinct positive ints
                 weights = F.softmax(self.dilation_logits[level], dim=0)
-                max_d = max(offsets)
+                max_d = offsets[-1]  # offsets are sorted ascending by construction
                 padded = F.pad(cur, (0, 0, max_d, 0))
                 # Sum_k w_k * cur shifted-back-by-offsets[k]
                 odd = sum(
@@ -1452,8 +1464,14 @@ class ExarchLM(nn.Module):
             for proj in self.cross_time_projs:
                 with torch.no_grad():
                     nn.init.zeros_(proj.weight)  # start as no-op
+            # Learnable scalar gates per layer, init to 0. Bound the projection's
+            # contribution while it learns; prevents Adagrad from blowing up the
+            # zero-init projection in the first few steps.
+            self.cross_time_gates = nn.ParameterList([
+                nn.Parameter(torch.zeros(1)) for _ in range(L - 1)
+            ])
             self._prev_layer_outputs = [None] * L
-            print(f"[CrossTime] stale-mode feedback active across {L-1} cross-layer projections")
+            print(f"[CrossTime] stale-mode feedback active across {L-1} cross-layer projections (gated)")
 
         # Final LN and LM head
         self.final_ln = nn.LayerNorm(C)
@@ -1509,6 +1527,23 @@ class ExarchLM(nn.Module):
                 layer._cache_h2 = False
                 layer._cached_h2 = None
 
+    @torch.compiler.disable
+    def _cross_time_read(self, x, layer_idx):
+        """Read prev step's layer N+1 output, project + gate, return bias to add to x.
+        Decorated with compiler.disable so Python list mutations on
+        self._prev_layer_outputs are reliably observed (compiled graphs may
+        otherwise silently miss the writes)."""
+        stale = self._prev_layer_outputs[layer_idx + 1]
+        if stale is None or stale.shape != x.shape:
+            return None
+        shifted = F.pad(stale, (0, 0, 1, -1))
+        return self.cross_time_projs[layer_idx](shifted) * self.cross_time_gates[layer_idx]
+
+    @torch.compiler.disable
+    def _cross_time_store(self, x, layer_idx):
+        """Stash layer output for next step's cross-time read."""
+        self._prev_layer_outputs[layer_idx] = x.detach()
+
     def _forward_embed(self, idx):
         """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""
         emb = self.token_embedding(idx)
@@ -1535,11 +1570,15 @@ class ExarchLM(nn.Module):
         x = self.dropout_emb(tok_emb)
         ple = tok_emb if self.per_layer_embedding else None
 
-        # Initialize from persistent state if cross-window bypass is enabled
+        # Initialize from persistent state if cross-window bypass is enabled.
+        # Capture as `initial_state` so iterative refinement can RESET to this
+        # value at the start of each IR pass (otherwise pass 1 inherits pass 0's
+        # accumulated current_state, causing slow drift to NaN).
         if self.decompose_bypass_cross_window and self._persistent_semantic_state is not None:
-            current_state = self._persistent_semantic_state.unsqueeze(1).expand(-1, T, -1)
+            initial_state = self._persistent_semantic_state.unsqueeze(1).expand(-1, T, -1)
         else:
-            current_state = None
+            initial_state = None
+        current_state = initial_state
 
         all_logits = [] if self.loop_iterations > 1 and targets is not None else None
 
@@ -1559,6 +1598,9 @@ class ExarchLM(nn.Module):
             if ir > 0:
                 # Inject prior pass's final hidden state as priming bias
                 x = x_orig + self.priming_proj(priming)
+                # Reset cross-window state — each pass starts from the same initial
+                # state, not from the accumulated state of the previous pass.
+                current_state = initial_state
 
             for loop in range(self.loop_iterations):
                 for layer_idx in range(eff_count):
@@ -1570,13 +1612,13 @@ class ExarchLM(nn.Module):
                         if random.random() < self._drop_probs[layer_idx]:
                             continue
 
-                    # Cross-time feedback: read prev step's deeper-layer output, project, shift right
+                    # Cross-time feedback: read prev step's deeper-layer output, project, shift right.
+                    # Helper is @torch.compiler.disable to ensure buffer mutations are reliably visible.
                     if (self.cross_time_feedback and self.training
                             and layer_idx < eff_count - 1):
-                        stale = self._prev_layer_outputs[layer_idx + 1]
-                        if stale is not None and stale.shape == x.shape:
-                            shifted = F.pad(stale, (0, 0, 1, -1))  # causal shift by 1
-                            x = x + self.cross_time_projs[layer_idx](shifted)
+                        bias = self._cross_time_read(x, layer_idx)
+                        if bias is not None:
+                            x = x + bias
 
                     if self.gradient_checkpointing and self.training:
                         def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
@@ -1587,7 +1629,7 @@ class ExarchLM(nn.Module):
 
                     # Store this layer's output for next training step's cross-time read
                     if self.cross_time_feedback and self.training:
-                        self._prev_layer_outputs[layer_idx] = x.detach()
+                        self._cross_time_store(x, layer_idx)
 
                 # Produce logits at each loop iteration for multi-iteration loss
                 if all_logits is not None:
