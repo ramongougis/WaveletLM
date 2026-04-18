@@ -1,11 +1,11 @@
 # Structural Semantic Embedding: Beyond Concept Labels
 
-> This plan is duplicated in EXARCH-semantic (formerly EXARCH-research) at plans/reincorporate_large_semantic_embedding.md
+> This plan is duplicated in WaveletLM-semantic (formerly WaveletLM-research) at plans/reincorporate_large_semantic_embedding.md
 
 ## Status: Post-release exploration
 
-## Approach: Fork current EXARCH project post-release and selectively reincorporate
-semantic embedding functionality. This keeps the main EXARCH repo clean (learned
+## Approach: Fork current WaveletLM project post-release and selectively reincorporate
+semantic embedding functionality. This keeps the main WaveletLM repo clean (learned
 embedding only) while the fork adds optional prescribed embedding support as a
 separate, well-structured codebase suitable for its own paper.
 
@@ -19,7 +19,7 @@ properties that more closely mirror what learned embeddings discover on their ow
 
 ## Motivation
 
-- EXARCH-semantic achieved BPB 1.0112 at C=512 with 256 human-defined concepts
+- WaveletLM-semantic achieved BPB 1.0112 at C=512 with 256 human-defined concepts
 - Learned embeddings at C=2048 achieve BPB 1.1431 at 1 epoch (and improving)
 - Human-interpretable concepts hit a ceiling around ~500 orthogonal dimensions —
   language doesn't have 2048 independent semantic categories
@@ -60,7 +60,7 @@ properties that more closely mirror what learned embeddings discover on their ow
 - Part-of-speech probability distribution (if POS tagger available)
 - Dimensionality: ~50-100
 
-### 5. Traditional semantic features (retained from EXARCH-semantic)
+### 5. Traditional semantic features (retained from WaveletLM-semantic)
 - High-level concept labels from FDA or similar
 - Limited to ~256-500 dimensions where orthogonal concepts exist
 - These provide the interpretability layer
@@ -82,7 +82,7 @@ a hybrid embedding where ~80% is prescribed and ~20% is learned. This tests whet
 the prescribed features cover the important dimensions and the model only needs to
 learn the remainder.
 
-## Key differences from EXARCH-semantic's current approach
+## Key differences from WaveletLM-semantic's current approach
 
 1. **Feature construction**: Statistical/structural extraction from corpus, not
    LLM-based concept labeling. Much cheaper ($0 vs $200+/concept for FDA).
@@ -97,9 +97,9 @@ learn the remainder.
 1. Run corpus analysis on WikiText-103: extract top-K 3-grams, compute token-level
    statistics (PMI, frequency, positional distributions)
 2. Build a feature extraction function: `token_id -> feature_vector (C=2048)`
-3. Store as a frozen embedding table (same as EXARCH-semantic's conceptual_embedding)
+3. Store as a frozen embedding table (same as WaveletLM-semantic's conceptual_embedding)
 4. Optional: leave last N dimensions learnable (hybrid mode)
-5. Train with same pipeline as EXARCH-semantic
+5. Train with same pipeline as WaveletLM-semantic
 
 ## Evaluation plan
 
@@ -107,7 +107,7 @@ learn the remainder.
 |-----------|------|----------------|-------------|------------|
 | Full prescribed | 2048 | 2048 | 0 | vs learned C=2048 |
 | Hybrid 80/20 | 2048 | 1636 | 412 | vs both above |
-| Matched C=512 | 512 | 512 | 0 | vs EXARCH-semantic's 256-concept embedding |
+| Matched C=512 | 512 | 512 | 0 | vs WaveletLM-semantic's 256-concept embedding |
 
 ## Open questions
 

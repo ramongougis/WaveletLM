@@ -2,14 +2,14 @@
 
 ## Summary
 
-Replace the fixed power-of-2 dilation pattern in EXARCH's lifting wavelet decomposition
+Replace the fixed power-of-2 dilation pattern in WaveletLM's lifting wavelet decomposition
 with learnable dilation offsets. Each wavelet level discovers which token spacings are
 most informative rather than being locked to 2^k strides. The dilations "crawl" toward
 optimal positions via gradient descent.
 
 ## Motivation
 
-- EXARCH's lifting predict/update steps compare positions at fixed dilations: 1, 2, 4, 8, ...
+- WaveletLM's lifting predict/update steps compare positions at fixed dilations: 1, 2, 4, 8, ...
 - The model cannot learn that level 3 should compare tokens 7 apart instead of 8
 - Wider lifting MLPs (hidden_mult) don't help because they add local expressivity,
   not range — the bottleneck is which positions are compared, not how the comparison
@@ -90,4 +90,4 @@ crawl as the next architectural change.
 Learned dilation lifting wavelets are novel. Fixed-dilation lifting is well-studied
 in signal processing (Sweldens 1996). Applying learned dilations to language modeling
 via the lifting scheme has not been explored. If wavelet crawl improves BPB at L=1,
-it's a standalone contribution independent of the rest of EXARCH.
+it's a standalone contribution independent of the rest of WaveletLM.

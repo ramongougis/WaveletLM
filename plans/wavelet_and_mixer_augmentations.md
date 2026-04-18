@@ -4,7 +4,7 @@
 
 A set of modular augmentations to the wavelet decomposition and spectral mixer,
 each implementable as an optional config flag for clean Boolean ablations.
-Targets performance gains in the current learned-embedding EXARCH (interpretability
+Targets performance gains in the current learned-embedding WaveletLM (interpretability
 considerations deferred to post-semantic-embedding reintegration).
 
 ## Status: Implementation candidate
@@ -53,7 +53,7 @@ The reconstruction logic stays the same — only the source of predict/update we
 
 ### Why this might help
 
-EXARCH uses wavelets for *prediction*, not signal compression. The strict invertibility
+WaveletLM uses wavelets for *prediction*, not signal compression. The strict invertibility
 constraint that classical wavelets need isn't necessary. The decompose path can specialize
 on "what to extract from the input," and the reconstruct path on "how to combine back into
 predictions." These are different objectives.
@@ -66,7 +66,7 @@ predictions." These are different objectives.
 
 Run K parallel learnable lifting wavelets per layer, each initialized to a different
 classical wavelet family (Haar, Daubechies-4, Symlet-4). Combine their decompositions
-with per-scale learned weights (analogous to old EXARCH-research's Haar+db8 blend).
+with per-scale learned weights (analogous to old WaveletLM-research's Haar+db8 blend).
 
 ### Cost
 
@@ -198,7 +198,7 @@ Optional list of width multipliers (one per scale). null = all 1.0 (today's beha
 
 ### Implementation
 
-In `ExarchBlock.__init__`, build mixers with different widths:
+In `WaveletLMBlock.__init__`, build mixers with different widths:
 
 ```python
 if per_scale_mixer_widths is not None:

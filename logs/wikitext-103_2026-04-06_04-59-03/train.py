@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# EXARCH - Exclusively Attentionless Reasoning with Causal Harmonics
+# WaveletLM - Exclusively Attentionless Reasoning with Causal Harmonics
 # train.py
 
 import os
@@ -31,7 +31,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 
 from model import (
-    set_seed, ExarchLM, MultiNodeExarchLM,
+    set_seed, WaveletLM, MultiNodeWaveletLM,
     Logger, parameter_breakdown, quantize_model,
 )
 
@@ -439,7 +439,7 @@ def train():
         logger = Logger(log_dir)
 
     # Log config
-    logger.log(f"Starting EXARCH {'Benchmark' if benchmark_only else 'Training'} on {dataset_name.upper()}")
+    logger.log(f"Starting WaveletLM {'Benchmark' if benchmark_only else 'Training'} on {dataset_name.upper()}")
     logger.log(f"Device: {device}, AMP: {use_amp} ({amp_dtype_str})")
     logger.log("")
     max_len = max(len(k) for k in config.keys() if not k.startswith("__"))
@@ -469,9 +469,9 @@ def train():
 
     # Build model
     if config.get('multinodal_enabled', False):
-        model = MultiNodeExarchLM(vocab_size, config, device=device)
+        model = MultiNodeWaveletLM(vocab_size, config, device=device)
     else:
-        model = ExarchLM(vocab_size, config, device=device)
+        model = WaveletLM(vocab_size, config, device=device)
     model = model.to(device)
 
     logger.log(f"[Run Folder] {log_dir}")
@@ -640,9 +640,9 @@ def train():
     best_model_path = os.path.join(log_dir, "best_model.pt")
 
     if config.get('multinodal_enabled', False):
-        model = MultiNodeExarchLM(vocab_size, config, device=device).to(device)
+        model = MultiNodeWaveletLM(vocab_size, config, device=device).to(device)
     else:
-        model = ExarchLM(vocab_size, config, device=device).to(device)
+        model = WaveletLM(vocab_size, config, device=device).to(device)
 
     try:
         ckpt = torch.load(best_model_path, map_location=device)

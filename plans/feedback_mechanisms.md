@@ -2,7 +2,7 @@
 
 ## Summary
 
-EXARCH currently has no true feedback. The mechanism formerly called "semantic
+WaveletLM currently has no true feedback. The mechanism formerly called "semantic
 feedback" (now **Decompose Bypass/DB**) is forward-propagated state, not
 feedback: layer N's running mean biases layer N+1, never the other way around.
 
@@ -134,7 +134,7 @@ contributes to backprop in the "final" loss mode.
 
 The first pass produces a coarse global summary of the input. The second pass
 can use that summary to disambiguate locally — exactly the function predictive
-coding plays in cortex. EXARCH's depth-vs-width experiments showed depth past
+coding plays in cortex. WaveletLM's depth-vs-width experiments showed depth past
 ~20 layers hurts; iterative refinement adds *effective depth* without adding
 parameters, by reusing the same blocks.
 
@@ -144,7 +144,7 @@ parameters, by reusing the same blocks.
 
 ### What
 
-Apply the same ExarchBlock K times instead of stacking K distinct blocks. State
+Apply the same WaveletLMBlock K times instead of stacking K distinct blocks. State
 flows through the loop with optional per-iteration positional/depth signals.
 Different from Feature 2 in that the loop is **per-block**, not whole-network.
 
@@ -184,10 +184,10 @@ Replace the `nn.ModuleList` of blocks with a single block + loop:
 
 ```python
 if looped_blocks:
-    self.shared_block = ExarchBlock(...)
+    self.shared_block = WaveletLMBlock(...)
     self.loop_count = looped_blocks_count
 else:
-    self.blocks = nn.ModuleList([ExarchBlock(...) for _ in range(layers)])
+    self.blocks = nn.ModuleList([WaveletLMBlock(...) for _ in range(layers)])
 
 # Forward:
 if looped_blocks:
@@ -224,7 +224,7 @@ match or beat 8 distinct blocks, that's a major capacity-efficiency win.
 4. **Cross-time feedback, two-pass mode** — only if stale mode showed signal.
 5. **Iterative refinement, K=3 or all-passes loss** — only if K=2 helped.
 6. **Combinations** — e.g., looped blocks + cross-time feedback could be the
-   "EXARCH-Recurrent" variant.
+   "WaveletLM-Recurrent" variant.
 
 ## Implementation effort estimate
 

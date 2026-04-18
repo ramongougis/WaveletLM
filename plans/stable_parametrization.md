@@ -1,4 +1,4 @@
-# Stable Parametrization for EXARCH
+# Stable Parametrization for WaveletLM
 
 ## Summary
 
@@ -11,7 +11,7 @@ and its stable exponential parametrization approach.
 
 ## Problem
 
-EXARCH experiences NaN during training in several configurations:
+WaveletLM experiences NaN during training in several configurations:
 - Mixer depth >= 3 at L=20 with lr=0.01
 - C=2048 with block_size=2048
 - C=2048 with lr=0.02
@@ -99,7 +99,7 @@ less, preventing signal growth through the residual stream.
 **Current:** `N(0, 1/sqrt(C))` — good scaling for init.
 
 **Problem:** No runtime scaling. The original Transformer paper multiplies
-embeddings by sqrt(C) to match the scale of positional encodings. EXARCH
+embeddings by sqrt(C) to match the scale of positional encodings. WaveletLM
 doesn't do this, meaning embedding magnitudes decrease as C increases.
 
 **Proposed:** Multiply embedding output by sqrt(C):

@@ -1,4 +1,4 @@
-# EXARCH Training Runs
+# WaveletLM Training Runs
 
 ## Sweep Index
 
@@ -45,7 +45,7 @@
 41. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
 42. [Best PTQ combination](#best-ptq-combination)
 43. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-44. [Seed variance: best EXARCH config](#seed-variance-best-exarch-config)
+44. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
 45. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
 46. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
 47. [Run Details](#run-details)
@@ -263,7 +263,7 @@ L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384. ~1.18B params, ~21 GB estimated.
 
 ### Grokking experiment: C=128, L=2, tiny core + massive memory
 
-~42M params total with L=2. Tiny mixer core with massive MLP and sparse memory. Two layers give double the wavelet decomposition depth at minimal cost. Testing if extreme epoch count can compensate for tiny width. If a ~42M model achieves comparable BPB to a 1B+ model, it demonstrates that EXARCH's wavelet mixing can generalize language patterns at minimal scale given sufficient training.
+~42M params total with L=2. Tiny mixer core with massive MLP and sparse memory. Two layers give double the wavelet decomposition depth at minimal cost. Testing if extreme epoch count can compensate for tiny width. If a ~42M model achieves comparable BPB to a 1B+ model, it demonstrates that WaveletLM's wavelet mixing can generalize language patterns at minimal scale given sufficient training.
 
 | Run | C | Layers | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|--------|--------|--------|---------------|--------|------------|----------------|-------|
@@ -458,7 +458,7 @@ Testing whether shared_lifting_weights and lifting_linear_only enable efficient 
 
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
-Per-scale mixed precision leveraging EXARCH's wavelet decomposition. Coarse scales (high-level semantics) get more bits; fine scales (local detail) tolerate aggressive quantization. All runs use the same trained checkpoint — no retraining needed.
+Per-scale mixed precision leveraging WaveletLM's wavelet decomposition. Coarse scales (high-level semantics) get more bits; fine scales (local detail) tolerate aggressive quantization. All runs use the same trained checkpoint — no retraining needed.
 
 **Baseline checkpoint:** L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, 2.0x dropout. BPB 1.0247. See [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt).
 
@@ -508,7 +508,7 @@ Target config: C=1024, L=20, SLW=true, mlp_expansion=200, PKM=65536, FwPKM=65536
 |   | | | ~12B | | ~140 GB / ~24 GB (fp16) | fp16 inference fits on a single 4090 |
 |   | | | ~12B | | ~140 GB / ~6 GB (PTQ) | With PTQ; inference fits on RTX 4060 (8 GB) |
 
-### Seed variance: best EXARCH config
+### Seed variance: best WaveletLM config
 
 3 runs at the best/most expensive config, varying only the seed. Reports mean ± std to establish statistical significance of BPB results.
 
@@ -526,7 +526,7 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 
 | Model | Type | Params | BPB (sliding) | Train tok/s | Gen tok/s | Training time | Optimizations | Notes |
 |-------|------|--------|---------------|-------------|-----------|---------------|---------------|-------|
-| EXARCH | Wavelet mixer | | | | | | torch.compile, fp16 | Best config from sweeps |
+| WaveletLM | Wavelet mixer | | | | | | torch.compile, fp16 | Best config from sweeps |
 | GPT-2 | Transformer | | | | | | Flash Attention, KV cache, TurboQuant, torch.compile, fp16 | Matched compute |
 | Mamba | SSM | | | | | | Mamba CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 | RWKV | Linear attention | | | | | | Custom CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# EXARCH - Exclusively Attentionless Reasoning with Causal Harmonics
+# WaveletLM - Exclusively Attentionless Reasoning with Causal Harmonics
 # model.py
 
 import os
@@ -804,10 +804,10 @@ def _compute_running_mean(x: torch.Tensor, prev_mean: torch.Tensor = None,
 
 
 # ==============================================================================
-# 7. EXARCH BLOCK
+# 7. WaveletLM BLOCK
 # ==============================================================================
 
-class ExarchBlock(nn.Module):
+class WaveletLMBlock(nn.Module):
     def __init__(
         self,
         C: int,
@@ -1220,10 +1220,10 @@ class ExarchBlock(nn.Module):
 
 
 # ==============================================================================
-# 8. EXARCH LANGUAGE MODEL
+# 8. WaveletLM LANGUAGE MODEL
 # ==============================================================================
 
-class ExarchLM(nn.Module):
+class WaveletLM(nn.Module):
     def __init__(self, vocab_size, config, device=None):
         super().__init__()
 
@@ -1362,10 +1362,10 @@ class ExarchLM(nn.Module):
         )
         self.effective_layer_count = effective_layer_count
         if self.looped_blocks:
-            print(f"[Looped] Single shared ExarchBlock applied {effective_layer_count} times")
+            print(f"[Looped] Single shared WaveletLMBlock applied {effective_layer_count} times")
         layer_build_count = 1 if self.looped_blocks else L
         self.layers = nn.ModuleList([
-            ExarchBlock(
+            WaveletLMBlock(
                 C,
                 levels=config['levels'],
                 low_rank=config.get('low_rank', 0),
@@ -1490,14 +1490,14 @@ class ExarchLM(nn.Module):
                 layer._cached_h2 = None
 
     def _forward_embed(self, idx):
-        """Embedding lookup + dropout. Used by MultiNodeExarchLM lockstep forward."""
+        """Embedding lookup + dropout. Used by MultiNodeWaveletLM lockstep forward."""
         emb = self.token_embedding(idx)
         if self.stab_embed_scaling:
             emb = emb * self._embed_scale
         return self.dropout_emb(emb)
 
     def _forward_head(self, x, targets=None):
-        """Final LN, LM head, and loss. Used by MultiNodeExarchLM lockstep forward."""
+        """Final LN, LM head, and loss. Used by MultiNodeWaveletLM lockstep forward."""
         x = self.final_ln(x)
         x = self.dropout_lm(x)
         logits = self.lm_head(x)
@@ -1615,11 +1615,11 @@ class ExarchLM(nn.Module):
 
 
 # ==============================================================================
-# 9. MULTINODAL — Cross-Cell Gate & Multi-Node EXARCH
+# 9. MULTINODAL — Cross-Cell Gate & Multi-Node WaveletLM
 # ==============================================================================
 
 class CrossCellGate(nn.Module):
-    """Multiplicative cross-cell gate for multinodal EXARCH.
+    """Multiplicative cross-cell gate for multinodal WaveletLM.
 
     Each cell's hidden state is multiplied by (1 + delta), where
     delta = tanh(proj(mean_of_other_cells)). Zero-initialized so the gate
@@ -1642,10 +1642,10 @@ class CrossCellGate(nn.Module):
         return result
 
 
-class MultiNodeExarchLM(nn.Module):
-    """Multinodal EXARCH: multiple independent cells with feature-bagged embeddings.
+class MultiNodeWaveletLM(nn.Module):
+    """Multinodal WaveletLM: multiple independent cells with feature-bagged embeddings.
 
-    Each cell is a complete ExarchLM instance operating on a different subset of
+    Each cell is a complete WaveletLM instance operating on a different subset of
     the embedding dimensions. Logits are averaged (product of experts) for prediction.
 
     With learned embeddings, feature bagging simply zeros (sets to eps) random
@@ -1678,7 +1678,7 @@ class MultiNodeExarchLM(nn.Module):
         self.cells = nn.ModuleList()
         for i in range(self.num_cells):
             set_seed(seeds[i])
-            cell = ExarchLM(
+            cell = WaveletLM(
                 vocab_size=vocab_size,
                 config=cell_config,
                 device=device,
@@ -1798,7 +1798,7 @@ class Logger:
 
 
 def parameter_breakdown(model, config):
-    """Print parameter breakdown for ExarchLM or MultiNodeExarchLM."""
+    """Print parameter breakdown for WaveletLM or MultiNodeWaveletLM."""
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -1811,14 +1811,14 @@ def parameter_breakdown(model, config):
     if trainable != total:
         print(f"Trainable parameters:{trainable:>{W},} ({trainable/1e6:.2f}M)")
 
-    if isinstance(model, MultiNodeExarchLM):
+    if isinstance(model, MultiNodeWaveletLM):
         for i, cell in enumerate(model.cells):
             cell_params = sum(p.numel() for p in cell.parameters())
             print(f"  Cell {i}:           {cell_params:>{W},} ({cell_params/1e6:.2f}M)")
         if model.cross_cell_gating:
             gate_params = sum(p.numel() for p in model.cross_cell_gates.parameters())
             print(f"  Cross-cell gates: {gate_params:>{W},} ({gate_params/1e6:.2f}M)")
-    elif isinstance(model, ExarchLM):
+    elif isinstance(model, WaveletLM):
         emb_params = model.token_embedding.weight.numel()
         lm_params = sum(p.numel() for p in model.lm_head.parameters())
         layer_params = sum(p.numel() for p in model.layers.parameters())
@@ -1985,14 +1985,14 @@ def _compute_module_mib(module):
 
 
 def quantize_model(model, config):
-    """Apply post-training quantization to an ExarchLM or MultiNodeExarchLM.
+    """Apply post-training quantization to an WaveletLM or MultiNodeWaveletLM.
 
     Replaces nn.Linear and nn.Embedding modules with quantized versions
     based on config settings. Small parameters (LayerNorm, scalars, scale_weights)
     are kept at full precision.
 
     Args:
-        model: ExarchLM or MultiNodeExarchLM in eval mode
+        model: WaveletLM or MultiNodeWaveletLM in eval mode
         config: dict with quantize_* keys
 
     Returns:
@@ -2006,17 +2006,17 @@ def quantize_model(model, config):
     mlp_bits = config.get('quantize_mlp_bits', 4)
     lift_bits = config.get('quantize_lifting_bits', 16)
 
-    # Collect all ExarchLM cells to quantize
-    if isinstance(model, MultiNodeExarchLM):
+    # Collect all WaveletLM cells to quantize
+    if isinstance(model, MultiNodeWaveletLM):
         cells = list(model.cells)
         # Quantize cross-cell gates
         if model.cross_cell_gating:
             for gate in model.cross_cell_gates:
                 gate.proj = QuantizedLinear(gate.proj, mlp_bits)
-    elif isinstance(model, ExarchLM):
+    elif isinstance(model, WaveletLM):
         cells = [model]
     else:
-        raise TypeError(f"quantize_model expects ExarchLM or MultiNodeExarchLM, got {type(model)}")
+        raise TypeError(f"quantize_model expects WaveletLM or MultiNodeWaveletLM, got {type(model)}")
 
     # Track shared lifting to avoid double-quantization
     quantized_lifting_ids = set()

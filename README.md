@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/exarch-header.svg" alt="EXARCH" width="90%"/>
+  <img src="assets/waveletlm-header.svg" alt="WaveletLM" width="90%"/>
 </p>
 
 <h3 align="center"><b>Exclusively Attentionless Reasoning with Causal Harmonics</b></h3>
@@ -10,7 +10,7 @@
 
 <br>
 
-EXARCH is an attention-free language model that replaces attention with a wavelet-based spectral mixing architecture. Each block processes the input sequence using a learned lifting wavelet scheme, Fast Hadamard Transform, per-scale gated spectral mixing (SwiGLU), and inverse wavelet transform. Combined with expanded MLPs and cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache. 
+WaveletLM is an attention-free language model that replaces attention with a wavelet-based spectral mixing architecture. Each block processes the input sequence using a learned lifting wavelet scheme, Fast Hadamard Transform, per-scale gated spectral mixing (SwiGLU), and inverse wavelet transform. Combined with expanded MLPs and cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache. 
 
 ## Installation
 
@@ -23,8 +23,8 @@ pip install torch datasets tiktoken tqdm
 Clone the repo:
 
 ```bash
-git clone https://github.com/ramongougis/EXARCH.git
-cd EXARCH
+git clone https://github.com/ramongougis/WaveletLM.git
+cd WaveletLM
 ```
 
 ## Usage
@@ -42,7 +42,7 @@ Key config options:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `C` | 1024 | Mixer working width (power of 2) |
-| `layers` | 20 | Number of EXARCH blocks |
+| `layers` | 20 | Number of WaveletLM blocks |
 | `mlp_expansion` | 20 | MLP hidden dim multiplier |
 | `levels` | 9 | Wavelet decomposition levels (~log2(block_size)) |
 | `dataset` | wikitext-103 | HuggingFace dataset name |
@@ -91,7 +91,7 @@ Learned Embedding (C)
     |
     v
 +----------------------------+
-| ExarchBlock (x layers)     |
+| WaveletLMBlock (x layers)     |
 |                            |
 |  LayerNorm                 |
 |  Lifting Wavelet Decompose |
@@ -133,7 +133,7 @@ LayerNorm --> LM Head --> logits
 
 ## Multinodal
 
-EXARCH supports a product-of-experts mode where multiple independent model cells process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in config.
+WaveletLM supports a product-of-experts mode where multiple independent model cells process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in config.
 
 ## Results
 
@@ -146,12 +146,12 @@ EXARCH supports a product-of-experts mode where multiple independent model cells
 | GPT-2 Large | Transformer | WebText (~40GB) | 774M | ~19[^3] |
 | S4* | SSM* | WikiText-103 (~0.5GB)* | 130M* | ~20[^4]* |
 | GPT-2 Medium | Transformer | WebText (~40GB) | 355M | ~22[^3] |
-| **EXARCH** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **1.18B** | **~24**[^1] |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **1.18B** | **~24**[^1] |
 | GPT-2 | Transformer | WebText (~40GB) | 124M | ~29[^3] |
 
-\* Trained and evaluated on the same dataset (direct comparison to EXARCH).
+\* Trained and evaluated on the same dataset (direct comparison to WaveletLM).
 
-EXARCH achieves this with only 2 layers (L=2, C=2048), no attention, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
+WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
 
 [^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5 epochs, 2.0x dropout. BPB=1.0247. See [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt).
 

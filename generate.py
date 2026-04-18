@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# EXARCH - Exclusively Attentionless Reasoning with Causal Harmonics
+# WaveletLM - Exclusively Attentionless Reasoning with Causal Harmonics
 # generate.py
 
 import argparse
@@ -27,7 +27,7 @@ import torch
 import torch.nn.functional as F
 import tiktoken
 
-from model import ExarchLM, MultiNodeExarchLM, causal_haar_decompose, quantize_model
+from model import WaveletLM, MultiNodeWaveletLM, causal_haar_decompose, quantize_model
 
 
 # ==============================================================================
@@ -497,7 +497,7 @@ def generate_best_of_n(model, enc, input_tensor, n, seed, **gen_kwargs):
 # ==============================================================================
 
 def main():
-    parser = argparse.ArgumentParser("EXARCH text generation")
+    parser = argparse.ArgumentParser("WaveletLM text generation")
     parser.add_argument("--checkpoint", required=True,
                         help="Path to checkpoint (e.g., logs/run_dir/best_model.pt)")
     parser.add_argument("--config", default=None,
@@ -536,7 +536,7 @@ def main():
                         help="Number of completions to generate")
     args = parser.parse_args()
 
-    # --strategies enables inference strategies matching EXARCH-research defaults
+    # --strategies enables inference strategies matching WaveletLM-research defaults
     if args.strategies:
         args.entropy_adaptive = True
         args.entropy_temp_max = 0.9
@@ -584,9 +584,9 @@ def main():
     vocab_size = enc.n_vocab
 
     if config.get('multinodal_enabled', False):
-        model = MultiNodeExarchLM(vocab_size, config, device=device)
+        model = MultiNodeWaveletLM(vocab_size, config, device=device)
     else:
-        model = ExarchLM(vocab_size, config, device=device)
+        model = WaveletLM(vocab_size, config, device=device)
     model = model.to(device)
 
     # Load checkpoint

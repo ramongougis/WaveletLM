@@ -1,4 +1,4 @@
-# Experimental: Bidirectional Training for EXARCH
+# Experimental: Bidirectional Training for WaveletLM
 
 ## Summary
 
@@ -14,11 +14,11 @@ doubling the effective training signal per epoch while maintaining directional a
 - On reversed sequences, "next" is actually the previous token in original order
 - The model sees both directions across an epoch, learning bidirectional patterns
 
-## EXARCH-specific advantage
+## WaveletLM-specific advantage
 
 The lifting wavelet predict step compares even[i] with odd[i - dilation], always
 looking backward in the sequence. On a reversed sequence, this effectively looks
-forward in the original order. Bidirectional training gives EXARCH both causal
+forward in the original order. Bidirectional training gives WaveletLM both causal
 directions through the wavelet decomposition without architectural changes.
 
 ## Key challenge: directional awareness
