@@ -89,12 +89,12 @@ Learned Embedding (C)
     |
     v
 +----------------------------+
-| WaveletLMBlock (x layers)     |
+| WaveletLM Block (x layers)    |
 |                            |
 |  LayerNorm                 |
 |  Lifting Wavelet Decompose |
 |  Fast Hadamard Transform   |
-|  Gated Spectral Mixer      |  <-- with optional cross-scale gating
+|  Gated Spectral Mixer      |
 |  Fast Hadamard (inverse)   |
 |  Learned Scale Weights     |
 |  Wavelet Reconstruct       |

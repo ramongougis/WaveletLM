@@ -30,25 +30,24 @@
 26. [New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model](#new-baseline-boolean-ablations-part-1-c2048-l2-epochs1-wide--shallow-model)
 27. [New Baseline Boolean ablations part 2: Stable parametrization](#new-baseline-boolean-ablations-part-2-stable-parametrization)
 28. [New Baseline Boolean ablations part 3: Rescue tests (vs known NaN configs)](#new-baseline-boolean-ablations-part-3-rescue-tests-vs-known-nan-configs)
-29. [New Baseline Boolean ablations part 4: Compatibility tests (sub-features at the new baseline)](#new-baseline-boolean-ablations-part-4-compatibility-tests-sub-features-at-the-new-baseline)
-30. [Block size (context window) — at new baseline](#block-size-context-window--at-new-baseline)
-31. [Grad accum — at new baseline](#grad-accum--at-new-baseline)
-32. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
-33. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
-34. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
-35. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
-36. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-37. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-38. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-39. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-40. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-41. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-42. [Best PTQ combination](#best-ptq-combination)
-43. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-44. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
-45. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-46. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-47. [Run Details](#run-details)
+29. [Block size (context window) — at new baseline](#block-size-context-window--at-new-baseline)
+30. [Grad accum — at new baseline](#grad-accum--at-new-baseline)
+31. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
+32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
+33. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
+34. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
+35. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
+36. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
+37. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+38. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+39. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+40. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+41. [Best PTQ combination](#best-ptq-combination)
+42. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+43. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
+44. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+45. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+46. [Run Details](#run-details)
 
 ---
 
@@ -351,28 +350,14 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 |   | Wavelet crawl (K=5) | [link](logs/wikitext-103_2026-04-18_08-14-44/log.txt) | NaN | ~840M | — | — | — | ±2 dilation offsets. NaN'd step ~4300 (LR=9.81e-03). At higher levels (base ≥ 8), softmax spread of ±2 deviates too far from Haar init, destabilizes predict/update networks. Not rescued — K=3 captures the benefit. |
 |   | Shared lifting weights (SLW) | [link](logs/wikitext-103_2026-04-18_09-46-25/log.txt) | 1.1165 | ~770M | 16,886 MiB | 11,388 MiB | **-0.0003** | One shared lifting wavelet instead of per-layer. Essentially tied on BPB; **-5% train VRAM, -9% inference VRAM**. Free memory savings. **Keep** for best-run. |
 |   | Lifting linear-only (LLO) | [link](logs/wikitext-103_2026-04-18_11-37-14/log.txt) | 1.1261 | ~790M | 15,766 MiB | 11,388 MiB | **+0.0093** | Replaces predict/update Sequentials (Linear→GELU→Dropout→Linear) with single Linears. Significant BPB regression — the GELU nonlinearity matters. **Drop** despite -11% time / -12% train VRAM savings. |
+|   | SLW + LLO combined | [link](logs/wikitext-103_2026-04-18_13-17-47/log.txt) | 1.1229 | ~720M | 15,286 MiB | — | **+0.0061** | LLO dominates the combo. SLW partially offsets but not enough. Fastest run yet (1.59h, -14%) and smallest VRAM, but BPB regression kills it. **Drop.** |
 
 ### New Baseline Boolean ablations part 2: Stable parametrization
 
-Tests of the 6 stability fixes from [`plans/stable_parametrization.md`](plans/stable_parametrization.md): spectral norm on mixer, FF sqrt(hidden_dim) scaling, embed sqrt(C) scaling, proj_out sqrt(C×L) scaling, mixer eps scaling, level-dependent lifting init. Master flag `stable_parametrization=True` enables all 6; each individual flag is also independently togglable.
+Tests of the 6 stability fixes from [`plans/stable_parametrization.md`](plans/stable_parametrization.md): spectral norm on mixer, FF sqrt(hidden_dim) scaling, embed sqrt(C) scaling, proj_out sqrt(C×L) scaling, mixer eps scaling, level-dependent lifting init. Master flag `stable_parametrization=True` enables all 6; each individual flag is also independently togglable. Each sub-feature is run individually against the new baseline (BPB 1.1168) to verify it runs without breakage and measure its standalone effect. Positive delta = useful at stable config (candidate for best-run); ~0 = neutral (still a rescue tool for unstable configs); negative = harmful here but may still rescue NaN configs.
 
-### New Baseline Boolean ablations part 3: Rescue tests (vs known NaN configs)
-
-If the master flag rescues a previously-NaN config, follow up with per-feature ablation to identify the load-bearing fix.
-
-| Run | NaN config under test | Stab flags | Folder | BPB (sliding) | Params | Notes |
-|-----|----------------------|-----------|--------|---------------|--------|-------|
-|   | mixer_depth=5 (was [Run 39](#run-39): NaN step 3600) | master | | | ~787M | Canonical depth-stack NaN; exp_param previously failed to fix |
-|   | lifting_hidden_mult=2 (was [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt): NaN step 2500) | master | | | ~556M | Wider lifting at L=20; recent NaN |
-|   | C=2048, lr=0.02 (was [Run 63](#run-63): NaN step 700) | master | | | ~617M | Width × LR NaN; survived only with exp_param previously |
-|   | new baseline + lr=0.02 + exp_param (NaN'd [link](logs/wikitext-103_2026-04-17_00-27-55/log.txt) step 4000, LR=1.82e-02) | master | | | 827.03M | If rescued, unlocks lr=0.02 at the new baseline — likely the biggest latent BPB win (L=1 previously showed -0.0084 at lr=0.02+exp_param). Primary target for `stab_spectral_norm`. |
-
-### New Baseline Boolean ablations part 4: Compatibility tests (sub-features at the new baseline)
-
-Each sub-feature run individually against the new baseline (probe BPB TBD from Part 3) to verify it runs without breakage and measure standalone effect. Positive delta = useful at stable config (could go in best combo); ~0 = neutral (still a rescue tool for unstable configs); negative = harmful here but may still rescue NaN configs.
-
-| Run | Stab flag | Folder | BPB (sliding) | Params | Delta vs probe | Notes |
-|-----|-----------|--------|---------------|--------|----------------|-------|
+| Run | Stab flag | Folder | BPB (sliding) | Params | Δ vs 1.1168 | Notes |
+|-----|-----------|--------|---------------|--------|-------------|-------|
 |   | master (all 6) | | | ~840M | | Combined effect of all sub-features |
 |   | spectral_norm | | | ~840M | | Constrains ‖mixer.W‖₂=1 (highest priority for NaN fix) |
 |   | ff_scaling | | | ~840M | | FF final layer × 1/√(hidden_dim) instead of 0.02 |
@@ -380,6 +365,17 @@ Each sub-feature run individually against the new baseline (probe BPB TBD from P
 |   | proj_out_scaling | | | ~840M | | proj_out × 1/√(C·L) instead of 1e-3 |
 |   | mixer_eps_scaling | | | ~840M | | mixer eps = eps/√Cp (refinement) |
 |   | lifting_level_scaling | | | ~840M | | Per-level lifting init damping by 1/(1+0.1·level) |
+
+### New Baseline Boolean ablations part 3: Rescue tests (vs known NaN configs)
+
+If the master flag rescues a previously-NaN config, follow up with per-feature ablation to identify the load-bearing fix.
+
+| Run | NaN config under test | Stab flags | Folder | BPB (sliding) | Params | Notes |
+|-----|----------------------|-----------|--------|---------------|--------|-------|
+|   | mixer_depth=5 (was [Run 39](#run-39): NaN step 3600) | master | [link](logs/wikitext-103_2026-04-18_14-55-19/log.txt) | **crashed** | ~787M | **Silent crash** before step 100. Likely torch.compile + spectral_norm parametrization on 1000 wrapped mixers (L=20 × S=10 × MD=5) exceeded resources. **Not rescued.** |
+|   | lifting_hidden_mult=2 (was [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt): NaN step 2500) | master | [link](logs/wikitext-103_2026-04-18_14-58-10/log.txt) | **NaN step 200** | ~556M | **WORSE than unmodified config** (original NaN'd at step 2500; with stab bundle, NaN at step 200 with val 8.92 at step 100). Stab bundle *actively destabilized* this. Suspect `stab_proj_out_scaling` formula `1/√(C·L)` at L=20 gives ~10× stronger proj_out than original 1e-3, amplifying residual-stream signal. **Not rescued.** |
+|   | C=2048, lr=0.02 (was [Run 63](#run-63): NaN step 700) | master | | | ~617M | Width × LR NaN; survived only with exp_param previously |
+|   | new baseline + lr=0.02 + exp_param (NaN'd [link](logs/wikitext-103_2026-04-17_00-27-55/log.txt) step 4000, LR=1.82e-02) | master | | | 827.03M | If rescued, unlocks lr=0.02 at the new baseline — likely the biggest latent BPB win (L=1 previously showed -0.0084 at lr=0.02+exp_param). Primary target for `stab_spectral_norm`. |
 
 ### Block size (context window) — at new baseline
 

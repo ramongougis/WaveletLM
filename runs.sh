@@ -188,23 +188,29 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # run_with "W&S: wavelet crawl (K=5)" "$NEW_BASELINE; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 5"
 
 # --- Lifting efficiency probes (param/compute savings; quality impact unknown) ---
-run_with "W&S: shared_lifting_weights" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True"
-run_with "W&S: lifting_linear_only" "$NEW_BASELINE; cfg['lifting_linear_only'] = True"
-run_with "W&S: shared_lifting + linear_only" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True; cfg['lifting_linear_only'] = True"
+# run_with "W&S: shared_lifting_weights" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True"
+# run_with "W&S: lifting_linear_only" "$NEW_BASELINE; cfg['lifting_linear_only'] = True"
+# run_with "W&S: shared_lifting + linear_only" "$NEW_BASELINE; cfg['shared_lifting_weights'] = True; cfg['lifting_linear_only'] = True"
 
-# =====================================================================
-# BOOLEAN ABLATIONS PART 4: STABLE PARAMETRIZATION (vs KNOWN NaN CONFIGS)
-# Tests whether stable_parametrization rescues configs that previously NaN'd.
-# Each row pairs a known-unstable config with stable_parametrization=True.
-# Reference NaN runs:
-#   - mixer_depth=5 at L=20:           Run 39, NaN step 3600 (LR=0.008)
-#   - lifting_hidden_mult=2 at L=20:   logs/...2026-04-16_17-23-50, NaN step 2500
-#   - C=2048, lr=0.02 at L=20, MLP=1:  Run 63, NaN step 700 (LR=0.003)
-# =====================================================================
+# # =====================================================================
+# # BOOLEAN ABLATIONS PART 4: STABLE PARAMETRIZATION (vs KNOWN NaN CONFIGS)
+# # Tests whether stable_parametrization rescues configs that previously NaN'd.
+# # Each row pairs a known-unstable config with stable_parametrization=True.
+# # Reference NaN runs:
+# #   - mixer_depth=5 at L=20:           Run 39, NaN step 3600 (LR=0.008)
+# #   - lifting_hidden_mult=2 at L=20:   logs/...2026-04-16_17-23-50, NaN step 2500
+# #   - C=2048, lr=0.02 at L=20, MLP=1:  Run 63, NaN step 700 (LR=0.003)
+# # =====================================================================
 
-run_with "Stab: vs mixer_depth=5 NaN (was Run 39)" "cfg['mixer_depth'] = 5; cfg['stable_parametrization'] = True"
-run_with "Stab: vs lifting_hidden_mult=2 NaN" "cfg['lifting_hidden_mult'] = 2; cfg['stable_parametrization'] = True"
-run_with "Stab: vs C=2048 lr=0.02 NaN (was Run 63)" "cfg['C'] = 2048; cfg['lr'] = 0.02; cfg['stable_parametrization'] = True"
+# All L=20 rescue tests below are commented out — stab bundle performs poorly at
+# L=20 scale (MD=5 OOM'd, hidden_mult=2 NaN'd EARLIER with stab than without),
+# and these configs aren't planned for release anyway. Only the new-baseline
+# rescue (at our actual target config) is retained since it's the one that
+# matters: if stab_spectral_norm rescues lr=0.02+exp_param at L=2/C=2048, that
+# unlocks ~-0.008 BPB (proven at L=1) for the final best-run.
+# run_with "Stab: vs mixer_depth=5 NaN (was Run 39)" "cfg['mixer_depth'] = 5; cfg['stable_parametrization'] = True"
+# run_with "Stab: vs lifting_hidden_mult=2 NaN" "cfg['lifting_hidden_mult'] = 2; cfg['stable_parametrization'] = True"
+# run_with "Stab: vs C=2048 lr=0.02 NaN (was Run 63)" "cfg['C'] = 2048; cfg['lr'] = 0.02; cfg['stable_parametrization'] = True"
 run_with "Stab: vs new-baseline+lr=0.02+exp_param NaN" "$NEW_BASELINE; cfg['lr'] = 0.02; cfg['exp_parametrization'] = True; cfg['stable_parametrization'] = True"
 
 # --- Compatibility tests: stab sub-features at the stable W&S baseline ---
