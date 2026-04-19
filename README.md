@@ -6,6 +6,8 @@
 
 WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block processes the input sequence using learned lifting wavelet decomposition, Fast Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FHT, and wavelet reconstruction. Combined with expanded MLPs and cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache.
 
+<br>
+
 <p align="center">
 · <a href="#installation">Installation</a><br>
 · <a href="#training">Training</a><br>
@@ -16,6 +18,8 @@ WaveletLM is a wavelet-based, attention-free language model that replaces attent
 · <a href="#license">License</a><br>
 · <a href="#references">References</a>
 </p>
+
+<br>
 
 ## Installation
 
