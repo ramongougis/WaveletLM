@@ -232,6 +232,8 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 - Does this token contain more than one word?
 - What is the frequency with which this token is used in deceptive contexts?
 
+Note that these are simply examples which may or may not be useful. Any feature label whatsoever can be set, along with any assignment of vectoral coefficients for each token to match the feature label.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
