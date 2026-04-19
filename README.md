@@ -10,24 +10,19 @@
 
 WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block processes the input sequence using learned lifting wavelet decomposition, Fast Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FHT, and wavelet reconstruction. Combined with expanded MLPs and cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache.
 
+**Contents:** [Installation](#installation) · [Training](#training) · [Generation](#generation) · [Architecture](#architecture) · [Multinodal](#multinodal) · [Results](#results) · [Post-Release Plans](#post-release-plans) · [License](#license) · [References](#references)
+
 ## Installation
 
-Requires Python 3.10+ and PyTorch 2.8+.
-
-```bash
-pip install torch datasets tiktoken tqdm
-```
-
-Clone the repo:
+Requires Python 3.10+, PyTorch 2.8+, and CUDA.
 
 ```bash
 git clone https://github.com/ramongougis/WaveletLM.git
 cd WaveletLM
+pip install torch datasets tiktoken tqdm numpy
 ```
 
-## Usage
-
-### Training
+## Training
 
 The configuration lives in `config.json`. Edit it to set model dimensions, dataset, optimizer, and hardware options, then run:
 
@@ -35,26 +30,34 @@ The configuration lives in `config.json`. Edit it to set model dimensions, datas
 python train.py
 ```
 
-Key config options:
+The shipped defaults reproduce the headline ~880M-parameter WikiText-103 run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, 5 epochs, 2.0× dropout). Key options:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `C` | 1024 | Mixer working width (power of 2) |
-| `layers` | 20 | Number of WaveletLM blocks |
+| `C` | 2048 | Mixer working width (power of 2) |
+| `layers` | 2 | Number of WaveletLM blocks |
 | `mlp_expansion` | 20 | MLP hidden dim multiplier |
-| `levels` | 9 | Wavelet decomposition levels (~log2(block_size)) |
+| `levels` | 5 | Wavelet decomposition levels (~log2(block_size)) |
+| `epochs` | 5 | Training epochs |
+| `block_size` | 256 | Context length |
 | `dataset` | wikitext-103 | HuggingFace dataset name |
 | `optimizer` | Adagrad | Adagrad or AdamW |
 | `amp_dtype` | fp16 | fp16 or bf16 |
 
-Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`runs.md`](runs.md).
+Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`runs.md`](runs.md). The full default run takes ~14h on an RTX 5090; drop `epochs` to 1 for a quick smoke test.
 
-### Generation
+## Generation
 
 ```bash
-# Default generation without inference strategies enabled
+# Default generation example without inference strategies enabled
+python generate.py --checkpoint logs/<run_dir>/best_model.pt
+```
+
+```bash
+# Some additional options
 python generate.py --checkpoint logs/<run_dir>/best_model.pt \
-    --prompt "The history of" --num_tokens 512
+    --prompt "Put a prompt here." --num_tokens 1024 --seed 1337 --n 1 \
+    --temperature 1.0
 ```
 
 Optional inference strategies:
@@ -187,7 +190,7 @@ Output tokens
 
 </details>
 
-## Multinodal
+### Multinodal
 
 WaveletLM supports a product-of-experts mode where multiple independent model cells process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in config.
 
