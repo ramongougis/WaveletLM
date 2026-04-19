@@ -213,9 +213,35 @@ WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no K
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
-## Planned Feature: Semantic Embedding
+## Post-Release Plans
 
-A feature planned for immediate post-release is the optional replacement of the learned token embedding with a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
+### Model comparisons
+
+Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized. See [`runs.md`](runs.md#planned-model-comparisons-wikitext-103-matched-compute).
+
+### Dataset comparisons
+
+The best WaveletLM config trained on WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, and OpenWebText separately to gauge performance. See [`runs.md`](runs.md#planned-dataset-comparisons-best-config-feasible-epochs).
+
+### Scaled-up model (B200)
+
+The current headline model (882.51M params: L=2, C=2048, MLP=20, PKM/FwPKM=16384) was trained on a single RTX 5090 due to budget constraints. A B200 (192 GB HBM3e) unlocks roughly an order of magnitude more parameter budget at training time and makes several scaling levers practical to stack simultaneously:
+
+- **Width (C):** 2048 → 4096 (mixer working width)
+- **Depth (L):** 2 → 4–8 (WaveletLM blocks)
+- **MLP expansion:** 20 → 50–200 (primary knowledge-storage lever; monotonic BPB contributor in ablations)
+- **PKM / FwPKM keys:** 16384 → 65536 (4× sparse memory capacity)
+
+The target is a ~10–15B parameter configuration chosen after the 5090 sweep completes. Two training targets are planned:
+
+- **WikiText-103 only**, for an apples-to-apples comparison against the 5090 headline run and against prior same-dataset baselines (Transformer-XL, S4).
+- **Multi-dataset training** across a broader mix (PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, OpenWebText, and WikiText-103), establishing WaveletLM's behavior as a general-purpose language model across domains rather than a single-benchmark result.
+
+fp16 inference should fit a single RTX 4090 (24 GB); Post-training quantization (PTQ with per-scale mixed precision, 8/4/2-bit) is expected to drop inference VRAM below 8 GB, enabling deployment on consumer-class GPUs. See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
+
+### Semantic embedding
+
+An optional replacement of the learned token embedding with a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
 
 **Why WaveletLM is structurally well-suited to this:** the spectral mixer operates directly on human-readable features instead of learned token similarity in the style of attention. Each semantic concept's temporal signal is decomposed at multiple scales, letting interpretable concepts at the input be processed at different temporal granularities.
 

@@ -44,7 +44,8 @@
 40. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
 41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
 42. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-43. [Run Details](#run-details)
+43. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+44. [Run Details](#run-details)
 
 ---
 
@@ -469,24 +470,25 @@ Per-scale mixed precision leveraging WaveletLM's wavelet decomposition. Coarse s
 
 ### Best run: optimal config, 10 epochs, seed = 1337
 
-Target config: C=1024, L=20, SLW=true, mlp_expansion=200, PKM=65536, FwPKM=65536, optimal booleans + dropout from sweeps. ~12B params. Requires B200 (192 GB HBM3e).
+Same config as the 5-epoch best run above, extended to 10 epochs. Stays on 5090 rather than scaling up to a B200-class run (MLP=200 / PKM=65536 / L=20 was the earlier B200 target but would entangle param-count, epochs, and seed in one step; kept as a possible post-release follow-up). Dropout may be bumped from 2.0× to 2.5× if the 5-epoch curve shows late-epoch overfit.
 
-| Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
-|-----|--------|---------------|--------|---------------|------------------|-------|
-|   | | | ~12B | | ~140 GB / ~24 GB (fp16) | fp16 inference fits on a single 4090 |
-|   | | | ~12B | | ~140 GB / ~6 GB (PTQ) | With PTQ; inference fits on RTX 4060 (8 GB) |
+**Config:** L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 10ep, 2.0× dropout (possibly 2.5×). **882.51M params.** Schedule: 58,457 steps/epoch × 10 = 584,570 total steps; warmup = 175,371 steps (30%).
+
+| Run | Seed | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
+|-----|------|--------|---------------|--------|---------------|------------------|-------|
+|   | 1337 | | | 882.51M | ~28h (est., 5090) | ~17 GB / ~3 GB (fp16) | Primary 10-epoch result |
 
 ### Seed variance: best WaveletLM config
 
-3 runs at the best/most expensive config, varying only the seed. Reports mean ± std to establish statistical significance of BPB results.
+2 additional seeds at the same 10-epoch config above, for mean ± std reporting. 3-seed total (1337 from the primary run + 42 + 7). Establishes statistical significance of the headline BPB number.
 
 | Run | Seed | Folder | BPB (sliding) | Notes |
 |-----|------|--------|---------------|-------|
-|   | 1337 | | | Primary (from sweeps) |
+|   | 1337 | | | From "Best run" above |
 |   | 42   | | | |
 |   | 7    | | | |
 
-Mean BPB: _ ± _
+Mean BPB: _ ± _. Total variance-study compute (2 additional seeds): ~56h on 5090.
 
 ### Planned: model comparisons (WikiText-103, matched compute)
 
@@ -509,6 +511,30 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 | BookCorpusOpen | `bookcorpusopen` | Fiction | | | |
 | TinyStories | `tinystories` | Simple narratives | | | Regression test |
 | OpenWebText | `openwebtext` | Web text | | | |
+
+### Post-release: scaled-up B200 configuration
+
+Budget-unconstrained follow-up to the 5090-bound headline run. Specific config chosen after the 5-epoch / 10-epoch 5090 sweeps complete and their BPB/VRAM curves identify the highest-leverage scaling axis. All four levers below are in play; exact numbers pending.
+
+| Lever | 5090 headline | B200 target | Rationale |
+|-------|--------------|-------------|-----------|
+| `C` (mixer width) | 2048 | 4096 | Doubles mixer expressivity; FHT stays O(C log C) |
+| `layers` | 2 | 4–8 | Depth past L=2 unexplored at C=2048 due to 5090 VRAM |
+| `mlp_expansion` | 20 | 50–200 | Monotonic BPB contributor; primary knowledge-storage lever |
+| `pkm_num_keys` / `fwpkm_num_keys` | 16384 | 65536 | 4× sparse memory capacity for long-tail patterns |
+| `shared_lifting_weights` | true | true | Keeps lifting memory flat with layer scaling |
+| Dropout | 2.0× (possibly 2.5×) | TBD | Likely scales further with added capacity |
+
+Two training targets are planned at this scale:
+
+- **WikiText-103 only** — direct apples-to-apples comparison against the 5090 headline run and against prior same-dataset baselines (Transformer-XL, S4).
+- **Multi-dataset** — training across PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, OpenWebText, and WikiText-103. Establishes WaveletLM's behavior as a general-purpose language model across domains rather than a single-benchmark result.
+
+| Run | Training target | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|----------------|--------|--------|---------------|--------|------------|----------------|-------|
+|   | WikiText-103 only | TBD (target ~10–15B) | | | ~10–15B | ≤192 GB (B200) | ~24 GB (fp16, single 4090) | Headline scale-up, direct comparison to 5090 run |
+|   | Multi-dataset mix | TBD (target ~10–15B) | | per-dataset | ~10–15B | ≤192 GB (B200) | ~24 GB (fp16, single 4090) | General-purpose LM behavior across domains |
+|   | Either + PTQ (per-scale 8/4/2-bit) | inference-only | | matches source | matches source | — | <8 GB | Enables consumer-GPU inference on either checkpoint |
 
 ---
 
