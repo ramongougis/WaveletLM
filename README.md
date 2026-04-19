@@ -13,13 +13,21 @@ WaveletLM is a wavelet-based, attention-free language model that replaces attent
 **Contents:**
 
  · [Installation](#installation)
+
  · [Training](#training)
+
  · [Generation](#generation)
+
  · [Architecture](#architecture)
+
  · [Multinodal](#multinodal)
+
  · [Results](#results)
+
  · [Post-Release Plans](#post-release-plans)
+
  · [License](#license)
+ 
  · [References](#references)
 
 ## Installation
