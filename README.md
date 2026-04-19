@@ -141,7 +141,7 @@ Output tokens
 <details>
 <summary><b>Additional key components</b> (always-on architectural pieces)</summary>
 
-- Pre-norm LayerNorms on both paths of each block, plus one final LayerNorm before the LM head
+- LayerNorms near both ends of each block, plus one final LayerNorm before the LM head
 - Two residual connections per block with learned scalar gating (`learned_residual` in config.json)
 - Learned per-scale weights applied after the inverse FHT — one trainable scalar per wavelet scale
 - Feature padding to the next power of 2, required for the Hadamard transform (`C` → `Cp = next_pow2(C)`)
@@ -199,9 +199,9 @@ Output tokens
 
 </details>
 
-### Multinodal
+### Multinodal Mode
 
-WaveletLM supports a product-of-experts mode where multiple independent model cells process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in config.
+WaveletLM supports a product-of-experts mode where multiple independent model nodes process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in the config. This mode may require additional stability improvements such as a lower learning rate and `stable_parametrization: true`, and acts as an as-yet underexplored capacity/scalability lever.
 
 ## Results
 
