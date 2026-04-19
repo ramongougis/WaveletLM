@@ -230,29 +230,42 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # BLOCK SIZE — at NEW_BASELINE (levels=5 supports any block_size >= 32)
 # =====================================================================
 
-run_with "Block size: 256" "$NEW_BASELINE; cfg['block_size'] = 256"
-run_with "Block size: 1024" "$NEW_BASELINE; cfg['block_size'] = 1024"
+# run_with "Block size: 256" "$NEW_BASELINE; cfg['block_size'] = 256"
+# run_with "Block size: 1024" "$NEW_BASELINE; cfg['block_size'] = 1024"
 
-# =====================================================================
-# GRAD ACCUM — at NEW_BASELINE
-# =====================================================================
+# # =====================================================================
+# # GRAD ACCUM — at NEW_BASELINE
+# # =====================================================================
 
-run_with "Grad accum: 1 (batch=8)" "$NEW_BASELINE; cfg['grad_accum'] = 1"
-run_with "Grad accum: 4 (batch=32)" "$NEW_BASELINE; cfg['grad_accum'] = 4"
+# run_with "Grad accum: 1 (batch=8)" "$NEW_BASELINE; cfg['grad_accum'] = 1"
+# run_with "Grad accum: 4 (batch=32)" "$NEW_BASELINE; cfg['grad_accum'] = 4"
 
-# =====================================================================
-# WARMUP FRACTION — at NEW_BASELINE
-# =====================================================================
+# # =====================================================================
+# # WARMUP FRACTION — at NEW_BASELINE
+# # =====================================================================
 
-run_with "Warmup fraction: 0.1" "$NEW_BASELINE; cfg['warmup_fraction'] = 0.1"
-run_with "Warmup fraction: 0.5" "$NEW_BASELINE; cfg['warmup_fraction'] = 0.5"
+# run_with "Warmup fraction: 0.1" "$NEW_BASELINE; cfg['warmup_fraction'] = 0.1"
+# run_with "Warmup fraction: 0.5" "$NEW_BASELINE; cfg['warmup_fraction'] = 0.5"
 
 # =====================================================================
 # GRAD CLIP — at NEW_BASELINE
 # =====================================================================
 
-run_with "Grad clip: 0.5" "$NEW_BASELINE; cfg['grad_clip'] = 0.5"
-run_with "Grad clip: 2.0" "$NEW_BASELINE; cfg['grad_clip'] = 2.0"
+# run_with "Grad clip: 0.5" "$NEW_BASELINE; cfg['grad_clip'] = 0.5"
+# run_with "Grad clip: 2.0" "$NEW_BASELINE; cfg['grad_clip'] = 2.0"
+
+# =====================================================================
+# BLOCK SIZE FOLLOW-UPS — extend the smaller-is-better trend.
+# block_size=256 was the biggest single-feature win (-0.0140 BPB).
+# block_size=128 probes whether the trend continues.
+# block_size=256 + grad_accum=1 is the critical stacking test for best-run.
+# block_size=64 runs contingent on 128 still winning (max dilation=16 at
+# levels=5 means 64-token context has ~4x dilation headroom; tight but workable).
+# =====================================================================
+
+run_with "Block size: 128" "$NEW_BASELINE; cfg['block_size'] = 128"
+run_with "Block size: 256 + grad_accum=1" "$NEW_BASELINE; cfg['block_size'] = 256; cfg['grad_accum'] = 1"
+run_with "Block size: 64" "$NEW_BASELINE; cfg['block_size'] = 64"
 
 # =====================================================================
 # C=4096 WIDTH SCALING — at NEW_BASELINE (lr=0.02 + exp_param baked in)
