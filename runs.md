@@ -406,7 +406,7 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 |-----|-----------|--------|---------------|--------|------|-------|-------|
 |   | 0.5 | [link](logs/wikitext-103_2026-04-19_03-16-59/log.txt) | 1.1167 | ~840M | 1.82h | -0.0001 | Essentially tied with baseline. Tighter clipping neither helps nor hurts at lr=0.01. |
 |   | 1.0 | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 1.85h | | Baseline (new baseline probe) |
-|   | 2.0 | | | ~840M | | | Looser clipping (pending) |
+|   | 2.0 | [link](logs/wikitext-103_2026-04-19_05-08-30/log.txt) | 1.1244 | ~840M | 1.81h | **+0.0076** | Looser clipping actively hurts — larger allowed gradient norms let occasional spikes corrupt the optimizer state. Confirms `grad_clip=1.0` is optimal, not just conservative. |
 
 ### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
 
