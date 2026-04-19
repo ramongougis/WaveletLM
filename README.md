@@ -89,45 +89,103 @@ Learned Embedding (C)
     |
     v
 +----------------------------+
-| WaveletLM Block (x layers)    |
+| WaveletLM Block (x layers) |
 |                            |
 |  LayerNorm                 |
 |  Lifting Wavelet Decompose |
 |  Fast Hadamard Transform   |
 |  Gated Spectral Mixer      |
-|  Fast Hadamard (inverse)   |
-|  Learned Scale Weights     |
+|  Fast Hadamard Inverse     |
+|  Learned Per-Scale Weights |
 |  Wavelet Reconstruct       |
-|  LayerNorm --> MLP         |
+|  Learned Residual 1        |
+|  LayerNorm                 |
+|  Feedforward Layers (MLP)  |
+|  Learned Residual 2        |
 +----------------------------+
     |
     v
-LayerNorm --> LM Head --> logits
+LayerNorm 
+    |
+    v
+LM Head
+    |
+    v
+Output tokens
 ```
 
 ### Key Components
 
-- **Learnable lifting wavelet decomposition** — predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block. Unlike fixed classical wavelets, these are trained end-to-end with the model, letting the decomposition specialize to language structure while causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient — untying them yields no BPB improvement, suggesting the wavelet acts as a well-conditioned multi-scale feature extractor whose inverse passes through cleanly, while the mixer and MLP between them carry the learned transformation.
+- **Learnable lifting wavelet decomposition**: predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block, trained end-to-end. Causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient; untying yields no BPB improvement, suggesting the wavelet acts as a well-conditioned feature extractor whose inverse passes through cleanly while the mixer and MLP carry the learned transformation.
 
-- **Fast Hadamard Transform (FHT)** — a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length — no quadratic blow-up regardless of context size, and no KV cache at inference.
+- **Fast Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length: no quadratic blow-up regardless of context size, and no KV cache at inference.
 
-- **Per-scale gated spectral mixer (SwiGLU)** — mixes each wavelet scale independently in Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size — versus attention's O(N²) in sequence length.
+- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size - versus attention's O(N²) in sequence length.
 
-- **Expanded MLP (expansion ≥ 20)** — the model's primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. MLP expansion is a monotonic contributor to BPB in our ablations, taking on much of the memorization role that attention plays in Transformer architectures.
+- **Expanded MLP (expansion ≥ 20)**: the model's primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. MLP expansion is a monotonic contributor to BPB in our ablations, taking on much of the memorization role that attention plays in Transformer architectures.
 
-- **Decompose bypass** — a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose wavelet coefficients. Provides cross-layer global context at O(C) cost per token, with no attention required.
+- **Decompose bypass**: a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose wavelet coefficients. Provides cross-layer global context at O(C) cost per token, with no attention required.
+
+<details>
+<summary><b>Additional key components</b> (always-on architectural pieces)</summary>
+
+- Pre-norm LayerNorms on both paths of each block, plus one final LayerNorm before the LM head
+- Two residual connections per block with learned scalar gating (`learned_residual` in config.json)
+- Learned per-scale weights applied after the inverse FHT — one trainable scalar per wavelet scale
+- Feature padding to the next power of 2, required for the Hadamard transform (`C` → `Cp = next_pow2(C)`)
+- Causal zero-padded dilation in the lifting predict/update steps, preserving autoregressive causality at every level
+
+</details>
 
 ### Optional features
 
-- **Per-Layer Embedding** — adds a learned per-channel residual of the original token embedding at each block, letting deeper blocks reach back to the input representation when relevant.
+- **Per-Layer Embedding**: adds a learned per-channel residual of the original token embedding at each block, letting deeper blocks reach back to the input representation when relevant.
 
-- **Product Key Memory / Fast-Weight Product Key Memory** — sparse key-value memory modules that complement the dense MLP, providing parameter-efficient long-tail pattern storage with optional inference-time fast-weight updates.
+- **Product Key Memory / Fast-Weight Product Key Memory**: sparse key-value memory modules that complement the dense MLP, providing parameter-efficient long-tail pattern storage with optional inference-time fast-weight updates.
 
-- **Low-Rank Factorization** — adds a rank-r perturbation `U·V^T` to the spectral mixer, expanding mixing expressivity at trivial parameter cost (rank=4 yields a measurable BPB improvement).
+- **Low-Rank Factorization**: adds a rank-r perturbation `U·V^T` to the spectral mixer, expanding mixing expressivity at trivial parameter cost (rank=4 yields a measurable BPB improvement).
 
-- **Exponential Parametrization** — reparameterizes mixer weights through `exp()`, stabilizing training under high learning rates that would otherwise NaN.
+- **Exponential Parametrization**: reparameterizes mixer weights through `exp()`, stabilizing training under high learning rates that would otherwise NaN.
 
-- **Cross-scale gating (routing mode)** — a learned (S, S) routing matrix that mixes per-scale inputs before each gate, enabling conditional cross-scale interactions (e.g., "when scale 0 shows pattern X, modulate scale 4's processing"). Initialized to identity so it begins as a no-op and only contributes what it learns.
+- **Cross-scale gating (routing mode)**: a learned (S, S) routing matrix that mixes per-scale inputs before each gate, enabling conditional cross-scale interactions (e.g., "when scale 0 shows pattern X, modulate scale 4's processing"). Initialized to identity so it begins as a no-op and only contributes what it learns.
+
+- **Per-scale mixer widths**: asymmetric per-scale mixer capacity. Coarse scales keep full mixer width while fine scales use reduced width via in/out projections. At widths `[1, 1, 1, 0.5, 0.5, 0.5]`, yields a small BPB improvement and a ~23% per-epoch speedup.
+
+- **Wavelet crawl**: learned soft-mixed dilations per wavelet level. Instead of fixed `2^l`, each level sees a softmax-weighted mixture of K candidate offsets around the base dilation, letting the model discover slightly off-power-of-2 receptive fields. K=3 (±1 search radius) is the stable sweet spot.
+
+- **Shared lifting weights**: a single lifting wavelet module shared across all blocks instead of per-block weights. Essentially free on BPB while cutting training VRAM by the weight of L−1 lifting modules (~5–10% at L=2).
+
+- **Looped blocks (Universal Transformer-style)**: apply one shared block K times in place of stacking L distinct blocks. Achieves BPB reduction at fixed parameter count by trading parameters for compute, though the same compute is usually better spent on additional training epochs of the stacked model.
+
+<details>
+<summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
+
+- Cross-layer decompose bypass state carry (`decompose_bypass_cross_window`)
+- Stable-parametrization master flag (`stable_parametrization`)
+- Spectral-norm constraint on mixer weights (`stab_spectral_norm`)
+- MLP final-layer variance scaling (`stab_ff_scaling`)
+- √C embedding output scaling (`stab_embed_scaling`)
+- Projection-out residual-stream scaling (`stab_proj_out_scaling`)
+- Mixer init-epsilon scaling (`stab_mixer_eps_scaling`)
+- Per-level lifting init damping (`stab_lifting_level_scaling`)
+- Multi-basis (K parallel) lifting wavelets (`multi_basis_lifting`, `multi_basis_inits`)
+- Untied reconstruction weights (`untied_reconstruction`)
+- Linear-only lifting networks — no GELU (`lifting_linear_only`)
+- Stacked spectral mixer depth (`mixer_depth`, `mixer_depth_stabilizers`, `mixer_depth_residuals`)
+- LoopLM mode — full-stack iterated inference (`loop_iterations`)
+- Weight tying between embedding and LM head (`tie_embedding_to_lm_head`)
+- Output-projection skip when C equals Cp (`skip_proj_out`)
+- Gradient checkpointing (`gradient_checkpointing`)
+- Stochastic depth (`stochastic_depth_rate`)
+- Per-component dropouts (`dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, `dropout_lm_head`)
+- Lifting-network hidden-dim multiplier (`lifting_hidden_mult`)
+- Lifting initialization choice — Haar / zero / random (`lifting_init`)
+- Lifting dropout (`lifting_dropout`)
+- Spectral mixer gate toggle and activation (`use_mixer_gate`, `mixer_gate_activation`)
+- Non-learned fixed-Haar fallback for the wavelet (`wavelet_mode="haar"`)
+- Multinodal mode and its sub-flags (`multinodal_enabled`, `multinodal_num_cells`, `multinodal_cell_dim`, `multinodal_seeds`, `multinodal_combination`, `multinodal_cross_cell_gating`, `multinodal_features_per_cell`, `multinodal_bagged_eps`)
+
+</details>
 
 ## Multinodal
 
