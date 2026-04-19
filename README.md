@@ -9,14 +9,14 @@ WaveletLM is a wavelet-based, attention-free language model that replaces attent
 <br>
 
 <p align="center">
-· <a href="#installation">Installation</a><br>
-· <a href="#training">Training</a><br>
-· <a href="#generation">Generation</a><br>
-· <a href="#architecture">Architecture</a><br>
-· <a href="#results">Results</a><br>
-· <a href="#post-release-plans">Post-Release Plans</a><br>
-· <a href="#license">License</a><br>
-· <a href="#references">References</a>
+<a href="#installation">Installation</a><br>
+<a href="#training">Training</a><br>
+<a href="#generation">Generation</a><br>
+<a href="#architecture">Architecture</a><br>
+<a href="#results">Results</a><br>
+<a href="#post-release-plans">Post-Release Plans</a><br>
+<a href="#license">License</a><br>
+<a href="#references">References</a>
 </p>
 
 <br>
