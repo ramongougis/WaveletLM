@@ -43,7 +43,7 @@
 39. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
 40. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
 41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-42. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+42. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
 43. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
 44. [Run Details](#run-details)
 
@@ -501,16 +501,21 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 | Mamba | SSM | | | | | | Mamba CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 | RWKV | Linear attention | | | | | | Custom CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 
-### Planned: dataset comparisons (best config, feasible epochs)
+### Planned: dataset comparisons (B200, 20+ epochs, max EBS)
 
-| Dataset | HuggingFace ID | Domain | Folder | BPB (sliding) | Notes |
-|---------|---------------|--------|--------|---------------|-------|
-| WikiText-103 | `wikitext-103` | Wikipedia | | | Primary benchmark |
-| PG-19 | `pg19` | Books (long-range coherence) | | | |
-| Pile ArXiv | `pile-arxiv` | Academic/technical | | | |
-| BookCorpusOpen | `bookcorpusopen` | Fiction | | | |
-| TinyStories | `tinystories` | Simple narratives | | | Regression test |
-| OpenWebText | `openwebtext` | Web text | | | |
+Tests whether WaveletLM's wavelet-mixing inductive bias keeps pace with attention when data isn't the bottleneck — the 882M model on WikiText-103's ~0.5 GB is data-saturated (each token seen ~5×). Each run targets a ~10–50 GB dataset, training on a B200 (or whichever VM is most efficient) for 20+ epochs with effective batch size (MBS × GA) pushed as high as stability allows to fully utilize HBM3e.
+
+**Stability notes:**
+- Large EBS is NaN-prone at `lr=0.01` on 5090 runs (block_size=1024 NaN'd at EBS=8192 tokens; grad_accum=4 NaN'd). At B200 scale, expect to need careful LR-batch retuning and likely `stable_parametrization: true`.
+- WikiText-103 stays included so the existing BPB 1.0247 baseline anchors comparisons.
+
+| Dataset | HuggingFace ID | Approx size | Domain | Folder | BPB (sliding) | Notes |
+|---------|---------------|-------------|--------|--------|---------------|-------|
+| WikiText-103 | `wikitext-103` | ~0.5 GB | Wikipedia | | | Anchor benchmark — compare against 5090 headline |
+| PG-19 | `pg19` | ~11 GB | Books (long-range coherence) | | | Tests long-document behavior |
+| Pile ArXiv | `pile-arxiv` | ~60 GB | Academic/technical | | | Highly structured, formulaic |
+| BookCorpusOpen | `bookcorpusopen` | ~6 GB | Fiction | | | Narrative prose |
+| OpenWebText | `openwebtext` | ~38 GB | Web text | | | Broadest domain; closest to modern LM regime |
 
 ### Post-release: scaled-up B200 configuration
 

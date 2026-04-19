@@ -225,15 +225,15 @@ WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no K
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
-## Post-Release Plans
-
-### Model comparisons
-
-Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized. See [`runs.md`](runs.md#planned-model-comparisons-wikitext-103-matched-compute).
+## Future Plans
 
 ### Dataset comparisons
 
-The best WaveletLM config trained on WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, and OpenWebText separately to gauge performance. See [`runs.md`](runs.md#planned-dataset-comparisons-best-config-feasible-epochs).
+The best WaveletLM config trained on PG-19, Pile-ArXiv, BookCorpusOpen, and/or OpenWebText to gauge performance on more data.
+
+### Model comparisons
+
+Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
 
 ### Scaled-up model (B200)
 
