@@ -183,7 +183,7 @@ Output tokens
 - Lifting dropout (`lifting_dropout`)
 - Spectral mixer gate toggle and activation (`use_mixer_gate`, `mixer_gate_activation`)
 - Non-learned fixed-Haar fallback for the wavelet (`wavelet_mode="haar"`)
-- Multinodal mode and its sub-flags (`multinodal_enabled`, `multinodal_num_cells`, `multinodal_cell_dim`, `multinodal_seeds`, `multinodal_combination`, `multinodal_cross_cell_gating`, `multinodal_features_per_cell`, `multinodal_bagged_eps`)
+- Multinodal feature bagging mode and its sub-flags (`multinodal_enabled`, `multinodal_num_cells`, `multinodal_cell_dim`, `multinodal_seeds`, `multinodal_combination`, `multinodal_cross_cell_gating`, `multinodal_features_per_cell`, `multinodal_bagged_eps`)
 
 </details>
 
