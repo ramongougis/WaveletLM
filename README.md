@@ -213,6 +213,25 @@ WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no K
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
+## Planned Feature: Semantic Embedding
+
+A feature planned for immediate post-release is the optional replacement of the learned token embedding with a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
+
+**Why WaveletLM is structurally well-suited to this:** the spectral mixer operates directly on human-readable features instead of learned token similarity in the style of attention. Each semantic concept's temporal signal is decomposed at multiple scales, letting interpretable concepts at the input be processed at different temporal granularities.
+
+**Expected impact:** improved interpretability at the embedding and low-layer level at a small cost to single-token performance. Extending the scheme to n-gram tokens, and deliberately choosing a set of dimensions for the semantic embedding which maximizes performance versus other such sets while retaining generality across datasets, may allow the model to match or exceed baseline learned embedding performance while retaining the interpretability advantage.
+
+See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for more information.
+
+**Example plain-language features:**
+
+- Is this token a noun?
+- Is this token a person?
+- Is this token associated with anger?
+- Does this token have 3, 4, or 5 syllables?
+- Does this token contain more than one word?
+- What is the frequency with which this token is used in deceptive contexts?
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
