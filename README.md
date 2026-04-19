@@ -57,6 +57,8 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Generation
 
+Weights may be obtained [here](huggingface.co). Replace the `logs/<run_dir>/best_model.pt` paths below with the path to the .pt file.
+
 ```bash
 # Default generation example without inference strategies enabled
 python generate.py --checkpoint logs/<run_dir>/best_model.pt
