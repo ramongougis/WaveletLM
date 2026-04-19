@@ -145,7 +145,7 @@ Output tokens
 
 - LayerNorms near both ends of each block, plus one final LayerNorm before the LM head
 - Two residual connections per block with learned scalar gating (`learned_residual` in config.json)
-- Learned per-scale weights applied after the inverse FHT — one trainable scalar per wavelet scale
+- Learned per-scale weights applied after the inverse FHT - one trainable scalar per wavelet scale
 - Feature padding to the next power of 2, required for the Hadamard transform (`C` → `Cp = next_pow2(C)`)
 - Causal zero-padded dilation in the lifting predict/update steps, preserving autoregressive causality at every level
 
@@ -184,16 +184,16 @@ Output tokens
 - Per-level lifting init damping (`stab_lifting_level_scaling`)
 - Multi-basis (K parallel) lifting wavelets (`multi_basis_lifting`, `multi_basis_inits`)
 - Untied reconstruction weights (`untied_reconstruction`)
-- Linear-only lifting networks — no GELU (`lifting_linear_only`)
+- Linear-only lifting networks - no GELU (`lifting_linear_only`)
 - Stacked spectral mixer depth (`mixer_depth`, `mixer_depth_stabilizers`, `mixer_depth_residuals`)
-- LoopLM mode — full-stack iterated inference (`loop_iterations`)
+- LoopLM mode - full-stack iterated inference (`loop_iterations`)
 - Weight tying between embedding and LM head (`tie_embedding_to_lm_head`)
 - Output-projection skip when C equals Cp (`skip_proj_out`)
 - Gradient checkpointing (`gradient_checkpointing`)
 - Stochastic depth (`stochastic_depth_rate`)
 - Per-component dropouts (`dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, `dropout_lm_head`)
 - Lifting-network hidden-dim multiplier (`lifting_hidden_mult`)
-- Lifting initialization choice — Haar / zero / random (`lifting_init`)
+- Lifting initialization choice - Haar / zero / random (`lifting_init`)
 - Lifting dropout (`lifting_dropout`)
 - Spectral mixer gate toggle and activation (`use_mixer_gate`, `mixer_gate_activation`)
 - Non-learned fixed-Haar fallback for the wavelet (`wavelet_mode="haar"`)
