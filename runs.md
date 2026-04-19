@@ -377,8 +377,8 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 
 | Run | block_size | Folder | BPB (sliding) | Params | Train VRAM | Time | Delta | Notes |
 |-----|------------|--------|---------------|--------|------------|------|-------|-------|
-|   | 64   | | | ~840M | | | | Contingent on block_size=128 still winning. At levels=5 (max dilation 16), 64-token context has ~4× dilation headroom — workable but tight. |
-|   | 128  | | | ~840M | | | | Extend the smaller-is-better trend. 8× headroom over max dilation, still plenty. |
+| ~~64~~ | — | **Cancelled** | — | — | — | — | BS=128 came in worse than BS=256, so the floor is at 256. Not worth probing smaller. |
+|   | 128  | [link](logs/wikitext-103_2026-04-19_07-00-01/log.txt) | 1.1075 | ~840M | 16,573 MiB | 2.74h | -0.0093 | Better than baseline (-0.0093) but **worse than BS=256** (+0.0047). The "more updates" trend plateaus between 256 and 128. BS=256 stays the winner. |
 |   | **256**  | [link](logs/wikitext-103_2026-04-18_16-12-23/log.txt) | **1.1028** | ~840M | 16,680 MiB | 2.16h | **-0.0140** | **Biggest single-feature win so far.** ~2× gradient updates per epoch since dataset splits into more blocks. With levels=5 (max dilation 2^4=16), 256-token context is still ample. |
 |   | 256 + grad_accum=1 | | | ~840M | | | | **Stacking test.** Combines the two "more updates" wins (block_size=256 gives 2×, grad_accum=1 gives another 2× → 4× total updates per epoch). Critical for best-run planning: tells us whether the two wins stack linearly or saturate. |
 |   | 512  | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 18,016 MiB | 1.85h | | Baseline (new baseline probe) |
