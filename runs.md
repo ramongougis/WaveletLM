@@ -329,9 +329,9 @@ The baseline used for all 1-epoch screening ablations. Combines proven wins (lev
 
 > **Note:** exp_param + lr=0.02 NaN'd at this config ([logs/.../2026-04-17_00-27-55](logs/wikitext-103_2026-04-17_00-27-55/log.txt), step 4000 LR=1.82e-02). Worked at L=1 previously but L=2 doubles residual signal accumulation. Re-test once stable_parametrization (spectral_norm in particular) is validated.
 
-| Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|--------|---------------|--------|------------|----------------|-------|
-| TBD (probe pending) | TBD | ~840M | TBD | TBD | Must beat 1.1133 ([old baseline](logs/wikitext-103_2026-04-11_21-09-05/log.txt): levels=9, lr=0.01, with PKM+FwPKM-16384) |
+| Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Time | Notes |
+|--------|---------------|--------|------------|----------------|------|-------|
+| [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1173 | 827.03M | 18,016 MiB | 12,679 MiB | 2.40h | +0.004 BPB vs old baseline (1.1133) but 30% faster and 30% smaller. `per_scale_mixer_widths` was subsequently promoted into the baseline ([logs/.../2026-04-17_14-23-49](logs/wikitext-103_2026-04-17_14-23-49/log.txt), BPB 1.1168), which is the reference used for all Part 1 ablation deltas below. |
 
 ### New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model
 
