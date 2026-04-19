@@ -253,7 +253,7 @@ fp16 inference should fit a single RTX 4090 (24 GB); Post-training quantization 
 
 ### Semantic embedding
 
-An optional replacement of the learned token embedding with a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
+An optional replacement of the learned token embedding to be developed soon is a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
 
 **Why WaveletLM is structurally well-suited to this:** the spectral mixer operates directly on human-readable features instead of learned token similarity in the style of attention. Each semantic concept's temporal signal is decomposed at multiple scales, letting interpretable concepts at the input be processed at different temporal granularities.
 
