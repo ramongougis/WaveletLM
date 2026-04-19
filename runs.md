@@ -329,9 +329,9 @@ The baseline used for all 1-epoch screening ablations. Combines proven wins (lev
 
 > **Note:** exp_param + lr=0.02 NaN'd at this config ([logs/.../2026-04-17_00-27-55](logs/wikitext-103_2026-04-17_00-27-55/log.txt), step 4000 LR=1.82e-02). Worked at L=1 previously but L=2 doubles residual signal accumulation. Re-test once stable_parametrization (spectral_norm in particular) is validated.
 
-| Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|--------|---------------|--------|------------|----------------|-------|
-| TBD (probe pending) | TBD | ~840M | TBD | TBD | Must beat 1.1133 ([old baseline](logs/wikitext-103_2026-04-11_21-09-05/log.txt): levels=9, lr=0.01, with PKM+FwPKM-16384) |
+| Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Time | Notes |
+|--------|---------------|--------|------------|----------------|------|-------|
+| [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1173 | 827.03M | 18,016 MiB | 12,679 MiB | 2.40h | +0.004 BPB vs old baseline (1.1133) but 30% faster and 30% smaller. `per_scale_mixer_widths` was subsequently promoted into the baseline ([logs/.../2026-04-17_14-23-49](logs/wikitext-103_2026-04-17_14-23-49/log.txt), BPB 1.1168), which is the reference used for all Part 1 ablation deltas below. |
 
 ### New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model
 
@@ -375,35 +375,38 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 
 `levels=5` from the new baseline supports any `block_size >= 32`, so no `levels` adjustment is needed when changing context length.
 
-| Run | block_size | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
-|-----|------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 256  | | | ~840M | | | | Half context |
-|   | 512  | TBD | TBD | ~840M | TBD | TBD | | Baseline (new baseline probe) |
-|   | 1024 | | | ~840M | | | | Double context; ~2x VRAM |
+| Run | block_size | Folder | BPB (sliding) | Params | Train VRAM | Time | Delta | Notes |
+|-----|------------|--------|---------------|--------|------------|------|-------|-------|
+|   | 64   | | | ~840M | | | | Contingent on block_size=128 still winning. At levels=5 (max dilation 16), 64-token context has ~4× dilation headroom — workable but tight. |
+|   | 128  | | | ~840M | | | | Extend the smaller-is-better trend. 8× headroom over max dilation, still plenty. |
+|   | **256**  | [link](logs/wikitext-103_2026-04-18_16-12-23/log.txt) | **1.1028** | ~840M | 16,680 MiB | 2.16h | **-0.0140** | **Biggest single-feature win so far.** ~2× gradient updates per epoch since dataset splits into more blocks. With levels=5 (max dilation 2^4=16), 256-token context is still ample. |
+|   | 256 + grad_accum=1 | | | ~840M | | | | **Stacking test.** Combines the two "more updates" wins (block_size=256 gives 2×, grad_accum=1 gives another 2× → 4× total updates per epoch). Critical for best-run planning: tells us whether the two wins stack linearly or saturate. |
+|   | 512  | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 18,016 MiB | 1.85h | | Baseline (new baseline probe) |
+|   | 1024 | [link](logs/wikitext-103_2026-04-18_18-23-56/log.txt) | NaN (3.5220) | ~840M | 24,091 MiB | 1.53h | — | ❌ NaN'd. Effective batch reached 8192 tokens, crossed AMP/fp16 overflow threshold. Would need MBS reduction to recover. |
 
 ### Grad accum — at new baseline
 
-| Run | grad_accum | Effective batch | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|-----------|----------------|--------|---------------|--------|------------|----------------|-------|
-|   | 1 | 8  | | | ~840M | | | Smaller effective batch |
-|   | 2 | 16 | TBD | TBD | ~840M | TBD | TBD | Baseline (new baseline probe) |
-|   | 4 | 32 | | | ~840M | | | Larger effective batch |
+| Run | grad_accum | Effective batch | Folder | BPB (sliding) | Params | Time | Delta | Notes |
+|-----|-----------|----------------|--------|---------------|--------|------|-------|-------|
+|   | **1** | **8**  | [link](logs/wikitext-103_2026-04-18_19-57-53/log.txt) | **1.1092** | ~840M | 2.39h | **-0.0076** | **Solid win.** Half the effective batch → 2× gradient updates per epoch at cost of +29% wall-clock time. |
+|   | 2 | 16 | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 1.85h | | Baseline (new baseline probe) |
+|   | 4 | 32 | [link](logs/wikitext-103_2026-04-18_22-23-30/log.txt) | NaN (3.5221) | ~840M | 1.39h | — | ❌ NaN'd. Effective batch=32 too aggressive at lr=0.01. Same theme as block_size=1024 — larger-batch NaN. |
 
 ### Warmup fraction — at new baseline
 
-| Run | warmup_fraction | Warmup steps | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|-----------------|--------------|--------|---------------|--------|------------|----------------|-------|
-|   | 0.1 | TBD | | | ~840M | | | Short warmup |
-|   | 0.3 | TBD | TBD | TBD | ~840M | TBD | TBD | Baseline (new baseline probe) |
-|   | 0.5 | TBD | | | ~840M | | | Long warmup |
+| Run | warmup_fraction | Folder | BPB (sliding) | Params | Time | Delta | Notes |
+|-----|-----------------|--------|---------------|--------|------|-------|-------|
+|   | 0.1 | [link](logs/wikitext-103_2026-04-18_23-49-03/log.txt) | NaN (3.5220) | ~840M | 1.61h | — | ❌ NaN'd. LR ramped faster than the model could absorb. |
+|   | 0.3 | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 1.85h | | Baseline (new baseline probe) |
+|   | 0.5 | [link](logs/wikitext-103_2026-04-19_01-27-15/log.txt) | 1.1210 | ~840M | 1.79h | +0.0042 | Slightly worse — over-cautious LR ramp means less effective training at peak. 0.3 is the sweet spot. |
 
 ### Grad clip — at new baseline
 
-| Run | grad_clip | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|-----------|--------|---------------|--------|------------|----------------|-------|
-|   | 0.5 | | | ~840M | | | Tighter clipping |
-|   | 1.0 | TBD | TBD | ~840M | TBD | TBD | Baseline (new baseline probe) |
-|   | 2.0 | | | ~840M | | | Looser clipping |
+| Run | grad_clip | Folder | BPB (sliding) | Params | Time | Delta | Notes |
+|-----|-----------|--------|---------------|--------|------|-------|-------|
+|   | 0.5 | [link](logs/wikitext-103_2026-04-19_03-16-59/log.txt) | 1.1167 | ~840M | 1.82h | -0.0001 | Essentially tied with baseline. Tighter clipping neither helps nor hurts at lr=0.01. |
+|   | 1.0 | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 1.85h | | Baseline (new baseline probe) |
+|   | 2.0 | | | ~840M | | | Looser clipping (pending) |
 
 ### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
 
