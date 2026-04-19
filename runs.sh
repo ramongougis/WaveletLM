@@ -265,7 +265,9 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 
 run_with "Block size: 128" "$NEW_BASELINE; cfg['block_size'] = 128"
 run_with "Block size: 256 + grad_accum=1" "$NEW_BASELINE; cfg['block_size'] = 256; cfg['grad_accum'] = 1"
-run_with "Block size: 64" "$NEW_BASELINE; cfg['block_size'] = 64"
+# BS=64 cancelled: BS=128 (1.1075) came in WORSE than BS=256 (1.1028), confirming
+# the block-size floor is around 256. Going smaller would likely regress further.
+# run_with "Block size: 64" "$NEW_BASELINE; cfg['block_size'] = 64"
 
 # =====================================================================
 # C=4096 WIDTH SCALING — at NEW_BASELINE (lr=0.02 + exp_param baked in)
