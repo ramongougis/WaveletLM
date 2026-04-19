@@ -263,32 +263,48 @@ NEW_BASELINE="cfg['layers'] = 2; cfg['C'] = 2048; cfg['mlp_expansion'] = 20; cfg
 # levels=5 means 64-token context has ~4x dilation headroom; tight but workable).
 # =====================================================================
 
-run_with "Block size: 128" "$NEW_BASELINE; cfg['block_size'] = 128"
-run_with "Block size: 256 + grad_accum=1" "$NEW_BASELINE; cfg['block_size'] = 256; cfg['grad_accum'] = 1"
+# run_with "Block size: 128" "$NEW_BASELINE; cfg['block_size'] = 128"
+# run_with "Block size: 256 + grad_accum=1" "$NEW_BASELINE; cfg['block_size'] = 256; cfg['grad_accum'] = 1"
 # BS=64 cancelled: BS=128 (1.1075) came in WORSE than BS=256 (1.1028), confirming
 # the block-size floor is around 256. Going smaller would likely regress further.
 # run_with "Block size: 64" "$NEW_BASELINE; cfg['block_size'] = 64"
 
 # =====================================================================
-# C=4096 WIDTH SCALING — at NEW_BASELINE (lr=0.02 + exp_param baked in)
-# Drops the prior lr=0.01 controls since lr=0.02+exp_param is now standard.
+# DROPPED: C=4096 width scaling probes
+# - lr=0.02 + exp_param NaN'd repeatedly at L=2/C=2048; won't work at C=4096 either.
+# - lr=0.01 variants: likely OOM on 5090, and width past 2048 hits diminishing returns
+#   at MLP=10 (halving the capacity lever that MLP expansion provides).
+# - Revisit post-release on a B200 if we want a width-scaling data point for the paper.
 # =====================================================================
 
-run_with "C=4096: L=1, MLP=10" "$NEW_BASELINE; cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10"
-run_with "C=4096: L=2, MLP=10, MBS=4/GA=4" "$NEW_BASELINE; cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
+# run_with "C=4096: L=1, MLP=10" "$NEW_BASELINE; cfg['layers'] = 1; cfg['C'] = 4096; cfg['mlp_expansion'] = 10"
+# run_with "C=4096: L=2, MLP=10, MBS=4/GA=4" "$NEW_BASELINE; cfg['layers'] = 2; cfg['C'] = 4096; cfg['mlp_expansion'] = 10; cfg['micro_batch_size'] = 4; cfg['grad_accum'] = 4"
 
 # =====================================================================
-# REDUCED LEVELS AT SCALE — at NEW_BASELINE, 5 epochs, 2.0x dropout
-# Tests whether levels<5 still wins at L=2/C=2048 now that NEW_BASELINE
-# already has levels=5 (from the L=20 finding). The levels=5 entry is
-# the canonical 5-epoch best-run candidate.
+# DROPPED: levels=1 and levels=2 at 5 epochs
+# 1-epoch screening already showed levels=5 is the sweet spot at L=2/C=2048.
+# No reason to expect levels=1 or levels=2 to beat levels=5 at 5 epochs when
+# they were also worse at 1 epoch. Only the levels=5 variant is retained and
+# promoted to the full best-run candidate below.
+# =====================================================================
+
+# run_with "5ep+2.0x dropout: levels=1" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 1; cfg['per_scale_mixer_widths'] = None; $DROPOUT_2X"
+# run_with "5ep+2.0x dropout: levels=2" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 2; cfg['per_scale_mixer_widths'] = None; $DROPOUT_2X"
+
+# =====================================================================
+# 5-EPOCH BEST-RUN CANDIDATE: all proven 1-epoch wins stacked.
+# Features in NEW_BASELINE: L=2, C=2048, MLP=20, PLE, levels=5, lr=0.01,
+# low_rank=4, per_scale_mixer_widths.
+# Added here: BS=256 + GA=1 (the big "more updates" win), cross_scale_gating,
+# wavelet_crawl K=3, shared_lifting_weights, PKM+FwPKM-16384, 5 epochs,
+# 2.0x dropout recipe. exp_param and lr=0.02 excluded (proven NaN).
+# Target: BPB < 1.0247 (old best) with realistic upside of breaking BPB 1.0.
+# Estimated time: ~18-20h on 5090.
 # =====================================================================
 
 DROPOUT_2X="cfg['dropout_embedding'] = 0.2; cfg['dropout_projection'] = 0.1; cfg['dropout_mixer'] = 0.1; cfg['dropout_mlp'] = 0.1; cfg['dropout_lm_head'] = 0.24"
 
-run_with "5ep+2.0x dropout: levels=1" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 1; cfg['per_scale_mixer_widths'] = None; $DROPOUT_2X"
-run_with "5ep+2.0x dropout: levels=2" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['levels'] = 2; cfg['per_scale_mixer_widths'] = None; $DROPOUT_2X"
-run_with "5ep+2.0x dropout: levels=5 (5-epoch best candidate)" "$NEW_BASELINE; cfg['epochs'] = 5; $DROPOUT_2X"
+run_with "5-epoch best run: all proven wins stacked" "$NEW_BASELINE; cfg['epochs'] = 5; cfg['block_size'] = 256; cfg['grad_accum'] = 1; cfg['eval_interval'] = 250; cfg['cross_scale_gating'] = True; cfg['wavelet_crawl'] = True; cfg['wavelet_crawl_k'] = 3; cfg['shared_lifting_weights'] = True; cfg['pkm_enabled'] = True; cfg['pkm_num_keys'] = 16384; cfg['fwpkm_enabled'] = True; cfg['fwpkm_num_keys'] = 16384; $DROPOUT_2X"
 
 # =====================================================================
 # RESET to baseline after all runs

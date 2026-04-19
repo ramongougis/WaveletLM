@@ -34,20 +34,17 @@
 30. [Grad accum — at new baseline](#grad-accum--at-new-baseline)
 31. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
 32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
-33. [C=4096 width scaling probes: 1 epoch, exp_param, MLP=10](#c4096-width-scaling-probes-1-epoch-exp_param-mlp10)
-34. [Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout](#reduced-levels-at-scale-l2-c2048-5-epochs-20x-dropout)
-35. [Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs](#best-run-candidate-l10-c2048-expparam-lr002-25x-dropout-5-epochs)
-36. [Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs](#shared-lifting--linear-only-at-scale-l10-c2048-5-epochs)
-37. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-38. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-39. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-40. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-41. [Best PTQ combination](#best-ptq-combination)
-42. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-43. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
-44. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-45. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
-46. [Run Details](#run-details)
+33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
+34. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+35. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+36. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+37. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+38. [Best PTQ combination](#best-ptq-combination)
+39. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
+40. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
+41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+42. [Planned: dataset comparisons (best config, feasible epochs)](#planned-dataset-comparisons-best-config-feasible-epochs)
+43. [Run Details](#run-details)
 
 ---
 
@@ -380,7 +377,7 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 | ~~64~~ | — | **Cancelled** | — | — | — | — | BS=128 came in worse than BS=256, so the floor is at 256. Not worth probing smaller. |
 |   | 128  | [link](logs/wikitext-103_2026-04-19_07-00-01/log.txt) | 1.1075 | ~840M | 16,573 MiB | 2.74h | -0.0093 | Better than baseline (-0.0093) but **worse than BS=256** (+0.0047). The "more updates" trend plateaus between 256 and 128. BS=256 stays the winner. |
 |   | **256**  | [link](logs/wikitext-103_2026-04-18_16-12-23/log.txt) | **1.1028** | ~840M | 16,680 MiB | 2.16h | **-0.0140** | **Biggest single-feature win so far.** ~2× gradient updates per epoch since dataset splits into more blocks. With levels=5 (max dilation 2^4=16), 256-token context is still ample. |
-|   | 256 + grad_accum=1 | | | ~840M | | | | **Stacking test.** Combines the two "more updates" wins (block_size=256 gives 2×, grad_accum=1 gives another 2× → 4× total updates per epoch). Critical for best-run planning: tells us whether the two wins stack linearly or saturate. |
+|   | **256 + grad_accum=1** | [link](logs/wikitext-103_2026-04-19_09-46-39/log.txt) | **1.0966** | ~840M | 16,680 MiB | 2.87h | **-0.0202** | **Stacks near-linearly!** Individual wins: BS=256 (-0.0140) + GA=1 (-0.0076) = -0.0216 linear prediction; actual -0.0202 (~94% of linear). First 1-epoch result below 1.10. Critical adoption decision for 5-epoch best-run (see "Best run candidate" section). |
 |   | 512  | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 18,016 MiB | 1.85h | | Baseline (new baseline probe) |
 |   | 1024 | [link](logs/wikitext-103_2026-04-18_18-23-56/log.txt) | NaN (3.5220) | ~840M | 24,091 MiB | 1.53h | — | ❌ NaN'd. Effective batch reached 8192 tokens, crossed AMP/fp16 overflow threshold. Would need MBS reduction to recover. |
 
@@ -408,60 +405,36 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 |   | 1.0 | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1168 | ~840M | 1.85h | | Baseline (new baseline probe) |
 |   | 2.0 | [link](logs/wikitext-103_2026-04-19_05-08-30/log.txt) | 1.1244 | ~840M | 1.81h | **+0.0076** | Looser clipping actively hurts — larger allowed gradient norms let occasional spikes corrupt the optimizer state. Confirms `grad_clip=1.0` is optimal, not just conservative. |
 
-### C=4096 width scaling probes: 1 epoch, exp_param, MLP=10
+### Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs
 
-Testing whether ultra-wide C=4096 with exp_param (enabling lr=0.02) outperforms C=2048. MLP=10 due to VRAM constraints (MLP=20 at C=4096 exceeds 49 GB). All runs include PLE, PKM+FwPKM-16384.
+Consolidated 5-epoch run stacking every proven win from the 1-epoch sweep. lr=0.02 + exp_param was dropped (NaN at L=2); the L=10 variant was dropped in favor of L=2, which produced the best 1-epoch BPB at this width. Baseline for comparison: L=2/C=2048/MLP=20/PLE/PKM+FwPKM-16384/lr=0.01, levels=9, 5ep, 2.0x dropout = BPB 1.0247 (see [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt)).
 
-| Run | L | C | MLP | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|---|------|-----|------|--------|---------------|--------|------------|----------------|-------|
-|   | 1 | 2048 | 20 | 0.01 | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1431 | 617.05M | 14,109 MiB | 3,519 MiB | C=2048 baseline for L=1 comparison |
-|   | 2 | 2048 | 20 | 0.01 | [link](logs/wikitext-103_2026-04-11_21-09-05/log.txt) | 1.1133 | 1180.28M | 24,643 MiB | 6,733 MiB | C=2048 baseline for L=2 comparison |
-|   | 1 | 4096 | 10 | 0.01 | | | ~3.5B | | | | Width scaling baseline |
-|   | 2 | 4096 | 10 | 0.01 | | | ~6.7B | | | | L=2 baseline; may need MBS=2/GA=8 |
-|   | 1 | 4096 | 10 | 0.02 | | | ~3.5B | | | | Exp param + higher LR |
-|   | 2 | 4096 | 10 | 0.02 | | | ~6.7B | | | | Exp param + higher LR; may need MBS=2/GA=8 |
+**Eval interval:** bumped from 100 → 250 from this run forward (~1,000 evals over 5 epochs, ~200 per epoch). Dense enough to resolve warmup / plateaus / tail without eval overhead from the ~50k steps/epoch at `block_size=256`. Drop back to 100 if curves come out noisy or early-stop signal is missed.
 
-### Reduced levels at scale: L=2, C=2048, 5 epochs, 2.0x dropout
-
-Testing whether levels=1 or levels=2 can match the full levels=9 at the optimal L=2/C=2048 config. If viable, the mixer shrinks from 10 scales to 2-3, freeing massive VRAM for wider C or more layers.
-
-| Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | 9 | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | 1.0247 | 1180.28M | 24,883 MiB | 6,733 MiB | Baseline (2.0x dropout best) |
-|   | 1 | | | TBD | | | | 5x fewer mixer params per layer |
-|   | 2 | | | TBD | | | | 3.3x fewer mixer params per layer |
-|   | 5 | | | TBD | | | | Optimal at L=20/C=512; test if it stays optimal at L=2/C=2048 |
-
-### Best run candidate: L=10, C=2048, ExpParam, lr=0.02, ~2.5x dropout, 5 epochs
-
-Combines all proven improvements: exponential parametrization (enables lr=0.02), aggressive dropout, full recipe. Other settings match best ablation results (except layers, kept at L=2).
+Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
+- `block_size=256` + `grad_accum=1`: -0.0202 (~94% linear stacking of the two individual wins)
+- `wavelet_crawl` K=3: -0.0037
+- `cross_scale_gating`: -0.0007
+- `shared_lifting_weights`: -0.0003 + ~1/2 lifting VRAM
+- `per_scale_mixer_widths` [1,1,1,0.5,0.5,0.5]: promoted into new baseline (-23% time, BPB tie)
+- `low_rank=4`: baseline value
+- `levels=5`: baseline value (was tested as a reduction from 9; stayed as baseline)
 
 | Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | L=10, C=2048, MLP=20, PLE, PKM+FwPKM-16384, exp_param, lr=0.02, **cross_scale_gating**, **wavelet_crawl K=3**, **per_scale_mixer_widths**, **low_rank=4**, 5ep. Dropout: emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25 (global cap of 0.25), possibly levels=5 | | | TBD | | | | TODO: verify other settings and param count on RunPod before running. Untied reconstruction tested and dropped — 1-epoch at the new baseline gave BPB 1.1173 (exact tie with baseline) at +168M params and +3% time; no generalization benefit despite extra capacity. Suggests one copy of the lifting wavelet is sufficient for the representation to emerge. ⚠️ **Stability warning — wavelet_crawl:** the K=3 crawl shifts predict/update networks' input distribution off Haar init. Stable at 1 epoch / lr=0.01 but K=5 NaN'd; stacked with exp_param + lr=0.02 + 10 layers + 5 epochs, the softmax drift may compound. **First-suspect on NaN.** Mitigations to try in order: (1) `stab_spectral_norm`, (2) raise crawl init bias from 5.0 → 10.0 or higher, (3) drop wavelet_crawl from this combo if neither helps. |
-
-### Shared lifting / linear-only at scale: L=10, C=2048, 5 epochs
-
-Testing whether shared_lifting_weights and lifting_linear_only enable efficient scaling to L=10 at C=2048 by dramatically reducing per-layer lifting params. All runs use the best candidate config above as baseline (exp_param, lr=0.02, ~2.5x dropout, PLE, PKM+FwPKM-16384, MLP=20).
-
-| Run | SLW | LLO | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|-----|-----|--------|---------------|--------|------------|----------------|-------|
-|   | false | false | | | TBD | | | | L=10 baseline above |
-|   | true  | false | | | TBD | | | | Shared lifting; saves ~675M params |
-|   | false | true  | | | TBD | | | | Linear-only lifting; saves ~370M params |
-|   | true  | true  | | | TBD | | | | Both; maximum param savings |
+|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | | | TBD | | | | Projected BPB ~0.99–1.02. Untied reconstruction was tested and dropped (1-epoch tie at +168M params, +3% time). Multi-basis lifting dropped (NaN even with tightened init). Exp param dropped (NaN at L=2 + lr=0.02). Iterative refinement / cross-time feedback / stability bundle all dropped after rescue tests. |
 
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
 Per-scale mixed precision leveraging WaveletLM's wavelet decomposition. Coarse scales (high-level semantics) get more bits; fine scales (local detail) tolerate aggressive quantization. All runs use the same trained checkpoint — no retraining needed.
 
-**Baseline checkpoint:** L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5ep, 2.0x dropout. BPB 1.0247. See [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt).
+**Baseline checkpoint:** the 5-epoch best run above (L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 2.0x dropout). Previous PTQ baseline was the levels=9 checkpoint at BPB 1.0247; switching to the consolidated best-run checkpoint once it completes.
 
 ### PTQ: Uniform quantization (all components same bits)
 
 | Run | Bits | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|------|--------|---------------|------------------|----------------|-------|-------|
-|   | 16 (baseline) | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | 1.0247 | ~2,250 MiB (fp16) | 6,733 MiB | | No quantization; 2.0x dropout best run |
+|   | 16 (baseline) | | TBD | TBD | TBD | | No quantization; fp16 reference for the 5-epoch best run |
 |   | 8 | | | | | | Uniform INT8 |
 |   | 4 | | | | | | Uniform INT4 — stress test |
 
