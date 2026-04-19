@@ -232,7 +232,7 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 - Does this token contain more than one word?
 - What is the frequency with which this token is used in deceptive contexts?
 
-Note that these are simply examples which may or may not be useful. Any feature label whatsoever can be set, along with any assignment of vectoral coefficients for each token to match the feature label.
+Note that these are simply examples which may or may not be useful. The method by which per-token coefficients are assigned - one-hot/binary, LLM-scored, human-rated, or corpus-derived - is itself an open design choice, each with its own interpretability, quality, and monetary tradeoffs.
 
 ## License
 
