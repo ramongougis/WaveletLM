@@ -67,10 +67,10 @@ run_variant() {
     echo "============================================================"
     set_config "$ENABLED" "$COARSE" "$MID" "$FINE" "$MLP" "$LIFT" "$EMB"
 
-    # 1) Benchmark — BPB + model size + compression ratio
+    # 1) Benchmark — BPB + model size + compression ratio (now quantized before benchmark)
     python train.py 2>&1 | tee "$LOG"
 
-    # 2) Short generation — tok/s, qualitative coherence (not --strategies)
+    # 2) Full-length generation — tok/s + peak inference VRAM + qualitative coherence
     if [ "$ENABLED" = "True" ]; then
         python generate.py --checkpoint "$CKPT" \
             --quantize \
@@ -80,10 +80,10 @@ run_variant() {
             --quantize_mlp_bits "$MLP" \
             --quantize_lifting_bits "$LIFT" \
             --quantize_embedding_bits "$EMB" \
-            --num_tokens 128 --n 1 --metrics 2>&1 | tee -a "$LOG"
+            --num_tokens 512 --n 1 --metrics 2>&1 | tee -a "$LOG"
     else
         python generate.py --checkpoint "$CKPT" \
-            --num_tokens 128 --n 1 --metrics 2>&1 | tee -a "$LOG"
+            --num_tokens 512 --n 1 --metrics 2>&1 | tee -a "$LOG"
     fi
 }
 
@@ -112,16 +112,22 @@ run_variant "16_lifting_only_8"        "True"  16 16 16 16  8 16
 # ===================== Summary =====================
 SUMMARY="$OUT_DIR/summary.txt"
 {
-    printf "%-28s | %-8s | %-8s | %-14s | %-10s\n" "variant" "BPB(sl)" "BPB(nov)" "size(MiB)" "compress"
-    printf "%-28s-+-%-8s-+-%-8s-+-%-14s-+-%-10s\n" "----------------------------" "--------" "--------" "--------------" "----------"
+    printf "%-28s | %-8s | %-8s | %-10s | %-8s | %-7s | %-10s\n" \
+        "variant" "BPB(sl)" "BPB(nov)" "size(MiB)" "compress" "tok/s" "peak VRAM"
+    printf "%-28s-+-%-8s-+-%-8s-+-%-10s-+-%-8s-+-%-7s-+-%-10s\n" \
+        "----------------------------" "--------" "--------" "----------" "--------" "-------" "----------"
     for log in "$OUT_DIR"/*.log; do
         [ "$(basename "$log")" = "summary.txt" ] && continue
         NAME=$(basename "$log" .log)
         BPB_SL=$(grep -oP 'BPB:\s+\K[0-9.]+' "$log" | tail -1)
         BPB_NOV=$(grep -oP 'BPB:\s+\K[0-9.]+' "$log" | head -1)
         SIZE=$(grep -oP 'Quantized:\s+\K[0-9.]+' "$log" | head -1)
-        RATIO=$(grep -oP '\K[0-9.]+x compression' "$log" | head -1)
-        printf "%-28s | %-8s | %-8s | %-14s | %-10s\n" "$NAME" "${BPB_SL:-—}" "${BPB_NOV:-—}" "${SIZE:-—}" "${RATIO:-fp16}"
+        RATIO=$(grep -oP '[0-9.]+x compression' "$log" | head -1)
+        TPS=$(grep -oP '\(\K[0-9.]+(?= tok/s\))' "$log" | tail -1)
+        VRAM=$(grep -oP 'Peak GPU memory:\s+\K[0-9.]+' "$log" | tail -1)
+        printf "%-28s | %-8s | %-8s | %-10s | %-8s | %-7s | %-10s\n" \
+            "$NAME" "${BPB_SL:-—}" "${BPB_NOV:-—}" "${SIZE:-—}" "${RATIO:-fp16}" \
+            "${TPS:-—}" "${VRAM:-—}"
     done
 } > "$SUMMARY"
 

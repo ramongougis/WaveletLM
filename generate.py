@@ -569,9 +569,8 @@ def main():
 
     # Resolve device
     device = torch.device(args.device if torch.cuda.is_available() or args.device != 'cuda' else 'cpu')
-    print(f"Device: {device}")
 
-    # Load config
+    # Load config path resolution (run_dir needed before Logger setup)
     if args.config is None:
         run_dir = os.path.dirname(args.checkpoint)
         config_path = os.path.join(run_dir, "config.json")
@@ -579,13 +578,16 @@ def main():
         run_dir = os.path.dirname(args.checkpoint)
         config_path = args.config
 
-    # Log to both stdout and generations.txt
-    gen_file_path = os.path.join(run_dir, "generations.txt")
-    gen_file = open(gen_file_path, 'a', encoding='utf-8')
+    # Match train.py: use the shared Logger class so stdout + generations.txt
+    # get the same timestamped output, with no silent prints.
+    from model import Logger
+    logger = Logger(run_dir, filename="generations.txt", append=True)
+    gen_file_path = logger.log_path
 
     def log(msg=""):
-        print(msg)
-        gen_file.write(msg + "\n")
+        logger.log(msg)
+
+    log(f"Device: {device}")
 
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config not found: {config_path}")
@@ -612,7 +614,7 @@ def main():
     model = model.to(device)
 
     # Load checkpoint
-    print(f"Loading checkpoint: {args.checkpoint}")
+    log(f"Loading checkpoint: {args.checkpoint}")
     load_checkpoint(model, args.checkpoint)
     model.eval()
 
@@ -627,17 +629,17 @@ def main():
 
     if config.get('quantize_enabled', False):
         q_stats = quantize_model(model, config)
-        print(f"[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
-              f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
-              f"({q_stats['compression_ratio']:.2f}x)")
+        log(f"[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
+            f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
+            f"({q_stats['compression_ratio']:.2f}x)")
 
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"Model: {total_params/1e6:.2f}M parameters")
+    log(f"Model: {total_params/1e6:.2f}M parameters")
 
     # Encode prompt
     prompt_ids = enc.encode(args.prompt)
     if not prompt_ids:
-        print("[WARNING] Empty prompt, using [0]")
+        log("[WARNING] Empty prompt, using [0]")
         prompt_ids = [0]
     input_tensor = torch.tensor([prompt_ids], dtype=torch.long, device=device)
 
@@ -711,7 +713,7 @@ def main():
         peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
         log(f"\nPeak GPU memory: {peak_mem:.0f} MiB")
 
-    gen_file.close()
+    logger.close()
     print(f"Saved to {gen_file_path}")
 
 
