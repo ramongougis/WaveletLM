@@ -667,10 +667,12 @@ def main():
         fwpkm_chunk_size=args.fwpkm_chunk_size,
     )
 
-    gen_file.write("\n" + "=" * 60 + "\n")
-    gen_file.write(f"Generation run: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    gen_file.write(f"Checkpoint: {args.checkpoint}\n")
-    gen_file.write("=" * 60 + "\n\n")
+    log("")
+    log("=" * 60)
+    log(f"Generation run: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    log(f"Checkpoint: {args.checkpoint}")
+    log("=" * 60)
+    log("")
 
     log(f"Prompt: {args.prompt}")
     log(f"Generating {args.num_tokens} tokens (temp={args.temperature}, top_p={args.top_p})...")
