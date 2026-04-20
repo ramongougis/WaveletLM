@@ -245,6 +245,7 @@ The current headline model (882.51M params: L=2, C=2048, MLP=20, PKM/FwPKM=16384
 - **Depth (L):** 2 → 4–8 (WaveletLM blocks)
 - **MLP expansion:** 20 → 50–200 (primary knowledge-storage lever; monotonic BPB contributor in ablations)
 - **PKM / FwPKM keys:** 16384 → 65536 (4× sparse memory capacity)
+- **Training precision:** fp16 → **FP8** (E4M3/E5M2 via Blackwell native tensor cores), for ~2× training throughput and ~30–40% memory reduction. Requires Transformer Engine (or torchao) plus per-tensor dynamic scaling to handle FP8's narrow range; bf16 was previously tried as a wider-range alternative and regressed, so the stability recipe is non-trivial.
 
 The target is a ~10–15B parameter configuration chosen after the 5090 sweep completes. Two training targets are planned:
 

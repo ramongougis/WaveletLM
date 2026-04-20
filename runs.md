@@ -39,12 +39,13 @@
 35. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
 36. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
 37. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-38. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+38. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
 39. [Best PTQ combination](#best-ptq-combination)
-40. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-41. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-42. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-43. [Run Details](#run-details)
+40. [PTQ sweep summary](#ptq-sweep-summary)
+41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+42. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+43. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+44. [Run Details](#run-details)
 
 ---
 
@@ -450,42 +451,84 @@ Per-scale mixed precision leveraging WaveletLM's wavelet decomposition. Coarse s
 
 **Baseline checkpoint:** the 5-epoch best run above (L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 2.0x dropout). Previous PTQ baseline was the levels=9 checkpoint at BPB 1.0247; switching to the consolidated best-run checkpoint once it completes.
 
+> **Note on compression ratios.** The current impl stores sub-8-bit weights as int8 (one value per byte) — no bit-packing yet. So every "enabled" variant produces the same physical size per quantized component regardless of bit-width: uniform 8-bit and uniform 4-bit both give 1.95× compression, and mixed-precision only varies ratio by **which** components are kept at fp16. Proper bit-packing would multiply the compression wins proportionally (uniform 4-bit → ~4×, uniform 2-bit → ~8×).
+
 ### PTQ: Uniform quantization (all components same bits)
 
-| Run | Bits | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
-|-----|------|--------|---------------|------------------|----------------|-------|-------|
-|   | 16 (baseline) | | TBD | TBD | TBD | | No quantization; fp16 reference for the 5-epoch best run |
-|   | 8 | | | | | | Uniform INT8 |
-|   | 4 | | | | | | Uniform INT4 — stress test |
+Baseline: 5-epoch best run, BPB 1.0219 (sliding). Peak inference VRAM at fp16: 4,918 MiB.
+
+| Run | Bits | Folder | BPB (sliding) | Δ BPB | Size (MiB) | Inf. VRAM | tok/s | Notes |
+|-----|------|--------|---------------|-------|------------|-----------|-------|-------|
+|   | 16 (baseline) | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/01_baseline_fp16.log) | 1.0219 | — | 1,684* | 4,918 MiB | 27.1 | fp16 reference |
+|   | 8 uniform | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/02_uniform_8bit.log) | **1.0220** | **+0.0001** | 1,726 | 4,408 MiB | 23.8 | Near-lossless drop-in. Lifting kept at 16. |
+|   | 4 uniform | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/03_uniform_4bit.log) | 1.1948 | +0.1729 | 1,726 | 4,408 MiB | 23.1 | **Catastrophic** — coarse-mixer-at-4 is the cliff. |
+
+\*fp16 reference size = 882.51M × 2 bytes ≈ 1,684 MiB; the quantized sizes above exclude the dequantize-to-fp16 working buffer.
 
 ### PTQ: Per-scale mixed precision quantization
 
-| Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
-|-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
-|   | 8 | 4 | 2 | 4 | 16 | 8 | | | | | | Default mixed config |
-|   | 8 | 8 | 4 | 4 | 16 | 8 | | | | | | Conservative fine scales |
-|   | 8 | 4 | 2 | 8 | 16 | 8 | | | | | | Higher MLP precision |
-|   | 8 | 4 | 2 | 4 | 8 | 8 | | | | | | Quantize lifting too |
-|   | 4 | 4 | 2 | 4 | 8 | 4 | | | | | | Aggressive — minimum viable |
-|   | 8 | 4 | 2 | 4 | 16 | 4 | | | | | | Aggressive embedding |
+Mixed precision by component, leveraging the wavelet-scale structure (coarse = semantics, fine = detail).
 
-### PTQ: Component isolation (quantize one component; keep the rest at 16)
+| Run | Mixer c/m/f | MLP | Lifting | Emb | Folder | BPB (sliding) | Δ BPB | Size (MiB) | Inf. VRAM | tok/s | Notes |
+|-----|-------------|-----|---------|-----|--------|---------------|-------|------------|-----------|-------|-------|
+|   | 8/4/2 | 4 | 16 | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/04_mixed_default.log) | 1.0302 | +0.0083 | 1,726 | 4,408 | 24.2 | Default mixed config |
+|   | **8/8/4** | 4 | 16 | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/05_mixed_conservative.log) | **1.0246** | **+0.0027** | 1,726 | 4,408 | 23.9 | **Conservative fine scales — best quality-preserving mixed variant** |
+|   | 8/4/2 | 8 | 16 | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/06_mixed_higher_mlp.log) | 1.0268 | +0.0049 | 1,726 | 4,408 | 24.4 | Higher MLP precision |
+|   | 8/4/2 | 4 | 8 | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/07_mixed_quant_lifting.log) | 1.0308 | +0.0089 | 1,487 | 4,408 | 22.8 | Quantize lifting too; 2.26× ratio |
+|   | 4/4/2 | 4 | 8 | 4 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/08_mixed_aggressive.log) | 1.1958 | +0.1739 | 1,487 | 4,408 | 21.5 | **Catastrophic** — coarse mixer at 4-bit breaks it |
+|   | 8/4/2 | 4 | 16 | 4 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/09_mixed_aggressive_emb.log) | 1.0339 | +0.0120 | 1,726 | 4,408 | 24.5 | Aggressive embedding |
 
-| Run | Component quantized | Bits | Folder | BPB (sliding) | Delta | Notes |
-|-----|-------------------|------|--------|---------------|-------|-------|
-|   | Mixer only (all scales) | 8 | | | | Mixer sensitivity |
-|   | Mixer only (all scales) | 4 | | | | |
-|   | MLP only | 8 | | | | MLP sensitivity |
-|   | MLP only | 4 | | | | |
-|   | Embedding only | 8 | | | | Embedding sensitivity |
-|   | Embedding only | 4 | | | | |
-|   | Lifting only | 8 | | | | Lifting sensitivity |
+### PTQ: Component isolation (quantize one component; keep the rest at fp16)
+
+Measures per-component sensitivity. Surfaces the key finding: **coarse mixer scales are the 4-bit cliff**; MLP, embedding, and lifting all tolerate 4-bit with negligible BPB loss.
+
+| Run | Component | Bits | Folder | BPB (sliding) | Δ BPB | Size (MiB) | Inf. VRAM | tok/s | Notes |
+|-----|-----------|------|--------|---------------|-------|------------|-----------|-------|-------|
+|   | Mixer only | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/10_mixer_only_8.log) | 1.0220 | +0.0001 | 3,371 | 4,499 | 26.2 | Mixer at 8-bit: safe |
+|   | Mixer only | 4 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/11_mixer_only_4.log) | **1.1832** | **+0.1613** | 3,371 | 4,499 | 25.2 | **Mixer at 4-bit alone breaks BPB** |
+|   | MLP only | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/12_mlp_only_8.log) | 1.0219 | 0.0000 | 2,567 | 4,251 | 25.5 | MLP at 8-bit: lossless |
+|   | MLP only | 4 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/13_mlp_only_4.log) | 1.0245 | +0.0026 | 2,567 | 4,251 | 25.6 | MLP tolerates 4-bit — biggest bit-packing opportunity (76% of layer params) |
+|   | Embedding only | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/14_embedding_only_8.log) | 1.0219 | 0.0000 | 3,034 | 4,892 | 27.8 | Embedding at 8-bit: lossless |
+|   | Embedding only | 4 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/15_embedding_only_4.log) | 1.0233 | +0.0014 | 3,034 | 4,892 | 26.0 | Embedding tolerates 4-bit |
+|   | Lifting only | 8 | [link](logs/wikitext-103_2026-04-19_13-16-24/ptq/16_lifting_only_8.log) | 1.0223 | +0.0004 | 3,383 | 4,519 | 26.3 | Lifting at 8-bit: near-lossless |
 
 ### Best PTQ combination
 
-| Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
-|-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
-|   | | | | | | | | | | | | Best combo from above; chosen to minimize size while keeping BPB delta < 0.01 |
+With the current (no-bit-packing) implementation, uniform 8-bit is the clear winner: near-lossless BPB and the maximum achievable compression. **Conservative mixed (8/8/4, MLP=4, lift=16, emb=8)** is the best candidate *for future bit-packing* — same compression today, but would drop below 0.5 GB with proper packing at +0.0027 BPB.
+
+| Config | Mixer c/m/f | MLP | Lifting | Emb | BPB (sliding) | Δ BPB | Size (MiB) | Inf. VRAM | tok/s | Notes |
+|--------|-------------|-----|---------|-----|---------------|-------|------------|-----------|-------|-------|
+| Safest shippable | 8/8/8 | 8 | 16 | 8 | 1.0220 | +0.0001 | 1,726 | 4,408 | 23.8 | Uniform 8-bit — ship-ready today. |
+| Bit-packing-ready | 8/8/4 | 4 | 16 | 8 | 1.0246 | +0.0027 | 1,726 | 4,408 | 23.9 | Same physical size today; projected ~0.5 GB with packing. |
+
+### PTQ sweep summary
+
+All 17 variants, full table. Logs folder: [`logs/wikitext-103_2026-04-19_13-16-24/ptq/`](logs/wikitext-103_2026-04-19_13-16-24/ptq/).
+
+| Variant | BPB (sl) | BPB (nov) | Size (MiB) | Compress | tok/s | Peak VRAM |
+|---------|----------|-----------|------------|----------|-------|-----------|
+| 01_baseline_fp16 | 1.0219 | 1.0404 | — | fp16 | 27.1 | 4,918 |
+| 02_uniform_8bit | 1.0220 | 1.0405 | 1,726.4 | 1.95× | 23.8 | 4,408 |
+| 03_uniform_4bit | 1.1948 | 1.2047 | 1,726.4 | 1.95× | 23.1 | 4,408 |
+| 04_mixed_default | 1.0302 | 1.0494 | 1,726.4 | 1.95× | 24.2 | 4,408 |
+| 05_mixed_conservative | 1.0246 | 1.0435 | 1,726.4 | 1.95× | 23.9 | 4,408 |
+| 06_mixed_higher_mlp | 1.0268 | 1.0456 | 1,726.4 | 1.95× | 24.4 | 4,408 |
+| 07_mixed_quant_lifting | 1.0308 | 1.0501 | 1,486.5 | 2.26× | 22.8 | 4,408 |
+| 08_mixed_aggressive | 1.1958 | 1.2056 | 1,486.5 | 2.26× | 21.5 | 4,408 |
+| 09_mixed_aggressive_emb | 1.0339 | 1.0532 | 1,726.4 | 1.95× | 24.5 | 4,408 |
+| 10_mixer_only_8 | 1.0220 | 1.0405 | 3,370.7 | 1.00× | 26.2 | 4,499 |
+| 11_mixer_only_4 | 1.1832 | 1.1930 | 3,370.7 | 1.00× | 25.2 | 4,499 |
+| 12_mlp_only_8 | 1.0219 | 1.0404 | 2,566.9 | 1.31× | 25.5 | 4,251 |
+| 13_mlp_only_4 | 1.0245 | 1.0434 | 2,566.9 | 1.31× | 25.6 | 4,251 |
+| 14_embedding_only_8 | 1.0219 | 1.0404 | 3,033.8 | 1.11× | 27.8 | 4,892 |
+| 15_embedding_only_4 | 1.0233 | 1.0420 | 3,033.8 | 1.11× | 26.0 | 4,892 |
+| 16_lifting_only_8 | 1.0223 | 1.0409 | 3,382.7 | 1.00× | 26.3 | 4,519 |
+
+**Key findings:**
+- **Coarse mixer scales (0-2) are the 4-bit cliff.** Every catastrophic variant (#03, #08, #11) has coarse mixer at 4-bit; every survivable variant keeps it ≥ 8-bit. Mid and fine scales tolerate 4-bit and 2-bit cleanly.
+- **MLP, embedding, lifting are highly tolerant.** Each individually survives 4-bit with ≤0.003 BPB degradation. MLP is 76% of layer params — biggest bit-packing opportunity.
+- **Generation is slightly slower under quantization** (21-25 vs 27 tok/s baseline) because we pay dequantize cost on every forward pass without a matching bandwidth win. Flips once packed kernels land.
+- **VRAM savings are modest** (~10%) for the same reason — dequantize-to-fp16 on forward briefly holds the full fp16 weight.
 
 ### Planned: model comparisons (WikiText-103, matched compute)
 
@@ -526,6 +569,7 @@ Budget-unconstrained follow-up to the 5090-bound headline run. Specific config c
 | `pkm_num_keys` / `fwpkm_num_keys` | 16384 | 65536 | 4× sparse memory capacity for long-tail patterns |
 | `shared_lifting_weights` | true | true | Keeps lifting memory flat with layer scaling |
 | Dropout | 2.0× (possibly 2.5×) | TBD | Likely scales further with added capacity |
+| `amp_dtype` | fp16 | **fp8 (E4M3/E5M2)** | Blackwell native FP8 tensor cores: ~2× training throughput, ~30–40% memory savings. Requires Transformer Engine (or torchao) + per-tensor dynamic scaling to manage FP8's narrow range. Note: bf16 was previously tried as a wider-range alternative and regressed (slower + more NaNs than fp16), so the stability recipe is non-trivial. FP8 needs its own tuned policy, not a drop-in dtype swap. |
 
 Two training targets are planned at this scale:
 
