@@ -35,17 +35,16 @@
 31. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
 32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
-34. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-35. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-36. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-37. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
-38. [Best PTQ combination](#best-ptq-combination)
-39. [Best run: optimal config, 10 epochs, seed = 1337](#best-run-optimal-config-10-epochs-seed--1337)
-40. [Seed variance: best WaveletLM config](#seed-variance-best-waveletlm-config)
-41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-42. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-43. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-44. [Run Details](#run-details)
+34. [3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout](#3-seed-10-epoch-variance-study-l2-c2048-25x-dropout)
+35. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+36. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+37. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+38. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-16)
+39. [Best PTQ combination](#best-ptq-combination)
+40. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+41. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+42. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+43. [Run Details](#run-details)
 
 ---
 
@@ -114,7 +113,7 @@ All defaults are optimal with epochs = 3. No boolean change improved BPB. Note t
 
 ### Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
-| Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+| Run | PKM | FwPKM | PKM num keys | FwPKM num keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
 | 4   | off | off | | | [link](#run-4) | 1.1751 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4, MLP only) |
 | 23  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1729 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
@@ -129,7 +128,7 @@ All defaults are optimal with epochs = 3. No boolean change improved BPB. Note t
 
 ### MLP expansion = 50 + memory
 
-| Run | PKM | FwPKM | pkm_num_keys | fwpkm_num_keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+| Run | PKM | FwPKM | PKM num keys | FwPKM num keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
 | 22  | off | off | | | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1409 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
 | 32  | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
@@ -195,19 +194,21 @@ NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below
 
 L=1 baseline uses ~4.7 GB VRAM, leaving ~44 GB headroom. Each run takes ~17 min. Testing mixer depth, MLP width, and large batch sizes as substitutes for model layers.
 
-| Run | mlp_expansion | mixer_depth | lr | MBS | GA | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|---------------|-------------|-----|-----|-----|--------|---------------|--------|------------|----------------|-------|
-| 45  | 1   | 1  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | L=1 baseline |
-| 46  | 100 | 1  | 0.01 | 4  | 4 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2469 | 119.18M | 4,324 MiB | 759 MiB | Massive MLP; -0.0708 vs L=1 baseline; 28min total |
-| 47  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4757 | 114.54M | 7,078 MiB | 719 MiB | MD=10 no residuals; +0.1580 vs L=1 baseline; WORSE |
-| 48  | 1   | 10 | 0.02 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_18-42-34/log.txt) | NaN | 114.54M | — | — | — | Diverged step 4200 (LR=0.019) |
-| 49  | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_19-29-57/log.txt) | 1.3035 | 72.48M | 4,915 MiB | 478 MiB | MD=2 no residuals; -0.0142 vs L=1 baseline |
-| 50  | 1   | 2  | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_19-49-29/log.txt) | 1.2924 | 72.48M | 4,915 MiB | 478 MiB | MD=2 + residuals; -0.0253 vs L=1 baseline |
-| 51  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_20-10-24/log.txt) | 1.2936 | 114.54M | 7,078 MiB | 719 MiB | MD=10 + residuals; -0.0241 vs L=1 baseline |
-| 52  | 100 | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_20-51-04/log.txt) | 1.5202 | 166.50M | 8,564 MiB | 1,041 MiB | MLP=100 + MD=10 no residuals; WORSE than either alone |
-| 53  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4391 | 114.54M | 7,082 MiB | 719 MiB | PLE=true; still worse than baseline (MD=10 no resid dominates) |
-| 54  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | DB=false; NaN — DB provides critical stability at L=1 |
-| 55  | 1   | 10 | 0.01 | 8  | 2 | [link](logs/wikitext-103_2026-04-10_22-48-20/log.txt) | NaN | 354.92M | — | — | — | C=1024, MD=10 no resid; NaN step 4500 (LR=0.01) |
+All runs use MBS=8, GA=2 except run 46 (noted below).
+
+| Run | mlp_expansion | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
+|-----|---------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|
+| 45  | 1   | 1  | 0.01 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3177 | 67.22M | 4,684 MiB | 448 MiB | L=1 baseline |
+| 46  | 100 | 1  | 0.01 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2469 | 119.18M | 4,324 MiB | 759 MiB | **MBS=4, GA=4.** Massive MLP; -0.0708 vs L=1 baseline; 28min total |
+| 47  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4757 | 114.54M | 7,078 MiB | 719 MiB | MD=10 no residuals; +0.1580 vs L=1 baseline; WORSE |
+| 48  | 1   | 10 | 0.02 | [link](logs/wikitext-103_2026-04-10_18-42-34/log.txt) | NaN | 114.54M | — | — | Diverged step 4200 (LR=0.019) |
+| 49  | 1   | 2  | 0.01 | [link](logs/wikitext-103_2026-04-10_19-29-57/log.txt) | 1.3035 | 72.48M | 4,915 MiB | 478 MiB | MD=2 no residuals; -0.0142 vs L=1 baseline |
+| 50  | 1   | 2  | 0.01 | [link](logs/wikitext-103_2026-04-10_19-49-29/log.txt) | 1.2924 | 72.48M | 4,915 MiB | 478 MiB | MD=2 + residuals; -0.0253 vs L=1 baseline |
+| 51  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_20-10-24/log.txt) | 1.2936 | 114.54M | 7,078 MiB | 719 MiB | MD=10 + residuals; -0.0241 vs L=1 baseline |
+| 52  | 100 | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_20-51-04/log.txt) | 1.5202 | 166.50M | 8,564 MiB | 1,041 MiB | MLP=100 + MD=10 no residuals; WORSE than either alone |
+| 53  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4391 | 114.54M | 7,082 MiB | 719 MiB | PLE=true; still worse than baseline (MD=10 no resid dominates) |
+| 54  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | DB=false; NaN — DB provides critical stability at L=1 |
+| 55  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_22-48-20/log.txt) | NaN | 354.92M | — | — | C=1024, MD=10 no resid; NaN step 4500 (LR=0.01) |
 
 ### Layers = 1 ablations, part 2 (bigger C)
 
@@ -421,9 +422,27 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 - `low_rank=4`: baseline value
 - `levels=5`: baseline value (was tested as a reduction from 9; stayed as baseline)
 
-| Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
-|-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | | | TBD | | | | Projected BPB ~0.99–1.02. Untied reconstruction was tested and dropped (1-epoch tie at +168M params, +3% time). Multi-basis lifting dropped (NaN even with tightened init). Exp param dropped (NaN at L=2 + lr=0.02). Iterative refinement / cross-time feedback / stability bundle all dropped after rescue tests. |
+| Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Time | Notes |
+|-----|--------|--------|---------------|--------|------------|----------------|------|-------|
+|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | **1.0219** | 882.51M | 18,235 MiB | 4,915 MiB | 15.79h | Non-overlapping BPB 1.0404. Only -0.0028 vs the levels=9 baseline (1.0247) — well short of the projected 0.99–1.02. |
+
+**Why the projection overshot.** The 94%-linear-stacking estimate was built from 1-epoch deltas. Several of those wins (especially `block_size=256` at -0.0140) come from "more gradient updates per epoch" — but at 5 epochs, the levels=9 baseline has also had time to converge. Short-training advantages compress as training continues; additivity at 1 epoch ≠ additivity at 5.
+
+**Overfit signal.** Final train loss 2.6492 / val loss 3.1925 → **~0.78 bit/token train-val gap**. Best val (3.1728) occurred mid-epoch-5; end-of-run val regressed slightly, indicating the model started drifting past its peak. 2.0× dropout is insufficient regularization for this capacity at 5 epochs, and the gap will widen further at 10 epochs if dropout isn't scaled.
+
+**Dropped features (ablation record).** Untied reconstruction (1-epoch tie at +168M params, +3% time), multi-basis lifting (NaN even with tightened init), exp_param at lr=0.02 (NaN at L=2), iterative refinement, cross-time feedback, stability-parametrization bundle.
+
+### 3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout
+
+Next up. Same config as the 5-epoch run above, doubled to 10 epochs, with dropout scaled to 2.5× (emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25) to counter the overfit signal observed at 2.0×. Three seeds (1337, 42, 7) for mean ± std reporting. Eval interval stays at 250. Estimated ~28h per seed, ~84h total on 5090. Peak training VRAM ~18 GB and peak generation VRAM ~5 GB from the 5-epoch run suggest PTQ work can proceed in tandem on the completed 5-epoch checkpoint.
+
+| Run | Seed | Folder | BPB (sliding) | Train/Val loss | Params | Time | Notes |
+|-----|------|--------|---------------|----------------|--------|------|-------|
+|   | 1337 | | | | 882.51M | ~28h | Primary |
+|   | 42   | | | | 882.51M | ~28h | |
+|   | 7    | | | | 882.51M | ~28h | |
+
+Mean BPB: _ ± _.
 
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
@@ -467,28 +486,6 @@ Per-scale mixed precision leveraging WaveletLM's wavelet decomposition. Coarse s
 | Run | Mixer coarse | Mixer mid | Mixer fine | MLP | Lifting | Embedding | Folder | BPB (sliding) | Model size (MiB) | Inference VRAM | Delta | Notes |
 |-----|-------------|-----------|------------|-----|---------|-----------|--------|---------------|------------------|----------------|-------|-------|
 |   | | | | | | | | | | | | Best combo from above; chosen to minimize size while keeping BPB delta < 0.01 |
-
-### Best run: optimal config, 10 epochs, seed = 1337
-
-Same config as the 5-epoch best run above, extended to 10 epochs. Stays on 5090 rather than scaling up to a B200-class run (MLP=200 / PKM=65536 / L=20 was the earlier B200 target but would entangle param-count, epochs, and seed in one step; kept as a possible post-release follow-up). Dropout may be bumped from 2.0× to 2.5× if the 5-epoch curve shows late-epoch overfit.
-
-**Config:** L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 10ep, 2.0× dropout (possibly 2.5×). **882.51M params.** Schedule: 58,457 steps/epoch × 10 = 584,570 total steps; warmup = 175,371 steps (30%).
-
-| Run | Seed | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
-|-----|------|--------|---------------|--------|---------------|------------------|-------|
-|   | 1337 | | | 882.51M | ~28h (est., 5090) | ~17 GB / ~3 GB (fp16) | Primary 10-epoch result |
-
-### Seed variance: best WaveletLM config
-
-2 additional seeds at the same 10-epoch config above, for mean ± std reporting. 3-seed total (1337 from the primary run + 42 + 7). Establishes statistical significance of the headline BPB number.
-
-| Run | Seed | Folder | BPB (sliding) | Notes |
-|-----|------|--------|---------------|-------|
-|   | 1337 | | | From "Best run" above |
-|   | 42   | | | |
-|   | 7    | | | |
-
-Mean BPB: _ ± _. Total variance-study compute (2 additional seeds): ~56h on 5090.
 
 ### Planned: model comparisons (WikiText-103, matched compute)
 
