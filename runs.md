@@ -36,16 +36,17 @@
 32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
 34. [3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout](#3-seed-10-epoch-variance-study-l2-c2048-25x-dropout)
-35. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-36. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-37. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-38. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
-39. [Best PTQ combination](#best-ptq-combination)
-40. [PTQ sweep summary](#ptq-sweep-summary)
-41. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-42. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-43. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-44. [Run Details](#run-details)
+35. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
+36. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+37. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+38. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+39. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
+40. [Best PTQ combination](#best-ptq-combination)
+41. [PTQ sweep summary](#ptq-sweep-summary)
+42. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+43. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+44. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+45. [Run Details](#run-details)
 
 ---
 
@@ -445,6 +446,24 @@ Next up. Same config as the 5-epoch run above, doubled to 10 epochs, with dropou
 
 Mean BPB: _ ± _.
 
+### PG-19 pre-release benchmark: best seed, 1 epoch
+
+Final pre-release run. Takes the best seed from the 3-seed WT103 study and trains it on PG-19 for 1 epoch. Purpose: publish a second-dataset number alongside WikiText-103 so the release isn't single-benchmark-only, and anchor against Transformer-XL / Compressive Transformer, both of which have reported PG-19 numbers.
+
+**Why 1 epoch is enough:** PG-19 is ~2.5B GPT-2 tokens, ~21× WikiText-103's training corpus. Each token is seen roughly 20× less often than in a 20-epoch WT103 run, so convergence is driven by seeing new data rather than re-seeing the same data. Long-form narrative structure is also less diverse in surface form than Wikipedia — the model shouldn't need many passes to absorb distribution.
+
+**Config:** identical to the 3-seed best run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 2.5× dropout). Only `epochs=1` and `dataset=pg19` change. **882.51M params.**
+
+**Block_size tradeoff:** PG-19 benefits from longer context in principle (long narrative arcs), but keeping `block_size=256` preserves apples-to-apples with WT103 at the same compute cost per step. Raising to 512 or 1024 is a post-release experiment.
+
+**Estimated runtime:** ~63h (~2.6 days) on 5090 using WT103's 3h/epoch × ~21× token ratio. Schedule at current MBS=8/GA=1: ~1.2M steps/epoch, warmup ~360k steps (30%).
+
+| Run | Seed | Folder | BPB (sliding) | Perplexity | Params | Time | Notes |
+|-----|------|--------|---------------|------------|--------|------|-------|
+|   | *best from 3-seed study* | | | | 882.51M | ~63h | Pre-release anchor on PG-19; compare to Transformer-XL / Compressive Transformer |
+
+After this run completes, release proceeds: HuggingFace upload of the best checkpoint (with HF model card), and the post-release items (model comparisons, dataset comparisons, scaled-up B200) follow.
+
 ### Post-training quantization (PTQ): inference-only, applied to best checkpoint
 
 Per-scale mixed precision leveraging WaveletLM's wavelet decomposition. Coarse scales (high-level semantics) get more bits; fine scales (local detail) tolerate aggressive quantization. All runs use the same trained checkpoint — no retraining needed.
@@ -541,7 +560,7 @@ All models use the same GPT-2 tokenizer (tiktoken, 50,257 vocab), same dataset p
 | Mamba | SSM | | | | | | Mamba CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 | RWKV | Linear attention | | | | | | Custom CUDA kernels, TurboQuant, torch.compile, fp16 | Matched compute |
 
-### Planned: dataset comparisons (B200, 20+ epochs, max EBS)
+### Planned: dataset comparisons (B200, max EBS)
 
 Tests whether WaveletLM's wavelet-mixing inductive bias keeps pace with attention when data isn't the bottleneck — the 882M model on WikiText-103's ~0.5 GB is data-saturated (each token seen ~5×). Each run targets a ~10–50 GB dataset, training on a B200 (or whichever VM is most efficient) for 20+ epochs with effective batch size (MBS × GA) pushed as high as stability allows to fully utilize HBM3e.
 
