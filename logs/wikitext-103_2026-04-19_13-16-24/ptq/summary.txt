@@ -1,0 +1,18 @@
+variant                      | BPB(sl)  | BPB(nov) | size(MiB)      | compress  
+-----------------------------+----------+----------+----------------+-----------
+01_baseline_fp16             | 1.0219   | 1.0404   | —            | fp16      
+02_uniform_8bit              | 1.0219   | 1.0404   | 1726.4         | 1.95x compression
+03_uniform_4bit              | 1.0219   | 1.0404   | 1726.4         | 1.95x compression
+04_mixed_default             | 1.0219   | 1.0404   | 1726.4         | 1.95x compression
+05_mixed_conservative        | 1.0219   | 1.0404   | 1726.4         | 1.95x compression
+06_mixed_higher_mlp          | 1.0219   | 1.0404   | 1726.4         | 1.95x compression
+07_mixed_quant_lifting       | 1.0219   | 1.0404   | 1486.5         | 2.26x compression
+08_mixed_aggressive          | 1.0219   | 1.0404   | 1486.5         | 2.26x compression
+09_mixed_aggressive_emb      | 1.0219   | 1.0404   | 1726.4         | 1.95x compression
+10_mixer_only_8              | 1.0219   | 1.0404   | 3370.7         | 1.00x compression
+11_mixer_only_4              | 1.0219   | 1.0404   | 3370.7         | 1.00x compression
+12_mlp_only_8                | 1.0219   | 1.0404   | 2566.9         | 1.31x compression
+13_mlp_only_4                | 1.0219   | 1.0404   | 2566.9         | 1.31x compression
+14_embedding_only_8          | 1.0219   | 1.0404   | 3033.8         | 1.11x compression
+15_embedding_only_4          | 1.0219   | 1.0404   | 3033.8         | 1.11x compression
+16_lifting_only_8            | 1.0219   | 1.0404   | 3382.7         | 1.00x compression
