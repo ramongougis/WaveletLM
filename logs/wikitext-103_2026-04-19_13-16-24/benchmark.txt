@@ -1,127 +1,170 @@
-[2026-04-20 06:44:33] === BENCHMARK ONLY MODE ===
-[2026-04-20 06:44:33] Run directory: logs/wikitext-103_2026-04-19_13-16-24
-[2026-04-20 06:44:33] Starting WaveletLM Benchmark on WIKITEXT-103
-[2026-04-20 06:44:33] Device: cuda, AMP: True (fp16)
-[2026-04-20 06:44:33] 
-[2026-04-20 06:44:33] 	dataset                             : wikitext-103
-[2026-04-20 06:44:33] 	out_dir                             : logs
-[2026-04-20 06:44:33] 	compile                             : True
-[2026-04-20 06:44:33] 	seed                                : 1337
-[2026-04-20 06:44:33] 	epochs                              : 10
-[2026-04-20 06:44:33] 	micro_batch_size                    : 8
-[2026-04-20 06:44:33] 	grad_accum                          : 1
-[2026-04-20 06:44:33] 	block_size                          : 256
-[2026-04-20 06:44:33] 	eval_interval                       : 250
-[2026-04-20 06:44:33] 	skip_warmup_saves                   : True
-[2026-04-20 06:44:33] 	C                                   : 2048
-[2026-04-20 06:44:33] 	layers                              : 2
-[2026-04-20 06:44:33] 	levels                              : 5
-[2026-04-20 06:44:33] 	low_rank                            : 4
-[2026-04-20 06:44:33] 	mlp_expansion                       : 20
-[2026-04-20 06:44:33] 	mlp_layers                          : 2
-[2026-04-20 06:44:33] 	pkm_enabled                         : True
-[2026-04-20 06:44:33] 	pkm_num_keys                        : 16384
-[2026-04-20 06:44:33] 	pkm_top_k                           : 32
-[2026-04-20 06:44:33] 	pkm_heads                           : 1
-[2026-04-20 06:44:33] 	fwpkm_enabled                       : True
-[2026-04-20 06:44:33] 	fwpkm_num_keys                      : 16384
-[2026-04-20 06:44:33] 	fwpkm_top_k                         : 32
-[2026-04-20 06:44:33] 	fwpkm_heads                         : 1
-[2026-04-20 06:44:33] 	fwpkm_inference_updates             : False
-[2026-04-20 06:44:33] 	fwpkm_update_lr                     : 0.01
-[2026-04-20 06:44:33] 	fwpkm_chunk_size                    : 64
-[2026-04-20 06:44:33] 	wavelet_mode                        : lifting
-[2026-04-20 06:44:33] 	shared_lifting_weights              : True
-[2026-04-20 06:44:33] 	untied_reconstruction               : False
-[2026-04-20 06:44:33] 	multi_basis_lifting                 : False
-[2026-04-20 06:44:33] 	multi_basis_inits                   : ['haar', 'random']
-[2026-04-20 06:44:33] 	cross_scale_gating                  : True
-[2026-04-20 06:44:33] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
-[2026-04-20 06:44:33] 	stable_parametrization              : False
-[2026-04-20 06:44:33] 	stab_spectral_norm                  : False
-[2026-04-20 06:44:33] 	stab_ff_scaling                     : False
-[2026-04-20 06:44:33] 	stab_embed_scaling                  : False
-[2026-04-20 06:44:33] 	stab_proj_out_scaling               : False
-[2026-04-20 06:44:33] 	stab_mixer_eps_scaling              : False
-[2026-04-20 06:44:33] 	stab_lifting_level_scaling          : False
-[2026-04-20 06:44:33] 	looped_blocks                       : False
-[2026-04-20 06:44:33] 	looped_blocks_count                 : 8
-[2026-04-20 06:44:33] 	wavelet_crawl                       : True
-[2026-04-20 06:44:33] 	wavelet_crawl_k                     : 3
-[2026-04-20 06:44:33] 	lifting_linear_only                 : False
-[2026-04-20 06:44:33] 	lifting_hidden_mult                 : 1
-[2026-04-20 06:44:33] 	lifting_init                        : haar
-[2026-04-20 06:44:33] 	lifting_dropout                     : 0.0
-[2026-04-20 06:44:33] 	use_mixer_gate                      : True
-[2026-04-20 06:44:33] 	mixer_gate_activation               : silu
-[2026-04-20 06:44:33] 	mixer_depth                         : 1
-[2026-04-20 06:44:33] 	mixer_depth_stabilizers             : False
-[2026-04-20 06:44:33] 	mixer_depth_residuals               : False
-[2026-04-20 06:44:33] 	decompose_bypass                    : True
-[2026-04-20 06:44:33] 	decompose_bypass_cross_window       : True
-[2026-04-20 06:44:33] 	learned_residual                    : True
-[2026-04-20 06:44:33] 	skip_proj_out                       : False
-[2026-04-20 06:44:33] 	stochastic_depth_rate               : 0.0
-[2026-04-20 06:44:33] 	dropout_embedding                   : 0.25
-[2026-04-20 06:44:33] 	dropout_projection                  : 0.125
-[2026-04-20 06:44:33] 	dropout_mixer                       : 0.125
-[2026-04-20 06:44:33] 	dropout_mlp                         : 0.125
-[2026-04-20 06:44:33] 	dropout_lm_head                     : 0.25
-[2026-04-20 06:44:33] 	optimizer                           : Adagrad
-[2026-04-20 06:44:33] 	optimizer_eps                       : 2e-13
-[2026-04-20 06:44:33] 	lr                                  : 0.01
-[2026-04-20 06:44:33] 	min_lr                              : 0.0002
-[2026-04-20 06:44:33] 	warmup_fraction                     : 0.3
-[2026-04-20 06:44:33] 	grad_clip                           : 1.0
-[2026-04-20 06:44:33] 	tie_embedding_to_lm_head            : False
-[2026-04-20 06:44:33] 	gradient_checkpointing              : False
-[2026-04-20 06:44:33] 	use_amp                             : True
-[2026-04-20 06:44:33] 	amp_dtype                           : fp16
-[2026-04-20 06:44:33] 	allow_tf32                          : True
-[2026-04-20 06:44:33] 	generation_prompt                   : The history of
-[2026-04-20 06:44:33] 	temperature                         : 1.0
-[2026-04-20 06:44:33] 	num_new_tokens                      : 512
-[2026-04-20 06:44:33] 	top_p                               : 0.95
-[2026-04-20 06:44:33] 	repetition_penalty                  : 1.1
-[2026-04-20 06:44:33] 	benchmark_only                      : True
-[2026-04-20 06:44:33] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-19_13-16-24
-[2026-04-20 06:44:33] 	multinodal_enabled                  : False
-[2026-04-20 06:44:33] 	multinodal_num_cells                : 2
-[2026-04-20 06:44:33] 	multinodal_cell_dim                 : 512
-[2026-04-20 06:44:33] 	multinodal_seeds                    : [42, 137]
-[2026-04-20 06:44:33] 	multinodal_combination              : average
-[2026-04-20 06:44:33] 	multinodal_cross_cell_gating        : False
-[2026-04-20 06:44:33] 	multinodal_cross_cell_gate_interval : 1
-[2026-04-20 06:44:33] 	multinodal_features_per_cell        : -1
-[2026-04-20 06:44:33] 	multinodal_bagged_eps               : 1e-06
-[2026-04-20 06:44:33] 	quantize_enabled                    : True
-[2026-04-20 06:44:33] 	quantize_mixer_coarse_bits          : 8
-[2026-04-20 06:44:33] 	quantize_mixer_mid_bits             : 8
-[2026-04-20 06:44:33] 	quantize_mixer_fine_bits            : 8
-[2026-04-20 06:44:33] 	quantize_mlp_bits                   : 8
-[2026-04-20 06:44:33] 	quantize_lifting_bits               : 16
-[2026-04-20 06:44:33] 	quantize_embedding_bits             : 8
-[2026-04-20 06:44:33] 	per_layer_embedding                 : True
-[2026-04-20 06:44:33] 	loop_iterations                     : 1
-[2026-04-20 06:44:33] 
-[2026-04-20 06:44:33] [Dataset] Loading wikitext-103 from cache...
-[2026-04-20 06:44:33] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
-[2026-04-20 06:44:33] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
-[2026-04-20 06:44:33] [Dataset] Vocab size: 50257
-[2026-04-20 06:44:38] [Run Folder] logs/wikitext-103_2026-04-19_13-16-24
-[2026-04-20 06:44:38] [Model] 882.51M parameters (882.51M trainable)
-[2026-04-20 06:44:38] 
+[2026-04-20 07:16:21] === BENCHMARK ONLY MODE ===
+[2026-04-20 07:16:21] Run directory: logs/wikitext-103_2026-04-19_13-16-24
+[2026-04-20 07:16:21] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-04-20 07:16:21] Device: cuda, AMP: True (fp16)
+[2026-04-20 07:16:21] 
+[2026-04-20 07:16:21] 	dataset                             : wikitext-103
+[2026-04-20 07:16:21] 	out_dir                             : logs
+[2026-04-20 07:16:21] 	compile                             : True
+[2026-04-20 07:16:21] 	seed                                : 1337
+[2026-04-20 07:16:21] 	epochs                              : 10
+[2026-04-20 07:16:21] 	micro_batch_size                    : 8
+[2026-04-20 07:16:21] 	grad_accum                          : 1
+[2026-04-20 07:16:21] 	block_size                          : 256
+[2026-04-20 07:16:21] 	eval_interval                       : 250
+[2026-04-20 07:16:21] 	skip_warmup_saves                   : True
+[2026-04-20 07:16:21] 	C                                   : 2048
+[2026-04-20 07:16:21] 	layers                              : 2
+[2026-04-20 07:16:21] 	levels                              : 5
+[2026-04-20 07:16:21] 	low_rank                            : 4
+[2026-04-20 07:16:21] 	mlp_expansion                       : 20
+[2026-04-20 07:16:21] 	mlp_layers                          : 2
+[2026-04-20 07:16:21] 	pkm_enabled                         : True
+[2026-04-20 07:16:21] 	pkm_num_keys                        : 16384
+[2026-04-20 07:16:21] 	pkm_top_k                           : 32
+[2026-04-20 07:16:21] 	pkm_heads                           : 1
+[2026-04-20 07:16:21] 	fwpkm_enabled                       : True
+[2026-04-20 07:16:21] 	fwpkm_num_keys                      : 16384
+[2026-04-20 07:16:21] 	fwpkm_top_k                         : 32
+[2026-04-20 07:16:21] 	fwpkm_heads                         : 1
+[2026-04-20 07:16:21] 	fwpkm_inference_updates             : False
+[2026-04-20 07:16:21] 	fwpkm_update_lr                     : 0.01
+[2026-04-20 07:16:21] 	fwpkm_chunk_size                    : 64
+[2026-04-20 07:16:21] 	wavelet_mode                        : lifting
+[2026-04-20 07:16:21] 	shared_lifting_weights              : True
+[2026-04-20 07:16:21] 	untied_reconstruction               : False
+[2026-04-20 07:16:21] 	multi_basis_lifting                 : False
+[2026-04-20 07:16:21] 	multi_basis_inits                   : ['haar', 'random']
+[2026-04-20 07:16:21] 	cross_scale_gating                  : True
+[2026-04-20 07:16:21] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+[2026-04-20 07:16:21] 	stable_parametrization              : False
+[2026-04-20 07:16:21] 	stab_spectral_norm                  : False
+[2026-04-20 07:16:21] 	stab_ff_scaling                     : False
+[2026-04-20 07:16:21] 	stab_embed_scaling                  : False
+[2026-04-20 07:16:21] 	stab_proj_out_scaling               : False
+[2026-04-20 07:16:21] 	stab_mixer_eps_scaling              : False
+[2026-04-20 07:16:21] 	stab_lifting_level_scaling          : False
+[2026-04-20 07:16:21] 	looped_blocks                       : False
+[2026-04-20 07:16:21] 	looped_blocks_count                 : 8
+[2026-04-20 07:16:21] 	wavelet_crawl                       : True
+[2026-04-20 07:16:21] 	wavelet_crawl_k                     : 3
+[2026-04-20 07:16:21] 	lifting_linear_only                 : False
+[2026-04-20 07:16:21] 	lifting_hidden_mult                 : 1
+[2026-04-20 07:16:21] 	lifting_init                        : haar
+[2026-04-20 07:16:21] 	lifting_dropout                     : 0.0
+[2026-04-20 07:16:21] 	use_mixer_gate                      : True
+[2026-04-20 07:16:21] 	mixer_gate_activation               : silu
+[2026-04-20 07:16:21] 	mixer_depth                         : 1
+[2026-04-20 07:16:21] 	mixer_depth_stabilizers             : False
+[2026-04-20 07:16:21] 	mixer_depth_residuals               : False
+[2026-04-20 07:16:21] 	decompose_bypass                    : True
+[2026-04-20 07:16:21] 	decompose_bypass_cross_window       : True
+[2026-04-20 07:16:21] 	learned_residual                    : True
+[2026-04-20 07:16:21] 	skip_proj_out                       : False
+[2026-04-20 07:16:21] 	stochastic_depth_rate               : 0.0
+[2026-04-20 07:16:21] 	dropout_embedding                   : 0.25
+[2026-04-20 07:16:21] 	dropout_projection                  : 0.125
+[2026-04-20 07:16:21] 	dropout_mixer                       : 0.125
+[2026-04-20 07:16:21] 	dropout_mlp                         : 0.125
+[2026-04-20 07:16:21] 	dropout_lm_head                     : 0.25
+[2026-04-20 07:16:21] 	optimizer                           : Adagrad
+[2026-04-20 07:16:21] 	optimizer_eps                       : 2e-13
+[2026-04-20 07:16:21] 	lr                                  : 0.01
+[2026-04-20 07:16:21] 	min_lr                              : 0.0002
+[2026-04-20 07:16:21] 	warmup_fraction                     : 0.3
+[2026-04-20 07:16:21] 	grad_clip                           : 1.0
+[2026-04-20 07:16:21] 	tie_embedding_to_lm_head            : False
+[2026-04-20 07:16:21] 	gradient_checkpointing              : False
+[2026-04-20 07:16:21] 	use_amp                             : True
+[2026-04-20 07:16:21] 	amp_dtype                           : fp16
+[2026-04-20 07:16:21] 	allow_tf32                          : True
+[2026-04-20 07:16:21] 	generation_prompt                   : The history of
+[2026-04-20 07:16:21] 	temperature                         : 1.0
+[2026-04-20 07:16:21] 	num_new_tokens                      : 512
+[2026-04-20 07:16:21] 	top_p                               : 0.95
+[2026-04-20 07:16:21] 	repetition_penalty                  : 1.1
+[2026-04-20 07:16:21] 	benchmark_only                      : True
+[2026-04-20 07:16:21] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-19_13-16-24
+[2026-04-20 07:16:21] 	multinodal_enabled                  : False
+[2026-04-20 07:16:21] 	multinodal_num_cells                : 2
+[2026-04-20 07:16:21] 	multinodal_cell_dim                 : 512
+[2026-04-20 07:16:21] 	multinodal_seeds                    : [42, 137]
+[2026-04-20 07:16:21] 	multinodal_combination              : average
+[2026-04-20 07:16:21] 	multinodal_cross_cell_gating        : False
+[2026-04-20 07:16:21] 	multinodal_cross_cell_gate_interval : 1
+[2026-04-20 07:16:21] 	multinodal_features_per_cell        : -1
+[2026-04-20 07:16:21] 	multinodal_bagged_eps               : 1e-06
+[2026-04-20 07:16:21] 	quantize_enabled                    : True
+[2026-04-20 07:16:21] 	quantize_mixer_coarse_bits          : 16
+[2026-04-20 07:16:21] 	quantize_mixer_mid_bits             : 16
+[2026-04-20 07:16:21] 	quantize_mixer_fine_bits            : 16
+[2026-04-20 07:16:21] 	quantize_mlp_bits                   : 16
+[2026-04-20 07:16:21] 	quantize_lifting_bits               : 8
+[2026-04-20 07:16:21] 	quantize_embedding_bits             : 16
+[2026-04-20 07:16:21] 	per_layer_embedding                 : True
+[2026-04-20 07:16:21] 	loop_iterations                     : 1
+[2026-04-20 07:16:21] 
+[2026-04-20 07:16:21] [Dataset] Loading wikitext-103 from cache...
+[2026-04-20 07:16:21] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-04-20 07:16:21] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-04-20 07:16:21] [Dataset] Vocab size: 50257
+[2026-04-20 07:16:26] [Run Folder] logs/wikitext-103_2026-04-19_13-16-24
+[2026-04-20 07:16:26] [Model] 882.51M parameters (882.51M trainable)
+[2026-04-20 07:16:26] 
 Loading best model for benchmarks...
-[2026-04-20 06:44:46] Best model loaded.
-[2026-04-20 06:44:46] 
-[Quantization] Original: 3366.5 MiB -> Quantized: 1726.4 MiB (1.95x)
-[2026-04-20 06:44:46] 
+[2026-04-20 07:16:33] Best model loaded.
+[2026-04-20 07:16:33] 
+[Quantization] Original: 3366.5 MiB -> Quantized: 3382.7 MiB (1.00x)
+[2026-04-20 07:16:33] 
 [BENCHMARK] Non-overlapping: 1123 windows of length 256
-[2026-04-20 06:44:53] 
+[2026-04-20 07:16:40] 
 [BENCHMARK - Non-overlapping]
-[2026-04-20 06:44:53]   Perplexity: 25.8013
-[2026-04-20 06:44:53]   BPT: 4.6894
-[2026-04-20 06:44:53]   BPB: 1.0405
-[2026-04-20 06:44:53]   Avg Loss: 3.2504
-[2026-04-20 06:44:53] 
+[2026-04-20 07:16:40]   Perplexity: 25.8312
+[2026-04-20 07:16:40]   BPT: 4.6910
+[2026-04-20 07:16:40]   BPB: 1.0409
+[2026-04-20 07:16:40]   Avg Loss: 3.2516
+[2026-04-20 07:16:40] 
 [SLIDING WINDOW] block_size=256, stride=128, min_context=128, 2246 windows
+[2026-04-20 07:16:52] 
+[BENCHMARK - Sliding Window]
+[2026-04-20 07:16:52]   Perplexity: 24.3773
+[2026-04-20 07:16:52]   BPT: 4.6075
+[2026-04-20 07:16:52]   BPB: 1.0223
+[2026-04-20 07:16:52]   Avg Loss: 3.1937
+[2026-04-20 07:16:52]   Stride: 128, Min Context: 128
+[2026-04-20 07:16:52] 
+=== GENERATION — Standard ===
+[2026-04-20 07:16:52] Prompt: The history of
+[2026-04-20 07:17:04] Generated:
+The history of Deenday is not clear , but it was first begun in 361 . The first version of that detailed law codes , sponges and fountains , had been made up including Copernicus ' own map for Britain , the full foot of the shield , a cross and a possession piece with the help of the text . This sign was preserved in a digestor silver plate . In an 1845 work , Rembrandt 's book used the name " Tichhtus Rymriever " with the motto Et tempus con roi apol , meaning " Great Wagon itself " , but this name was later adopted by Symeon of Durham . At a later date , Adrian Peterson suggests that the inscription upon it may Galaxy S4 's name at the Anak Palgens has written the word Nufuluth ( Old Norse " helories or mine " ) . John Koch described it in his book Turamadagnjo ; his work later evolved into an account , Nightjameside Fishing . His involvement as advisor of archeology has been toned down by some historians . Thorvald Górecki then further expands the decoration by citing the commissions of rulers and statesmen , which he termed Emanuel or Orkan . 
+
+
+
+
+ = = Recent developments = = 
+
+
+
+
+ Ulfr Jarl ( Greek : ἔχος " mother of which " means " there ) was enriched from 12th century B.C. ' s name to foundations of an ancestral ancient empire " . The clergyman , a 15th @-@ century skald and one who would hold part of the town of Hell , stood . Sveinn was a deacon from a Armenian scholar from the 8th century until his death in 1732 . In this way he offered his allegiance to the Crusades by appealing the liberties of the peoples inhabiting hostile areas . His sources include an altar small post at circa reference collections deemed to be the house of Traveller that is in communal quarters in Kashmir . The manuscript is syntypes and is referred to as Dakrawdan al @-@ ʿAlʿ itself . Koppány 's library serves as the source for the current " Temple of Charilition " . Furthermore , it includes more pages of missing vertebrae by typical Egyptologists such as Morel , who says it is executed by testaments such as a pederent ammunition camel or a spy of King Antiochus III . 
+
+
+
+
+
+[2026-04-20 07:17:04] === GENERATION — Strategies ===
+[2026-04-20 07:17:04] Prompt: The history of
+[2026-04-20 07:17:22] Generated:
+The history of the WHL is considered one of the most successful and influential teams in hockey . The first game of the AHA 's Stanley Cup finals was held on September 30 , 1920 at Madison Square Garden , when Montreal played against the Red Devils . In that game , Ottawa defeated a number @-@ one goal in each of its last two games to win the Canadian championship . 
+
+
+ The Canadiens were forced into financial difficulty after the 1911 – 12 season due to World War I. It had been rumored by some that the NHL would not be able to play their home matches there but as it turned out , having lost only eight games during this time period . At the end of the 1935 – 36 season , Ottawa finished fifth in the standings for the second consecutive year with an average attendance of 15 @,@ 060 . 
+
+
+ The team began the 1900 – 01 season well ; the Senators played three seasons before being eliminated from the NHA playoffs in 1921 . After finishing the 1937 – 38 season without another loss , the Maroons returned to the AHAC where they won four straight championships between 1906 and 1910 . During that span , the Wanderers again qualified for the Stanley Cup Final , which was held in New York City on October 28 , 1924 , although the trophy remained intact . As part of the deal , the Americans were given permission by the NHL to sell the rights to players already involved . On August 4 , 1925 , Toronto fans attended a ceremony hosted by the Canadiens ' owners , who decided that the agreement meant all potential champions could return to Canada if necessary . However , in December 1934 , Quebec Hockey Club ( PCHA ) folded following the death of Martin Schmeichelberg . This resulted in the merger of the Amateur Athletic Union ( AAU ) and the American Hockey Association ( OHA ) , both affiliated in Ontario . In 1918 , the Tigers merged once more to become the National Hockey League . Although the league did not retain the WHA name , other clubs continued to exist and later joined the professional club for various reasons : the Ottawa squad , led by former player Claude Ruel , became the Calgary team 's manager until 1905 . When Ottawa returned to Ottawa in 1913 , the team changed its colours of blue , black and white . 
+
+
+ After a brief stint in the minor leagues , Ottawa HC played in the CAHL for several years beginning in 1926 , then moved back to Richmond . They quickly found themselves in need of new players such as goaltender Miikka Kiprusoff , who was named captain of the Flames in 1931
+
+[2026-04-20 07:17:22] Metrics: MeanLogP=-1.1525 | MeanH=3.59 | D1=0.639 | D2=0.939 | D3=0.990 | Rep4=0.027
+[2026-04-20 07:17:22] Inference VRAM (approx): 9059 MiB (model=7947 + activations=1112) — use generate.py for accurate measurement

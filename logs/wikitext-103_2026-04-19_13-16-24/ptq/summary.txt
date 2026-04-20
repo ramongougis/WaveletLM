@@ -1,0 +1,18 @@
+variant                      | BPB(sl)  | BPB(nov) | size(MiB)  | compress | tok/s   | peak VRAM 
+-----------------------------+----------+----------+------------+----------+---------+-----------
+01_baseline_fp16             | 1.0219   | 1.0404   | —        | fp16     | 27.1    | 4918      
+02_uniform_8bit              | 1.0220   | 1.0405   | 1726.4     | 1.95x compression | 23.8    | 4408      
+03_uniform_4bit              | 1.1948   | 1.2047   | 1726.4     | 1.95x compression | 23.1    | 4408      
+04_mixed_default             | 1.0302   | 1.0494   | 1726.4     | 1.95x compression | 24.2    | 4408      
+05_mixed_conservative        | 1.0246   | 1.0435   | 1726.4     | 1.95x compression | 23.9    | 4408      
+06_mixed_higher_mlp          | 1.0268   | 1.0456   | 1726.4     | 1.95x compression | 24.4    | 4408      
+07_mixed_quant_lifting       | 1.0308   | 1.0501   | 1486.5     | 2.26x compression | 22.8    | 4408      
+08_mixed_aggressive          | 1.1958   | 1.2056   | 1486.5     | 2.26x compression | 21.5    | 4408      
+09_mixed_aggressive_emb      | 1.0339   | 1.0532   | 1726.4     | 1.95x compression | 24.5    | 4408      
+10_mixer_only_8              | 1.0220   | 1.0405   | 3370.7     | 1.00x compression | 26.2    | 4499      
+11_mixer_only_4              | 1.1832   | 1.1930   | 3370.7     | 1.00x compression | 25.2    | 4499      
+12_mlp_only_8                | 1.0219   | 1.0404   | 2566.9     | 1.31x compression | 25.5    | 4251      
+13_mlp_only_4                | 1.0245   | 1.0434   | 2566.9     | 1.31x compression | 25.6    | 4251      
+14_embedding_only_8          | 1.0219   | 1.0404   | 3033.8     | 1.11x compression | 27.8    | 4892      
+15_embedding_only_4          | 1.0233   | 1.0420   | 3033.8     | 1.11x compression | 26.0    | 4892      
+16_lifting_only_8            | 1.0223   | 1.0409   | 3382.7     | 1.00x compression | 26.3    | 4519      
