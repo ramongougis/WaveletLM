@@ -216,14 +216,14 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 | GPT-2 Large | Transformer | WebText (~40GB) | 774M | ~19[^3] |
 | S4* | SSM* | WikiText-103 (~0.5GB)* | 130M* | ~20[^4]* |
 | GPT-2 Medium | Transformer | WebText (~40GB) | 355M | ~22[^3] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **1.18B** | **~24**[^1] |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **883M** | **~24**[^1] |
 | GPT-2 | Transformer | WebText (~40GB) | 124M | ~29[^3] |
 
 \* Trained and evaluated on the same dataset (direct comparison to WaveletLM).
 
 WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
 
-[^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, 5 epochs, 2.0x dropout. BPB=1.0247. See [training log](logs/wikitext-103_2026-04-14_09-07-12/log.txt).
+[^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 5 epochs, 2.0× dropout. Sliding-window PPL 24.34, BPB 1.0219. See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt).
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
