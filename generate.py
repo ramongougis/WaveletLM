@@ -534,6 +534,28 @@ def main():
                         help="Fix WikiText-103 spacing artifacts (e.g., remove space before periods)")
     parser.add_argument("--n", type=int, default=1,
                         help="Number of completions to generate")
+    # --- Post-training quantization overrides (none set → config.json values used) ---
+    # Each arg accepts both --quantize_* and --ptq_* spellings as aliases.
+    parser.add_argument("--quantize", "--ptq", "--ptq_enabled", action="store_true",
+                        help="Enable post-training quantization (overrides config). Not included in --strategies.")
+    parser.add_argument("--quantize_mixer_coarse_bits", "--ptq_mixer_coarse_bits",
+                        type=int, default=None,
+                        help="Bit-width for mixer scales 0-2 (coarse). Overrides config.")
+    parser.add_argument("--quantize_mixer_mid_bits", "--ptq_mixer_mid_bits",
+                        type=int, default=None,
+                        help="Bit-width for mixer scales 3-5 (mid). Overrides config.")
+    parser.add_argument("--quantize_mixer_fine_bits", "--ptq_mixer_fine_bits",
+                        type=int, default=None,
+                        help="Bit-width for mixer scales 6+ (fine). Overrides config.")
+    parser.add_argument("--quantize_mlp_bits", "--ptq_mlp_bits",
+                        type=int, default=None,
+                        help="Bit-width for MLP / proj_out / PKM query_proj. Overrides config.")
+    parser.add_argument("--quantize_lifting_bits", "--ptq_lifting_bits",
+                        type=int, default=None,
+                        help="Bit-width for lifting wavelet predict/update nets. Overrides config.")
+    parser.add_argument("--quantize_embedding_bits", "--ptq_embedding_bits",
+                        type=int, default=None,
+                        help="Bit-width for token embedding and lm_head. Overrides config.")
     args = parser.parse_args()
 
     # --strategies enables inference strategies matching WaveletLM-research defaults
@@ -593,6 +615,15 @@ def main():
     print(f"Loading checkpoint: {args.checkpoint}")
     load_checkpoint(model, args.checkpoint)
     model.eval()
+
+    # Apply --quantize_* CLI overrides on top of config values
+    if args.quantize:
+        config['quantize_enabled'] = True
+    for key in ('quantize_mixer_coarse_bits', 'quantize_mixer_mid_bits',
+                'quantize_mixer_fine_bits', 'quantize_mlp_bits',
+                'quantize_lifting_bits', 'quantize_embedding_bits'):
+        if getattr(args, key) is not None:
+            config[key] = getattr(args, key)
 
     if config.get('quantize_enabled', False):
         q_stats = quantize_model(model, config)
