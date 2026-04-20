@@ -75,13 +75,13 @@ python generate.py --checkpoint best_model.pt \
 
 ### Inference Strategies:
 
-Can run all strategies together or individual ones. Strategies include entropy-adaptive temperature, lookahead reranking, best-of-n sampling, clean spacing, and wavelet coherence monitoring:
+Can run all strategies together with `--strategies` or individual ones. See `config.json` for a complete list.
 
 ```bash
 # Use all inference strategies
 python generate.py --checkpoint best_model.pt --strategies
 
-# Individual options
+# Some strategies options
 python generate.py --checkpoint best_model.pt --entropy_adaptive \
     --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing \
     --wavelet_coherence
