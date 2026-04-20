@@ -556,6 +556,8 @@ def main():
     parser.add_argument("--quantize_embedding_bits", "--ptq_embedding_bits",
                         type=int, default=None,
                         help="Bit-width for token embedding and lm_head. Overrides config.")
+    parser.add_argument("--quantize8", "--ptq8", action="store_true",
+                        help="Shortcut: uniform 8-bit PTQ across all components.")
     args = parser.parse_args()
 
     # --strategies enables inference strategies matching WaveletLM-research defaults
@@ -619,6 +621,12 @@ def main():
     model.eval()
 
     # Apply --quantize_* CLI overrides on top of config values
+    if args.quantize8:
+        config['quantize_enabled'] = True
+        for key in ('quantize_mixer_coarse_bits', 'quantize_mixer_mid_bits',
+                    'quantize_mixer_fine_bits', 'quantize_mlp_bits',
+                    'quantize_lifting_bits', 'quantize_embedding_bits'):
+            config[key] = 8
     if args.quantize:
         config['quantize_enabled'] = True
     for key in ('quantize_mixer_coarse_bits', 'quantize_mixer_mid_bits',

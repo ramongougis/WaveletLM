@@ -57,41 +57,48 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Generation
 
-Weights may be obtained [here](huggingface.co). Replace the `logs/<run_dir>/best_model.pt` paths below with the path to the .pt file.
+Weights may be obtained [here](huggingface.co). Replace `best_model.pt` below with the appropriate path/name.
 
 ```bash
-# Default generation example without inference strategies enabled
-python generate.py --checkpoint logs/<run_dir>/best_model.pt
-```
+# Recommended generation command
+python generate.py --checkpoint best_model.pt --strategies \
+    --prompt "Your prompt here"
 
-```bash
-# Some additional options
-python generate.py --checkpoint logs/<run_dir>/best_model.pt \
+# Default generation
+python generate.py --checkpoint best_model.pt
+
+# Additional options
+python generate.py --checkpoint best_model.pt \
     --prompt "Put a prompt here." --num_tokens 1024 --seed 1337 --n 1 \
-    --temperature 1.0
+    --temperature 1.0 --strategies --ptq8
 ```
 
-Optional inference strategies:
+### Inference Strategies:
+
+Can run all strategies together or individual ones. Strategies include entropy-adaptive temperature, lookahead reranking, best-of-n sampling, clean spacing, and wavelet coherence monitoring:
 
 ```bash
-# Use all strategies (recommended)
+# Use all inference strategies
 python generate.py --checkpoint best_model.pt --strategies
 
-# Entropy-adaptive temperature
-python generate.py --checkpoint best_model.pt --entropy_adaptive
-
-# Lookahead reranking
-python generate.py --checkpoint best_model.pt --lookahead_k 3 --lookahead_depth 5
-
-# Best-of-N sampling
-python generate.py --checkpoint best_model.pt --best_of_n 5
-
-# Clean WikiText-103 spacing artifacts (remove space before periods)
-python generate.py --checkpoint best_model.pt --clean_spacing
-
-# Wavelet coherence monitoring
-python generate.py --checkpoint best_model.pt --wavelet_coherence
+# Individual options
+python generate.py --checkpoint best_model.pt --entropy_adaptive \
+    --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing \
+    --wavelet_coherence
 ```
+
+### Post-training quantization (PTQ; optional)
+
+Near-lossless uniform 8-bit PTQ — recommended when VRAM or checkpoint size matters.
+
+```bash
+python generate.py --checkpoint best_model.pt --ptq8
+```
+
+Effects:
+
++0.0001 BPB (negligible), -10% inference VRAM, -50% checkpoint size, & -12% tok/s until bit-packed kernels land (see [`runs.md`](runs.md#ptq-sweep-summary)).
+
 
 ## Architecture
 
