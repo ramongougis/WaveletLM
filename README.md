@@ -55,6 +55,7 @@ The shipped defaults reproduce the headline ~880M-parameter WikiText-103 run (L=
 
 Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`runs.md`](runs.md). The full default run takes ~14h on an RTX 5090; drop `epochs` to 1 for a quick smoke test.
 
+
 ## Generation
 
 Weights may be obtained [here](huggingface.co). Replace `best_model.pt` below with the appropriate path/name.
@@ -134,7 +135,6 @@ LM Head
     v
 Output tokens
 ```
-
 ### Key Components
 
 - **Learnable lifting wavelet decomposition**: predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block, trained end-to-end. Causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient; untying yields no BPB improvement, suggesting the wavelet acts as a well-conditioned feature extractor whose inverse passes through cleanly while the mixer and MLP carry the learned transformation.
@@ -212,6 +212,7 @@ Output tokens
 
 WaveletLM supports a product-of-experts mode where multiple independent model nodes process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in the config. This mode may require additional stability improvements such as a lower learning rate and `stable_parametrization: true`, and acts as an as-yet underexplored capacity/scalability lever.
 
+
 ## Results
 
 ### WikiText-103 Perplexity Comparison
@@ -233,6 +234,7 @@ WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no K
 [^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 5 epochs, 2.0× dropout. Sliding-window PPL 24.34, BPB 1.0219. See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt).
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
+
 
 ## Future Plans
 
@@ -281,6 +283,7 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 - What is the frequency with which this token is used in deceptive contexts?
 
 Note that these are simply examples which may or may not be useful. The method by which per-token coefficients are assigned - one-hot/binary, LLM-scored, human-rated, or corpus-derived - is itself an open design choice, each with its own interpretability, quality, and monetary tradeoffs.
+
 
 ## License
 
