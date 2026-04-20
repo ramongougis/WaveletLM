@@ -75,7 +75,7 @@ python generate.py --checkpoint best_model.pt \
 
 ### Inference Strategies:
 
-Can run all strategies together with `--strategies` or individual ones. See `config.json` for a complete list.
+Can run all strategies together with `--strategies` or individual ones. Use `--help` for a complete list.
 
 ```bash
 # Use all inference strategies
