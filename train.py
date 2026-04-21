@@ -206,14 +206,28 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
     _prev_cwb = getattr(base_model, 'decompose_bypass_cross_window', False)
     base_model.decompose_bypass_cross_window = False
 
+    # Disable fast-weight inference updates during benchmark. If left on, FwPKM
+    # mutates its value_deltas buffer during every forward pass, making BPB
+    # non-deterministic and contaminating state across benchmark runs.
+    _prev_fwpkm_upd = []
+    for layer in base_model.layers if hasattr(base_model, 'layers') else []:
+        if hasattr(layer, 'fwpkm') and getattr(layer.fwpkm, 'inference_updates', False):
+            _prev_fwpkm_upd.append((layer, layer.fwpkm.inference_updates))
+            layer.fwpkm.inference_updates = False
+
     T = config['block_size']
     batch_size = config['micro_batch_size']
     eval_len = len(eval_data)
     num_windows = (eval_len - 1) // T
 
+    def _restore_flags():
+        base_model.decompose_bypass_cross_window = _prev_cwb
+        for layer, v in _prev_fwpkm_upd:
+            layer.fwpkm.inference_updates = v
+
     if num_windows == 0:
         logger.log("[WARN] Test data too small for evaluation")
-        base_model.decompose_bypass_cross_window = _prev_cwb
+        _restore_flags()
         model.train()
         return None
 
@@ -247,8 +261,8 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
         total_loss += loss_per_token.sum().item()
         total_tokens += B * seq_len
 
-    # Restore the flag so subsequent generation uses its configured value
-    base_model.decompose_bypass_cross_window = _prev_cwb
+    # Restore the flags so subsequent generation uses their configured values
+    _restore_flags()
     model.train()
 
     if total_tokens == 0:
@@ -281,6 +295,19 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
     # earlier window's beginning is a causality leak. Restored before return.
     _prev_cwb = getattr(base_model, 'decompose_bypass_cross_window', False)
     base_model.decompose_bypass_cross_window = False
+
+    # Disable fast-weight inference updates during benchmark (same rationale
+    # as evaluate_full_validation).
+    _prev_fwpkm_upd = []
+    for layer in base_model.layers if hasattr(base_model, 'layers') else []:
+        if hasattr(layer, 'fwpkm') and getattr(layer.fwpkm, 'inference_updates', False):
+            _prev_fwpkm_upd.append((layer, layer.fwpkm.inference_updates))
+            layer.fwpkm.inference_updates = False
+
+    def _restore_flags():
+        base_model.decompose_bypass_cross_window = _prev_cwb
+        for layer, v in _prev_fwpkm_upd:
+            layer.fwpkm.inference_updates = v
 
     T = config['block_size']
     batch_size = config['micro_batch_size']
@@ -339,8 +366,8 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
             total_loss += loss_per_token.sum().item()
             total_scored_tokens += loss_per_token.numel()
 
-    # Restore the flag so subsequent generation uses its configured value
-    base_model.decompose_bypass_cross_window = _prev_cwb
+    # Restore the flags so subsequent generation uses their configured values
+    _restore_flags()
     model.train()
 
     if total_scored_tokens == 0:
