@@ -1,23 +1,41 @@
 #!/bin/bash
-# 3-seed 10-epoch variance study at the best-run config.
-# config.json is already set to L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384,
-# lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths,
-# cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 10 epochs, 2.5x dropout.
-# Each run only overrides `seed` before training.
+# Pre-3-seed probes. Each probe edits only the relevant config keys, runs
+# train.py + generate.py (standard + strategies), commits/pushes, and resets
+# the changed keys before the next probe. Decision criteria for which to
+# adopt are in runs.md (EMA, WD, 2.0x dropout sections).
+#
+# Probe order (cheapest signal first):
+#   1. EMA probe — 1 epoch, decompose_bypass_ema=true
+#   2. WD 1e-6 — 5 epochs
+#   3. WD 1e-7 — 5 epochs
+#
+# After all three complete, manually inspect the BPB/PPL deltas vs the 5-epoch
+# best (1.0201 BPB / 24.21 PPL) and update runs.md before kicking off the
+# 3-seed runs (which live in a separate driver, to be added once the recipe
+# is locked).
 
-set_seed() {
+set_keys() {
+    # Usage: set_keys '{"epochs": 1, "weight_decay": 0.0, ...}'
     python -c "
 import json
 cfg = json.load(open('config.json'))
-cfg['seed'] = $1
+patch = json.loads('''$1''')
+cfg.update(patch)
 json.dump(cfg, open('config.json', 'w'), indent=4)
 "
 }
 
-run_seed() {
-    local SEED="$1"
-    echo "=== 10-epoch run, seed=$SEED ==="
-    set_seed "$SEED"
+run_probe() {
+    local NAME="$1"
+    local PATCH="$2"
+    local RESET_PATCH="$3"
+
+    echo ""
+    echo "============================================================"
+    echo "=== Probe: $NAME"
+    echo "===   patch: $PATCH"
+    echo "============================================================"
+    set_keys "$PATCH"
     python train.py
     LATEST_CKPT=$(ls -dt logs/wikitext-103_*/best_model.pt 2>/dev/null | head -1)
     if [ -n "$LATEST_CKPT" ]; then
@@ -25,20 +43,52 @@ run_seed() {
         python generate.py --checkpoint "$LATEST_CKPT" --strategies
     fi
     git add .
-    git commit --no-edit -m "10-epoch 3-seed variance: seed=$SEED"
+    git commit --no-edit -m "Probe: $NAME"
     git pull --no-edit
     git push
+
+    # Reset the keys this probe changed so the next probe starts from the
+    # post-reset baseline (6 epochs, 2.0x dropout, no EMA, no WD).
+    set_keys "$RESET_PATCH"
 }
 
-run_seed 1337
-run_seed 42
-run_seed 7
+# ====================================================================
+# Probe 1 — EMA probe (~5h)
+# Tests data-dependent EMA replacement of cumulative running mean in
+# decompose_bypass. 1 epoch, single forward pass, structural test.
+# ====================================================================
+run_probe \
+    "EMA probe (1 epoch, decompose_bypass_ema=true)" \
+    '{"epochs": 1, "decompose_bypass_ema": true}' \
+    '{"epochs": 6, "decompose_bypass_ema": false}'
 
-# Reset seed to 1337 for cleanliness
-set_seed 1337
-git add config.json
-git commit --no-edit -m "Reset seed to 1337 after 3-seed variance study"
-git pull --no-edit
-git push
+# ====================================================================
+# Probe 2 — Weight decay 1e-6 (~14h)
+# Low-WD probe. Original WD=1e-3 stalled training; 1e-6 should be small
+# enough to not interact with Adagrad accumulators yet still detectable
+# if WD has any beneficial effect at all.
+# ====================================================================
+run_probe \
+    "WD 1e-6 probe (5 epochs)" \
+    '{"epochs": 5, "weight_decay": 1e-6}' \
+    '{"epochs": 6, "weight_decay": 0.0}'
 
-echo "=== All 3 seeds complete ==="
+# ====================================================================
+# Probe 3 — Weight decay 1e-7 (~14h)
+# Even lower WD. If 1e-6 is harmful or neutral, 1e-7 closes the loop on
+# "WD is not a viable lever for this model."
+# ====================================================================
+run_probe \
+    "WD 1e-7 probe (5 epochs)" \
+    '{"epochs": 5, "weight_decay": 1e-7}' \
+    '{"epochs": 6, "weight_decay": 0.0}'
+
+echo ""
+echo "============================================================"
+echo "=== All probes complete ==="
+echo "===   Compare each probe folder's benchmark.txt to:"
+echo "===     5-epoch best: logs/wikitext-103_2026-04-19_13-16-24"
+echo "===     (BPB 1.0201, PPL 24.21, post-fix eval)"
+echo "===   Update runs.md probe sections with results,"
+echo "===   then update runs.sh for the 3-seed runs at the winning recipe."
+echo "============================================================"
