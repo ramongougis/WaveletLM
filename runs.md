@@ -37,17 +37,18 @@
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
 34. [3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout](#3-seed-10-epoch-variance-study-l2-c2048-25x-dropout)
 35. [Weight decay spot-check (low values): 5 epochs, best architecture](#weight-decay-spot-check-low-values-5-epochs-best-architecture)
-36. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
-37. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-38. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-39. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-40. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
-41. [Best PTQ combination](#best-ptq-combination)
-42. [PTQ sweep summary](#ptq-sweep-summary)
-43. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-44. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-45. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-46. [Run Details](#run-details)
+36. [Decompose-bypass data-dependent EMA probe: 1 epoch](#decompose-bypass-data-dependent-ema-probe-1-epoch)
+37. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
+38. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+39. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+40. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+41. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
+42. [Best PTQ combination](#best-ptq-combination)
+43. [PTQ sweep summary](#ptq-sweep-summary)
+44. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+45. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+46. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+47. [Run Details](#run-details)
 
 ---
 
@@ -462,6 +463,32 @@ Prior WD test used WD=1e-3 on top of 1.5× dropout and stalled training (see [ru
 |-----|-----|--------|---------------|----------------|--------|------|-------|
 |   | 1e-6 | | | | 882.51M | ~14h | Lowest probe first; early-stop if stalling |
 |   | 1e-7 | | | | 882.51M | ~14h | |
+
+### Decompose-bypass data-dependent EMA probe: 1 epoch
+
+Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-mean in `decompose_bypass` (which cannot forget) with a data-dependent EMA:
+
+```
+α_t = σ(W · x_t + b)
+μ_t = α_t ⊙ μ_{t-1} + (1 - α_t) ⊙ x_t
+```
+
+**Motivation.** The current `_compute_running_mean` is a cumsum-based causal average — a 1st-order IIR filter with a pole at z=1 that can't discard stale state. As context grows, old tokens dilute new ones indefinitely. For language, which requires *selective* forgetting at topic/character/clause boundaries, this is a genuine architectural limitation. A σ-gated EMA gives per-channel, per-token control: α≈1 preserves long-range state, α≈0 flushes history.
+
+**Config:** baseline 5-epoch best run config (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights), but `epochs=1` and new flag `decompose_bypass_ema=true`. Gate initialized to σ(0)=0.5 (≈50% retention per channel) so behavior at step 0 is a cleaner version of the cumulative mean before the gate learns.
+
+**Added params:** ~1 Linear(C,C) + bias per block = ~4.2M params per block × 2 blocks = ~8.4M. Negligible.
+
+**Implementation note:** sequential over time (breaks `torch.compile`, wrapped with `@torch.compiler.disable`). Expected ~2-3× slower per forward pass than the cumsum baseline for this probe. Runtime estimate: ~8-10h for 1 epoch vs ~3h baseline. If the direction validates, production version needs an associative scan (e.g., Triton kernel or pytorch equivalent) to remove the slowdown.
+
+**Decision criteria:**
+- BPB drops ≥0.005 vs the baseline new_baseline probe (1.1168): **adopt for release**; re-run the 5-epoch best and 3-seed runs with `decompose_bypass_ema=true`.
+- BPB drops 0.001-0.005: **record as post-release improvement**; keep current for release.
+- BPB ≥ baseline: **cumulative mean was doing less harm than expected**; ship as-is, note in post-release plans that the rigidity isn't the bottleneck.
+
+| Run | Config | Folder | BPB (sliding) | Δ BPB vs 1.1168 | Params | Time | Notes |
+|-----|--------|--------|---------------|-----------------|--------|------|-------|
+|   | `decompose_bypass_ema=true`, else identical to new-baseline 1-epoch probe | | | | ~848M | ~8-10h | σ-gated EMA replaces cumulative mean |
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 

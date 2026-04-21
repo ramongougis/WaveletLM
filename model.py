@@ -835,6 +835,40 @@ def _compute_running_mean(x: torch.Tensor, prev_mean: torch.Tensor = None,
     return history_sum / divisors
 
 
+@torch.compiler.disable
+def _compute_data_dependent_ema(x: torch.Tensor,
+                                gate_weight: torch.Tensor,
+                                gate_bias: torch.Tensor,
+                                prev_ema: torch.Tensor = None) -> torch.Tensor:
+    """Data-dependent EMA for decompose_bypass — selective forgetting variant.
+
+    α_t = σ(W · x_t + b)               per-token, per-channel gate
+    μ_t = α_t ⊙ μ_{t-1} + (1 - α_t) ⊙ x_t
+
+    This is a 1st-order IIR low-pass filter with a dynamic cutoff frequency.
+    When α ≈ 1 the model remembers perfectly; when α ≈ 0 it flushes history
+    and focuses on new content. Replaces the cumulative running mean, which
+    cannot forget.
+
+    Implementation: sequential loop over time (breaks torch.compile, hence
+    the @disable decorator). Expected ~2-3× slowdown per forward pass vs the
+    cumsum-based running mean. Acceptable for a 1-epoch probe; if the
+    direction validates, replace with an associative scan for production.
+    """
+    B, T, C = x.shape
+    alphas = torch.sigmoid(F.linear(x, gate_weight, gate_bias))  # [B, T, C]
+    out = torch.empty_like(x)
+    if prev_ema is None:
+        ema = torch.zeros(B, C, device=x.device, dtype=x.dtype)
+    else:
+        ema = prev_ema
+    for t in range(T):
+        a = alphas[:, t]
+        ema = a * ema + (1.0 - a) * x[:, t]
+        out[:, t] = ema
+    return out
+
+
 # ==============================================================================
 # 7. WaveletLM BLOCK
 # ==============================================================================
@@ -853,6 +887,7 @@ class WaveletLMBlock(nn.Module):
         device=None,
         dtype=None,
         decompose_bypass: bool = True,
+        decompose_bypass_ema: bool = False,
         wavelet_mode: str = "lifting",
         lifting_hidden_mult: int = 1,
         lifting_init: str = "haar",
@@ -960,6 +995,7 @@ class WaveletLMBlock(nn.Module):
                     self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_wavelet)
 
         # Decompose bypass projections
+        self.decompose_bypass_ema = decompose_bypass_ema and decompose_bypass
         if self.decompose_bypass:
             self.history_gains = nn.Parameter(
                 torch.zeros(self.levels + 1, self.C, device=device, dtype=dtype)
@@ -973,6 +1009,17 @@ class WaveletLMBlock(nn.Module):
                 eye_sz = min(self.C, self.C)
                 eye = 0.5 * torch.eye(eye_sz, device=w.device, dtype=w.dtype)
                 w[:eye_sz, :eye_sz] += eye
+
+            if self.decompose_bypass_ema:
+                # Data-dependent EMA gate: α_t = σ(W·x_t + b). Init so initial
+                # behavior approximates "no forgetting" — bias=0 gives α=0.5
+                # per-channel (50% retention), letting the gate learn from there.
+                self.ema_gate = nn.Linear(
+                    self.C, self.C, bias=True, device=device, dtype=dtype
+                )
+                with torch.no_grad():
+                    self.ema_gate.weight.zero_()   # start with α = σ(b) = σ(0) = 0.5
+                    self.ema_gate.bias.zero_()
 
         # Spectral mixers: one per scale, optionally stacked with mixer_depth
         S = levels + 1
@@ -1127,7 +1174,12 @@ class WaveletLMBlock(nn.Module):
         gate_bias_scales = None
 
         if self.decompose_bypass:
-            current_running_mean = _compute_running_mean(x)
+            if self.decompose_bypass_ema:
+                current_running_mean = _compute_data_dependent_ema(
+                    x, self.ema_gate.weight, self.ema_gate.bias,
+                )
+            else:
+                current_running_mean = _compute_running_mean(x)
 
             if prev_state is not None:
                 mixed_context = current_running_mean + self.cross_layer_mix(prev_state)
@@ -1396,6 +1448,7 @@ class WaveletLM(nn.Module):
                 dropout_mlp=config.get('dropout_mlp', 0.0),
                 device=device,
                 decompose_bypass=config.get("decompose_bypass", True),
+                decompose_bypass_ema=config.get("decompose_bypass_ema", False),
                 wavelet_mode=wavelet_mode,
                 lifting_hidden_mult=lifting_hidden_mult,
                 lifting_init=lifting_init,
