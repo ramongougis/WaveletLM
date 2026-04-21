@@ -1,128 +1,201 @@
-[2026-04-21 17:55:52] === BENCHMARK ONLY MODE ===
-[2026-04-21 17:55:52] Run directory: logs/wikitext-103_2026-04-16_08-50-21
-[2026-04-21 17:55:52] Starting WaveletLM Benchmark on WIKITEXT-103
-[2026-04-21 17:55:52] Device: cuda, AMP: True (fp16)
-[2026-04-21 17:55:52] 
-[2026-04-21 17:55:52] 	dataset                             : wikitext-103
-[2026-04-21 17:55:52] 	out_dir                             : logs
-[2026-04-21 17:55:52] 	compile                             : True
-[2026-04-21 17:55:52] 	seed                                : 1337
-[2026-04-21 17:55:52] 	epochs                              : 6
-[2026-04-21 17:55:52] 	micro_batch_size                    : 8
-[2026-04-21 17:55:52] 	grad_accum                          : 1
-[2026-04-21 17:55:52] 	block_size                          : 512
-[2026-04-21 17:55:52] 	eval_interval                       : 250
-[2026-04-21 17:55:52] 	skip_warmup_saves                   : True
-[2026-04-21 17:55:52] 	C                                   : 512
-[2026-04-21 17:55:52] 	layers                              : 20
-[2026-04-21 17:55:52] 	levels                              : 6
-[2026-04-21 17:55:52] 	low_rank                            : 0
-[2026-04-21 17:55:52] 	mlp_expansion                       : 1
-[2026-04-21 17:55:52] 	mlp_layers                          : 2
-[2026-04-21 17:55:52] 	pkm_enabled                         : False
-[2026-04-21 17:55:52] 	pkm_num_keys                        : 529
-[2026-04-21 17:55:52] 	pkm_top_k                           : 32
-[2026-04-21 17:55:52] 	pkm_heads                           : 1
-[2026-04-21 17:55:52] 	fwpkm_enabled                       : False
-[2026-04-21 17:55:52] 	fwpkm_num_keys                      : 529
-[2026-04-21 17:55:52] 	fwpkm_top_k                         : 32
-[2026-04-21 17:55:52] 	fwpkm_heads                         : 1
-[2026-04-21 17:55:52] 	fwpkm_inference_updates             : False
-[2026-04-21 17:55:52] 	fwpkm_update_lr                     : 0.01
-[2026-04-21 17:55:52] 	fwpkm_chunk_size                    : 64
-[2026-04-21 17:55:52] 	wavelet_mode                        : lifting
-[2026-04-21 17:55:52] 	shared_lifting_weights              : False
-[2026-04-21 17:55:52] 	untied_reconstruction               : False
-[2026-04-21 17:55:52] 	multi_basis_lifting                 : False
-[2026-04-21 17:55:52] 	multi_basis_inits                   : ['haar', 'random']
-[2026-04-21 17:55:52] 	cross_scale_gating                  : False
-[2026-04-21 17:55:52] 	per_scale_mixer_widths              : None
-[2026-04-21 17:55:52] 	stable_parametrization              : False
-[2026-04-21 17:55:52] 	stab_spectral_norm                  : False
-[2026-04-21 17:55:52] 	stab_ff_scaling                     : False
-[2026-04-21 17:55:52] 	stab_embed_scaling                  : False
-[2026-04-21 17:55:52] 	stab_proj_out_scaling               : False
-[2026-04-21 17:55:52] 	stab_mixer_eps_scaling              : False
-[2026-04-21 17:55:52] 	stab_lifting_level_scaling          : False
-[2026-04-21 17:55:52] 	looped_blocks                       : False
-[2026-04-21 17:55:52] 	looped_blocks_count                 : 8
-[2026-04-21 17:55:52] 	wavelet_crawl                       : False
-[2026-04-21 17:55:52] 	wavelet_crawl_k                     : 3
-[2026-04-21 17:55:52] 	lifting_linear_only                 : False
-[2026-04-21 17:55:52] 	lifting_hidden_mult                 : 1
-[2026-04-21 17:55:52] 	lifting_init                        : haar
-[2026-04-21 17:55:52] 	lifting_dropout                     : 0.0
-[2026-04-21 17:55:52] 	use_mixer_gate                      : True
-[2026-04-21 17:55:52] 	mixer_gate_activation               : silu
-[2026-04-21 17:55:52] 	mixer_depth                         : 1
-[2026-04-21 17:55:52] 	mixer_depth_stabilizers             : False
-[2026-04-21 17:55:52] 	mixer_depth_residuals               : False
-[2026-04-21 17:55:52] 	decompose_bypass                    : True
-[2026-04-21 17:55:52] 	decompose_bypass_cross_window       : True
-[2026-04-21 17:55:52] 	decompose_bypass_ema                : False
-[2026-04-21 17:55:52] 	learned_residual                    : True
-[2026-04-21 17:55:52] 	skip_proj_out                       : False
-[2026-04-21 17:55:52] 	stochastic_depth_rate               : 0.0
-[2026-04-21 17:55:52] 	dropout_embedding                   : 0.2
-[2026-04-21 17:55:52] 	dropout_projection                  : 0.1
-[2026-04-21 17:55:52] 	dropout_mixer                       : 0.1
-[2026-04-21 17:55:52] 	dropout_mlp                         : 0.1
-[2026-04-21 17:55:52] 	dropout_lm_head                     : 0.24
-[2026-04-21 17:55:52] 	optimizer                           : Adagrad
-[2026-04-21 17:55:52] 	optimizer_eps                       : 2e-13
-[2026-04-21 17:55:52] 	lr                                  : 0.01
-[2026-04-21 17:55:52] 	min_lr                              : 0.0002
-[2026-04-21 17:55:52] 	warmup_fraction                     : 0.3
-[2026-04-21 17:55:52] 	grad_clip                           : 1.0
-[2026-04-21 17:55:52] 	tie_embedding_to_lm_head            : False
-[2026-04-21 17:55:52] 	gradient_checkpointing              : False
-[2026-04-21 17:55:52] 	use_amp                             : True
-[2026-04-21 17:55:52] 	amp_dtype                           : fp16
-[2026-04-21 17:55:52] 	allow_tf32                          : True
-[2026-04-21 17:55:52] 	generation_prompt                   : The history of
-[2026-04-21 17:55:52] 	temperature                         : 1.0
-[2026-04-21 17:55:52] 	num_new_tokens                      : 512
-[2026-04-21 17:55:52] 	top_p                               : 0.95
-[2026-04-21 17:55:52] 	repetition_penalty                  : 1.1
-[2026-04-21 17:55:52] 	benchmark_only                      : True
-[2026-04-21 17:55:52] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-16_08-50-21
-[2026-04-21 17:55:52] 	multinodal_enabled                  : False
-[2026-04-21 17:55:52] 	multinodal_num_cells                : 2
-[2026-04-21 17:55:52] 	multinodal_cell_dim                 : 512
-[2026-04-21 17:55:52] 	multinodal_seeds                    : [42, 137]
-[2026-04-21 17:55:52] 	multinodal_combination              : average
-[2026-04-21 17:55:52] 	multinodal_cross_cell_gating        : False
-[2026-04-21 17:55:52] 	multinodal_cross_cell_gate_interval : 1
-[2026-04-21 17:55:52] 	multinodal_features_per_cell        : -1
-[2026-04-21 17:55:52] 	multinodal_bagged_eps               : 1e-06
-[2026-04-21 17:55:52] 	quantize_enabled                    : False
-[2026-04-21 17:55:52] 	quantize_mixer_coarse_bits          : 8
-[2026-04-21 17:55:52] 	quantize_mixer_mid_bits             : 4
-[2026-04-21 17:55:52] 	quantize_mixer_fine_bits            : 2
-[2026-04-21 17:55:52] 	quantize_mlp_bits                   : 4
-[2026-04-21 17:55:52] 	quantize_lifting_bits               : 16
-[2026-04-21 17:55:52] 	quantize_embedding_bits             : 8
-[2026-04-21 17:55:52] 	per_layer_embedding                 : False
-[2026-04-21 17:55:52] 	loop_iterations                     : 1
-[2026-04-21 17:55:52] 
-[2026-04-21 17:55:52] [Dataset] Loading wikitext-103 from cache...
-[2026-04-21 17:55:55] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
-[2026-04-21 17:55:55] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
-[2026-04-21 17:55:55] [Dataset] Vocab size: 50257
-[2026-04-21 17:55:58] [Run Folder] logs/wikitext-103_2026-04-16_08-50-21
-[2026-04-21 17:55:58] 
+[2026-04-21 21:30:10] === BENCHMARK ONLY MODE ===
+[2026-04-21 21:30:10] Run directory: logs/wikitext-103_2026-04-16_08-50-21
+[2026-04-21 21:30:10] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-04-21 21:30:10] Device: cuda, AMP: True (fp16)
+[2026-04-21 21:30:10] 
+[2026-04-21 21:30:10] 	dataset                             : wikitext-103
+[2026-04-21 21:30:10] 	out_dir                             : logs
+[2026-04-21 21:30:10] 	compile                             : True
+[2026-04-21 21:30:10] 	seed                                : 1337
+[2026-04-21 21:30:10] 	epochs                              : 6
+[2026-04-21 21:30:10] 	micro_batch_size                    : 8
+[2026-04-21 21:30:10] 	grad_accum                          : 1
+[2026-04-21 21:30:10] 	block_size                          : 512
+[2026-04-21 21:30:10] 	eval_interval                       : 250
+[2026-04-21 21:30:10] 	skip_warmup_saves                   : True
+[2026-04-21 21:30:10] 	C                                   : 512
+[2026-04-21 21:30:10] 	layers                              : 20
+[2026-04-21 21:30:10] 	levels                              : 6
+[2026-04-21 21:30:10] 	low_rank                            : 0
+[2026-04-21 21:30:10] 	mlp_expansion                       : 1
+[2026-04-21 21:30:10] 	mlp_layers                          : 2
+[2026-04-21 21:30:10] 	pkm_enabled                         : False
+[2026-04-21 21:30:10] 	pkm_num_keys                        : 529
+[2026-04-21 21:30:10] 	pkm_top_k                           : 32
+[2026-04-21 21:30:10] 	pkm_heads                           : 1
+[2026-04-21 21:30:10] 	fwpkm_enabled                       : False
+[2026-04-21 21:30:10] 	fwpkm_num_keys                      : 529
+[2026-04-21 21:30:10] 	fwpkm_top_k                         : 32
+[2026-04-21 21:30:10] 	fwpkm_heads                         : 1
+[2026-04-21 21:30:10] 	fwpkm_inference_updates             : False
+[2026-04-21 21:30:10] 	fwpkm_update_lr                     : 0.01
+[2026-04-21 21:30:10] 	fwpkm_chunk_size                    : 64
+[2026-04-21 21:30:10] 	wavelet_mode                        : lifting
+[2026-04-21 21:30:10] 	shared_lifting_weights              : False
+[2026-04-21 21:30:10] 	untied_reconstruction               : False
+[2026-04-21 21:30:10] 	multi_basis_lifting                 : False
+[2026-04-21 21:30:10] 	multi_basis_inits                   : ['haar', 'random']
+[2026-04-21 21:30:10] 	cross_scale_gating                  : False
+[2026-04-21 21:30:10] 	per_scale_mixer_widths              : None
+[2026-04-21 21:30:10] 	stable_parametrization              : False
+[2026-04-21 21:30:10] 	stab_spectral_norm                  : False
+[2026-04-21 21:30:10] 	stab_ff_scaling                     : False
+[2026-04-21 21:30:10] 	stab_embed_scaling                  : False
+[2026-04-21 21:30:10] 	stab_proj_out_scaling               : False
+[2026-04-21 21:30:10] 	stab_mixer_eps_scaling              : False
+[2026-04-21 21:30:10] 	stab_lifting_level_scaling          : False
+[2026-04-21 21:30:10] 	looped_blocks                       : False
+[2026-04-21 21:30:10] 	looped_blocks_count                 : 8
+[2026-04-21 21:30:10] 	wavelet_crawl                       : False
+[2026-04-21 21:30:10] 	wavelet_crawl_k                     : 3
+[2026-04-21 21:30:10] 	lifting_linear_only                 : False
+[2026-04-21 21:30:10] 	lifting_hidden_mult                 : 1
+[2026-04-21 21:30:10] 	lifting_init                        : haar
+[2026-04-21 21:30:10] 	lifting_dropout                     : 0.0
+[2026-04-21 21:30:10] 	use_mixer_gate                      : True
+[2026-04-21 21:30:10] 	mixer_gate_activation               : silu
+[2026-04-21 21:30:10] 	mixer_depth                         : 1
+[2026-04-21 21:30:10] 	mixer_depth_stabilizers             : False
+[2026-04-21 21:30:10] 	mixer_depth_residuals               : False
+[2026-04-21 21:30:10] 	decompose_bypass                    : True
+[2026-04-21 21:30:10] 	decompose_bypass_cross_window       : True
+[2026-04-21 21:30:10] 	decompose_bypass_ema                : False
+[2026-04-21 21:30:10] 	learned_residual                    : True
+[2026-04-21 21:30:10] 	skip_proj_out                       : False
+[2026-04-21 21:30:10] 	stochastic_depth_rate               : 0.0
+[2026-04-21 21:30:10] 	dropout_embedding                   : 0.2
+[2026-04-21 21:30:10] 	dropout_projection                  : 0.1
+[2026-04-21 21:30:10] 	dropout_mixer                       : 0.1
+[2026-04-21 21:30:10] 	dropout_mlp                         : 0.1
+[2026-04-21 21:30:10] 	dropout_lm_head                     : 0.24
+[2026-04-21 21:30:10] 	optimizer                           : Adagrad
+[2026-04-21 21:30:10] 	optimizer_eps                       : 2e-13
+[2026-04-21 21:30:10] 	lr                                  : 0.01
+[2026-04-21 21:30:10] 	min_lr                              : 0.0002
+[2026-04-21 21:30:10] 	warmup_fraction                     : 0.3
+[2026-04-21 21:30:10] 	grad_clip                           : 1.0
+[2026-04-21 21:30:10] 	tie_embedding_to_lm_head            : False
+[2026-04-21 21:30:10] 	gradient_checkpointing              : False
+[2026-04-21 21:30:10] 	use_amp                             : True
+[2026-04-21 21:30:10] 	amp_dtype                           : fp16
+[2026-04-21 21:30:10] 	allow_tf32                          : True
+[2026-04-21 21:30:10] 	generation_prompt                   : The history of
+[2026-04-21 21:30:10] 	temperature                         : 1.0
+[2026-04-21 21:30:10] 	num_new_tokens                      : 512
+[2026-04-21 21:30:10] 	top_p                               : 0.95
+[2026-04-21 21:30:10] 	repetition_penalty                  : 1.1
+[2026-04-21 21:30:10] 	benchmark_only                      : True
+[2026-04-21 21:30:10] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-16_08-50-21
+[2026-04-21 21:30:10] 	multinodal_enabled                  : False
+[2026-04-21 21:30:10] 	multinodal_num_cells                : 2
+[2026-04-21 21:30:10] 	multinodal_cell_dim                 : 512
+[2026-04-21 21:30:10] 	multinodal_seeds                    : [42, 137]
+[2026-04-21 21:30:10] 	multinodal_combination              : average
+[2026-04-21 21:30:10] 	multinodal_cross_cell_gating        : False
+[2026-04-21 21:30:10] 	multinodal_cross_cell_gate_interval : 1
+[2026-04-21 21:30:10] 	multinodal_features_per_cell        : -1
+[2026-04-21 21:30:10] 	multinodal_bagged_eps               : 1e-06
+[2026-04-21 21:30:10] 	quantize_enabled                    : False
+[2026-04-21 21:30:10] 	quantize_mixer_coarse_bits          : 8
+[2026-04-21 21:30:10] 	quantize_mixer_mid_bits             : 4
+[2026-04-21 21:30:10] 	quantize_mixer_fine_bits            : 2
+[2026-04-21 21:30:10] 	quantize_mlp_bits                   : 4
+[2026-04-21 21:30:10] 	quantize_lifting_bits               : 16
+[2026-04-21 21:30:10] 	quantize_embedding_bits             : 8
+[2026-04-21 21:30:10] 	per_layer_embedding                 : False
+[2026-04-21 21:30:10] 	loop_iterations                     : 1
+[2026-04-21 21:30:10] 
+[2026-04-21 21:30:10] [Dataset] Loading wikitext-103 from cache...
+[2026-04-21 21:30:10] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-04-21 21:30:10] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-04-21 21:30:10] [Dataset] Vocab size: 50257
+[2026-04-21 21:30:13] [Run Folder] logs/wikitext-103_2026-04-16_08-50-21
+[2026-04-21 21:30:13] 
 ============================================================
-[2026-04-21 17:55:58] PARAMETER BREAKDOWN
-[2026-04-21 17:55:58] ============================================================
-[2026-04-21 17:55:58] Total parameters:               272,054,472 (272.05M)
-[2026-04-21 17:55:58]   Token embedding:             25,731,584 (25.73M)
-[2026-04-21 17:55:58]   Layers (total):             220,590,280 (220.59M)
-[2026-04-21 17:55:58]     Mixer/layer:                3,670,016 (3.67M)
-[2026-04-21 17:55:58]     MLP/layer:                    525,312 (0.53M)
-[2026-04-21 17:55:58]   LM head:                     25,731,584 (25.73M)
-[2026-04-21 17:55:58]   Final LayerNorm:                  1,024 (0.00M)
-[2026-04-21 17:55:58] ============================================================
+[2026-04-21 21:30:13] PARAMETER BREAKDOWN
+[2026-04-21 21:30:13] ============================================================
+[2026-04-21 21:30:13] Total parameters:               272,054,472 (272.05M)
+[2026-04-21 21:30:13]   Token embedding:             25,731,584 (25.73M)
+[2026-04-21 21:30:13]   Layers (total):             220,590,280 (220.59M)
+[2026-04-21 21:30:13]     Mixer/layer:                3,670,016 (3.67M)
+[2026-04-21 21:30:13]     MLP/layer:                    525,312 (0.53M)
+[2026-04-21 21:30:13]   LM head:                     25,731,584 (25.73M)
+[2026-04-21 21:30:13]   Final LayerNorm:                  1,024 (0.00M)
+[2026-04-21 21:30:13] ============================================================
 
-[2026-04-21 17:55:58] [Model] 272.05M parameters (272.05M trainable)
-[2026-04-21 17:55:58] 
+[2026-04-21 21:30:13] [Model] 272.05M parameters (272.05M trainable)
+[2026-04-21 21:30:13] 
 Loading best model for benchmarks...
+[2026-04-21 21:30:17] Best model loaded.
+[2026-04-21 21:30:17] 
+[BENCHMARK] Non-overlapping: 561 windows of length 512
+[2026-04-21 21:30:26] 
+[BENCHMARK - Non-overlapping]
+[2026-04-21 21:30:26]   Perplexity: 39.4921
+[2026-04-21 21:30:26]   BPT: 5.3035
+[2026-04-21 21:30:26]   BPB: 1.1768
+[2026-04-21 21:30:26]   Avg Loss: 3.6761
+[2026-04-21 21:30:26] 
+[SLIDING WINDOW] block_size=512, stride=256, min_context=256, 1122 windows
+[2026-04-21 21:30:43] 
+[BENCHMARK - Sliding Window]
+[2026-04-21 21:30:43]   Perplexity: 38.3413
+[2026-04-21 21:30:43]   BPT: 5.2608
+[2026-04-21 21:30:43]   BPB: 1.1673
+[2026-04-21 21:30:43]   Avg Loss: 3.6465
+[2026-04-21 21:30:43]   Stride: 256, Min Context: 256
+[2026-04-21 21:30:43] 
+=== GENERATION — Standard ===
+[2026-04-21 21:30:43] Prompt: The history of
+[2026-04-21 21:31:42] Generated:
+The history of discovery began to develop steadily , even in decades after the development of efficient solar allow for less serious improvements to ocean , shallow water currents and terrain . In 1972 the dam was raised once again and discoveries were carried out from the surrounding towns , which resulted in a completely new economy claim . 
+
+
+ In 1900 , substantial dams and diversification of earth were built to ensure the preservation of apple orchards in the present @-@ day Mysore and Notlicated O 'Sullivan exiles . This income was allocated to an adjacent immigrant population gathering above the Lake Okeechobee Bay , further depriving the Prairie Bird and World Bankholders of concentrating food on the subject and addressing the possible extinction of those rivers . 
+
+
+
+
+ = = = Folding and mining = = = 
+
+
+
+
+ The southern part of the Indiana State Cycle passed through information on the climate in the settlement . In June 1969 , against mysterious land employee engineer Harriet R. Goodwin , the master radiologist John Baker 's Wyoming logo McCain Davis , paper with the SEC announced , " I know they 're fine about the surface a few days ago and we get closer . " In April 1997 , former with the help of Rocket Group , Mastock developed the Shannanger and improved thousands of new lava flows . The expedition produced major impacts by dropping armor , which ran extremely difficult to glide with the wind feed on rocks and into ultraviolet tiling in the drop zone . Among the first hunting scraps provided at the World Scientific Society in Colombia in 1966 , NJPW launched a new diet @-@ revealed plant during the process of generating additional metals , for example an airborne hollow car , using will Geo conformation . 
+
+
+
+
+ = = Interaction with cargoes = = 
+
+
+
+
+ Multnomah 's first report on the cravy event , " Freedom into a Cypress " which was finally completed in 1846 demonstrated the importance of oxygen economy in the process of exploitation as water from the ultraviolet gas canyon would melt well for its seawater . The Sproyans were producing water water from their native top hemlock , and spongier iron ore . Halefield had been brought in by excess from 1 @,@ 200 @,@ 000 m2 ( 200 @,@ 000 @,@ 000 cu ft ) of rock condensed by spring to spring 2001 , increasing the depth of the oil needed to produce relatively reduced fauna . 
+
+
+ The remains of many ant crustaceans have been circulations along the Yukon , where
+
+[2026-04-21 21:31:42] === GENERATION — Strategies ===
+[2026-04-21 21:31:42] Prompt: The history of
+[2026-04-21 21:32:48] Generated:
+The history of the game is also referenced in a variety of ways , including one where the player can take his place from an enemy or to defeat enemies . The story revolves around the protagonist and his family who are trying to make their way back into space ; when they go through it , the player must choose between two different types of health : the " perfect " type of weapon , and the ability to move on with them . This allows for more detail than any other character , which was considered by some reviewers as the best choice for the role . 
+
+
+ In addition to the main characters ' backstory , the series uses the same design elements as the previous games . The player controls the character 's mother , whose name is derived from her father 's surname , while the latter includes a number of items that she can use to destroy the player 's ship . When the player returns to the base , the player may be forced to leave the world if the player has not made enough time to complete its journey . 
+
+
+
+
+ = = Plot = = 
+
+
+
+
+ After learning that the first person in the world is going to see the world before he died , the player is asked what the next day will be able to break up with another man , which leads him to find new ones . They have little time to recover , so the team learns that the group will never have to kill themselves after they encounter the evil creatures called the " Shadows " . While there , they decide to end the conflict , but both become too popular and do not want to fall out of control . As the party becomes increasingly aggressive , the player has to return home , leaving the party safe for the rest of the game . If the player chooses to keep his own life , the player can start a quest to protect each other by attacking a nearby island , known as the " Light Blues " ( 南艩翊 ) , a powerful sea @-@ based fighter . The player assumes that the player is allowed to travel across the globe during the course of the game , though it cannot reach the target area until it reaches the beginning . Upon returning to the game , the player must enter the city of Tokyo to collect the weapons , which are used to help save the player 's life . 
+
+
+ The player takes over the game 's plot mode , using the objective level , which allows players to create additional abilities throughout the game . Players play an important role in the gameplay , such as a multiplayer mode . There are several levels within the game : the
+
+[2026-04-21 21:32:48] Metrics: MeanLogP=-1.4279 | MeanH=5.00 | D1=0.557 | D2=0.867 | D3=0.961 | Rep4=0.062
+[2026-04-21 21:32:48] Inference VRAM (approx): 3594 MiB (model=3021 + activations=572) — use generate.py for accurate measurement
