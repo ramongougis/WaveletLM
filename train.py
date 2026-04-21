@@ -563,7 +563,7 @@ def train():
     model = model.to(device)
 
     logger.log(f"[Run Folder] {log_dir}")
-    total_params, trainable_params = parameter_breakdown(model, config)
+    total_params, trainable_params = parameter_breakdown(model, config, logger=logger)
     logger.log(f"[Model] {total_params/1e6:.2f}M parameters ({trainable_params/1e6:.2f}M trainable)")
 
     train_peak_mem = None
