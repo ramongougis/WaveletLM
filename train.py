@@ -799,6 +799,11 @@ def train():
         torch.cuda.reset_peak_memory_stats()
         inference_baseline_mem = torch.cuda.memory_allocated() / (1024 ** 2)
 
+    # Critical: restore eval mode before generation. The evaluate_* functions
+    # above exit with model.train() (to match training-loop conventions), but
+    # generation must run with dropout disabled or sampled logits will be noisy.
+    model.eval()
+
     # Generate samples using generate.py functions
     from generate import generate_one, generate_best_of_n, compute_quality_metrics, format_metrics
 
