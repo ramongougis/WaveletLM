@@ -82,10 +82,17 @@ def load_and_encode_dataset(config, logger):
         ds = load_dataset(dataset_name)
 
     def encode_split(split_data):
-        text = "\n\n".join(split_data["text"])
-        num_bytes = len(text.encode("utf-8"))
-        tokens = enc.encode(text, allowed_special=set())
-        return torch.tensor(tokens, dtype=torch.long), num_bytes
+        # Tokenize with "\n\n".join to preserve the distribution the model was
+        # trained on (paragraph boundaries → token 628, which the model has
+        # learned to predict). But compute the byte-count denominator using the
+        # canonical "\n".join convention so BPB matches literature baselines.
+        # If step 0 verification showed "".join matches canonical better,
+        # swap text_for_bytes below accordingly.
+        text_for_tokens = "\n\n".join(split_data["text"])
+        tokens = enc.encode(text_for_tokens, allowed_special=set())
+        text_for_bytes = "\n".join(split_data["text"])
+        canonical_bytes = len(text_for_bytes.encode("utf-8"))
+        return torch.tensor(tokens, dtype=torch.long), canonical_bytes
 
     logger.log(f"[Dataset] Loading {dataset_name}...")
     train_data, _ = encode_split(ds["train"])
@@ -193,6 +200,12 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
     if hasattr(base_model, 'reset_semantic_state'):
         base_model.reset_semantic_state()
 
+    # Disable cross-window decompose-bypass state during eval to prevent
+    # disjoint-history injection (MBS>1) and sliding-window causality leaks
+    # (MBS=1). Restored before return.
+    _prev_cwb = getattr(base_model, 'decompose_bypass_cross_window', False)
+    base_model.decompose_bypass_cross_window = False
+
     T = config['block_size']
     batch_size = config['micro_batch_size']
     eval_len = len(eval_data)
@@ -200,6 +213,7 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
 
     if num_windows == 0:
         logger.log("[WARN] Test data too small for evaluation")
+        base_model.decompose_bypass_cross_window = _prev_cwb
         model.train()
         return None
 
@@ -214,9 +228,6 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
         start_window = batch_idx * batch_size
         end_window = min(start_window + batch_size, num_windows)
         current_bs = end_window - start_window
-
-        if current_bs < batch_size and batch_idx == num_batches - 1:
-            continue  # skip incomplete final batch
 
         x_list, y_list = [], []
         for w in range(start_window, end_window):
@@ -236,6 +247,8 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
         total_loss += loss_per_token.sum().item()
         total_tokens += B * seq_len
 
+    # Restore the flag so subsequent generation uses its configured value
+    base_model.decompose_bypass_cross_window = _prev_cwb
     model.train()
 
     if total_tokens == 0:
@@ -262,6 +275,12 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
     base_model = getattr(model, "_orig_mod", model)
     if hasattr(base_model, 'reset_semantic_state'):
         base_model.reset_semantic_state()
+
+    # Disable cross-window decompose-bypass state during eval. Sliding windows
+    # overlap by design, so state passed from a later window's end into an
+    # earlier window's beginning is a causality leak. Restored before return.
+    _prev_cwb = getattr(base_model, 'decompose_bypass_cross_window', False)
+    base_model.decompose_bypass_cross_window = False
 
     T = config['block_size']
     batch_size = config['micro_batch_size']
@@ -297,9 +316,6 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
         end_w = min(start_w + batch_size, len(windows))
         current_bs = end_w - start_w
 
-        if current_bs < batch_size and batch_idx == num_batches - 1 and num_batches > 1:
-            continue
-
         x_list, y_list, trg_lens = [], [], []
         for w_idx in range(start_w, end_w):
             begin_loc, trg_len = windows[w_idx]
@@ -323,6 +339,8 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
             total_loss += loss_per_token.sum().item()
             total_scored_tokens += loss_per_token.numel()
 
+    # Restore the flag so subsequent generation uses its configured value
+    base_model.decompose_bypass_cross_window = _prev_cwb
     model.train()
 
     if total_scored_tokens == 0:
