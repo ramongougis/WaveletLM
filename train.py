@@ -452,8 +452,9 @@ def train():
             # didn't exist when the run was trained), force them to their
             # feature-off defaults rather than leaking the current root
             # config's value into a model that was trained without them.
+            # per_scale_mixer_widths is handled below as a special case
+            # because its required length depends on this run's `levels`.
             ARCH_DEFAULTS = {
-                'per_scale_mixer_widths': None,
                 'cross_scale_gating': False,
                 'wavelet_crawl': False,
                 'wavelet_crawl_k': 3,
@@ -491,6 +492,13 @@ def train():
             for k, default in ARCH_DEFAULTS.items():
                 if k not in run_config:
                     config[k] = default
+
+            # Special case: per_scale_mixer_widths length must match S = levels + 1
+            # for THIS run. If absent from run_config, set to all-1.0 (no per-scale
+            # width adjustment), matching the model's behavior before the feature
+            # was added — which is what the run was actually trained with.
+            if 'per_scale_mixer_widths' not in run_config:
+                config['per_scale_mixer_widths'] = [1.0] * (config['levels'] + 1)
         log_dir = benchmark_run_dir
         logger = Logger(log_dir, filename="benchmark.txt")
         logger.log(f"=== BENCHMARK ONLY MODE ===")
