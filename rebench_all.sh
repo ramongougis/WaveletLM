@@ -33,9 +33,15 @@ EOF
 trap cleanup EXIT
 
 # ----- Step 1: pre-rename existing benchmark.txt files -----
+# Only snapshot if benchmark.txt actually contains a completed sliding-window
+# benchmark — prevents incomplete artifacts (e.g. partial prior rebench
+# attempts that crashed before the benchmark phase) from being promoted to
+# "historical baseline."
 echo "=== Pre-renaming existing benchmark.txt → benchmark_pre_v2.txt ==="
 for folder in logs/wikitext-103_* ; do
-    if [ -f "$folder/benchmark.txt" ] && [ ! -f "$folder/benchmark_pre_v2.txt" ]; then
+    if [ -f "$folder/benchmark.txt" ] \
+       && grep -q "BENCHMARK - Sliding Window" "$folder/benchmark.txt" \
+       && [ ! -f "$folder/benchmark_pre_v2.txt" ]; then
         mv "$folder/benchmark.txt" "$folder/benchmark_pre_v2.txt"
         echo "  $folder"
     fi
