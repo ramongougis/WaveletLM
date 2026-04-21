@@ -82,17 +82,17 @@ def load_and_encode_dataset(config, logger):
         ds = load_dataset(dataset_name)
 
     def encode_split(split_data):
-        # Tokenize with "\n\n".join to preserve the distribution the model was
-        # trained on (paragraph boundaries → token 628, which the model has
-        # learned to predict). But compute the byte-count denominator using the
-        # canonical "\n".join convention so BPB matches literature baselines.
-        # If step 0 verification showed "".join matches canonical better,
-        # swap text_for_bytes below accordingly.
-        text_for_tokens = "\n\n".join(split_data["text"])
-        tokens = enc.encode(text_for_tokens, allowed_special=set())
-        text_for_bytes = "\n".join(split_data["text"])
-        canonical_bytes = len(text_for_bytes.encode("utf-8"))
-        return torch.tensor(tokens, dtype=torch.long), canonical_bytes
+        # Reverted to symmetric "\n\n".join for both tokens and bytes after
+        # step-0 verification showed none of "\n", "\n\n", or "" can reproduce
+        # Gemini's asserted canonical wiki.test.raw byte count (1,314,696) from
+        # the HuggingFace wikitext-103-raw-v1 loader. "\n\n" is actually the
+        # closest of the three (1,296,370; delta 18,326). Since we can't
+        # reproduce canonical from the HF loader, we keep the self-consistent
+        # tokens-and-bytes pair from "\n\n" and publish transparently.
+        text = "\n\n".join(split_data["text"])
+        num_bytes = len(text.encode("utf-8"))
+        tokens = enc.encode(text, allowed_special=set())
+        return torch.tensor(tokens, dtype=torch.long), num_bytes
 
     logger.log(f"[Dataset] Loading {dataset_name}...")
     train_data, _ = encode_split(ds["train"])

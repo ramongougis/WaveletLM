@@ -1,14 +1,25 @@
 """
-Step 0 of the benchmark-correctness fix cycle.
+Diagnostic: byte counts of the HF wikitext-103-raw-v1 test split under three
+join conventions.
 
-Verifies which join convention on HuggingFace's wikitext-103-raw-v1 test split
-reproduces the canonical wiki.test.raw byte count (target: 1,314,696).
+Originally step 0 of the benchmark-correctness fix cycle, used to verify an
+asserted "canonical" byte count of 1,314,696 for wiki.test.raw. Run once on
+2026-04-21 with the following result:
 
-Run on the pod (or anywhere with the HF dataset available):
-    python verify_canonical_bytes.py
+    A — '\\n'.join:   1,292,013 bytes   (-22,683 vs asserted canonical)
+    B — ''.join:      1,287,656 bytes   (-27,040)
+    C — '\\n\\n'.join: 1,296,370 bytes   (-18,326)   ← closest; our current
 
-Outputs three byte counts so we can pick the canonical-matching convention
-for `text_for_bytes` in `load_and_encode_dataset.encode_split`.
+Conclusion: no join of the HF-loader output reproduces 1,314,696. The claim
+was likely from a different wikitext source or a different paper's setup.
+We kept '\\n\\n'.join as the self-consistent token/byte pair since it's the
+closest reproducible number to the asserted canonical and matches what the
+model was trained on.
+
+Kept in the repo as a diagnostic if future reviewers ask "where does
+1,296,370 come from?"
+
+Run: python verify_canonical_bytes.py
 """
 from datasets import load_dataset
 
