@@ -493,12 +493,18 @@ def train():
                 if k not in run_config:
                     config[k] = default
 
-            # Special case: per_scale_mixer_widths length must match S = levels + 1
-            # for THIS run. If absent from run_config, set to all-1.0 (no per-scale
-            # width adjustment), matching the model's behavior before the feature
-            # was added — which is what the run was actually trained with.
+            # Special case: per_scale_mixer_widths absent means the run was
+            # trained *before* the feature existed. Set to None (NOT all-1.0),
+            # because None and all-1.0 produce DIFFERENT model structures:
+            #   - None → scale_mixers[s] is a GatedSpectralMixer directly
+            #     (state dict keys: scale_mixers.s.mixer.weight)
+            #   - all-1.0 → scale_mixers[s] is a PerScaleMixer wrapper
+            #     (state dict keys: scale_mixers.s.mixer.mixer.weight)
+            # Using all-1.0 caused checkpoint keys to silently fail to load
+            # under strict=False, leaving mixer weights randomly initialized.
+            # Symptoms were gibberish generation + inflated BPB on older runs.
             if 'per_scale_mixer_widths' not in run_config:
-                config['per_scale_mixer_widths'] = [1.0] * (config['levels'] + 1)
+                config['per_scale_mixer_widths'] = None
         log_dir = benchmark_run_dir
         logger = Logger(log_dir, filename="benchmark.txt")
         logger.log(f"=== BENCHMARK ONLY MODE ===")
