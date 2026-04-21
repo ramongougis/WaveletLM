@@ -35,7 +35,7 @@
 31. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
 32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
-34. [3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout](#3-seed-10-epoch-variance-study-l2-c2048-25x-dropout)
+34. [3-seed variance study: L=2, C=2048, 2.0x dropout, 6 epochs](#3-seed-variance-study-l2-c2048-20x-dropout-6-epochs)
 35. [Weight decay spot-check (low values): 5 epochs, best architecture](#weight-decay-spot-check-low-values-5-epochs-best-architecture)
 36. [Decompose-bypass data-dependent EMA probe: 1 epoch](#decompose-bypass-data-dependent-ema-probe-1-epoch)
 37. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
@@ -428,7 +428,7 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 
 | Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Time | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|------|-------|
-|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | **1.0219** | 882.51M | 18,235 MiB | 4,915 MiB | 15.79h | Non-overlapping BPB 1.0404. Only -0.0028 vs the levels=9 baseline (1.0247) — well short of the projected 0.99–1.02. |
+|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | **1.0201** (post-fix; was 1.0219 pre-fix) | 882.51M | 18,235 MiB | 4,915 MiB | 15.79h | Non-overlapping BPB ~1.0386. Sliding-window PPL 24.21. Eval-fix correction (cross-window state disable + final-batch inclusion) shaved 0.0018 BPB. Headline run going into release. |
 
 **Why the projection overshot.** The 94%-linear-stacking estimate was built from 1-epoch deltas. Several of those wins (especially `block_size=256` at -0.0140) come from "more gradient updates per epoch" — but at 5 epochs, the levels=9 baseline has also had time to converge. Short-training advantages compress as training continues; additivity at 1 epoch ≠ additivity at 5.
 
@@ -436,17 +436,28 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 
 **Dropped features (ablation record).** Untied reconstruction (1-epoch tie at +168M params, +3% time), multi-basis lifting (NaN even with tightened init), exp_param at lr=0.02 (NaN at L=2), iterative refinement, cross-time feedback, stability-parametrization bundle.
 
-### 3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout
+### 3-seed variance study: L=2, C=2048, 2.0x dropout, 6 epochs
 
-Next up. Same config as the 5-epoch run above, doubled to 10 epochs, with dropout scaled to 2.5× (emb=0.25, proj=0.125, mixer=0.125, mlp=0.125, lm=0.25) to counter the overfit signal observed at 2.0×. Three seeds (1337, 42, 7) for mean ± std reporting. Eval interval stays at 250. Estimated ~28h per seed, ~84h total on 5090. Peak training VRAM ~18 GB and peak generation VRAM ~5 GB from the 5-epoch run suggest PTQ work can proceed in tandem on the completed 5-epoch checkpoint.
+**Protocol revised after seed 1337 abandoned run (see below).** Original plan was 3 seeds × 10 epochs × 2.5× dropout. After seed 1337 ran ~8.5 epochs, comparison against the 5-epoch best (2.0× dropout) showed the 2.5×/10-ep protocol was **worse**, not better, across the same fixed eval pipeline:
+
+| Protocol | Best val loss | Sliding-window BPB (post-fix eval) | Sliding-window PPL |
+|----------|---------------|-----|-----|
+| 5 epochs, 2.0× dropout (best run from earlier) | 3.1728 | **1.0201** | **24.21** |
+| 10 epochs, 2.5× dropout (seed 1337, stopped at end of epoch 8) | 3.1953 | 1.0267 | 24.72 |
+
+Two findings: (1) 2.5× dropout was an overcorrection — the model was *under-fitting* in some channels relative to 2.0×; (2) the val curve flattened hard after epoch 6 (epochs 7+8 combined gave only ~0.09 PPL improvement). Going forward: **2.0× dropout, 6 epochs.**
+
+**Revised plan:** 3 seeds (1337, 42, 7) at L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, **6 epochs, 2.0× dropout** (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24). Estimated ~17h per seed, ~51h total on 5090 (down from the original 84h estimate at 10 epochs). PTQ work can proceed in tandem on the completed 5-epoch checkpoint as before.
 
 | Run | Seed | Folder | BPB (sliding) | Train/Val loss | Params | Time | Notes |
 |-----|------|--------|---------------|----------------|--------|------|-------|
-|   | 1337 | | | | 882.51M | ~28h | Primary |
-|   | 42   | | | | 882.51M | ~28h | |
-|   | 7    | | | | 882.51M | ~28h | |
+|   | 1337 | | | | 882.51M | ~17h | Primary (re-run at 6ep / 2.0× dropout) |
+|   | 42   | | | | 882.51M | ~17h | |
+|   | 7    | | | | 882.51M | ~17h | |
 
 Mean BPB: _ ± _.
+
+**Abandoned: seed 1337 at 10 epochs / 2.5× dropout** ([log](logs/wikitext-103_2026-04-20_09-03-34/log.txt)) — best val loss 3.1953 at end of epoch 8; stopped early at epoch 9 once it was clear the protocol was worse than the 5-epoch baseline. **Sliding-window BPB 1.0267, PPL 24.72** (post-fix eval; see [benchmark.txt](logs/wikitext-103_2026-04-20_09-03-34/benchmark.txt)). Train loss 2.34 vs val 3.20 = ~1.24 bits/token gap, *worse* than the 5-epoch run's 0.78-bit gap despite stronger dropout — suggests the dropout was hurting representational capacity more than the overfit gap was hurting generalization. Useful negative result; informs the post-release dropout-component sensitivity sweep.
 
 ### Weight decay spot-check (low values): 5 epochs, best architecture
 
