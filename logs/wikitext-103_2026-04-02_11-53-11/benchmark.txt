@@ -1,150 +1,152 @@
-[2026-04-02 16:34:41] === BENCHMARK ONLY MODE ===
-[2026-04-02 16:34:41] Run directory: logs/wikitext-103_2026-04-02_11-53-11
-[2026-04-02 16:34:41] Starting WaveletLM Benchmark on WIKITEXT-103
-[2026-04-02 16:34:41] Device: cuda, AMP: True (fp16)
-[2026-04-02 16:34:41] 
-[2026-04-02 16:34:41] 	dataset                             : wikitext-103
-[2026-04-02 16:34:41] 	out_dir                             : logs
-[2026-04-02 16:34:41] 	compile                             : True
-[2026-04-02 16:34:41] 	seed                                : 1337
-[2026-04-02 16:34:41] 	epochs                              : 1
-[2026-04-02 16:34:41] 	micro_batch_size                    : 8
-[2026-04-02 16:34:41] 	grad_accum                          : 2
-[2026-04-02 16:34:41] 	block_size                          : 512
-[2026-04-02 16:34:41] 	eval_interval                       : 100
-[2026-04-02 16:34:41] 	skip_warmup_saves                   : True
-[2026-04-02 16:34:41] 	C                                   : 64
-[2026-04-02 16:34:41] 	layers                              : 20
-[2026-04-02 16:34:41] 	levels                              : 9
-[2026-04-02 16:34:41] 	low_rank                            : 0
-[2026-04-02 16:34:41] 	mlp_expansion                       : 1
-[2026-04-02 16:34:41] 	mlp_layers                          : 2
-[2026-04-02 16:34:41] 	wavelet_mode                        : lifting
-[2026-04-02 16:34:41] 	shared_lifting_weights              : False
-[2026-04-02 16:34:41] 	lifting_linear_only                 : False
-[2026-04-02 16:34:41] 	lifting_hidden_mult                 : 1
-[2026-04-02 16:34:41] 	lifting_init                        : haar
-[2026-04-02 16:34:41] 	lifting_dropout                     : 0.0
-[2026-04-02 16:34:41] 	use_mixer_gate                      : True
-[2026-04-02 16:34:41] 	mixer_gate_activation               : silu
-[2026-04-02 16:34:41] 	decompose_bypass                   : True
-[2026-04-02 16:34:41] 	decompose_bypass_cross_window      : True
-[2026-04-02 16:34:41] 	learned_residual                    : True
-[2026-04-02 16:34:41] 	skip_proj_out                       : False
-[2026-04-02 16:34:41] 	stochastic_depth_rate               : 0.0
-[2026-04-02 16:34:41] 	dropout_embedding                   : 0.0
-[2026-04-02 16:34:41] 	dropout_projection                  : 0.0
-[2026-04-02 16:34:41] 	dropout_mixer                       : 0.0
-[2026-04-02 16:34:41] 	dropout_mlp                         : 0.0
-[2026-04-02 16:34:41] 	dropout_lm_head                     : 0.0
-[2026-04-02 16:34:41] 	optimizer                           : Adagrad
-[2026-04-02 16:34:41] 	optimizer_eps                       : 2e-13
-[2026-04-02 16:34:41] 	lr                                  : 0.02
-[2026-04-02 16:34:41] 	min_lr                              : 0.0002
-[2026-04-02 16:34:41] 	warmup_fraction                     : 0.3
-[2026-04-02 16:34:41] 	grad_clip                           : 1.0
-[2026-04-02 16:34:41] 	tie_embedding_to_lm_head            : False
-[2026-04-02 16:34:41] 	gradient_checkpointing              : False
-[2026-04-02 16:34:41] 	use_amp                             : True
-[2026-04-02 16:34:41] 	amp_dtype                           : fp16
-[2026-04-02 16:34:41] 	allow_tf32                          : True
-[2026-04-02 16:34:41] 	generation_prompt                   : The history of
-[2026-04-02 16:34:41] 	temperature                         : 1.0
-[2026-04-02 16:34:41] 	num_new_tokens                      : 512
-[2026-04-02 16:34:41] 	top_p                               : 0.95
-[2026-04-02 16:34:41] 	repetition_penalty                  : 1.1
-[2026-04-02 16:34:41] 	benchmark_only                      : True
-[2026-04-02 16:34:41] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-02_11-53-11
-[2026-04-02 16:34:41] 	multinodal_enabled                  : False
-[2026-04-02 16:34:41] 	multinodal_num_cells                : 2
-[2026-04-02 16:34:41] 	multinodal_cell_dim                 : 512
-[2026-04-02 16:34:41] 	multinodal_seeds                    : [42, 137]
-[2026-04-02 16:34:41] 	multinodal_combination              : average
-[2026-04-02 16:34:41] 	multinodal_cross_cell_gating        : False
-[2026-04-02 16:34:41] 	multinodal_cross_cell_gate_interval : 1
-[2026-04-02 16:34:41] 	multinodal_features_per_cell        : -1
-[2026-04-02 16:34:41] 	multinodal_bagged_eps               : 1e-06
-[2026-04-02 16:34:41] 
-[2026-04-02 16:34:44] [Dataset] Loading wikitext-103...
-[2026-04-02 16:35:50] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens
-[2026-04-02 16:35:50] [Dataset] Vocab size: 50257
-[2026-04-02 16:35:51] [Run Folder] logs/wikitext-103_2026-04-02_11-53-11
-[2026-04-02 16:35:51] [Model] 11.42M parameters (11.42M trainable)
-[2026-04-02 16:35:51] 
+[2026-04-21 10:59:24] === BENCHMARK ONLY MODE ===
+[2026-04-21 10:59:24] Run directory: logs/wikitext-103_2026-04-02_11-53-11
+[2026-04-21 10:59:24] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-04-21 10:59:24] Device: cuda, AMP: True (fp16)
+[2026-04-21 10:59:24] 
+[2026-04-21 10:59:24] 	dataset                             : wikitext-103
+[2026-04-21 10:59:24] 	out_dir                             : logs
+[2026-04-21 10:59:24] 	compile                             : True
+[2026-04-21 10:59:24] 	seed                                : 1337
+[2026-04-21 10:59:24] 	epochs                              : 6
+[2026-04-21 10:59:24] 	micro_batch_size                    : 8
+[2026-04-21 10:59:24] 	grad_accum                          : 1
+[2026-04-21 10:59:24] 	block_size                          : 512
+[2026-04-21 10:59:24] 	eval_interval                       : 250
+[2026-04-21 10:59:24] 	skip_warmup_saves                   : True
+[2026-04-21 10:59:24] 	C                                   : 64
+[2026-04-21 10:59:24] 	layers                              : 20
+[2026-04-21 10:59:24] 	levels                              : 9
+[2026-04-21 10:59:24] 	low_rank                            : 0
+[2026-04-21 10:59:24] 	mlp_expansion                       : 1
+[2026-04-21 10:59:24] 	mlp_layers                          : 2
+[2026-04-21 10:59:24] 	pkm_enabled                         : True
+[2026-04-21 10:59:24] 	pkm_num_keys                        : 16384
+[2026-04-21 10:59:24] 	pkm_top_k                           : 32
+[2026-04-21 10:59:24] 	pkm_heads                           : 1
+[2026-04-21 10:59:24] 	fwpkm_enabled                       : True
+[2026-04-21 10:59:24] 	fwpkm_num_keys                      : 16384
+[2026-04-21 10:59:24] 	fwpkm_top_k                         : 32
+[2026-04-21 10:59:24] 	fwpkm_heads                         : 1
+[2026-04-21 10:59:24] 	fwpkm_inference_updates             : False
+[2026-04-21 10:59:24] 	fwpkm_update_lr                     : 0.01
+[2026-04-21 10:59:24] 	fwpkm_chunk_size                    : 64
+[2026-04-21 10:59:24] 	wavelet_mode                        : lifting
+[2026-04-21 10:59:24] 	shared_lifting_weights              : False
+[2026-04-21 10:59:24] 	untied_reconstruction               : False
+[2026-04-21 10:59:24] 	multi_basis_lifting                 : False
+[2026-04-21 10:59:24] 	multi_basis_inits                   : ['haar', 'random']
+[2026-04-21 10:59:24] 	cross_scale_gating                  : False
+[2026-04-21 10:59:24] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[2026-04-21 10:59:24] 	stable_parametrization              : False
+[2026-04-21 10:59:24] 	stab_spectral_norm                  : False
+[2026-04-21 10:59:24] 	stab_ff_scaling                     : False
+[2026-04-21 10:59:24] 	stab_embed_scaling                  : False
+[2026-04-21 10:59:24] 	stab_proj_out_scaling               : False
+[2026-04-21 10:59:24] 	stab_mixer_eps_scaling              : False
+[2026-04-21 10:59:24] 	stab_lifting_level_scaling          : False
+[2026-04-21 10:59:24] 	looped_blocks                       : False
+[2026-04-21 10:59:24] 	looped_blocks_count                 : 8
+[2026-04-21 10:59:24] 	wavelet_crawl                       : False
+[2026-04-21 10:59:24] 	wavelet_crawl_k                     : 3
+[2026-04-21 10:59:24] 	lifting_linear_only                 : False
+[2026-04-21 10:59:24] 	lifting_hidden_mult                 : 1
+[2026-04-21 10:59:24] 	lifting_init                        : haar
+[2026-04-21 10:59:24] 	lifting_dropout                     : 0.0
+[2026-04-21 10:59:24] 	use_mixer_gate                      : True
+[2026-04-21 10:59:24] 	mixer_gate_activation               : silu
+[2026-04-21 10:59:24] 	mixer_depth                         : 1
+[2026-04-21 10:59:24] 	mixer_depth_stabilizers             : False
+[2026-04-21 10:59:24] 	mixer_depth_residuals               : False
+[2026-04-21 10:59:24] 	decompose_bypass                    : True
+[2026-04-21 10:59:24] 	decompose_bypass_cross_window       : True
+[2026-04-21 10:59:24] 	decompose_bypass_ema                : False
+[2026-04-21 10:59:24] 	learned_residual                    : True
+[2026-04-21 10:59:24] 	skip_proj_out                       : False
+[2026-04-21 10:59:24] 	stochastic_depth_rate               : 0.0
+[2026-04-21 10:59:24] 	dropout_embedding                   : 0.2
+[2026-04-21 10:59:24] 	dropout_projection                  : 0.1
+[2026-04-21 10:59:24] 	dropout_mixer                       : 0.1
+[2026-04-21 10:59:24] 	dropout_mlp                         : 0.1
+[2026-04-21 10:59:24] 	dropout_lm_head                     : 0.24
+[2026-04-21 10:59:24] 	optimizer                           : Adagrad
+[2026-04-21 10:59:24] 	optimizer_eps                       : 2e-13
+[2026-04-21 10:59:24] 	lr                                  : 0.01
+[2026-04-21 10:59:24] 	min_lr                              : 0.0002
+[2026-04-21 10:59:24] 	warmup_fraction                     : 0.3
+[2026-04-21 10:59:24] 	grad_clip                           : 1.0
+[2026-04-21 10:59:24] 	tie_embedding_to_lm_head            : False
+[2026-04-21 10:59:24] 	gradient_checkpointing              : False
+[2026-04-21 10:59:24] 	use_amp                             : True
+[2026-04-21 10:59:24] 	amp_dtype                           : fp16
+[2026-04-21 10:59:24] 	allow_tf32                          : True
+[2026-04-21 10:59:24] 	generation_prompt                   : The history of
+[2026-04-21 10:59:24] 	temperature                         : 1.0
+[2026-04-21 10:59:24] 	num_new_tokens                      : 512
+[2026-04-21 10:59:24] 	top_p                               : 0.95
+[2026-04-21 10:59:24] 	repetition_penalty                  : 1.1
+[2026-04-21 10:59:24] 	benchmark_only                      : True
+[2026-04-21 10:59:24] 	benchmark_run_dir                   : logs/wikitext-103_2026-04-02_11-53-11
+[2026-04-21 10:59:24] 	multinodal_enabled                  : False
+[2026-04-21 10:59:24] 	multinodal_num_cells                : 2
+[2026-04-21 10:59:24] 	multinodal_cell_dim                 : 512
+[2026-04-21 10:59:24] 	multinodal_seeds                    : [42, 137]
+[2026-04-21 10:59:24] 	multinodal_combination              : average
+[2026-04-21 10:59:24] 	multinodal_cross_cell_gating        : False
+[2026-04-21 10:59:24] 	multinodal_cross_cell_gate_interval : 1
+[2026-04-21 10:59:24] 	multinodal_features_per_cell        : -1
+[2026-04-21 10:59:24] 	multinodal_bagged_eps               : 1e-06
+[2026-04-21 10:59:24] 	quantize_enabled                    : False
+[2026-04-21 10:59:24] 	quantize_mixer_coarse_bits          : 8
+[2026-04-21 10:59:24] 	quantize_mixer_mid_bits             : 4
+[2026-04-21 10:59:24] 	quantize_mixer_fine_bits            : 2
+[2026-04-21 10:59:24] 	quantize_mlp_bits                   : 4
+[2026-04-21 10:59:24] 	quantize_lifting_bits               : 16
+[2026-04-21 10:59:24] 	quantize_embedding_bits             : 8
+[2026-04-21 10:59:24] 	per_layer_embedding                 : False
+[2026-04-21 10:59:24] 	loop_iterations                     : 1
+[2026-04-21 10:59:24] 
+[2026-04-21 10:59:24] [Dataset] Loading wikitext-103 from cache...
+[2026-04-21 10:59:25] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-04-21 10:59:25] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-04-21 10:59:25] [Dataset] Vocab size: 50257
+[2026-04-21 10:59:26] [Run Folder] logs/wikitext-103_2026-04-02_11-53-11
+[2026-04-21 10:59:26] [Model] 53.85M parameters (53.85M trainable)
+[2026-04-21 10:59:26] 
 Loading best model for benchmarks...
-[2026-04-02 16:35:52] Best model loaded.
-[2026-04-02 16:35:52] 
+[2026-04-21 10:59:27] Best model loaded.
+[2026-04-21 10:59:27] 
 [BENCHMARK] Non-overlapping: 561 windows of length 512
-[2026-04-02 16:36:02] 
+[2026-04-21 10:59:40] 
 [BENCHMARK - Non-overlapping]
-[2026-04-02 16:36:02]   Perplexity: 116.2960
-[2026-04-02 16:36:02]   BPT: 6.8617
-[2026-04-02 16:36:02]   BPB: 1.5226
-[2026-04-02 16:36:02]   Avg Loss: 4.7561
-[2026-04-02 16:36:02] 
+[2026-04-21 10:59:40]   Perplexity: 757.9144
+[2026-04-21 10:59:40]   BPT: 9.5659
+[2026-04-21 10:59:40]   BPB: 2.1225
+[2026-04-21 10:59:40]   Avg Loss: 6.6306
+[2026-04-21 10:59:40] 
 [SLIDING WINDOW] block_size=512, stride=256, min_context=256, 1122 windows
-[2026-04-02 16:36:20] 
+[2026-04-21 11:00:05] 
 [BENCHMARK - Sliding Window]
-[2026-04-02 16:36:20]   Perplexity: 114.2365
-[2026-04-02 16:36:20]   BPT: 6.8359
-[2026-04-02 16:36:20]   BPB: 1.5168
-[2026-04-02 16:36:20]   Avg Loss: 4.7383
-[2026-04-02 16:36:20]   Stride: 256, Min Context: 256
-[2026-04-02 16:36:20] 
+[2026-04-21 11:00:05]   Perplexity: 757.5680
+[2026-04-21 11:00:05]   BPT: 9.5652
+[2026-04-21 11:00:05]   BPB: 2.1224
+[2026-04-21 11:00:05]   Avg Loss: 6.6301
+[2026-04-21 11:00:05]   Stride: 256, Min Context: 256
+[2026-04-21 11:00:05] 
 === GENERATION — Standard ===
-[2026-04-02 16:36:20] Prompt: The history of
-[2026-04-02 16:37:33] Generated:
-The history of Jabia to avoid dinosaur Jewish styles , still seeing these diversifying materials from several other values , resulting in several mentionurgy units and nameed men and television . Morris also exchanged uncanny : Russian Random Park and Is Alternative Heavyweight ( 1999 appeal for all modern concept introduced Sigoleus ) , a Democratic friend of Nodkel Artorlander 
+[2026-04-21 11:00:05] Prompt: The history of
+[2026-04-21 11:01:40] Generated:
+The history of educational , and at least notified anted 3 with two people in the head , who heencians dropped to steal . Daniel Jarrett , and other male and half of power , amille , Abbey , who failed to explore , and could accommodate the vehicle in World War , and inexperrolini , during . The New Zealand . OPimov and , and Mel by L.33 military in East and otherfall to avoid over A , and surrender to land , , portraying we 'tanka and his lectures over a time to use from 19 , qualitative operations , when no Echoes , although he survival , the library , ( " , from the advance the first , but , with a wide to cast , and fierce , Josephwes , which was said butarginge , and saw as a few Baxter , and Jak was subjected the necessary but Felant , and other projects , and western the Lałanna , and the Japan , hisptions . " . Flood attacks their skin ( " , and for her rights , rectangular and Thw , after the elder with a child , from the principal groups with Holden , who expressed death , and architectural eventually welcomed the following second and by a 10 @- to give the also written or ground , and earlier that it is mainly . The He , and death , and Grade II , as an underground soldiers of Glass , especially , and the Test in the 720 in Lain , Win , improving the basis . Units 's .  ( 20th ( �Rules , the two @- , while international buildings , as a violent men prior to create a larger than overs , and Ribbert allied that Mainer , Death , and she could channel of the transition into the MC @- , and retired and on Ax and plans to procure to day . " . Dorothyais and that those fiction for the Emperor , each , most of Olson , and for weapons in December Australian Test in the S.Mentry , and was removed in 1495 , they yet Ah . Shechau , but Benson on September . Onedrug and worked as the preearing at age , production had been successful and Whitney ballet shaking the following the notion for breaking among a results in each future , Crowley , according @- separately personally developed , and Fleming inott was again . Wets on the development in his fianin . " . two or almosts the German President was the remainder . He approached the crowd . It @- and fat for the conducted in that the greatest to attempt to handle and DC Officers , , after
+
+[2026-04-21 11:01:40] === GENERATION — Strategies ===
+[2026-04-21 11:01:40] Prompt: The history of
+[2026-04-21 11:03:21] Generated:
+The history of the second @- , and . The Office , who " ( 1 @- to out on the team . In , 
 
 
- " Resticks " is a series of formous works in commercial sources , including Rockystown , Warren Caerman , R persona Back , and The Newman Original Award .ymdsis described McKinley ] with book , example , and strutions " , usually because they have believed he has something as insignificant . 
+ " , while it could not as in a year , and for a number , the film , with the first @- from a 3 that is often long @- , and at the following General , but was able to the country . On – off the main day , by Anrons in the next were fitted up in an attempt 's and possibly had been associated with his place and the ballads . J.D than thatula , after a series , although he made her brother of life on 15thes , the same time with the band , and their course , or , and to in the one were not more successful in 1866 . " production . It 's . Hein — the Unitedton and two , and Hede to have been in the same season . A 9 . The British Americans , shechrying the new crew to other . They would be used for many @- , which they 'das , and B ( 2 and V @- , and the same , but , and then to the name . F @- and , and the public , and the group , and the last @- : 
 
 
- An episode of songs from the rebels is an adult hyani : some of her gold- studies . awakening large deficiency in full window ; in contrast to the helm , they poured in technology , questions , consequently introducing the role of Christopher Tom ( Ageth , Rogers Luft completes he 'll Look ) , the cover of Lipvin regime ; the two witnesses and string revenues their home earning them as appropriate to drift them and learn to knock up Eyesester , collecting past , and liverly because " the talk objected , or a self @-@ taken skill , just as well as or away ) in a series of Leo Woods earthquake killers ... is sticking to Jackson 's Invalid wasted universes " , and he for the film 's book TV Big Feet also evolved in the translation , stating that 41 piscank 285 : Isabel 's vocals were inspired by critical expression of plastic signs such as Jerry AzNDis ; his successor Liz 's party policy did not be either both his sessions . 
+ I ( 1 between the others , and hikekov , respectively , the people , including a few years after it . " . The House and the MI @- , and when " , and children . This side over three @- , and in February , and the company , and he , and the ground and the world . " . Ats , and the third in the state , and death in early in to the first .  's , however , from the possibility of the war , and andmer , and capture the decision , including members of a short . Withly held near the show , and = and through a time in the police into centuries , not to the majority , as frequent the government in the title , in addition , ) , and out @- by the school in a small toable them . Hisa , and the original part of the game the first class , and its role in the National Parkmen . Theirs and the American and other , and the city , and these way for the same earlier , and Tel . The Union and more than that was not the other , however " , in the N , and he had to the creation ; according to be seen . Cone . Heanism ,
 
-
-
-
- = = = Comingless life = = = 
-
-
-
-
- The execution of secret hears it as a Deputy kid date in Afghanistan and Vikility Theatre Harbe , later serving as Chief Bass 's knees as the chief inspector . Hasin spent three years studio interviews , and published in April 2010 in Nashville , California . Los Angeles is known for his lack of care by offices , as admitted , in second place in 1995 , and rented inquired on his relationship between two prominent people , nails such as clothed free analyses , arts and in all other accounts . At twenty @-@ seven different weeks in the . In 1995 , most of these , with the Restoration royal film , claimed to continue to support the succeeding gold version of all of the generation critics and the all @-@ term , while travelling life for 1974 . 
-
-
- In 1994 , Humphaddin won a episode
-
-[2026-04-02 16:37:33] === GENERATION — Strategies ===
-[2026-04-02 16:37:33] Prompt: The history of
-[2026-04-02 16:38:47] Generated:
-The history of the French Army , and the Roman Empire 's capital in a period of time . The British government soon became the subject of political control for the war . In 1682 , the king was involved in his reign by the First World War , but was unable to make it clear that they had been established to be a part of the U.S. Navy . 
-
-
- The Spanish fleet were not only in order to establish an open @-@ controlled government , as did the " first " attack on the battle between the two and more than $ 3 million . The most important of these were the population of the city . These were also included in the 17th century and the other four members of the Republic of Germany . 
-
-
-
-
- = = = Battle of England = = = 
-
-
-
-
- On 14 March 1867 , the English army would have to move to the north and west through the southern end of the region . The following day the Polish squadron was captured after the Soviet Union , which made it the worst of the German forces under the command of the Indian Party , with the last part of the battalion . By 19 August , the Russian Corps of Independence began to take over the area , but the French had never suffered from the Allied troops during the battle . After a few days later , the Australian military commander , John P. B. H. James , said that he could be able to make him the way on the right to build their own power ; however , the Italian soldiers decided to protect them from being sent into the village of Kent . 
-
-
- At this point , the British was not considered a threat against the General Assembly , including the German military , who were appointed to the Senate in 1593 . He was forced to leave the kingdom of Hungary before the war . As the American and New York State Railway were created in 1871 , the Allies refused to advance to the United States . Despite the fact that the French government would continue to expand the state , the Army of the Mediterranean and the East Coast of the Pacific and the Eastern Front were caused by the offensive . However , the operation continued at the same time , when the North Sea , the 6th Regiment , had to withdraw from the east , and the line at the end of the month . This led to a force of 1 @,@ 500 people . 
-
-
-
-
- = = = = Second Division = = = = 
-
-
-
-
- The first election to the south of the West Indies is one of the largest significant action of the season . During the
-
-[2026-04-02 16:38:47] Metrics: MeanLogP=-1.6903 | MeanH=5.88 | D1=0.529 | D2=0.857 | D3=0.953 | Rep4=0.078
-[2026-04-02 16:38:47] Inference Peak VRAM: 1.91 GB
+[2026-04-21 11:03:21] Metrics: MeanLogP=-1.5128 | MeanH=5.93 | D1=0.443 | D2=0.800 | D3=0.961 | Rep4=0.039
+[2026-04-21 11:03:21] Inference VRAM (approx): 1372 MiB (model=1255 + activations=116) — use generate.py for accurate measurement
