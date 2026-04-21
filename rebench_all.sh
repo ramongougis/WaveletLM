@@ -70,22 +70,20 @@ EOF
     echo "=== Rebenching: $folder"
     echo "============================================================"
 
-    PER_LOG="$folder/rebench_run.log"
     set +e
-    python train.py > "$PER_LOG" 2>&1
+    python train.py
     RC=$?
     set -e
-    tail -40 "$PER_LOG"
 
     if [ "$RC" -ne 0 ] || [ ! -f "$folder/benchmark.txt" ]; then
-        echo "[FAIL] $folder (exit code $RC) — see $PER_LOG" | tee -a "$FAIL_LOG"
+        echo "[FAIL] $folder (exit code $RC)" | tee -a "$FAIL_LOG"
     fi
 done
 
 echo ""
 echo "=== Rebench complete ==="
 if [ -s "$FAIL_LOG" ]; then
-    echo "Failures: $(wc -l < $FAIL_LOG) folders failed (see $FAIL_LOG; per-folder log in <folder>/rebench_run.log)"
+    echo "Failures: $(wc -l < $FAIL_LOG) folders failed (see $FAIL_LOG)"
 fi
 echo "Each successful folder now has a fresh benchmark.txt and a preserved benchmark_pre_v2.txt."
 echo "Run the post-processing/CSV step separately when you want a comparison summary."
