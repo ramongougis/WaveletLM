@@ -231,6 +231,8 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 
 WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
 
+**Regularization caveat.** The model has substantial unused capacity: train-val gaps over 0.8 loss during longer runs show it can fit the training distribution faster than it generalizes. We expect perplexity to drop further with better-tuned regularization, but the cost budget is beyond our current grasp. Weight decay was tested (WD=1e-3 on top of 1.5× dropout [here](logs/wikitext-103_2026-04-14_06-41-17/log.txt)), but training stalled and the run was early-stopped. Weight decay does not seem to be a viable lever due to interaction with Adagrad's accumulator. Strategies such as scheduled weight decay have not been tested.
+
 [^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 5 epochs, 2.0× dropout. Sliding-window PPL 24.34, BPB 1.0219. See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt).
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.

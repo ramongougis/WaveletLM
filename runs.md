@@ -36,17 +36,18 @@
 32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
 34. [3-seed 10-epoch variance study: L=2, C=2048, 2.5x dropout](#3-seed-10-epoch-variance-study-l2-c2048-25x-dropout)
-35. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
-36. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
-37. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
-38. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
-39. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
-40. [Best PTQ combination](#best-ptq-combination)
-41. [PTQ sweep summary](#ptq-sweep-summary)
-42. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-43. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-44. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-45. [Run Details](#run-details)
+35. [Weight decay spot-check (low values): 5 epochs, best architecture](#weight-decay-spot-check-low-values-5-epochs-best-architecture)
+36. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
+37. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
+38. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
+39. [PTQ: Per-scale mixed precision](#ptq-per-scale-mixed-precision-quantization)
+40. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
+41. [Best PTQ combination](#best-ptq-combination)
+42. [PTQ sweep summary](#ptq-sweep-summary)
+43. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+44. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+45. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+46. [Run Details](#run-details)
 
 ---
 
@@ -445,6 +446,22 @@ Next up. Same config as the 5-epoch run above, doubled to 10 epochs, with dropou
 |   | 7    | | | | 882.51M | ~28h | |
 
 Mean BPB: _ ± _.
+
+### Weight decay spot-check (low values): 5 epochs, best architecture
+
+Prior WD test used WD=1e-3 on top of 1.5× dropout and stalled training (see [run log](logs/wikitext-103_2026-04-14_06-41-17/log.txt)) — likely the Adagrad × WD compounding effect. This series probes whether sufficiently small WD values are either lossless or slightly beneficial, using the current best architecture (same config as the 3-seed runs, dropout at 2.5×). Each run is early-stopped if training stalls.
+
+**Tiered plan:**
+1. Test WD=1e-6 and WD=1e-7 (5 epochs each, same best-run config otherwise).
+2. If either shows improvement or holds steady, extend inward/outward: WD=1e-5 or WD=1e-8, as indicated by the trend.
+3. If a clearly beneficial value is found, the 3-seed 10-epoch runs may be re-run with WD enabled. Otherwise, close the loop with "WD is not a viable lever on this model."
+
+**Compute-saving option under consideration:** truncate the 3-seed runs after seed 1337 completes so these WD probes can slot in sooner; the remaining two seeds can be deferred until a final recipe is locked. Separately, the 3-seed runs may not need a full 10 epochs — if the val curve saturates earlier, epoch count can be trimmed, which also frees budget for these probes.
+
+| Run | WD | Folder | BPB (sliding) | Train/Val loss | Params | Time | Notes |
+|-----|-----|--------|---------------|----------------|--------|------|-------|
+|   | 1e-6 | | | | 882.51M | ~14h | Lowest probe first; early-stop if stalling |
+|   | 1e-7 | | | | 882.51M | ~14h | |
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 
