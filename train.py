@@ -447,6 +447,50 @@ def train():
                        'multinodal_bagged_eps']:
                 if k in run_config:
                     config[k] = run_config[k]
+
+            # For arch keys missing from the run's config (i.e., the key
+            # didn't exist when the run was trained), force them to their
+            # feature-off defaults rather than leaking the current root
+            # config's value into a model that was trained without them.
+            ARCH_DEFAULTS = {
+                'per_scale_mixer_widths': None,
+                'cross_scale_gating': False,
+                'wavelet_crawl': False,
+                'wavelet_crawl_k': 3,
+                'decompose_bypass_ema': False,
+                'untied_reconstruction': False,
+                'multi_basis_lifting': False,
+                'multi_basis_inits': ['haar', 'random'],
+                'looped_blocks': False,
+                'looped_blocks_count': 8,
+                'per_layer_embedding': False,
+                'shared_lifting_weights': False,
+                'stable_parametrization': False,
+                'stab_spectral_norm': False,
+                'stab_ff_scaling': False,
+                'stab_embed_scaling': False,
+                'stab_proj_out_scaling': False,
+                'stab_mixer_eps_scaling': False,
+                'stab_lifting_level_scaling': False,
+                'mixer_depth': 1,
+                'mixer_depth_stabilizers': False,
+                'mixer_depth_residuals': False,
+                'skip_proj_out': False,
+                'fwpkm_inference_updates': False,
+                'fwpkm_update_lr': 0.01,
+                'fwpkm_chunk_size': 64,
+                'lifting_linear_only': False,
+                'lifting_hidden_mult': 1,
+                'lifting_init': 'haar',
+                'lifting_dropout': 0.0,
+                'use_mixer_gate': True,
+                'mixer_gate_activation': 'silu',
+                'multinodal_combination': 'average',
+                'loop_iterations': 1,
+            }
+            for k, default in ARCH_DEFAULTS.items():
+                if k not in run_config:
+                    config[k] = default
         log_dir = benchmark_run_dir
         logger = Logger(log_dir, filename="benchmark.txt")
         logger.log(f"=== BENCHMARK ONLY MODE ===")
