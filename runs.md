@@ -479,7 +479,7 @@ Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-m
 
 **Added params:** ~1 Linear(C,C) + bias per block = ~4.2M params per block × 2 blocks = ~8.4M. Negligible.
 
-**Implementation note:** sequential over time (breaks `torch.compile`, wrapped with `@torch.compiler.disable`). Expected ~2-3× slower per forward pass than the cumsum baseline for this probe. Runtime estimate: ~8-10h for 1 epoch vs ~3h baseline. If the direction validates, production version needs an associative scan (e.g., Triton kernel or pytorch equivalent) to remove the slowdown.
+**Implementation note:** Hillis–Steele associative parallel scan in pure pytorch (breaks `torch.compile`, wrapped with `@torch.compiler.disable`). O(log T) GPU-dispatch depth; 8 passes at T=256. Scan state runs in fp32 to avoid fp16 underflow on products of small α. Expected ~1.5–2× slower per forward pass than the cumsum baseline. Runtime estimate: **~5-6h for 1 epoch** vs ~3h baseline. If the direction validates, a Triton kernel (Mamba-style) can close the remaining gap for production runs.
 
 **Decision criteria:**
 - BPB drops ≥0.005 vs the baseline new_baseline probe (1.1168): **adopt for release**; re-run the 5-epoch best and 3-seed runs with `decompose_bypass_ema=true`.
@@ -488,7 +488,7 @@ Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-m
 
 | Run | Config | Folder | BPB (sliding) | Δ BPB vs 1.1168 | Params | Time | Notes |
 |-----|--------|--------|---------------|-----------------|--------|------|-------|
-|   | `decompose_bypass_ema=true`, else identical to new-baseline 1-epoch probe | | | | ~848M | ~8-10h | σ-gated EMA replaces cumulative mean |
+|   | `decompose_bypass_ema=true`, else identical to new-baseline 1-epoch probe | | | | ~848M | ~5-6h | σ-gated EMA replaces cumulative mean; Hillis–Steele parallel scan |
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 

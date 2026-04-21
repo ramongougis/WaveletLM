@@ -850,23 +850,48 @@ def _compute_data_dependent_ema(x: torch.Tensor,
     and focuses on new content. Replaces the cumulative running mean, which
     cannot forget.
 
-    Implementation: sequential loop over time (breaks torch.compile, hence
-    the @disable decorator). Expected ~2-3× slowdown per forward pass vs the
-    cumsum-based running mean. Acceptable for a 1-epoch probe; if the
-    direction validates, replace with an associative scan for production.
+    Implementation: Hillis–Steele parallel associative scan. The recurrence
+    can be written as a composition of linear functions f_t(y) = A_t y + B_t
+    with A_t = α_t, B_t = (1-α_t) x_t. Two such functions compose as
+    (A_o, B_o) ∘ (A_i, B_i) = (A_o A_i, A_o B_i + B_o), which is associative
+    and enables a log-depth prefix scan over T tokens.
+
+    Complexity: O(N log N) work, O(log N) GPU-dispatch depth. At T=256 this
+    is log2(256)=8 passes, each a fused cat/mul/add over the time dimension.
+    Expected ~1.5–2× slowdown vs the cumsum running mean (much better than
+    the ~2.5–4× cost of a naive sequential for-loop). Numerics run in fp32
+    inside the scan to avoid fp16 underflow on products of small α values.
     """
-    B, T, C = x.shape
+    T = x.size(1)
     alphas = torch.sigmoid(F.linear(x, gate_weight, gate_bias))  # [B, T, C]
-    out = torch.empty_like(x)
-    if prev_ema is None:
-        ema = torch.zeros(B, C, device=x.device, dtype=x.dtype)
-    else:
-        ema = prev_ema
-    for t in range(T):
-        a = alphas[:, t]
-        ema = a * ema + (1.0 - a) * x[:, t]
-        out[:, t] = ema
-    return out
+
+    # Cast scan state to fp32: products of α_t decay toward 0 over long T and
+    # underflow in fp16 (e.g. 0.5**256 ≈ 1e-77).
+    A = alphas.float()
+    B_out = ((1.0 - alphas) * x).float()
+
+    if prev_ema is not None:
+        B_out = B_out.clone()
+        B_out[:, 0] = B_out[:, 0] + alphas[:, 0].float() * prev_ema.float()
+
+    # Slice-based scan: skips the redundant identity math on the first `step`
+    # positions per pass (no counterpart `step` tokens back, so they stay
+    # unchanged). Eliminates the pad-tensor allocations and ~12.5% of the
+    # multiplications vs a cat-based scan.
+    step = 1
+    while step < T:
+        new_A = A.clone()
+        new_B = B_out.clone()
+        A_shifted = A[:, :T - step]
+        B_shifted = B_out[:, :T - step]
+        # Compose: outer = current (later position), inner = shifted (earlier)
+        new_A[:, step:] = A[:, step:] * A_shifted
+        new_B[:, step:] = A[:, step:] * B_shifted + B_out[:, step:]
+        A = new_A
+        B_out = new_B
+        step *= 2
+
+    return B_out.to(x.dtype)
 
 
 # ==============================================================================
