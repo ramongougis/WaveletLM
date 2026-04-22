@@ -501,6 +501,8 @@ Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-m
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 
+**IMPORTANT: Incorporate SentencePiece tokenization FIRST!**
+
 Final pre-release run. Takes the best seed from the 3-seed WT103 study and trains it on PG-19 for 1 epoch. Purpose: publish a second-dataset number alongside WikiText-103 so the release isn't single-benchmark-only, and anchor against Transformer-XL / Compressive Transformer, both of which have reported PG-19 numbers.
 
 **Why 1 epoch is enough:** PG-19 is ~2.5B GPT-2 tokens, ~21× WikiText-103's training corpus. Each token is seen roughly 20× less often than in a 20-epoch WT103 run, so convergence is driven by seeing new data rather than re-seeing the same data. Long-form narrative structure is also less diverse in surface form than Wikipedia — the model shouldn't need many passes to absorb distribution.

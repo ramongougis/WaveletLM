@@ -229,7 +229,7 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 | **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **24.2**[^1] |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
-\* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM).
+\* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
 ### PG-19 Test Set Perplexity Comparison
 
@@ -241,7 +241,7 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 | Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
 | **WaveletLM** | **Wavelet mixer** | **883M** | **TBD** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
 
-All models in this table were trained and evaluated on PG-19. The standard PG-19 protocol (established by Rae et al. 2019) uses a 32K-vocabulary SentencePiece tokenizer; WaveletLM currently uses GPT-2 BPE (50,257 vocab) for WikiText-103, with plans to add SentencePiece for PG-19.
+All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization.
 
 WaveletLM achieves these PPL values with only 2 layers (L=2, C=2048), no attention, and no KV cache. Comparison numbers are sourced from respective papers. See References below.
 
