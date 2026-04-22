@@ -187,6 +187,78 @@ def estimate_loss(model, get_batch, config, device, use_amp, amp_dtype):
 
 
 # ==============================================================================
+# LOG SUMMARY (CSV upsert)
+# ==============================================================================
+
+def upsert_log_summary(run_folder, bpb_sliding, ppl_sliding, params,
+                       csv_path=os.path.join("logs", "log_summary.csv")):
+    """Insert or update a row in logs/log_summary.csv for this run.
+
+    Row columns: folder, bpb_sliding, ppl_sliding, params.
+    - If the run_folder already exists, updates its values in place.
+    - If not present, appends a new row.
+    - Creates the CSV with a header if it doesn't yet exist.
+    - Uses a read-modify-rewrite pattern (safe; the file is tiny).
+
+    Fires for both training runs (benchmark_only=false, end-of-training
+    benchmark) and benchmark-only runs (rebench). Tolerant of missing values
+    — pass None for any field that's unavailable and it's written as empty.
+    """
+    import csv
+    folder = os.path.basename(run_folder.rstrip(os.sep).rstrip('/'))
+    fieldnames = ['folder', 'bpb_sliding', 'ppl_sliding', 'params']
+
+    def _fmt(v, spec=None):
+        if v is None:
+            return ""
+        if spec is None:
+            return str(v)
+        return format(v, spec)
+
+    new_row = {
+        'folder': folder,
+        'bpb_sliding': _fmt(bpb_sliding, '.4f'),
+        'ppl_sliding': _fmt(ppl_sliding, '.4f'),
+        'params': f"{params:,}" if params is not None else "",
+    }
+
+    # Read existing rows (if any)
+    rows = []
+    if os.path.exists(csv_path):
+        try:
+            with open(csv_path, 'r', encoding='utf-8', newline='') as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    rows.append({k: r.get(k, '') for k in fieldnames})
+        except Exception:
+            rows = []  # corrupt file → overwrite
+
+    # Upsert with merge semantics: if the new value is empty but the existing
+    # row has a value, preserve it. Prevents a partial/failed benchmark from
+    # silently wiping historical numbers for that folder.
+    updated = False
+    for i, r in enumerate(rows):
+        if r.get('folder') == folder:
+            merged = {k: r.get(k, '') for k in fieldnames}
+            for k, v in new_row.items():
+                if v or not merged.get(k):
+                    merged[k] = v
+            rows[i] = merged
+            updated = True
+            break
+    if not updated:
+        rows.append(new_row)
+
+    # Rewrite
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+
+# ==============================================================================
 # BENCHMARKS
 # ==============================================================================
 
@@ -797,6 +869,7 @@ def train():
     # Sliding window benchmark
     results_sw = evaluate_sliding_window(
         model, test_data, config, logger, device, use_amp, amp_dtype)
+    bpb_sw = None
     if results_sw:
         bpb_sw = results_sw['bits_per_token'] / bytes_per_token
         logger.log(f"\n[BENCHMARK - Sliding Window]")
@@ -805,6 +878,19 @@ def train():
         logger.log(f"  BPB: {bpb_sw:.4f}")
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
+
+    # Upsert this run's entry in logs/log_summary.csv. Fires for both
+    # benchmark_only=true (rebench) and benchmark_only=false (end of training).
+    try:
+        upsert_log_summary(
+            run_folder=log_dir,
+            bpb_sliding=bpb_sw,
+            ppl_sliding=(results_sw['perplexity'] if results_sw else None),
+            params=total_params,
+        )
+        logger.log(f"[log_summary.csv] Updated row for {os.path.basename(log_dir)}")
+    except Exception as e:
+        logger.log(f"[log_summary.csv] Update skipped: {e}")
 
     # Log mixer depth stabilizer values if enabled
     if config.get('mixer_depth_stabilizers', False) and config.get('mixer_depth', 1) > 1:
