@@ -233,13 +233,17 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 
 ### PG-19 Test Set Perplexity Comparison
 
-| Model | Type | Trained on | Params | PPL |
-|-------|------|-----------|--------|-----|
+| Model | Type | Params | PPL |
+|-------|------|--------|-----|
+| Perceiver AR | Cross-attn + latents | 974M | 28.9[^5] |
+| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 29.0[^6] |
+| Compressive Transformer | Transformer + compressive memory | 257M | 33.6[^7] |
+| Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
+| **WaveletLM** | **Wavelet mixer** | **883M** | **TBD** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
 
+All models in this table were trained and evaluated on PG-19. The standard PG-19 protocol (established by Rae et al. 2019) uses a 32K-vocabulary SentencePiece tokenizer; WaveletLM currently uses GPT-2 BPE (50,257 vocab) for WikiText-103, with plans to add SentencePiece for PG-19.
 
-\* Both trained and evaluated on PG-19 only (direct comparison to WaveletLM).
-
-WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention and no KV cache. Comparison numbers are sourced from respective papers; see references below.
+WaveletLM achieves these PPL values with only 2 layers (L=2, C=2048), no attention, and no KV cache. Comparison numbers are sourced from respective papers. See References below.
 
 ### Areas for Improvement
 
@@ -314,3 +318,6 @@ Apache License 2.0. See [LICENSE](LICENSE) for details.
 [^2]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
 [^3]: Radford et al. "Language Models are Unsupervised Multitask Learners." OpenAI, 2019.
 [^4]: Gu et al. "Efficiently Modeling Long Sequences with Structured State Spaces." arXiv:2111.00396, 2021.
+[^5]: Hawthorne et al. "General-purpose, long-context autoregressive modeling with Perceiver AR." arXiv:2202.07765, 2022.
+[^6]: Hutchins et al. "Block-Recurrent Transformers." arXiv:2203.07852, 2022.
+[^7]: Rae et al. "Compressive Transformers for Long-Range Sequence Modelling." arXiv:1911.05507, 2019. (PG-19 dataset introduction; reports both Compressive Transformer and Transformer-XL on PG-19.)
