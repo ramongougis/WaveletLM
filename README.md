@@ -178,7 +178,7 @@ Output tokens
 
 - **Looped blocks (Universal Transformer-style)**: apply one shared block K times in place of stacking L distinct blocks. Achieves BPB reduction at fixed parameter count by trading parameters for compute, though the same compute is usually better spent on additional training epochs of the stacked model.
 
-- **Data-dependent EMA bypass** (`decompose_bypass_ema`): replaces the cumulative-mean decompose-bypass with a σ-gated exponential moving average: a leaky integrator whose leak rate is decided per-token by the current input. DSP-wise: an adaptive (Kalman/Wiener-flavor) 1st-order IIR filter whose cutoff frequency changes with input, letting the model selectively forget at topic/clause boundaries and retain across stable context. Adds ~8M params (C² + C per block); 1-epoch smoke test showed a 0.30-nat val-loss improvement vs the cumulative-mean baseline.
+- **Data-dependent EMA bypass** (`decompose_bypass_ema`): replaces the cumulative-mean decompose-bypass with a σ-gated EMA: a leaky integrator whose leak rate is decided per-token by the current input. DSP-wise: an adaptive (Kalman/Wiener-flavor) 1st-order IIR filter whose cutoff frequency changes with input, letting the model selectively forget at topical/clausal boundaries. 
 
 <details>
 <summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
