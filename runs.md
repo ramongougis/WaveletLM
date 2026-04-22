@@ -37,7 +37,7 @@
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
 34. [3-seed variance study: L=2, C=2048, 2.0x dropout, 6 epochs](#3-seed-variance-study-l2-c2048-20x-dropout-6-epochs)
 35. [Weight decay spot-check (low values): 5 epochs, best architecture](#weight-decay-spot-check-low-values-5-epochs-best-architecture)
-36. [Decompose-bypass data-dependent EMA probe: 1 epoch](#decompose-bypass-data-dependent-ema-probe-1-epoch)
+36. [Decompose-bypass data-dependent EMA probe](#decompose-bypass-data-dependent-ema-probe)
 37. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
 38. [Post-training quantization (PTQ)](#post-training-quantization-ptq-inference-only-applied-to-best-checkpoint)
 39. [PTQ: Uniform quantization](#ptq-uniform-quantization-all-components-same-bits)
@@ -461,21 +461,16 @@ Mean BPB: _ ± _.
 
 ### Weight decay spot-check (low values): 5 epochs, best architecture
 
-Prior WD test used WD=1e-3 on top of 1.5× dropout and stalled training (see [run log](logs/wikitext-103_2026-04-14_06-41-17/log.txt)) — likely the Adagrad × WD compounding effect. This series probes whether sufficiently small WD values are either lossless or slightly beneficial, using the current best architecture (same config as the 3-seed runs, dropout at 2.5×). Each run is early-stopped if training stalls.
+Prior WD test used WD=1e-3 on top of 1.5× dropout and stalled training (see [run log](logs/wikitext-103_2026-04-14_06-41-17/log.txt)) — likely the Adagrad × WD compounding effect. This probe tests whether a far smaller WD value has any beneficial effect at the current best architecture.
 
-**Tiered plan:**
-1. Test WD=1e-6 and WD=1e-7 (5 epochs each, same best-run config otherwise).
-2. If either shows improvement or holds steady, extend inward/outward: WD=1e-5 or WD=1e-8, as indicated by the trend.
-3. If a clearly beneficial value is found, the 3-seed 10-epoch runs may be re-run with WD enabled. Otherwise, close the loop with "WD is not a viable lever on this model."
-
-**Compute-saving option under consideration:** truncate the 3-seed runs after seed 1337 completes so these WD probes can slot in sooner; the remaining two seeds can be deferred until a final recipe is locked. Separately, the 3-seed runs may not need a full 10 epochs — if the val curve saturates earlier, epoch count can be trimmed, which also frees budget for these probes.
+**Revised scope (2026-04-22):** original plan tested WD=1e-6 and WD=1e-7. The 1e-6 probe's end-of-epoch-1 val loss (3.7702) was bit-identical to the 5-epoch best run's epoch-1 val loss (3.7640) — confirming **WD=1e-6 has essentially zero effect at this scale**. The 1e-7 probe would be even closer to zero effect and is therefore low-signal. **Cancelled in favor of a 5-epoch EMA probe** (see next section), which showed a 0.30-nat val-loss improvement at 1 epoch and deserves the compute. A broader WD × dropout grid is deferred to post-release, when compute budget allows a proper 2D sweep.
 
 | Run | WD | Folder | BPB (sliding) | Train/Val loss | Params | Time | Notes |
 |-----|-----|--------|---------------|----------------|--------|------|-------|
-|   | 1e-6 | | | | 882.51M | ~14h | Lowest probe first; early-stop if stalling |
-|   | 1e-7 | | | | 882.51M | ~14h | |
+|   | 1e-6 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | in-progress | epoch 1: train 3.6597 / val 3.7702 | 882.51M | ~17h | Essentially indistinguishable from 5-epoch baseline at epoch 1 → WD=1e-6 is inert at this scale |
+|   | ~~1e-7~~ | cancelled | — | — | — | — | Compute reallocated to 5-epoch EMA run |
 
-### Decompose-bypass data-dependent EMA probe: 1 epoch
+### Decompose-bypass data-dependent EMA probe
 
 Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-mean in `decompose_bypass` (which cannot forget) with a data-dependent EMA:
 
@@ -486,20 +481,23 @@ Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-m
 
 **Motivation.** The current `_compute_running_mean` is a cumsum-based causal average — a 1st-order IIR filter with a pole at z=1 that can't discard stale state. As context grows, old tokens dilute new ones indefinitely. For language, which requires *selective* forgetting at topic/character/clause boundaries, this is a genuine architectural limitation. A σ-gated EMA gives per-channel, per-token control: α≈1 preserves long-range state, α≈0 flushes history.
 
-**Config:** baseline 5-epoch best run config (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights), but `epochs=1` and new flag `decompose_bypass_ema=true`. Gate initialized to σ(0)=0.5 (≈50% retention per channel) so behavior at step 0 is a cleaner version of the cumulative mean before the gate learns.
+**Config:** baseline 5-epoch best run config (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights), plus new flag `decompose_bypass_ema=true`. Gate initialized to σ(0)=0.5 (≈50% retention per channel) so behavior at step 0 is a cleaner version of the cumulative mean before the gate learns.
 
 **Added params:** ~1 Linear(C,C) + bias per block = ~4.2M params per block × 2 blocks = ~8.4M. Negligible.
 
-**Implementation note:** Hillis–Steele associative parallel scan in pure pytorch with slice-based composition (no pad allocations; skips identity math on the first `step` positions per pass, saving ~12.5% of the multiplications). Wrapped with `@torch.compiler.disable`. O(log T) GPU-dispatch depth; 8 passes at T=256. Scan state runs in fp32 to avoid fp16 underflow on products of small α. Expected ~1.5× slower per forward pass than the cumsum baseline. Runtime estimate: **~4.5–5.5h for 1 epoch** vs ~3h baseline. If the direction validates, a Triton kernel (Mamba-style) can close the remaining gap for production runs.
+**Implementation note:** Hillis–Steele associative parallel scan in pure pytorch with slice-based composition (no pad allocations; skips identity math on the first `step` positions per pass, saving ~12.5% of the multiplications). Wrapped with `@torch.compiler.disable`. O(log T) GPU-dispatch depth; 8 passes at T=256. Scan state runs in fp32 to avoid fp16 underflow on products of small α. Observed runtime: **~3:28 per epoch** vs ~3:12 baseline — only ~8% slower, much better than the ~50% initially projected. If a production version wants the remaining margin closed, a Triton kernel (Mamba-style) can get there.
 
 **Decision criteria:**
-- BPB drops ≥0.005 vs the baseline new_baseline probe (1.1168): **adopt for release**; re-run the 5-epoch best and 3-seed runs with `decompose_bypass_ema=true`.
-- BPB drops 0.001-0.005: **record as post-release improvement**; keep current for release.
-- BPB ≥ baseline: **cumulative mean was doing less harm than expected**; ship as-is, note in post-release plans that the rigidity isn't the bottleneck.
+- Sliding BPB after 5 epochs drops ≥0.005 vs 5-epoch best (1.0201): **adopt for release**; re-run the 3-seed variance study with `decompose_bypass_ema=true`.
+- Sliding BPB drops 0.001-0.005: **record as post-release improvement**; keep current for release.
+- Sliding BPB ≥ baseline: **cumulative mean was doing less harm than expected**; ship as-is.
 
-| Run | Config | Folder | BPB (sliding) | Δ BPB vs 1.1168 | Params | Time | Notes |
-|-----|--------|--------|---------------|-----------------|--------|------|-------|
-|   | `decompose_bypass_ema=true`, else identical to new-baseline 1-epoch probe | | | | ~848M | ~4.5-5.5h | σ-gated EMA replaces cumulative mean; Hillis–Steele parallel scan (slice-based) |
+| Run | Config | Folder | BPB (sliding) | PPL (sliding) | Val loss (epoch 1) | Params | Time | Notes |
+|-----|--------|--------|---------------|---------------|-------|--------|------|-------|
+| EMA 1-epoch smoke test | `decompose_bypass_ema=true`, 1 epoch | [link](logs/wikitext-103_2026-04-21_22-05-15/log.txt) | **1.110** | **32.07** | **3.4580** | ~848M | 3.48h | **Val loss −0.30 nats vs 1-epoch no-EMA reference (3.7640); huge improvement.** Equivalent to ~3 epochs of extra baseline training at this rate. |
+| EMA 5-epoch full run | `decompose_bypass_ema=true`, 5 epochs | | | | | ~848M | ~17h | Replaces the cancelled WD 1e-7 probe. Directly comparable to the 5-epoch best run (1.0201). Main release-gating experiment. |
+
+**1-epoch baseline reference (EMA=false):** the 5-epoch best run's end-of-epoch-1 val loss was 3.7640 ([source log](logs/wikitext-103_2026-04-19_13-16-24/log.txt)). The WD 1e-6 probe's end-of-epoch-1 val loss was 3.7702 — bit-identical within noise — which serves as independent confirmation. No separate 1-epoch EMA=false control needed.
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 

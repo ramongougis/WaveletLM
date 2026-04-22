@@ -74,14 +74,19 @@ run_probe \
     '{"epochs": 6, "weight_decay": 0.0}'
 
 # ====================================================================
-# Probe 3 — Weight decay 1e-7 (~14h)
-# Even lower WD. If 1e-6 is harmful or neutral, 1e-7 closes the loop on
-# "WD is not a viable lever for this model."
+# Probe 3 — 5-epoch EMA probe (~17h)
+# The 1-epoch EMA smoke test showed a 0.30-nat val-loss improvement
+# (3.4580 vs 3.7640 baseline). Extending to 5 epochs to see whether
+# the gain compounds through training or asymptotes. Replaces what
+# was originally the WD 1e-7 probe — further regularization sweeps
+# (including WD grid and dropout grid) are deferred to post-release,
+# since the 1e-6 probe already confirms WD has negligible effect at
+# this scale and compute budget is better spent characterizing EMA.
 # ====================================================================
 run_probe \
-    "WD 1e-7 probe (5 epochs)" \
-    '{"epochs": 5, "weight_decay": 1e-7}' \
-    '{"epochs": 6, "weight_decay": 0.0}'
+    "EMA 5-epoch run (decompose_bypass_ema=true)" \
+    '{"epochs": 5, "decompose_bypass_ema": true}' \
+    '{"epochs": 6, "decompose_bypass_ema": false}'
 
 echo ""
 echo "============================================================"
@@ -89,6 +94,7 @@ echo "=== All probes complete ==="
 echo "===   Compare each probe folder's benchmark.txt to:"
 echo "===     5-epoch best: logs/wikitext-103_2026-04-19_13-16-24"
 echo "===     (BPB 1.0201, PPL 24.21, post-fix eval)"
-echo "===   Update runs.md probe sections with results,"
-echo "===   then update runs.sh for the 3-seed runs at the winning recipe."
+echo "===   If EMA 5-epoch beats 1.0201, adopt it for the 3-seed"
+echo "===   variance study. Update runs.md then update runs.sh"
+echo "===   for the 3-seed runs at the winning recipe."
 echo "============================================================"
