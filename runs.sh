@@ -57,10 +57,10 @@ run_probe() {
 # Tests data-dependent EMA replacement of cumulative running mean in
 # decompose_bypass. 1 epoch, single forward pass, structural test.
 # ====================================================================
-run_probe \
-    "EMA probe (1 epoch, decompose_bypass_ema=true)" \
-    '{"epochs": 1, "decompose_bypass_ema": true}' \
-    '{"epochs": 6, "decompose_bypass_ema": false}'
+# run_probe \
+#     "EMA probe (1 epoch, decompose_bypass_ema=true)" \
+#     '{"epochs": 1, "decompose_bypass_ema": true}' \
+#     '{"epochs": 6, "decompose_bypass_ema": false}'
 
 # ====================================================================
 # Probe 2 — Weight decay 1e-6 (~14h)
@@ -68,10 +68,10 @@ run_probe \
 # enough to not interact with Adagrad accumulators yet still detectable
 # if WD has any beneficial effect at all.
 # ====================================================================
-run_probe \
-    "WD 1e-6 probe (5 epochs)" \
-    '{"epochs": 5, "weight_decay": 1e-6}' \
-    '{"epochs": 6, "weight_decay": 0.0}'
+# run_probe \
+#     "WD 1e-6 probe (5 epochs)" \
+#     '{"epochs": 5, "weight_decay": 1e-6}' \
+#     '{"epochs": 6, "weight_decay": 0.0}'
 
 # ====================================================================
 # Probe 3 — 5-epoch EMA probe (~17h)

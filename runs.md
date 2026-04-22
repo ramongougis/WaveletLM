@@ -440,10 +440,10 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 
 **Protocol revised after seed 1337 abandoned run (see below).** Original plan was 3 seeds × 10 epochs × 2.5× dropout. After seed 1337 ran ~8.5 epochs, comparison against the 5-epoch best (2.0× dropout) showed the 2.5×/10-ep protocol was **worse**, not better, across the same fixed eval pipeline:
 
-| Protocol | Best val loss | Sliding-window BPB (post-fix eval) | Sliding-window PPL |
-|----------|---------------|-----|-----|
-| 5 epochs, 2.0× dropout (best run from earlier) | 3.1728 | **1.0201** | **24.21** |
-| 10 epochs, 2.5× dropout (seed 1337, stopped at end of epoch 8) | 3.1953 | 1.0267 | 24.72 |
+| Protocol | Folder | Best val loss | Sliding-window BPB (post-fix eval) | Sliding-window PPL |
+|----------|--------|---------------|-----|-----|
+| 5 epochs, 2.0× dropout (best run from earlier) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | 3.1728 | **1.0201** | **24.21** |
+| 10 epochs, 2.5× dropout (seed 1337, stopped at end of epoch 8) | [link](logs/wikitext-103_2026-04-20_09-03-34/log.txt) | 3.1953 | 1.0267 | 24.72 |
 
 Two findings: (1) 2.5× dropout was an overcorrection — the model was *under-fitting* in some channels relative to 2.0×; (2) the val curve flattened hard after epoch 6 (epochs 7+8 combined gave only ~0.09 PPL improvement). Going forward: **2.0× dropout, 6 epochs.**
 
