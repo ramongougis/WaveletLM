@@ -4,7 +4,7 @@
 
 <br>
 
-WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block processes the input sequence using learned lifting wavelet decomposition, a Fast Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FHT, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache.
+WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block processes the input sequence using learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse Fast Walsh-Hadamard Transform, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache.
 
 <br>
 
@@ -110,20 +110,20 @@ Input tokens
 Learned Embedding (C)
     |
     v
-+------------------------------+
-| WaveletLM Block (x layers)   |
-|                              |
-|  LayerNorm                   |
-|  Lifting Wavelet Decompose   |
-|  Fast Hadamard Transform     |
-|  Gated Spectral Mixer        |
-|  Fast Hadamard Inverse       |
-|  Lifting Wavelet Reconstruct |
-|  Learned Residual 1          |
-|  LayerNorm                   |
-|  Feedforward Layers (MLP)    |
-|  Learned Residual 2          |
-+------------------------------+
++---------------------------------+
+|  WaveletLM Block (x N layers)   |
+|                                 |
+|  LayerNorm                      |
+|  Lifting Wavelet Decompose      |
+|  Fast Walsh-Hadamard Transform  |
+|  Gated Spectral Mixer           |
+|  Fast Walsh-Hadamard Inverse    |
+|  Lifting Wavelet Reconstruct    |
+|  Learned Residual 1             |
+|  LayerNorm                      |
+|  Feedforward Layers (MLP)       |
+|  Learned Residual 2             |
++---------------------------------+
     |
     v
 LayerNorm 
@@ -138,9 +138,9 @@ Output tokens
 
 - **Learnable lifting wavelet decomposition**: predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block, trained end-to-end. Causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient; untying yields no BPB improvement, suggesting the wavelet acts as a well-conditioned feature extractor whose inverse passes through cleanly while the mixer and MLP carry the learned transformation.
 
-- **Fast Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length: no quadratic blow-up regardless of context size, and no KV cache at inference.
+- **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length: no quadratic blow-up regardless of context size, and no KV cache at inference.
 
-- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size - versus attention's O(N²) in sequence length.
+- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size - versus attention's O(N²) in sequence length.
 
 - **Expanded MLP (expansion ≥ 20)**: the model's primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. MLP expansion is a monotonic contributor to BPB in our ablations, taking on much of the memorization role that attention plays in Transformer architectures.
 
@@ -152,7 +152,7 @@ Output tokens
 - LayerNorms near both ends of each block, plus one final LayerNorm before the LM head
 - Two residual connections per block with learned scalar gating (`learned_residual` in config.json)
 - Learned per-scale weights applied after the inverse FHT - one trainable scalar per wavelet scale
-- Feature padding to the next power of 2, required for the Hadamard transform (`C` → `Cp = next_pow2(C)`)
+- Feature padding to the next power of 2, required for the Walsh-Hadamard transform (`C` → `Cp = next_pow2(C)`)
 - Causal zero-padded dilation in the lifting predict/update steps, preserving autoregressive causality at every level
 
 </details>
@@ -241,7 +241,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Regularization**: Greater than 0.8 train/val loss gaps at 5+ epochs show WaveletLM is vastly underregularized. Perplexity is expected to drop further with increased dropout and well-chosen weight decay, but such parameter sweeps are also limited by budget. There are 5 dropout parameters to adjust: `dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, and `dropout_lm_head`.
 
-**Parameter compression**: The raw parameter count matters, but so does what those parameters are doing. Of WaveletLM's 883M total, around 55% (488M) live in two highly-compressible components: dense MLPs (335.6M) and product-key memory modules (PKM: 76M + FwPKM: 76M). The architecturally distinctive components like lifting wavelets (83.9M), the spectral mixer (88.2M), and decompose EMA bypass (8.4M), are small by comparison. Further work is needed to determine the degree of compressivity of high-parameter regions.
+**Parameter compression**: The raw parameter count matters, but so does what those parameters are doing. Of WaveletLM's 883M total, around 55% (488M) live in two highly-compressible components: dense MLPs (335.6M) and product-key memory modules (PKM: 76M + FwPKM: 76M). The architecturally distinctive components like lifting wavelets (83.9M), the spectral mixer (88.2M), and decompose EMA bypass (8.4M), are small in comparison. Further work is needed to determine the degree of compressivity of high-parameter regions.
 
 [^1]: See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-19_13-16-24/benchmark.txt).
 
