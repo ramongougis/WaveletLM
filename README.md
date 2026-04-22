@@ -88,7 +88,7 @@ python generate.py --checkpoint best_model.pt --entropy_adaptive \
     --wavelet_coherence
 ```
 
-### Post-training quantization (PTQ; optional)
+### Post-Training Quantization (PTQ; optional)
 
 Near-lossless uniform 8-bit PTQ — recommended when VRAM or checkpoint size matters.
 
@@ -157,7 +157,7 @@ Output tokens
 
 </details>
 
-### Optional features
+### Optional Features
 
 - **Per-Layer Embedding**: adds a learned per-channel residual of the original token embedding at each block, letting deeper blocks reach back to the input representation when relevant.
 
@@ -216,7 +216,7 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 
 ## Results
 
-### WikiText-103 Perplexity Comparison
+### WikiText-103 Test Set Perplexity Comparison
 
 | Model | Type | Trained on | Params | PPL |
 |-------|------|-----------|--------|-----|
@@ -229,11 +229,19 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 | **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **24.2**[^1] |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
-\* Trained and evaluated on the same dataset (direct comparison to WaveletLM).
+\* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM).
+
+### PG-19 Test Set Perplexity Comparison
+
+| Model | Type | Trained on | Params | PPL |
+|-------|------|-----------|--------|-----|
+
+
+\* Both trained and evaluated on PG-19 only (direct comparison to WaveletLM).
 
 WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention and no KV cache. Comparison numbers are sourced from respective papers; see references below.
 
-### Areas for improvement
+### Areas for Improvement
 
 Longer training time, more regularization, and parameter compression are the surest ways to immediately improve the model's performance. We invite others to tackle each of these tasks in turn:
 
@@ -250,15 +258,15 @@ See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark
 
 ## Future Plans
 
-### Dataset comparisons
+### Dataset Comparisons
 
 The best WaveletLM config trained on PG-19, Pile-ArXiv, BookCorpusOpen, and/or OpenWebText to gauge performance on more data.
 
-### Model comparisons
+### Model Comparisons
 
 Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
 
-### Scaled-up model (B200)
+### Scaled-Up Model (B200)
 
 The current headline model (882.51M params: L=2, C=2048, MLP=20, PKM/FwPKM=16384) was trained on a single RTX 5090 due to budget constraints. A B200 (192 GB HBM3e) unlocks roughly an order of magnitude more parameter budget at training time and makes several scaling levers practical to stack simultaneously:
 
@@ -275,13 +283,13 @@ The target is a ~10–15B parameter configuration chosen after the 5090 sweep co
 
 fp16 inference should fit a single RTX 4090 (24 GB); Post-training quantization (PTQ with per-scale mixed precision, 8/4/2-bit) is expected to drop inference VRAM below 8 GB, enabling deployment on consumer-class GPUs. See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
 
-### Semantic embedding
+### Semantic Embedding & Interpretability Work
 
 An optional replacement of the learned token embedding to be developed soon is a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
 
-**Why WaveletLM is structurally well-suited to this:** the spectral mixer operates directly on human-readable features instead of learned token similarity in the style of attention. Each semantic concept's temporal signal is decomposed at multiple scales, letting interpretable concepts at the input be processed at different temporal granularities.
+**Why WaveletLM is structurally well-suited to this:** the spectral mixer operates directly on human-readable features instead of learned token similarity in the style of attention. Each semantic concept's temporal signal is decomposed at multiple scales, letting interpretable concepts at the input be processed at different temporal granularities. Furthermore, lower layer counts minimize the amount of spectral and residual mixing which happen end-to-end with eithe rtype of embedding, making interpretability easier to achieve.
 
-**Expected impact:** improved interpretability at the embedding and low-layer level at a small cost to single-token performance. Extending the scheme to n-gram tokens, and deliberately choosing a set of dimensions for the semantic embedding which maximizes performance versus other such sets while retaining generality across datasets, may allow the model to match or exceed baseline learned embedding performance while retaining the interpretability advantage.
+**Expected impact:** With a semantic embedding, we may achieve improved interpretability at a small cost to single-token performance. Extending the scheme to n-gram tokens, and deliberately choosing a set of dimensions for the semantic embedding which maximizes performance versus other such sets while retaining generality across datasets, may allow the model to match or exceed baseline learned embedding performance while retaining the interpretability advantage and making the model more efficient, though further testing is needed to confirm this.
 
 See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for more information.
 
