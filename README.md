@@ -39,7 +39,7 @@ Run:
 python train.py
 ```
 
-`config.json` replicates the current best [880M parameter WikiText-103 run](logs\wikitext-103_2026-04-22_01-36-47\log.txt), which requires 18235 MiB to train.
+`config.json` replicates the current best [883M parameter WikiText-103 run](logs\wikitext-103_2026-04-22_01-36-47\log.txt), which requires 18235 MiB to train.
 
 Key config options:
 
@@ -62,7 +62,7 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 Obtain weights from [HuggingFace](huggingface.co), then replace `best_model.pt` in the commands below with the path to the file. 
 
-The [current best 880M parameter model](logs\wikitext-103_2026-04-22_01-36-47\log.txt) requires 4918 MiB for inference and generates at 28.8 tokens/s on a 5090.
+The [current best 883M parameter model](logs\wikitext-103_2026-04-22_01-36-47\log.txt) requires 4918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
 ```bash
 # Recommended generation command
@@ -143,15 +143,15 @@ Output tokens
 ```
 ### Key Components
 
-- **Learnable lifting wavelet decomposition**: predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block, trained end-to-end. Causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient; untying yields no BPB improvement, suggesting the wavelet acts as a well-conditioned feature extractor whose inverse passes through cleanly while the mixer and MLP carry the learned transformation.
+- **Learnable lifting wavelet decomposition**: Haar-initialized predict/update networks decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Decompose/reconstruct weights are shared — untying yielded no BPB improvement.
 
-- **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length: no quadratic blow-up regardless of context size.
+- **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
 
-- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size - versus attention's O(N²) in sequence length.
+- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space via a gated linear layer. Runs in fixed O(S²) per layer for S scales, versus attention's O(N²) in sequence length.
 
-- **Expanded MLP (expansion ≥ 20)**: the model's primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. MLP expansion is a monotonic contributor to BPB in our ablations, taking on much of the memorization role that attention plays in Transformer architectures.
+- **Expanded MLP (expansion ≥ 20)**: the primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. Monotonic BPB contributor in ablations, taking on much of attention's memorization role.
 
-- **Decompose bypass**: a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose wavelet coefficients. Provides cross-layer global context at O(C) cost per token, with no attention required.
+- **Decompose bypass**: a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose coefficients. O(C) per-token cross-layer global context without attention.
 
 <details>
 <summary><b>Additional key components</b> (always-on architectural pieces)</summary>
@@ -166,25 +166,25 @@ Output tokens
 
 ### Optional Features
 
-- **Per-Layer Embedding**: adds a learned per-channel residual of the original token embedding at each block, letting deeper blocks reach back to the input representation when relevant.
+- **Per-Layer Embedding**: a learned per-channel residual of the token embedding added at each block, letting deeper blocks reach back to the input representation.
 
-- **Product Key Memory / Fast-Weight Product Key Memory**: sparse key-value memory modules that complement the dense MLP, providing parameter-efficient long-tail pattern storage with optional inference-time fast-weight updates.
+- **Product Key Memory / Fast-Weight Product Key Memory**: sparse key-value memory modules complementing the dense MLP, with optional inference-time fast-weight updates.
 
-- **Low-Rank Factorization**: adds a rank-r perturbation `U·V^T` to the spectral mixer, expanding mixing expressivity at trivial parameter cost (rank=4 yields a measurable BPB improvement).
+- **Low-Rank Factorization**: a rank-r `U·V^T` perturbation added to the spectral mixer; rank=4 yields a measurable BPB improvement at trivial parameter cost.
 
 - **Exponential Parametrization**: reparameterizes mixer weights through `exp()`, stabilizing training under high learning rates that would otherwise NaN.
 
-- **Cross-scale gating (routing mode)**: a learned (S, S) routing matrix that mixes per-scale inputs before each gate, enabling conditional cross-scale interactions (e.g., "when scale 0 shows pattern X, modulate scale 4's processing"). Initialized to identity so it begins as a no-op and only contributes what it learns.
+- **Cross-scale gating (routing mode)**: a learned identity-initialized (S, S) routing matrix that mixes per-scale inputs before each gate, enabling conditional cross-scale interactions.
 
-- **Per-scale mixer widths**: asymmetric per-scale mixer capacity. Coarse scales keep full mixer width while fine scales use reduced width via in/out projections. At widths `[1, 1, 1, 0.5, 0.5, 0.5]`, yields a small BPB improvement and a ~23% per-epoch speedup.
+- **Per-scale mixer widths**: asymmetric per-scale mixer capacity (coarse scales full width, fine scales reduced). At `[1, 1, 1, 0.5, 0.5, 0.5]`: small BPB improvement + ~23% per-epoch speedup.
 
-- **Wavelet crawl**: learned soft-mixed dilations per wavelet level. Instead of fixed `2^l`, each level sees a softmax-weighted mixture of K candidate offsets around the base dilation, letting the model discover slightly off-power-of-2 receptive fields. K=3 (±1 search radius) is the stable sweet spot.
+- **Wavelet crawl**: softmax-weighted mixture of K candidate dilations per level around the base `2^l`, letting the model discover off-power-of-2 receptive fields. K=3 (±1) is the stable sweet spot.
 
-- **Shared lifting weights**: a single lifting wavelet module shared across all blocks instead of per-block weights. Essentially free on BPB while cutting training VRAM by the weight of L−1 lifting modules (~5–10% at L=2).
+- **Shared lifting weights**: one lifting wavelet module shared across all blocks. Essentially free on BPB; cuts training VRAM by ~5–10% at L=2.
 
-- **Looped blocks (Universal Transformer-style)**: apply one shared block K times in place of stacking L distinct blocks. Achieves BPB reduction at fixed parameter count by trading parameters for compute, though the same compute is usually better spent on additional training epochs of the stacked model.
+- **Looped blocks (Universal Transformer-style)**: one shared block applied K times in place of L stacked blocks. Reduces BPB at fixed parameter count; compute is usually better spent on more epochs of the stacked model.
 
-- **Data-dependent EMA bypass** (`decompose_bypass_ema`): replaces the cumulative-mean decompose-bypass with a σ-gated EMA: a leaky integrator whose leak rate is decided per-token by the current input. DSP-wise: an adaptive (Kalman/Wiener-flavor) 1st-order IIR filter whose cutoff frequency changes with input, letting the model selectively forget at topical/clausal boundaries. 
+- **Data-dependent EMA bypass** (`decompose_bypass_ema`): replaces the cumulative-mean decompose-bypass with a σ-gated EMA — an adaptive 1st-order IIR filter whose leak rate is chosen per-token, letting the model selectively forget at topical/clausal boundaries.
 
 <details>
 <summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
@@ -215,10 +215,6 @@ Output tokens
 - Multinodal feature bagging mode and its sub-flags (`multinodal_enabled`, `multinodal_num_cells`, `multinodal_cell_dim`, `multinodal_seeds`, `multinodal_combination`, `multinodal_cross_cell_gating`, `multinodal_features_per_cell`, `multinodal_bagged_eps`)
 
 </details>
-
-### Multinodal Mode
-
-WaveletLM supports a product-of-experts mode where multiple independent model nodes process the input in parallel with different feature subsets (feature bagging), then combine logits via averaging. Enable with `multinodal_enabled: true` in the config. This mode may require additional stability improvements such as a lower learning rate and `stable_parametrization: true`, and acts as an as-yet underexplored capacity/scalability lever.
 
 
 ## Results
@@ -258,13 +254,13 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 
 ### Areas for Improvement
 
-Longer training time, more regularization, and parameter compression are the surest ways to immediately improve the model's performance. We invite others to tackle each of these tasks in turn:
+Longer training time, more regularization, and parameter compression are the surest ways to immediately improve the model's performance.
 
-**More training time**: Validation loss was still improving at epoch 5, indicating further training will improve results. My budget is limited in the number of runs I can perform. More research and more resources are needed to uncover the effects of longer training.
+**More training time**: More research and more resources are needed to uncover the effects of longer training.
 
-**Regularization**: Greater than 0.8 train/val loss gaps at 5+ epochs show WaveletLM is vastly underregularized. Perplexity is expected to drop further with increased dropout and weight decay, but such parameter sweeps are also limited by budget. There are 5 dropout parameters to adjust alongside `weight_decay`: `dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, and `dropout_lm_head`.
+**Regularization**: WaveletLM is vastly underregularized, with a 0.8 train/val loss gap at 5+ epochs. Dropout and weight decay parameter sweeps are limited by budget and involve tuning `weight_decay` `dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, and `dropout_lm_head` in tandem.
 
-**Parameter compression**: The raw parameter count matters, but so does what those parameters are doing. Of WaveletLM's 883M total, around 55% (488M) live in two highly-compressible components: dense MLPs (335.6M) and product-key memory modules (PKM: 76M + FwPKM: 76M). The architecturally distinctive components like lifting wavelets (83.9M), the spectral mixer (88.2M), and decompose EMA bypass (8.4M), are small in comparison. Further work is needed to determine the degree of compressivity of high-parameter regions.
+**Parameter compression**: Of WaveletLM's 883M parameter total, around 55% (488M) live in two highly-compressible components: dense MLPs (335.6M) and product-key memory modules (PKM: 76M + FwPKM: 76M). Further work is needed to determine the degree of compressivity in each.
 
 
 ## Future Plans
@@ -279,7 +275,7 @@ Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern archi
 
 ### Scaled-Up Model (B200)
 
-The 882M RTX 5090 headline run scales up naturally to a B200:
+The 883M RTX 5090 headline run scales up naturally to a B200:
 
 - `C`: 2048 → 4096 
 - `layers`: 2 → 4–8
@@ -304,6 +300,10 @@ An optional replacement for the learned token embedding is a **semantic embeddin
 WaveletLM is structurally well-suited for this: the spectral mixer can operate directly on human-readable features, and multi-scale decomposition lets the same concept be processed at different temporal granularities. Expected tradeoff is improved interpretability at a small performance cost, potentially recovered or even improved via n-gram tokens and careful feature selection for the dimensions. 
 
 See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for the full design, including open questions on coefficient assignment methods: one-hot/binary, LLM-scored, human-rated, or corpus-derived.
+
+### Multinodal Mode
+
+WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever.
 
 
 ## License
