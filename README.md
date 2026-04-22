@@ -110,21 +110,20 @@ Input tokens
 Learned Embedding (C)
     |
     v
-+----------------------------+
-| WaveletLM Block (x layers) |
-|                            |
-|  LayerNorm                 |
-|  Lifting Wavelet Decompose |
-|  Fast Hadamard Transform   |
-|  Gated Spectral Mixer      |
-|  Fast Hadamard Inverse     |
-|  Learned Per-Scale Weights |
-|  Wavelet Reconstruct       |
-|  Learned Residual 1        |
-|  LayerNorm                 |
-|  Feedforward Layers (MLP)  |
-|  Learned Residual 2        |
-+----------------------------+
++------------------------------+
+| WaveletLM Block (x layers)   |
+|                              |
+|  LayerNorm                   |
+|  Lifting Wavelet Decompose   |
+|  Fast Hadamard Transform     |
+|  Gated Spectral Mixer        |
+|  Fast Hadamard Inverse       |
+|  Lifting Wavelet Reconstruct |
+|  Learned Residual 1          |
+|  LayerNorm                   |
+|  Feedforward Layers (MLP)    |
+|  Learned Residual 2          |
++------------------------------+
     |
     v
 LayerNorm 
@@ -221,21 +220,30 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 
 | Model | Type | Trained on | Params | PPL |
 |-------|------|-----------|--------|-----|
-| Transformer-XL* | Transformer + recurrence* | WikiText-103 (~0.5GB)* | 257M* | ~18[^2]* |
-| GPT-2 XL | Transformer | WebText (~40GB) | 1.5B | ~18[^3] |
-| GPT-2 Large | Transformer | WebText (~40GB) | 774M | ~19[^3] |
-| S4* | SSM* | WikiText-103 (~0.5GB)* | 130M* | ~20[^4]* |
-| GPT-2 Medium | Transformer | WebText (~40GB) | 355M | ~22[^3] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (~0.5GB)** | **883M** | **~24**[^1] |
-| GPT-2 | Transformer | WebText (~40GB) | 124M | ~29[^3] |
+| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 17.5[^3] |
+| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 18.3[^2]* |
+| GPT-2 Large | Transformer | WebText (40GB) | 774M | 19.3[^3] |
+| S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 20.9[^4]* |
+| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 22.1[^3] |
+| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **24.2**[^1] |
+| GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
 \* Trained and evaluated on the same dataset (direct comparison to WaveletLM).
 
-WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention, and no KV cache. Validation loss was still improving at epoch 5, indicating further training will improve results. Comparison numbers are approximate and sourced from respective papers; see references below.
+WaveletLM achieves this with only 2 layers (L=2, C=2048), no attention and no KV cache. Comparison numbers are sourced from respective papers; see references below.
 
-**Regularization caveat.** The model has substantial unused capacity: train-val gaps over 0.8 loss during longer runs show it can fit the training distribution faster than it generalizes. We expect perplexity to drop further with better-tuned regularization, but the cost budget is beyond our current grasp. Weight decay was tested (WD=1e-3 on top of 1.5× dropout [here](logs/wikitext-103_2026-04-14_06-41-17/log.txt)), but training stalled and the run was early-stopped. Weight decay does not seem to be a viable lever due to interaction with Adagrad's accumulator. Strategies such as scheduled weight decay have not been tested.
+### Areas for improvement
 
-[^1]: L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, 5 epochs, 2.0× dropout. Sliding-window PPL 24.21, BPB 1.0201 (post-eval-fix; pre-fix numbers were 24.34 / 1.0219, corrected by disabling cross-window state during sliding-window evaluation and including the final partial batch). See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-19_13-16-24/benchmark.txt).
+Longer training time, more regularization, and parameter compression are the surest ways to immediately improve the model's performance. We invite others to tackle each of these tasks in turn:
+
+**More training time**: Validation loss was still improving at epoch 5, indicating further training will improve results. My budget is limited in the number of runs I can perform. More research and more resources are needed to uncover the effects of longer training.
+
+**Regularization**: Greater than 0.8 train/val loss gaps at 5+ epochs show WaveletLM is vastly underregularized. Perplexity is expected to drop further with increased dropout and well-chosen weight decay, but such parameter sweeps are also limited by budget. There are 5 dropout parameters to adjust: `dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, and `dropout_lm_head`.
+
+**Parameter compression**: The raw parameter count matters, but so does what those parameters are doing. Of WaveletLM's 883M total, around 55% (488M) live in two highly-compressible components: dense MLPs (335.6M) and product-key memory modules (PKM: 76M + FwPKM: 76M). The architecturally distinctive components like lifting wavelets (83.9M), the spectral mixer (88.2M), and decompose EMA bypass (8.4M), are small by comparison. Further work is needed to determine the degree of compressivity of high-parameter regions.
+
+[^1]: See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-19_13-16-24/benchmark.txt).
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
