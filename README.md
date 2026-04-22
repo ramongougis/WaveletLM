@@ -60,7 +60,7 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Generation
 
-Obtain weights from [HuggingFace](huggingface.co), then replace `best_model.pt` in the commands below with the path to the file. 
+Obtain weights from [HuggingFace](https://huggingface.co), then replace `best_model.pt` in the commands below with the path to the file. 
 
 The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
