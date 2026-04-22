@@ -14,7 +14,7 @@ WaveletLM is a wavelet-based, attention-free language model that replaces attent
 <a href="#generation">Generation</a><br>
 <a href="#architecture">Architecture</a><br>
 <a href="#results">Results</a><br>
-<a href="#post-release-plans">Post-Release Plans</a><br>
+<a href="#future-plans">Future Plans</a><br>
 <a href="#license">License</a><br>
 <a href="#references">References</a>
 </p>
@@ -33,19 +33,19 @@ pip install torch datasets tiktoken tqdm numpy
 
 ## Training
 
-The `config.json` file replicates the current best [880M parameter WikiText-103 run](logs\wikitext-103_2026-04-22_01-36-47\log.txt), which requires 18235 MiB for training and 
-
-Edit  to set model dimension C and other options, then run:
+Run:
 
 ```bash
 python train.py
 ```
 
-The default config reproduces the headline ~880M-parameter WikiText-103 run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, 5 epochs, 2.0× dropout). Key options:
+`config.json` replicates the current best [880M parameter WikiText-103 run](logs\wikitext-103_2026-04-22_01-36-47\log.txt), which requires 18235 MiB to train.
+
+Key config options:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `C` | 2048 | Mixer working width (power of 2) |
+| `C` | 2048 | Mixer channel width (power of 2 recommended) |
 | `layers` | 2 | Number of WaveletLM blocks |
 | `mlp_expansion` | 20 | MLP hidden dim multiplier |
 | `levels` | 5 | Wavelet decomposition levels (~log2(block_size)) |
@@ -60,7 +60,9 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Generation
 
-Weights may be obtained [here](huggingface.co). Replace `best_model.pt` below with the appropriate path/name.
+Obtain weights from [HuggingFace](huggingface.co), then replace `best_model.pt` in the commands below with the path to the file. 
+
+The [current best 880M parameter model](logs\wikitext-103_2026-04-22_01-36-47\log.txt) requires 4918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
 ```bash
 # Recommended generation command
@@ -72,8 +74,8 @@ python generate.py --checkpoint best_model.pt
 
 # Additional options
 python generate.py --checkpoint best_model.pt \
-    --prompt "Put a prompt here." --num_tokens 1024 --seed 1337 --n 1 \
-    --temperature 1.0 --strategies --ptq8
+    --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 \
+    --n 1 --temperature 1.0 --strategies --ptq8 --num_tokens 9000
 ```
 
 ### Inference Strategies:
@@ -98,9 +100,12 @@ Near-lossless uniform 8-bit PTQ — recommended when VRAM or checkpoint size mat
 python generate.py --checkpoint best_model.pt --ptq8
 ```
 
-Effects:
+PTQ effects:
 
-+0.0001 BPB (negligible), -10% inference VRAM, -50% checkpoint size, & -12% tok/s until bit-packed kernels land (see [`runs.md`](runs.md#ptq-sweep-summary)).
+- +0.0001 BPB hit (negligible performance impact)
+- 10% less inference VRAM
+- 50% less checkpoint file size
+- 12% less tok/s currently. However, PTQ is expected to be 1.4-2.2x faster than the baseline 28.8 tok/s with bit-packed kernels. See [Future Plans → Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels) and [`runs.md`](runs.md#post-release-bit-packed-ptq-kernels)).
 
 
 ## Architecture
@@ -274,42 +279,31 @@ Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern archi
 
 ### Scaled-Up Model (B200)
 
-The current headline model (882.51M params: L=2, C=2048, MLP=20, PKM/FwPKM=16384) was trained on a single RTX 5090 due to budget constraints. A B200 (192 GB HBM3e) unlocks roughly an order of magnitude more parameter budget at training time and makes several scaling levers practical to stack simultaneously:
+The 882M RTX 5090 headline run scales up naturally to a B200:
 
-- **Width (C):** 2048 → 4096 (mixer working width)
-- **Depth (L):** 2 → 4–8 (WaveletLM blocks)
-- **MLP expansion:** 20 → 50–200 (primary knowledge-storage lever; monotonic BPB contributor in ablations)
-- **PKM / FwPKM keys:** 16384 → 65536 (4× sparse memory capacity)
-- **Training precision:** fp16 → **FP8** (E4M3/E5M2 via Blackwell native tensor cores), for ~2× training throughput and ~30–40% memory reduction.
+- `C`: 2048 → 4096 
+- `layers`: 2 → 4–8
+- `mlp_expansion`: 20 → 50–200
+- `pkm_num_keys` & `fwpkm_num_keys`: 16384 → 65536 each
+- fp16 → FP8 via Blackwell tensor cores (NYI)
 
-The target is a ~10–15B parameter configuration chosen after the 5090 sweep completes. Three training targets are planned:
+Target is a 10–15B parameter configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. 
 
-- **WikiText-103 only**
-- **PG-19 only**
-- **Multi-dataset training** across a broader mix combined (PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, OpenWebText, and WikiText-103), establishing WaveletLM's behavior as a general-purpose language model across domains rather than a single-benchmark result.
+Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with [uniform 8-bit PTQ](runs.md#ptq-sweep-summary). See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
 
-Inference for the scaled-up model would fit on a single RTX 4090 (24 GB), and [uniform 8-bit PTQ](runs.md#ptq-sweep-summary) roughly halves that. Sub 8-bit compression is available via the mixed 8/4/2 config but needs post-release bit-packing to realize its storage benefit. See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
+### Bit-Packed PTQ Kernels
+
+The [current PTQ path](runs.md#ptq-sweep-summary) dequantizes int8 weights to fp16 inside `forward()` and runs a standard fp16 matmul, which pays the dequant cost every step with no bandwidth win - hence the 12% generation slowdown and the fact that sub-8-bit variants compress identically to 8-bit on disk. 
+
+Swapping `QuantizedLinear` / `QuantizedEmbedding` for fused packed-weight kernels (Marlin W8A16 / W4A16, CUTLASS `i8gemm`, bitsandbytes, Triton for the embedding lookup) fixes both: storage scales with bit-width, and each matmul reads half or a quarter as many bytes. Expected generation at batch=1 (fp16 baseline 28.8 tok/s) is **~1.4–1.6× faster** for fused uniform 8-bit and **~1.8–2.2× faster** for fused mixed 8/4/2, with BPB unchanged. See [runs.md](runs.md#post-release-bit-packed-ptq-kernels) for the full plan.
 
 ### Semantic Embedding & Interpretability Work
 
-An optional replacement of the learned token embedding to be developed soon is a **semantic embedding**, where each dimension is a plain-language description or condition, and each token (or n-gram) is expressed as a vector of values across those dimensions.
+An optional replacement for the learned token embedding is a **semantic embedding**, where each dimension is a plain-language feature (e.g. "is this token a noun?", "is this token associated with anger?", "corpus frequency in deceptive contexts") and each token or n-gram is a vector of values across those dimensions. 
 
-**Why WaveletLM is structurally well-suited to this:** the spectral mixer operates directly on human-readable features instead of learned token similarity in the style of attention. Each semantic concept's temporal signal is decomposed at multiple scales, letting interpretable concepts at the input be processed at different temporal granularities. Furthermore, lower layer counts minimize the amount of spectral and residual mixing which happen end-to-end with eithe rtype of embedding, making interpretability easier to achieve.
+WaveletLM is structurally well-suited for this: the spectral mixer can operate directly on human-readable features, and multi-scale decomposition lets the same concept be processed at different temporal granularities. Expected tradeoff is improved interpretability at a small performance cost, potentially recovered or even improved via n-gram tokens and careful feature selection for the dimensions. 
 
-**Expected impact:** With a semantic embedding, we may achieve improved interpretability at a small cost to single-token performance. Extending the scheme to n-gram tokens, and deliberately choosing a set of dimensions for the semantic embedding which maximizes performance versus other such sets while retaining generality across datasets, may allow the model to match or exceed baseline learned embedding performance while retaining the interpretability advantage and making the model more efficient, though further testing is needed to confirm this.
-
-See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for more information.
-
-**Example plain-language features:**
-
-- Is this token a noun?
-- Is this token a person?
-- Is this token associated with anger?
-- Does this token have 3, 4, or 5 syllables?
-- Does this token contain more than one word?
-- What is the frequency with which this token is used in deceptive contexts?
-
-Note that these are simply examples which may or may not be useful. The method by which per-token coefficients are assigned - one-hot/binary, LLM-scored, human-rated, or corpus-derived - is itself an open design choice, each with its own interpretability, quality, and monetary tradeoffs.
+See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for the full design, including open questions on coefficient assignment methods: one-hot/binary, LLM-scored, human-rated, or corpus-derived.
 
 
 ## License

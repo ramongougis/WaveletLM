@@ -45,10 +45,11 @@
 41. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
 42. [Best PTQ combination](#best-ptq-combination)
 43. [PTQ sweep summary](#ptq-sweep-summary)
-44. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-45. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-46. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-47. [Run Details](#run-details)
+44. [Post-release: bit-packed PTQ kernels](#post-release-bit-packed-ptq-kernels)
+45. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+46. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+47. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+48. [Run Details](#run-details)
 
 ---
 
@@ -603,6 +604,34 @@ All 17 variants, full table. Logs folder: [`logs/wikitext-103_2026-04-19_13-16-2
 - **MLP, embedding, lifting are highly tolerant.** Each individually survives 4-bit with ≤0.003 BPB degradation. MLP is 76% of layer params — biggest bit-packing opportunity.
 - **Generation is slightly slower under quantization** (21-25 vs 27 tok/s baseline) because we pay dequantize cost on every forward pass without a matching bandwidth win. Flips once packed kernels land.
 - **VRAM savings are modest** (~10%) for the same reason — dequantize-to-fp16 on forward briefly holds the full fp16 weight.
+
+### Post-release: bit-packed PTQ kernels
+
+Follow-up to the PTQ sweep above. The current `QuantizedLinear` / `QuantizedEmbedding` path stores int8 weights but dequantizes to fp16 inside `forward()`, then runs a standard fp16 matmul. That pays the dequant cost on every step without realizing the bandwidth win, which is why generation is 12% slower than fp16 despite the 1.95× storage compression — and why sub-8-bit variants (`03_uniform_4bit`, `08_mixed_aggressive`) compress identically to 8-bit on disk (one value per byte regardless of bit-width).
+
+Replacing the dequant-then-matmul path with fused packed-weight kernels turns both problems around: storage actually scales with bit-width, and the matmul reads half (8-bit) or a quarter (4-bit) as many bytes per step, so generation is bandwidth-limited on a much smaller working set than fp16.
+
+**Candidate kernels:**
+- **Uniform 8-bit:** CUTLASS `i8gemm`, `bitsandbytes.matmul_8bit`, or Marlin's W8A16 path. Drop-in replacement for the current `QuantizedLinear`.
+- **Mixed 8/4/2 (W4A16 / W2A16):** Marlin, AWQ kernels, or GPTQ-Triton. Requires per-scale bit-width metadata to be baked into the packed tensor layout.
+- **Embedding:** int8/int4 gather kernels (bitsandbytes ships one; a small hand-written Triton kernel also suffices since the access pattern is just a table lookup).
+
+**Expected generation tok/s (batch=1, 5090, fp16 baseline = 28.8 tok/s):**
+
+| Path | Expected tok/s | vs fp16 | Expected size (MiB) | vs fp16 |
+|------|----------------|---------|---------------------|---------|
+| Current dequant-to-fp16 (uniform 8-bit) | 23.8 (measured) | 0.88× | 1,726 | 1.95× |
+| Fused uniform 8-bit kernels | ~40–46 | 1.4–1.6× | 1,726 | 1.95× |
+| Fused mixed 8/4/2 kernels (conservative: 8/8/4 MLP=4, emb=8, lift=16) | ~52–63 | 1.8–2.2× | ≤900 | ≥3.7× |
+
+Numbers are estimates based on reported speedups for comparable kernels on 7B-class transformers at batch=1 (Marlin W4A16: 2.0–2.5× fp16; bitsandbytes W8A16: 1.5–1.8× fp16 on memory-bound layers). WaveletLM's high MLP expansion (20×) puts a larger share of weight bytes in quantizable linears than a typical transformer, so the ratio should track the upper end rather than the lower. Final number pending actual measurement.
+
+**Caveats:**
+- The LM head is the dominant cost at batch=1 (vocab=50,257 × C=2048). Whether it's quantized, and at what bits, drives a large fraction of the total speedup. The 8/8/4 conservative recipe keeps embedding at 8-bit, which would leave most of the head bandwidth unchanged from uniform 8-bit.
+- FwPKM top-k gather is a table lookup, not a matmul — it does not benefit from fused quant kernels and stays bandwidth-bound on the value table regardless.
+- The BPB numbers from the current PTQ sweep carry over unchanged: bit-packing is a *byte layout* change, not a numerical-precision change. `02_uniform_8bit` at BPB 1.0220 is the same 1.0220 once the kernel is swapped.
+
+**Status:** Deferred to post-release. The "uniform 8-bit via a fused kernel" path is the lowest-risk / highest-value first target because it ships a concrete speedup + compression win without new BPB risk. Mixed-precision packing follows.
 
 ### Planned: model comparisons (WikiText-103, matched compute)
 
