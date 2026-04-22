@@ -4,7 +4,7 @@
 
 <br>
 
-WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block ues learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism and O(n log n) scaling on the chosen dimensions instead of input length.
+WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block uses learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism and sub-quadratic scaling in sequence length.
 
 <br>
 
@@ -33,7 +33,9 @@ pip install torch datasets tiktoken tqdm numpy
 
 ## Training
 
-Edit `config.json` to set model dimension C, dataset, optimizer, and other options, then run:
+The `config.json` file replicates the current best [880M parameter WikiText-103 run](logs\wikitext-103_2026-04-22_01-36-47\log.txt), which requires 18235 MiB for training and 
+
+Edit  to set model dimension C and other options, then run:
 
 ```bash
 python train.py
