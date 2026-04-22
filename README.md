@@ -4,7 +4,7 @@
 
 <br>
 
-WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block processes the input sequence using learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse Fast Walsh-Hadamard Transform, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism, no quadratic scaling, and no key/value cache.
+WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block ues learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism and O(n log n) scaling on the chosen dimensions instead of input length.
 
 <br>
 
@@ -33,13 +33,13 @@ pip install torch datasets tiktoken tqdm numpy
 
 ## Training
 
-The configuration lives in `config.json`. Edit it to set model dimensions, dataset, optimizer, and hardware options, then run:
+Edit `config.json` to set model dimension C, dataset, optimizer, and other options, then run:
 
 ```bash
 python train.py
 ```
 
-The shipped defaults reproduce the headline ~880M-parameter WikiText-103 run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, 5 epochs, 2.0× dropout). Key options:
+The default config reproduces the headline ~880M-parameter WikiText-103 run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, 5 epochs, 2.0× dropout). Key options:
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -138,7 +138,7 @@ Output tokens
 
 - **Learnable lifting wavelet decomposition**: predict/update networks (initialized to Haar) decompose each sequence into multi-scale coefficients at every block, trained end-to-end. Causality is preserved through zero-padded dilation. Ablations show that sharing weights between the decompose and reconstruct paths is sufficient; untying yields no BPB improvement, suggesting the wavelet acts as a well-conditioned feature extractor whose inverse passes through cleanly while the mixer and MLP carry the learned transformation.
 
-- **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length: no quadratic blow-up regardless of context size, and no KV cache at inference.
+- **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation that replaces attention's channel-mixing role. Cost is independent of sequence length: no quadratic blow-up regardless of context size.
 
 - **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space through a gated linear layer. Captures interactions within each frequency band without forcing cross-band mixing, and runs in fixed O(S²) cost per layer for S wavelet scales regardless of context size - versus attention's O(N²) in sequence length.
 
@@ -225,11 +225,15 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 19.3[^3] |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 20.9[^4]* |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 22.1[^3] |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **23.7** |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **24.2**[^1] |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
+
+See [training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-22_01-36-47/benchmark.txt) for the results (5 epochs, 2.0× dropout, weight decay 1e-6).
+
+See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
 ### PG-19 Test Set Perplexity Comparison
 
@@ -243,7 +247,7 @@ WaveletLM supports a product-of-experts mode where multiple independent model no
 
 All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization.
 
-WaveletLM achieves these PPL values with only 2 layers (L=2, C=2048), no attention, and no KV cache. Comparison numbers are sourced from respective papers. See References below.
+Comparison numbers for both datasets are sourced from their respective papers. See References below.
 
 ### Areas for Improvement
 
@@ -251,20 +255,16 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **More training time**: Validation loss was still improving at epoch 5, indicating further training will improve results. My budget is limited in the number of runs I can perform. More research and more resources are needed to uncover the effects of longer training.
 
-**Regularization**: Greater than 0.8 train/val loss gaps at 5+ epochs show WaveletLM is vastly underregularized. Perplexity is expected to drop further with increased dropout and well-chosen weight decay, but such parameter sweeps are also limited by budget. There are 5 dropout parameters to adjust: `dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, and `dropout_lm_head`.
+**Regularization**: Greater than 0.8 train/val loss gaps at 5+ epochs show WaveletLM is vastly underregularized. Perplexity is expected to drop further with increased dropout and weight decay, but such parameter sweeps are also limited by budget. There are 5 dropout parameters to adjust alongside `weight_decay`: `dropout_embedding`, `dropout_projection`, `dropout_mixer`, `dropout_mlp`, and `dropout_lm_head`.
 
 **Parameter compression**: The raw parameter count matters, but so does what those parameters are doing. Of WaveletLM's 883M total, around 55% (488M) live in two highly-compressible components: dense MLPs (335.6M) and product-key memory modules (PKM: 76M + FwPKM: 76M). The architecturally distinctive components like lifting wavelets (83.9M), the spectral mixer (88.2M), and decompose EMA bypass (8.4M), are small in comparison. Further work is needed to determine the degree of compressivity of high-parameter regions.
-
-[^1]: See [training log](logs/wikitext-103_2026-04-19_13-16-24/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-19_13-16-24/benchmark.txt).
-
-See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
 
 ## Future Plans
 
 ### Dataset Comparisons
 
-The best WaveletLM config trained on PG-19, Pile-ArXiv, BookCorpusOpen, and/or OpenWebText to gauge performance on more data.
+The best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, and other datasets to gauge their performance.
 
 ### Model Comparisons
 
@@ -278,14 +278,15 @@ The current headline model (882.51M params: L=2, C=2048, MLP=20, PKM/FwPKM=16384
 - **Depth (L):** 2 → 4–8 (WaveletLM blocks)
 - **MLP expansion:** 20 → 50–200 (primary knowledge-storage lever; monotonic BPB contributor in ablations)
 - **PKM / FwPKM keys:** 16384 → 65536 (4× sparse memory capacity)
-- **Training precision:** fp16 → **FP8** (E4M3/E5M2 via Blackwell native tensor cores), for ~2× training throughput and ~30–40% memory reduction. Requires Transformer Engine (or torchao) plus per-tensor dynamic scaling to handle FP8's narrow range; bf16 was previously tried as a wider-range alternative and regressed, so the stability recipe is non-trivial.
+- **Training precision:** fp16 → **FP8** (E4M3/E5M2 via Blackwell native tensor cores), for ~2× training throughput and ~30–40% memory reduction.
 
-The target is a ~10–15B parameter configuration chosen after the 5090 sweep completes. Two training targets are planned:
+The target is a ~10–15B parameter configuration chosen after the 5090 sweep completes. Three training targets are planned:
 
-- **WikiText-103 only**, for an apples-to-apples comparison against the 5090 headline run and against prior same-dataset baselines (Transformer-XL, S4).
-- **Multi-dataset training** across a broader mix (PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, OpenWebText, and WikiText-103), establishing WaveletLM's behavior as a general-purpose language model across domains rather than a single-benchmark result.
+- **WikiText-103 only**
+- **PG-19 only**
+- **Multi-dataset training** across a broader mix combined (PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, OpenWebText, and WikiText-103), establishing WaveletLM's behavior as a general-purpose language model across domains rather than a single-benchmark result.
 
-fp16 inference should fit a single RTX 4090 (24 GB); Post-training quantization (PTQ with per-scale mixed precision, 8/4/2-bit) is expected to drop inference VRAM below 8 GB, enabling deployment on consumer-class GPUs. See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
+Inference for the scaled-up model would fit on a single RTX 4090 (24 GB), and [uniform 8-bit PTQ](runs.md#ptq-sweep-summary) roughly halves that. Sub 8-bit compression is available via the mixed 8/4/2 config but needs post-release bit-packing to realize its storage benefit. See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
 
 ### Semantic Embedding & Interpretability Work
 
