@@ -39,7 +39,7 @@ Run:
 python train.py
 ```
 
-`config.json` replicates the current best [883M parameter WikiText-103 run](logs\wikitext-103_2026-04-22_01-36-47\log.txt), which requires 18235 MiB to train.
+`config.json` replicates the current best [883M parameter WikiText-103 run](logs/wikitext-103_2026-04-22_01-36-47/log.txt), which requires 18235 MiB to train.
 
 Key config options:
 
@@ -62,19 +62,19 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 Obtain weights from [HuggingFace](huggingface.co), then replace `best_model.pt` in the commands below with the path to the file. 
 
-The [current best 883M parameter model](logs\wikitext-103_2026-04-22_01-36-47\log.txt) requires 4918 MiB for inference and generates at 28.8 tokens/s on a 5090.
+The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
 ```bash
 # Recommended generation command
-python generate.py --checkpoint best_model.pt --strategies \
+python generate.py --checkpoint best_model.pt --strategies /
     --prompt "Your prompt here"
 
 # Default generation
 python generate.py --checkpoint best_model.pt
 
 # Additional options
-python generate.py --checkpoint best_model.pt \
-    --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 \
+python generate.py --checkpoint best_model.pt /
+    --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 /
     --n 1 --temperature 1.0 --strategies --ptq8 --num_tokens 9000
 ```
 
@@ -87,8 +87,8 @@ Can run all strategies together with `--strategies` or individual ones. Use `--h
 python generate.py --checkpoint best_model.pt --strategies
 
 # Some strategies options
-python generate.py --checkpoint best_model.pt --entropy_adaptive \
-    --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing \
+python generate.py --checkpoint best_model.pt --entropy_adaptive /
+    --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing /
     --wavelet_coherence
 ```
 
@@ -232,7 +232,7 @@ Output tokens
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
-\* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
+/* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
 See [training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-22_01-36-47/benchmark.txt) for the results (5 epochs, 2.0× dropout, weight decay 1e-6).
 
