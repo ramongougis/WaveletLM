@@ -358,7 +358,7 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 
 ### New Baseline Boolean ablations part 2: Stable parametrization — SKIPPED
 
-Six stability fixes from [`plans/stable_parametrization.md`](plans/stable_parametrization.md) were implemented (spectral norm on mixer, FF √(hidden_dim) scaling, embed √C scaling, proj_out √(C·L) scaling, mixer eps scaling, level-dependent lifting init) but **not evaluated individually.**
+Six stability fixes (spectral norm on mixer, FF √(hidden_dim) scaling, embed √C scaling, proj_out √(C·L) scaling, mixer eps scaling, level-dependent lifting init) were implemented but **not evaluated individually.** See [plans/other_post_release_plans.md §5](plans/other_post_release_plans.md#5-stable-parametrization--validation-and-finishing-gaps) for details and validation plan.
 
 **Reason:** the master bundle performed *worse* than the unmodified configs in every rescue test attempted (see Part 3). Most notably, the lr=0.02+exp_param rescue NaN'd at step 3200 with stab, versus step 4000 without it — i.e. the stability features *accelerated* the failure rather than preventing it. This strongly suggests a bug in at least one of the implementations (likely `stab_proj_out_scaling`, whose `1/√(C·L)` formula produces a residual-stream contribution ~15× larger than the original `1e-3` at the new baseline).
 
