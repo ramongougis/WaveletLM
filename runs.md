@@ -449,7 +449,7 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 | Run | Config | Folder | BPB (sliding) | PPL (sliding) | Val loss (epoch 1) | Params | Time | Notes |
 |-----|--------|--------|---------------|---------------|--------------------|--------|------|-------|
 | EMA 1-epoch smoke test | `decompose_bypass_ema=true`, 1 epoch | [link](logs/wikitext-103_2026-04-21_22-05-15/log.txt) | 1.1102 | 32.0731 | 3.4580 | ~848M | 3.48h | 1-epoch val-loss gain of −0.30 nats vs no-EMA baseline (3.7640). |
-| EMA 5-epoch full run | `decompose_bypass_ema=true`, 5 epochs | [link](logs/wikitext-103_2026-04-22_18-42-22/log.txt) | 1.0226 | 24.3993 | — | ~848M | ~17h | **Regressed vs 5-epoch no-EMA baseline (1.0201). Rejected.** 1→5 epoch inversion; design notes in `plans/ema_post_release.md`. |
+| EMA 5-epoch full run | `decompose_bypass_ema=true`, 5 epochs | [link](logs/wikitext-103_2026-04-22_18-42-22/log.txt) | 1.0226 | 24.3993 | — | ~848M | ~17h | **Regressed vs 5-epoch no-EMA baseline (1.0201). Rejected.** 1→5 epoch inversion; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md). |
 
 ### 3-seed variance study: L=2, C=2048, 2.0x dropout, 5 epochs
 

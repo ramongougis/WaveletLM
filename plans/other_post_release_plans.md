@@ -77,19 +77,31 @@ Acts as a non-linear denoiser, forcing the mixer to process only the principal H
 
 ---
 
-## 5. Other items from the audit not listed above
+## 5. Stable parametrization — validation and finishing gaps
 
-None. The audit had exactly these four + the one already tested pre-release (data-dependent EMA). Nothing else from the review is deferred.
+**What:** The six stability fixes described in [`plans/stable_parametrization.md`](stable_parametrization.md) (spectral norm on mixer, FF √(hidden_dim) scaling, embedding √C scaling, proj_out √(C·layers) scaling, mixer eps scaling with C, level-dependent lifting init) are all implemented in [model.py](../model.py) and wired through the master flag `stable_parametrization` plus individual `stab_*` toggles. But per [runs.md:361](../runs.md#L361), they were **never evaluated individually**, and the master-flag attempt on the mixer_depth=5 @ L=20 config silently crashed before step 100 (likely torch.compile + ~1000 spectral-norm-wrapped mixers exceeding a compilation resource limit). Consequently the flags are unused latent infrastructure in the release configuration.
+
+**Why this matters:** Several latent-win runs are blocked on this validation. The most valuable is `lr=0.02 + exp_param` ([runs.md:346](../runs.md#L346)), which previously showed −0.0084 BPB at L=1 but NaN'd at L=2 step 4000 — spectral norm on the mixer is the hypothesized fix. Multi-basis lifting and high-depth mixer configs are also deferred behind this validation. Stable parametrization will likely also be load-bearing for the B200 scale-up (larger C, deeper L, longer block_size) where existing lr=0.01 recipes start hitting stability walls.
+
+**Outstanding work:**
+
+- **Small-scale validation sweep.** Reproduce the three failing configs from the original testing plan (C=2048 lr=0.02, C=2048 block_size=2048, mixer_depth=5 at L=20) at reduced scale (e.g. C=512) so each probe costs 1–3h instead of 17h. Run each of the six `stab_*` sub-flags individually against each failing config. Identifies which fixes are load-bearing and in which failure modes.
+- **Re-attempt mixer_depth=5 without torch.compile**, or with on-the-fly weight normalization replacing spectral norm in the >3 mixer_depth regime. The failure was a compilation resource issue, not a stability issue, and needs to be diagnosed separately from the numerical question.
+- **Gate.weight scaling gap.** [model.py:471](../model.py#L471) currently uses fixed `nn.init.normal_(self.gate.weight, std=0.02)` regardless of C. The original plan (section 2, lines 55–62) proposed `N(0, 0.02 / sqrt(C / 512))` but didn't include it in the priority list; no `stab_gate_scaling` flag exists. Low priority unless validation sweeps show the gate contributes to instability at high C, in which case add the flag to match.
+- **Update [plans/stable_parametrization.md](stable_parametrization.md)** to reflect actual status: mark the six as implemented, document the mixer_depth=5 crash with its likely compile-limit cause, list the gate.weight gap, and convert "Testing plan" into an outstanding validation backlog with pointers to the runs.md entries.
+
+**Recommended framing:** Run before the B200 scale-up work. Skip if the B200 recipe happens to train cleanly without stabilizers — but if any NaN appears in the scale-up regime, this is the first place to look, and the ablation work is needed to know which subset to enable rather than flipping the master flag blindly.
 
 ---
 
 ## Prioritization order for post-release
 
-1. **Data-dependent EMA** (if pre-release probe validated): promote to default, consider production-grade associative scan implementation.
+1. **Data-dependent EMA** (further investigation; see [plans/ema_post_release.md](ema_post_release.md) — superseded by post-release work since the 1→5 epoch inversion rejected it pre-release).
 2. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
-3. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
-4. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-5. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+3. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
+4. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
+5. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
+6. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
 
 ## Provenance
 

@@ -204,7 +204,7 @@ Output tokens
 <details>
 <summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
 
-- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`) — σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (−0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; design gaps documented in [plans/](plans/).
+- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`) — σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (−0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md).
 - Cross-layer decompose bypass state carry (`decompose_bypass_cross_window`)
 - Stable-parametrization master flag (`stable_parametrization`)
 - Spectral-norm constraint on mixer weights (`stab_spectral_norm`)
@@ -320,6 +320,20 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 ### Multinodal Mode
 
 WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever.
+
+### Adaptive Decompose Bypass
+
+Replacing the parameter-free cumulative running mean with a data-dependent EMA (`decompose_bypass_ema`) gained −0.30 nats at 1 epoch, but regressed at 5 epochs (BPB 1.0226 vs 1.0201). The inversion likely due to short-horizon forgetting and learned gate overfitting. Post-release plan: develop freeze-gate/bias correction probes and alternative formulations with a selective SSM bypass as fallback. See [plans/ema_post_release.md](plans/ema_post_release.md).
+
+### Other Post-Release Plans
+
+See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for info on each.
+
+- Cross-scale phase gating (coarse-modulates-fine)
+- Stable parametrization — validation and finishing gaps 
+- Data-dependent lifting networks (Mamba-style)
+- Wavelet Packet Decomposition (WPD)
+- Top-K / hard thresholding in the Hadamard domain
 
 
 ## License
