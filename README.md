@@ -64,17 +64,22 @@ Obtain weights from [HuggingFace](https://huggingface.co), then replace `best_mo
 
 The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
+Recommended generation command:
+
 ```bash
-# Recommended generation command
 python generate.py --checkpoint best_model.pt --strategies /
     --prompt "Your prompt here"
 ```
+
+Default generation:
+
 ```bash
-# Default generation
 python generate.py --checkpoint best_model.pt
 ```
+
+Additional options:
+
 ```bash
-# Additional options
 python generate.py --checkpoint best_model.pt /
     --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 /
     --n 1 --temperature 1.0 --strategies --ptq8 --num_tokens 9000
@@ -84,12 +89,15 @@ python generate.py --checkpoint best_model.pt /
 
 Can run all strategies together with `--strategies` or individual ones. Use `--help` for a complete list.
 
+Use all inference strategies:
+
 ```bash
-# Use all inference strategies
 python generate.py --checkpoint best_model.pt --strategies
 ```
+
+Some strategies options:
+
 ```bash
-# Some strategies options
 python generate.py --checkpoint best_model.pt --entropy_adaptive /
     --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing /
     --wavelet_coherence
@@ -97,7 +105,7 @@ python generate.py --checkpoint best_model.pt --entropy_adaptive /
 
 ### Post-Training Quantization (PTQ; optional)
 
-Near-lossless uniform 8-bit PTQ — recommended when VRAM or checkpoint size matters.
+Near-lossless uniform 8-bit PTQ:
 
 ```bash
 python generate.py --checkpoint best_model.pt --ptq8
