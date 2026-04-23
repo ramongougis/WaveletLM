@@ -201,11 +201,10 @@ Output tokens
 
 - **Looped blocks (Universal Transformer-style)**: one shared block applied K times in place of L stacked blocks. Reduces BPB at fixed parameter count; compute is usually better spent on more epochs of the stacked model.
 
-- **Data-dependent EMA bypass** (`decompose_bypass_ema`): replaces the cumulative-mean decompose-bypass with a σ-gated EMA — an adaptive 1st-order IIR filter whose leak rate is chosen per-token, letting the model selectively forget at topical/clausal boundaries.
-
 <details>
 <summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
 
+- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`) — σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (−0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; design gaps documented in [plans/](plans/).
 - Cross-layer decompose bypass state carry (`decompose_bypass_cross_window`)
 - Stable-parametrization master flag (`stable_parametrization`)
 - Spectral-norm constraint on mixer weights (`stab_spectral_norm`)

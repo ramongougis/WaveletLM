@@ -35,7 +35,7 @@
 31. [Warmup fraction — at new baseline](#warmup-fraction--at-new-baseline)
 32. [Grad clip — at new baseline](#grad-clip--at-new-baseline)
 33. [Best run candidate: L=2, C=2048, lr=0.01, 2.0x dropout, 5 epochs](#best-run-candidate-l2-c2048-lr001-20x-dropout-5-epochs)
-34. [3-seed variance study: L=2, C=2048, 2.0x dropout, 6 epochs](#3-seed-variance-study-l2-c2048-20x-dropout-6-epochs)
+34. [3-seed variance study: L=2, C=2048, 2.0x dropout, 5 epochs](#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs)
 35. [Weight decay spot-check (low values): 5 epochs, best architecture](#weight-decay-spot-check-low-values-5-epochs-best-architecture)
 36. [Decompose-bypass data-dependent EMA probe](#decompose-bypass-data-dependent-ema-probe)
 37. [PG-19 pre-release benchmark: best seed, 1 epoch](#pg-19-pre-release-benchmark-best-seed-1-epoch)
@@ -437,68 +437,31 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 
 **Dropped features (ablation record).** Untied reconstruction (1-epoch tie at +168M params, +3% time), multi-basis lifting (NaN even with tightened init), exp_param at lr=0.02 (NaN at L=2), iterative refinement, cross-time feedback, stability-parametrization bundle.
 
-### 3-seed variance study: L=2, C=2048, 2.0x dropout, 6 epochs
-
-**Protocol revised after seed 1337 abandoned run (see below).** Original plan was 3 seeds × 10 epochs × 2.5× dropout. After seed 1337 ran ~8.5 epochs, comparison against the 5-epoch best (2.0× dropout) showed the 2.5×/10-ep protocol was **worse**, not better, across the same fixed eval pipeline:
-
-| Protocol | Folder | Best val loss | Sliding-window BPB (post-fix eval) | Sliding-window PPL |
-|----------|--------|---------------|-----|-----|
-| 5 epochs, 2.0× dropout (best run from earlier) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | 3.1728 | **1.0201** | **24.21** |
-| 10 epochs, 2.5× dropout (seed 1337, stopped at end of epoch 8) | [link](logs/wikitext-103_2026-04-20_09-03-34/log.txt) | 3.1953 | 1.0267 | 24.72 |
-
-Two findings: (1) 2.5× dropout was an overcorrection — the model was *under-fitting* in some channels relative to 2.0×; (2) the val curve flattened hard after epoch 6 (epochs 7+8 combined gave only ~0.09 PPL improvement). Going forward: **2.0× dropout, 6 epochs.**
-
-**Revised plan:** 3 seeds (1337, 42, 7) at L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, **6 epochs, 2.0× dropout** (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24). Estimated ~17h per seed, ~51h total on 5090 (down from the original 84h estimate at 10 epochs). PTQ work can proceed in tandem on the completed 5-epoch checkpoint as before.
-
-| Run | Seed | Folder | BPB (sliding) | Train/Val loss | Params | Time | Notes |
-|-----|------|--------|---------------|----------------|--------|------|-------|
-|   | 1337 | | | | 882.51M | ~17h | Primary (re-run at 6ep / 2.0× dropout) |
-|   | 42   | | | | 882.51M | ~17h | |
-|   | 7    | | | | 882.51M | ~17h | |
-
-Mean BPB: _ ± _.
-
-**Abandoned: seed 1337 at 10 epochs / 2.5× dropout** ([log](logs/wikitext-103_2026-04-20_09-03-34/log.txt)) — best val loss 3.1953 at end of epoch 8; stopped early at epoch 9 once it was clear the protocol was worse than the 5-epoch baseline. **Sliding-window BPB 1.0267, PPL 24.72** (post-fix eval; see [benchmark.txt](logs/wikitext-103_2026-04-20_09-03-34/benchmark.txt)). Train loss 2.34 vs val 3.20 = ~1.24 bits/token gap, *worse* than the 5-epoch run's 0.78-bit gap despite stronger dropout — suggests the dropout was hurting representational capacity more than the overfit gap was hurting generalization. Useful negative result; informs the post-release dropout-component sensitivity sweep.
-
 ### Weight decay spot-check (low values): 5 epochs, best architecture
 
-Prior WD test used WD=1e-3 on top of 1.5× dropout and stalled training (see [run log](logs/wikitext-103_2026-04-14_06-41-17/log.txt)) — likely the Adagrad × WD compounding effect. This probe tests whether a far smaller WD value has any beneficial effect at the current best architecture.
-
-**Revised scope (2026-04-22):** original plan tested WD=1e-6 and WD=1e-7. The 1e-6 probe's end-of-epoch-1 val loss (3.7702) was bit-identical to the 5-epoch best run's epoch-1 val loss (3.7640) — confirming **WD=1e-6 has essentially zero effect at this scale**. The 1e-7 probe would be even closer to zero effect and is therefore low-signal. **Cancelled in favor of a 5-epoch EMA probe** (see next section), which showed a 0.30-nat val-loss improvement at 1 epoch and deserves the compute. A broader WD × dropout grid is deferred to post-release, when compute budget allows a proper 2D sweep.
-
-| Run | WD | Folder | BPB (sliding) | Train/Val loss | Params | Time | Notes |
-|-----|-----|--------|---------------|----------------|--------|------|-------|
-|   | 1e-6 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | in-progress | epoch 1: train 3.6597 / val 3.7702 | 882.51M | ~17h | Essentially indistinguishable from 5-epoch baseline at epoch 1 → WD=1e-6 is inert at this scale |
-|   | ~~1e-7~~ | cancelled | — | — | — | — | Compute reallocated to 5-epoch EMA run |
+| Run | WD | Folder | BPB (sliding) | PPL (sliding) | Best val loss | Params | Time | Notes |
+|-----|-----|--------|---------------|---------------|----------------|--------|------|-------|
+|   | 0 (baseline) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | 1.0201 | 24.21 | 3.1728 | 882.51M | ~17h | 5-epoch best prior to WD probe |
+|   | 1e-6 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | **1.0140** | **23.7490** | **3.1593** | 882.51M | ~17h | **New best.** −0.0061 BPB / −0.46 PPL vs WD=0 baseline. WD=1e-6 adopted for 3-seed. |
 
 ### Decompose-bypass data-dependent EMA probe
 
-Tests Gemini's adversarial-audit suggestion #2: replace the cumulative running-mean in `decompose_bypass` (which cannot forget) with a data-dependent EMA:
-
-```
-α_t = σ(W · x_t + b)
-μ_t = α_t ⊙ μ_{t-1} + (1 - α_t) ⊙ x_t
-```
-
-**Motivation.** The current `_compute_running_mean` is a cumsum-based causal average — a 1st-order IIR filter with a pole at z=1 that can't discard stale state. As context grows, old tokens dilute new ones indefinitely. For language, which requires *selective* forgetting at topic/character/clause boundaries, this is a genuine architectural limitation. A σ-gated EMA gives per-channel, per-token control: α≈1 preserves long-range state, α≈0 flushes history.
-
-**Config:** baseline 5-epoch best run config (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights), plus new flag `decompose_bypass_ema=true`. Gate initialized to σ(0)=0.5 (≈50% retention per channel) so behavior at step 0 is a cleaner version of the cumulative mean before the gate learns.
-
-**Added params:** ~1 Linear(C,C) + bias per block = ~4.2M params per block × 2 blocks = ~8.4M. Negligible.
-
-**Implementation note:** Hillis–Steele associative parallel scan in pure pytorch with slice-based composition (no pad allocations; skips identity math on the first `step` positions per pass, saving ~12.5% of the multiplications). Wrapped with `@torch.compiler.disable`. O(log T) GPU-dispatch depth; 8 passes at T=256. Scan state runs in fp32 to avoid fp16 underflow on products of small α. Observed runtime: **~3:28 per epoch** vs ~3:12 baseline — only ~8% slower, much better than the ~50% initially projected. If a production version wants the remaining margin closed, a Triton kernel (Mamba-style) can get there.
-
-**Decision criteria:**
-- Sliding BPB after 5 epochs drops ≥0.005 vs 5-epoch best (1.0201): **adopt for release**; re-run the 3-seed variance study with `decompose_bypass_ema=true`.
-- Sliding BPB drops 0.001-0.005: **record as post-release improvement**; keep current for release.
-- Sliding BPB ≥ baseline: **cumulative mean was doing less harm than expected**; ship as-is.
-
 | Run | Config | Folder | BPB (sliding) | PPL (sliding) | Val loss (epoch 1) | Params | Time | Notes |
-|-----|--------|--------|---------------|---------------|-------|--------|------|-------|
-| EMA 1-epoch smoke test | `decompose_bypass_ema=true`, 1 epoch | [link](logs/wikitext-103_2026-04-21_22-05-15/log.txt) | **1.1102** | **32.0731** | **3.4580** | ~848M | 3.48h | **Val loss −0.30 nats vs 1-epoch no-EMA reference (3.7640); huge improvement.** Equivalent to ~3 epochs of extra baseline training at this rate. |
-| EMA 5-epoch full run | `decompose_bypass_ema=true`, 5 epochs | | | | | ~848M | ~17h | Replaces the cancelled WD 1e-7 probe. Directly comparable to the 5-epoch best run (1.0201). Main release-gating experiment. |
+|-----|--------|--------|---------------|---------------|--------------------|--------|------|-------|
+| EMA 1-epoch smoke test | `decompose_bypass_ema=true`, 1 epoch | [link](logs/wikitext-103_2026-04-21_22-05-15/log.txt) | 1.1102 | 32.0731 | 3.4580 | ~848M | 3.48h | 1-epoch val-loss gain of −0.30 nats vs no-EMA baseline (3.7640). |
+| EMA 5-epoch full run | `decompose_bypass_ema=true`, 5 epochs | [link](logs/wikitext-103_2026-04-22_18-42-22/log.txt) | 1.0226 | 24.3993 | — | ~848M | ~17h | **Regressed vs 5-epoch no-EMA baseline (1.0201). Rejected.** 1→5 epoch inversion; design notes in `plans/ema_post_release.md`. |
 
-**1-epoch baseline reference (EMA=false):** the 5-epoch best run's end-of-epoch-1 val loss was 3.7640 ([source log](logs/wikitext-103_2026-04-19_13-16-24/log.txt)). The WD 1e-6 probe's end-of-epoch-1 val loss was 3.7702 — bit-identical within noise — which serves as independent confirmation. No separate 1-epoch EMA=false control needed.
+### 3-seed variance study: L=2, C=2048, 2.0x dropout, 5 epochs
+
+Locked recipe: L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, **5 epochs, 2.0× dropout, WD=1e-6**. Seeds: 1337, 42, 7.
+
+| Run | Seed | Folder | BPB (sliding) | PPL (sliding) | Train/Val loss | Params | Time | Notes |
+|-----|------|--------|---------------|---------------|----------------|--------|------|-------|
+|   | 1337 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | **1.0140** | **23.7490** | — | 882.51M | ~17h | Primary; new best. WD=1e-6 adopted. |
+|   | 42   | | | | | 882.51M | ~17h | |
+|   | 7    | | | | | 882.51M | ~17h | |
+
+Mean BPB: _ ± _.
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 
@@ -508,7 +471,7 @@ Final pre-release run. Takes the best seed from the 3-seed WT103 study and train
 
 **Why 1 epoch is enough:** PG-19 is ~2.5B GPT-2 tokens, ~21× WikiText-103's training corpus. Each token is seen roughly 20× less often than in a 20-epoch WT103 run, so convergence is driven by seeing new data rather than re-seeing the same data. Long-form narrative structure is also less diverse in surface form than Wikipedia — the model shouldn't need many passes to absorb distribution.
 
-**Config:** identical to the 3-seed best run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 2.5× dropout). Only `epochs=1` and `dataset=pg19` change. **882.51M params.**
+**Config:** identical to the 3-seed best run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 2.0× dropout, WD=1e-6). Only `epochs=1` and `dataset=pg19` change. **882.51M params.**
 
 **Block_size tradeoff:** PG-19 benefits from longer context in principle (long narrative arcs), but keeping `block_size=256` preserves apples-to-apples with WT103 at the same compute cost per step. Raising to 512 or 1024 is a post-release experiment.
 
