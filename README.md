@@ -4,7 +4,7 @@
 
 <br>
 
-WaveletLM is a wavelet-based, attention-free language model that replaces attention with spectral mixing. Each block uses learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this produces a fully causal sequence language model with no attention mechanism and sub-quadratic scaling in sequence length.
+WaveletLM is a fully causal, attention-free language model that mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and a cross-layer decompose bypass, this yields an architecture with no attention, no KV cache, and O(n log n) scaling in sequence length.
 
 <br>
 
@@ -47,13 +47,19 @@ Key config options:
 |--------|---------|-------------|
 | `C` | 2048 | Mixer channel width (power of 2 recommended) |
 | `layers` | 2 | Number of WaveletLM blocks |
-| `mlp_expansion` | 20 | MLP hidden dim multiplier |
 | `levels` | 5 | Wavelet decomposition levels (~log2(block_size)) |
-| `epochs` | 5 | Training epochs |
+| `mlp_expansion` | 20 | Hidden layer width multiplier |
 | `block_size` | 256 | Context length |
-| `dataset` | wikitext-103 | HuggingFace dataset name |
-| `optimizer` | Adagrad | Adagrad or AdamW |
-| `amp_dtype` | fp16 | fp16 or bf16 |
+| `epochs` | 5 | Training epochs |
+| `micro_batch_size` | 8 | Per-step batch size (scale to fit VRAM) |
+| `grad_accum` | 1 | Gradient accumulation; effective batch = `micro_batch_size × grad_accum` |
+| `lr` | 0.01 | Peak learning rate (Adagrad-tuned; reduce substantially if switching to AdamW) |
+| `weight_decay` | 1e-6 | L2 weight decay (1e-6 mildly beneficial; 1e-3 stalls training) |
+| `warmup_fraction` | 0.3 | Fraction of total steps spent in LR warmup |
+| `dropout_lm_head` | 0.24 | LM-head dropout (other heads: `dropout_mlp` / `mixer` / `projection` / `embedding`) |
+| `dataset` | wikitext-103 | HuggingFace dataset ID |
+| `seed` | 1337 | RNG seed (e.g. for variance studies) |
+| `compile` | True | Enable `torch.compile`; disable when debugging |
 
 Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`runs.md`](runs.md). The full default run takes ~14h on an RTX 5090; drop `epochs` to 1 for a quick smoke test.
 
@@ -158,18 +164,18 @@ Output tokens
 
 - **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
 
-- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space via a gated linear layer. Runs in fixed O(S²) per layer for S scales, versus attention's O(N²) in sequence length.
+- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space via a gated linear layer. Runs in fixed O(S²) per layer for S scales (S = levels + 1), versus attention's O(N²) in sequence length.
 
-- **Expanded MLP (expansion ≥ 20)**: the primary knowledge-storage mechanism, scaled well beyond the ~4× typical in Transformers. Monotonic BPB contributor in ablations, taking on much of attention's memorization role.
+- **Expanded MLP (expansion ≥ 20)**: Hidden layer width multiplier for the MLP layers. Monotonic BPB contributor in ablations, but asymptotic above 50.
 
-- **Decompose bypass**: a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose coefficients. O(C) per-token cross-layer global context without attention.
+- **Decompose bypass**: a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose coefficients.
 
 <details>
 <summary><b>Additional key components</b> (always-on architectural pieces)</summary>
 
-- LayerNorms near both ends of each block, plus one final LayerNorm before the LM head
+- LayerNorms near both ends of each block, and one before the LM head
 - Two residual connections per block with learned scalar gating (`learned_residual` in config.json)
-- Learned per-scale weights applied after the inverse FHT - one trainable scalar per wavelet scale
+- Per-scale weights applied after the inverse FHT, one trainable scalar per wavelet scale
 - Feature padding to the next power of 2, required for the Walsh-Hadamard transform (`C` → `Cp = next_pow2(C)`)
 - Causal zero-padded dilation in the lifting predict/update steps, preserving autoregressive causality at every level
 
