@@ -68,10 +68,12 @@ The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/lo
 # Recommended generation command
 python generate.py --checkpoint best_model.pt --strategies /
     --prompt "Your prompt here"
-
+```
+```bash
 # Default generation
 python generate.py --checkpoint best_model.pt
-
+```
+```bash
 # Additional options
 python generate.py --checkpoint best_model.pt /
     --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 /
@@ -85,7 +87,8 @@ Can run all strategies together with `--strategies` or individual ones. Use `--h
 ```bash
 # Use all inference strategies
 python generate.py --checkpoint best_model.pt --strategies
-
+```
+```bash
 # Some strategies options
 python generate.py --checkpoint best_model.pt --entropy_adaptive /
     --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing /
