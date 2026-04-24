@@ -28,7 +28,7 @@ import torch.nn.functional as F
 
 from model import (
     WaveletLM, MultiNodeWaveletLM, causal_haar_decompose, quantize_model,
-    get_tokenizer, GPT2Tokenizer, SentencePieceTokenizer,
+    get_tokenizer, GPT2Tokenizer, SentencePieceTokenizer, SP_PG19_MODEL_PATH,
 )
 
 
@@ -154,15 +154,34 @@ def strip_compiled_prefix(state_dict):
 
 
 def peek_checkpoint_tokenizer(ckpt_path):
-    """Read just the tokenizer_name from a wrapped checkpoint, without
-    loading model weights. Returns None for legacy bare-state-dict checkpoints."""
+    """Read tokenizer metadata from a wrapped checkpoint, without loading
+    model weights. Returns the tokenizer name, or None for legacy
+    bare-state-dict checkpoints.
+
+    Side effect: if the checkpoint embeds a SentencePiece .model blob and
+    the expected .cache path does not yet exist, this writes the blob so
+    SentencePieceTokenizer() can load it when constructed. Lets users run
+    generate.py on a downloaded PG-19 checkpoint with no extra files.
+    """
     try:
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     except Exception:
         return None
-    if isinstance(ckpt, dict) and "model_state" in ckpt:
-        return ckpt.get("tokenizer_name")
-    return None
+    if not (isinstance(ckpt, dict) and "model_state" in ckpt):
+        return None
+
+    tokenizer_name = ckpt.get("tokenizer_name")
+
+    sp_bytes = ckpt.get("sentencepiece_model")
+    if sp_bytes is not None and tokenizer_name == "sentencepiece-pg19-32k":
+        if not os.path.exists(SP_PG19_MODEL_PATH):
+            os.makedirs(os.path.dirname(SP_PG19_MODEL_PATH) or ".", exist_ok=True)
+            with open(SP_PG19_MODEL_PATH, "wb") as f:
+                f.write(sp_bytes)
+            print(f"[Tokenizer] Extracted embedded SentencePiece model to "
+                  f"{SP_PG19_MODEL_PATH} ({len(sp_bytes)/1024:.1f} KB)")
+
+    return tokenizer_name
 
 
 def load_checkpoint(model, ckpt_path):

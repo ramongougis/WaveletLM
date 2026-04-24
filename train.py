@@ -535,14 +535,31 @@ def save_with_retry(state_dict, path, retries=3, tokenizer_name=None):
     """Save checkpoint with retry logic for filesystem issues.
 
     If tokenizer_name is provided, the saved object is a wrapper dict
-    {'model_state': ..., 'tokenizer_name': ...} so generate.py can build the
-    matching tokenizer regardless of what's in config.json at inference time.
-    Bare state_dict is used when tokenizer_name is None (legacy format).
+    {'model_state': ..., 'tokenizer_name': ..., 'sentencepiece_model': ...}.
+    For SentencePiece tokenizers, the raw `.model` file bytes are embedded in
+    the checkpoint so a user downloading only best_model.pt from HF can run
+    generate.py out of the box with no extra files. The field is None for
+    GPT-2 checkpoints. Bare state_dict is used when tokenizer_name is None
+    (legacy format).
     """
-    payload = (
-        {"model_state": state_dict, "tokenizer_name": tokenizer_name}
-        if tokenizer_name is not None else state_dict
-    )
+    if tokenizer_name is not None:
+        sp_bytes = None
+        if tokenizer_name == "sentencepiece-pg19-32k":
+            try:
+                with open(SP_PG19_MODEL_PATH, "rb") as f:
+                    sp_bytes = f.read()
+            except FileNotFoundError:
+                # Training should never hit this (SP model is trained at startup),
+                # but fail softly if so — the checkpoint is still usable locally.
+                pass
+        payload = {
+            "model_state": state_dict,
+            "tokenizer_name": tokenizer_name,
+            "sentencepiece_model": sp_bytes,
+        }
+    else:
+        payload = state_dict
+
     for attempt in range(retries):
         try:
             torch.save(payload, path)
