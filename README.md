@@ -253,7 +253,7 @@ Output tokens
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
 
-See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
+See [`runs.md`](runs.md) for a full record of all training runs, logs, configs, and benchmark results.
 
 ### PG-19 Test Set Perplexity Comparison
 
