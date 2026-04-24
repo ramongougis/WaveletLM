@@ -27,10 +27,21 @@ echo "=== PG-19 pre-release run (1 epoch, SentencePiece auto)"
 echo "============================================================"
 set_keys '{"dataset": "pg19", "epochs": 1, "eval_interval": 2500}'
 python train.py
+TRAIN_EXIT=$?
+if [ $TRAIN_EXIT -ne 0 ]; then
+    echo ""
+    echo "[runs.sh] train.py failed with exit code $TRAIN_EXIT."
+    echo "[runs.sh] Restoring WT-103 default config and skipping commit/push."
+    set_keys '{"dataset": "wikitext-103", "epochs": 5, "eval_interval": 250}'
+    exit $TRAIN_EXIT
+fi
+
 LATEST_CKPT=$(ls -dt logs/pg19_*/best_model.pt 2>/dev/null | head -1)
 if [ -n "$LATEST_CKPT" ]; then
-    python generate.py --checkpoint "$LATEST_CKPT"
-    python generate.py --checkpoint "$LATEST_CKPT" --strategies
+    python generate.py --checkpoint "$LATEST_CKPT" || true
+    python generate.py --checkpoint "$LATEST_CKPT" --strategies || true
+else
+    echo "[runs.sh] No best_model.pt found under logs/pg19_*/. Skipping generation."
 fi
 
 # Reset config.json to the WT-103 best-run defaults before committing, so the

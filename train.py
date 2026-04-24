@@ -64,7 +64,7 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
     log(f"[SentencePiece] Streaming PG-19 train text (cap {sample_cap_bytes/1e9:.1f} GB)...")
     written = 0
     with open(sample_path, 'w', encoding='utf-8') as fout:
-        ds = load_dataset("pg19", split="train", streaming=True)
+        ds = load_dataset("pg19", split="train", streaming=True, trust_remote_code=True)
         for example in ds:
             line = example["text"].replace("\n", " ").strip() + "\n"
             fout.write(line)
@@ -139,13 +139,15 @@ def load_and_encode_dataset(config, logger):
         logger.log(f"[Dataset] Vocab size: {vocab_size}")
         return train_data, val_data, test_data, enc, bytes_per_token
 
-    # Encode from scratch
+    # Encode from scratch. trust_remote_code=True is required for legacy
+    # script-based loaders (e.g. pg19) on datasets >=2.20; safe for the
+    # canonical datasets used here (DeepMind's pg19, HF's wikitext).
     if dataset_name == "wikitext-103":
         ds = load_dataset("wikitext", "wikitext-103-raw-v1")
     elif dataset_name == "wikitext-2":
         ds = load_dataset("wikitext", "wikitext-2-raw-v1")
     else:
-        ds = load_dataset(dataset_name)
+        ds = load_dataset(dataset_name, trust_remote_code=True)
 
     def encode_split(split_data):
         # Reverted to symmetric "\n\n".join for both tokens and bytes after

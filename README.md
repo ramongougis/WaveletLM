@@ -26,7 +26,7 @@ Requires Python 3.10+, PyTorch 2.8+, and CUDA.
 ```bash
 git clone https://github.com/ramongougis/WaveletLM.git
 cd WaveletLM
-pip install torch datasets tiktoken sentencepiece tqdm numpy
+pip install torch "datasets<3.0" tiktoken sentencepiece tqdm numpy
 ```
 
 ## Training
