@@ -233,6 +233,18 @@ Output tokens
 
 ## Results
 
+It is important to note that WaveletLM has **not** been fully optimized: 
+
+- regularization shows a 0.8 train/val loss gap, 
+- the 5 dropout parameters have not been swept, 
+- weight decay needs further tuning, 
+- longer training time is needed, and 
+- parameter compression has not yet been applied.
+
+My current run budget is limited. Other researchers are encouraged to run the model with these changes to more accurately gauge its potential performance.
+
+See [Areas for Improvement]() below for more info on optimization, and [Future Plans]() for ways to push WaveletLM further post-release.
+
 ### WikiText-103 Test Set Perplexity Comparison
 
 | Model | Type | Trained on | Params | PPL |
@@ -339,7 +351,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+Apache License 2.0
 
 ## References
 
