@@ -243,7 +243,7 @@ It is important to note that WaveletLM has **not** been fully optimized:
 
 My current run budget is limited. Other researchers are encouraged to run the model with these changes to more accurately gauge its potential performance.
 
-See [Areas for Improvement]() below for more info on optimization, and [Future Plans]() for ways to push WaveletLM further post-release.
+See [Areas for Improvement](#areas-for-improvement) below for more info on optimization, and [Future Plans](#future-plans) for ways to push WaveletLM further post-release.
 
 ### WikiText-103 Test Set Perplexity Comparison
 
