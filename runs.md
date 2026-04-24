@@ -457,11 +457,11 @@ Locked recipe: L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=25
 
 | Run | Seed | Folder | BPB (sliding) | PPL (sliding) | Best val loss | Params | Time | Notes |
 |-----|------|--------|---------------|---------------|----------------|--------|------|-------|
-|   | 1337 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | **1.0140** | **23.7490** | 3.1593 | 882.51M | ~17h | Primary; new best. WD=1e-6 adopted. |
+|   | 1337 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | **1.0140** | **23.7490** | 3.1593 | 882.51M | ~17h | Primary; best of 3 seeds. Promoted to PG-19 and HF upload. |
 |   | 42   | [link](logs/wikitext-103_2026-04-23_12-43-30/log.txt) | 1.0155 | 23.8604 | 3.1757 | 882.51M | ~17h | +0.0015 BPB / +0.11 PPL vs seed 1337. |
-|   | 7    | | | | | 882.51M | ~17h | |
+|   | 7    | [link](logs/wikitext-103_2026-04-24_05-02-29/log.txt) | 1.0152 | 23.8438 | 3.1626 | 882.51M | ~17h | +0.0012 BPB / +0.09 PPL vs seed 1337. |
 
-Mean PPL: _ ± _.
+**Mean BPB: 1.0149 ± 0.0008 | Mean PPL: 23.82 ± 0.06 | Mean best val loss: 3.166 ± 0.009** (sample std across 3 seeds, n=3). Tight cluster — ~0.08% CV on BPB, ~0.25% on PPL. Confirms the WD=1e-6 recipe is not seed-1337-specific.
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 
