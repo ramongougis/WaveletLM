@@ -246,7 +246,7 @@ Output tokens
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
-/* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
+\* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
 † Best of 3 seeds with mean PPL __ ± __.
 
