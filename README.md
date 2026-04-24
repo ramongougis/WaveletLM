@@ -26,7 +26,7 @@ Requires Python 3.10+, PyTorch 2.8+, and CUDA.
 ```bash
 git clone https://github.com/ramongougis/WaveletLM.git
 cd WaveletLM
-pip install torch datasets tiktoken tqdm numpy
+pip install torch datasets tiktoken sentencepiece tqdm numpy
 ```
 
 ## Training
@@ -275,7 +275,7 @@ See [`runs.md`](runs.md) for a full record of all training runs, logs, configs, 
 | Block-Recurrent Transformer | Transformer + recurrence | ~200M | 29.0[^6] |
 | Compressive Transformer | Transformer + compressive memory | 257M | 33.6[^7] |
 | Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
-| **WaveletLM** | **Wavelet mixer** | **883M** | **TBD** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
+| **WaveletLM** | **Wavelet mixer** | **~808M** | **TBD** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
 
 All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization.
 

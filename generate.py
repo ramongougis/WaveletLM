@@ -25,9 +25,11 @@ from collections import Counter
 
 import torch
 import torch.nn.functional as F
-import tiktoken
 
-from model import WaveletLM, MultiNodeWaveletLM, causal_haar_decompose, quantize_model
+from model import (
+    WaveletLM, MultiNodeWaveletLM, causal_haar_decompose, quantize_model,
+    get_tokenizer, GPT2Tokenizer, SentencePieceTokenizer,
+)
 
 
 # ==============================================================================
@@ -151,10 +153,34 @@ def strip_compiled_prefix(state_dict):
     return out
 
 
+def peek_checkpoint_tokenizer(ckpt_path):
+    """Read just the tokenizer_name from a wrapped checkpoint, without
+    loading model weights. Returns None for legacy bare-state-dict checkpoints."""
+    try:
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    except Exception:
+        return None
+    if isinstance(ckpt, dict) and "model_state" in ckpt:
+        return ckpt.get("tokenizer_name")
+    return None
+
+
 def load_checkpoint(model, ckpt_path):
-    """Load checkpoint with _orig_mod prefix handling."""
+    """Load checkpoint with _orig_mod prefix handling.
+
+    Handles both the legacy bare-state-dict format and the wrapped format
+    {'model_state': ..., 'tokenizer_name': ...}. Returns the tokenizer name
+    if present in the checkpoint, else None (caller falls back to config).
+    """
     checkpoint = torch.load(ckpt_path, map_location="cpu")
-    state = strip_compiled_prefix(checkpoint)
+
+    if isinstance(checkpoint, dict) and "model_state" in checkpoint:
+        tokenizer_name = checkpoint.get("tokenizer_name")
+        state = strip_compiled_prefix(checkpoint["model_state"])
+    else:
+        tokenizer_name = None
+        state = strip_compiled_prefix(checkpoint)
+
     missing, unexpected = model.load_state_dict(state, strict=False)
 
     # Filter benign missing/unexpected keys
@@ -166,6 +192,8 @@ def load_checkpoint(model, ckpt_path):
         print(f"[WARNING] Missing keys: {real_missing}")
     if real_unexpected:
         print(f"[WARNING] Unexpected keys: {real_unexpected}")
+
+    return tokenizer_name
 
 
 # ==============================================================================
@@ -605,9 +633,20 @@ def main():
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    # Build model
-    enc = tiktoken.get_encoding("gpt2")
-    vocab_size = enc.n_vocab
+    # Resolve tokenizer: prefer the name embedded in the checkpoint (so we
+    # match what the model was trained with), else fall back to the active
+    # config (auto-selects from dataset). Warn on mismatch.
+    ckpt_tokenizer = peek_checkpoint_tokenizer(args.checkpoint)
+    config_tokenizer = config.get("tokenizer", "auto")
+    if ckpt_tokenizer is not None:
+        if config_tokenizer not in ("auto", ckpt_tokenizer):
+            log(f"[WARNING] Checkpoint tokenizer ({ckpt_tokenizer}) != config "
+                f"({config_tokenizer}). Using checkpoint's tokenizer to match weights.")
+        enc = get_tokenizer({"tokenizer": ckpt_tokenizer})
+    else:
+        enc = get_tokenizer(config)
+    vocab_size = enc.vocab_size
+    log(f"[Tokenizer] {enc.display_name()}")
 
     if config.get('multinodal_enabled', False):
         model = MultiNodeWaveletLM(vocab_size, config, device=device)

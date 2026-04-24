@@ -1836,6 +1836,90 @@ class Logger:
         self.file.close()
 
 
+# ==============================================================================
+# TOKENIZER WRAPPERS
+# ==============================================================================
+# Auto-selection by dataset: WikiText uses GPT-2 BPE (tiktoken) to match prior
+# practice; PG-19 uses a 32K SentencePiece BPE trained on PG-19's train split,
+# matching the tokenizer family used by Compressive Transformer / Transformer-XL
+# in their PG-19 numbers. Override via config["tokenizer"] = "<name>".
+
+DATASET_TOKENIZER = {
+    "wikitext-103": "gpt2",
+    "wikitext-2": "gpt2",
+    "pg19": "sentencepiece-pg19-32k",
+}
+DEFAULT_TOKENIZER = "gpt2"
+SP_PG19_MODEL_PATH = os.path.join(".cache", "pg19_sp32k.model")
+
+
+class GPT2Tokenizer:
+    name = "gpt2"
+
+    def __init__(self):
+        import tiktoken
+        self._enc = tiktoken.get_encoding("gpt2")
+        self.vocab_size = self._enc.n_vocab
+
+    def encode(self, text, allow_special=False):
+        if allow_special:
+            return self._enc.encode(text)
+        return self._enc.encode(text, allowed_special=set())
+
+    def decode(self, ids):
+        return self._enc.decode(ids)
+
+    def display_name(self):
+        return f"GPT-2 BPE (tiktoken), {self.vocab_size:,} vocab"
+
+
+class SentencePieceTokenizer:
+    name = "sentencepiece-pg19-32k"
+    model_path = SP_PG19_MODEL_PATH
+
+    def __init__(self):
+        import sentencepiece as spm
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(
+                f"SentencePiece model not found at {self.model_path}. "
+                "Train it via train.py on the PG-19 train split (the first PG-19 "
+                "run will train it automatically) or place a pre-trained .model file there."
+            )
+        self._sp = spm.SentencePieceProcessor()
+        self._sp.load(self.model_path)
+        self.vocab_size = self._sp.get_piece_size()
+
+    def encode(self, text, allow_special=False):
+        return self._sp.encode(text, out_type=int)
+
+    def decode(self, ids):
+        return self._sp.decode(ids)
+
+    def display_name(self):
+        return f"SentencePiece BPE (PG-19, 32K), {self.vocab_size:,} vocab"
+
+
+def resolve_tokenizer_name(config):
+    """Resolve the tokenizer name from config, applying dataset auto-selection."""
+    name = config.get("tokenizer", "auto")
+    if name == "auto":
+        dataset_name = config.get("dataset", "wikitext-103")
+        name = DATASET_TOKENIZER.get(dataset_name, DEFAULT_TOKENIZER)
+    return name
+
+
+def get_tokenizer(config):
+    """Construct the tokenizer wrapper for the active config."""
+    name = resolve_tokenizer_name(config)
+    if name == "gpt2":
+        return GPT2Tokenizer()
+    if name == "sentencepiece-pg19-32k":
+        return SentencePieceTokenizer()
+    raise ValueError(
+        f"Unknown tokenizer: {name!r}. Known: 'gpt2', 'sentencepiece-pg19-32k', 'auto'."
+    )
+
+
 def parameter_breakdown(model, config, logger=None):
     """Print parameter breakdown for WaveletLM or MultiNodeWaveletLM.
 

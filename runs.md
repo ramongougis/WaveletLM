@@ -465,13 +465,13 @@ Mean PPL: _ ± _.
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 
-**IMPORTANT: Incorporate SentencePiece tokenization FIRST!**
-
 Final pre-release run. Takes the best seed from the 3-seed WT103 study and trains it on PG-19 for 1 epoch. Purpose: publish a second-dataset number alongside WikiText-103 so the release isn't single-benchmark-only, and anchor against Transformer-XL / Compressive Transformer, both of which have reported PG-19 numbers.
 
-**Why 1 epoch is enough:** PG-19 is ~2.5B GPT-2 tokens, ~21× WikiText-103's training corpus. Each token is seen roughly 20× less often than in a 20-epoch WT103 run, so convergence is driven by seeing new data rather than re-seeing the same data. Long-form narrative structure is also less diverse in surface form than Wikipedia — the model shouldn't need many passes to absorb distribution.
+**Tokenizer:** 32K SentencePiece BPE trained on the PG-19 train split (matches Transformer-XL / Compressive Transformer's tokenizer family). Auto-selected when `dataset=pg19` is set in config — first run trains the SP model and caches it at `.cache/pg19_sp32k.model`; subsequent runs reuse it. See [train.py](../train.py) `train_pg19_sentencepiece()`. Note: embedding and LM head shapes scale with vocab size, so the PG-19 model has ~808M params vs WT-103's 883M (−74.8M from the embedding + LM head going from 50K to 32K vocab).
 
-**Config:** identical to the 3-seed best run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 2.0× dropout, WD=1e-6). Only `epochs=1` and `dataset=pg19` change. **882.51M params.**
+**Why 1 epoch is enough:** PG-19 is ~2B tokens under SentencePiece, ~15–20× WikiText-103's training corpus. Each token is seen roughly 15–20× less often than in a 20-epoch WT103 run, so convergence is driven by seeing new data rather than re-seeing the same data. Long-form narrative structure is also less diverse in surface form than Wikipedia — the model shouldn't need many passes to absorb distribution.
+
+**Config:** identical to the 3-seed best run (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, 2.0× dropout, WD=1e-6). `epochs=1`, `dataset=pg19`, tokenizer auto-resolves to SentencePiece. **~808M params** (reduced from 883M due to 32K vs 50K vocab in the embedding and LM head).
 
 **Block_size tradeoff:** PG-19 benefits from longer context in principle (long narrative arcs), but keeping `block_size=256` preserves apples-to-apples with WT103 at the same compute cost per step. Raising to 512 or 1024 is a post-release experiment.
 
@@ -479,7 +479,7 @@ Final pre-release run. Takes the best seed from the 3-seed WT103 study and train
 
 | Run | Seed | Folder | BPB (sliding) | Perplexity | Params | Time | Notes |
 |-----|------|--------|---------------|------------|--------|------|-------|
-|   | *best from 3-seed study* | | | | 882.51M | ~63h | Pre-release anchor on PG-19; compare to Transformer-XL / Compressive Transformer |
+|   | *best from 3-seed study* | | | | ~808M | ~63h | Pre-release anchor on PG-19; SentencePiece 32K tokenizer; compare to Transformer-XL / Compressive Transformer |
 
 After this run completes, release proceeds: HuggingFace upload of the best checkpoint (with HF model card), and the post-release items (model comparisons, dataset comparisons, scaled-up B200) follow.
 

@@ -26,14 +26,68 @@ import datetime
 
 import torch
 import torch.nn.functional as F
-import tiktoken
 from tqdm import tqdm
 from datasets import load_dataset
 
 from model import (
     set_seed, WaveletLM, MultiNodeWaveletLM,
     Logger, parameter_breakdown, quantize_model,
+    get_tokenizer, resolve_tokenizer_name, SP_PG19_MODEL_PATH,
 )
+
+
+# ==============================================================================
+# SENTENCEPIECE TRAINING (one-time setup for PG-19)
+# ==============================================================================
+
+def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
+    """Train a 32K-vocab SentencePiece BPE model on the PG-19 train split.
+
+    Called automatically on first PG-19 run if the cached model is missing.
+    Output: .cache/pg19_sp32k.model. Single-threaded SP training; sample-capped
+    to keep wall time reasonable on first setup.
+    """
+    import sentencepiece as spm
+
+    log = (lambda s: logger.log(s)) if logger is not None else print
+    model_prefix = os.path.join(cache_dir, "pg19_sp32k")
+    model_path = model_prefix + ".model"
+    if os.path.exists(model_path):
+        return model_path
+
+    os.makedirs(cache_dir, exist_ok=True)
+    log("[SentencePiece] Training 32K BPE on PG-19 train split (one-time setup).")
+
+    sample_path = os.path.join(cache_dir, "_pg19_sp_train_sample.txt")
+    sample_cap_bytes = 2 * 1024 * 1024 * 1024  # 2 GB cap; ample coverage for 32K vocab
+
+    log(f"[SentencePiece] Streaming PG-19 train text (cap {sample_cap_bytes/1e9:.1f} GB)...")
+    written = 0
+    with open(sample_path, 'w', encoding='utf-8') as fout:
+        ds = load_dataset("pg19", split="train", streaming=True)
+        for example in ds:
+            line = example["text"].replace("\n", " ").strip() + "\n"
+            fout.write(line)
+            written += len(line.encode("utf-8"))
+            if written >= sample_cap_bytes:
+                break
+    log(f"[SentencePiece] Wrote {written/1e9:.2f} GB of training text.")
+
+    log("[SentencePiece] Training BPE model (this may take 5–30 minutes)...")
+    spm.SentencePieceTrainer.train(
+        input=sample_path,
+        model_prefix=model_prefix,
+        vocab_size=32000,
+        model_type="bpe",
+        character_coverage=0.9995,
+        normalization_rule_name="identity",
+        input_sentence_size=10_000_000,
+        shuffle_input_sentence=True,
+        train_extremely_large_corpus=True,
+    )
+    os.remove(sample_path)
+    log(f"[SentencePiece] Trained model saved to {model_path}")
+    return model_path
 
 
 # ==============================================================================
@@ -41,20 +95,32 @@ from model import (
 # ==============================================================================
 
 def load_and_encode_dataset(config, logger):
-    """Load dataset via HuggingFace and encode with GPT-2 tokenizer (tiktoken).
+    """Load dataset via HuggingFace and encode with the auto-selected tokenizer.
+
+    Tokenizer is chosen from config["tokenizer"] (defaults to "auto" which
+    routes by dataset). Cache is namespaced by tokenizer so swapping tokenizers
+    doesn't reuse stale token IDs.
 
     Returns:
         train_data, val_data, test_data: torch.long tensors of token IDs
-        enc: tiktoken encoding object
+        enc: Tokenizer wrapper (provides .encode, .decode, .vocab_size)
+        bytes_per_token: float for BPB calculations
     """
-    enc = tiktoken.get_encoding("gpt2")
-    vocab_size = enc.n_vocab  # 50257
-
     dataset_name = config.get("dataset", "wikitext-103")
+    tokenizer_name = resolve_tokenizer_name(config)
 
-    # Check for cached encoded tensors
+    # Train SP model on first PG-19 run if not yet cached.
+    if tokenizer_name == "sentencepiece-pg19-32k" and not os.path.exists(SP_PG19_MODEL_PATH):
+        train_pg19_sentencepiece(cache_dir=".cache", logger=logger)
+
+    enc = get_tokenizer(config)
+    vocab_size = enc.vocab_size
+
+    logger.log(f"[Tokenizer] {enc.display_name()}")
+
+    # Check for cached encoded tensors (namespaced by tokenizer)
     cache_dir = ".cache"
-    cache_path = os.path.join(cache_dir, f"{dataset_name}_gpt2.pt")
+    cache_path = os.path.join(cache_dir, f"{dataset_name}_{tokenizer_name}.pt")
 
     if os.path.exists(cache_path):
         logger.log(f"[Dataset] Loading {dataset_name} from cache...")
@@ -91,7 +157,7 @@ def load_and_encode_dataset(config, logger):
         # tokens-and-bytes pair from "\n\n" and publish transparently.
         text = "\n\n".join(split_data["text"])
         num_bytes = len(text.encode("utf-8"))
-        tokens = enc.encode(text, allowed_special=set())
+        tokens = enc.encode(text)
         return torch.tensor(tokens, dtype=torch.long), num_bytes
 
     logger.log(f"[Dataset] Loading {dataset_name}...")
@@ -465,11 +531,21 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
 # CHECKPOINT SAVE
 # ==============================================================================
 
-def save_with_retry(state_dict, path, retries=3):
-    """Save checkpoint with retry logic for filesystem issues."""
+def save_with_retry(state_dict, path, retries=3, tokenizer_name=None):
+    """Save checkpoint with retry logic for filesystem issues.
+
+    If tokenizer_name is provided, the saved object is a wrapper dict
+    {'model_state': ..., 'tokenizer_name': ...} so generate.py can build the
+    matching tokenizer regardless of what's in config.json at inference time.
+    Bare state_dict is used when tokenizer_name is None (legacy format).
+    """
+    payload = (
+        {"model_state": state_dict, "tokenizer_name": tokenizer_name}
+        if tokenizer_name is not None else state_dict
+    )
     for attempt in range(retries):
         try:
-            torch.save(state_dict, path)
+            torch.save(payload, path)
             return
         except (OSError, RuntimeError) as e:
             if attempt < retries - 1:
@@ -640,7 +716,7 @@ def train():
     train_data = train_data.to(device)
     val_data = val_data.to(device)
     test_data = test_data.to(device)
-    vocab_size = enc.n_vocab
+    vocab_size = enc.vocab_size
 
     # Compute training schedule
     T = config['block_size']
@@ -776,7 +852,8 @@ def train():
                                 state_dict = model._orig_mod.state_dict()
                             except AttributeError:
                                 state_dict = model.state_dict()
-                            save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"))
+                            save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"),
+                                            tokenizer_name=enc.name)
 
             # End of epoch
             epoch_duration = time.time() - epoch_start
@@ -797,7 +874,8 @@ def train():
                     state_dict = model._orig_mod.state_dict()
                 except AttributeError:
                     state_dict = model.state_dict()
-                save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"))
+                save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"),
+                                tokenizer_name=enc.name)
 
         # =====================================================================
         # TRAINING COMPLETE
