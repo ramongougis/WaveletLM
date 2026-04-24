@@ -1,47 +1,50 @@
 #!/bin/bash
-# 3-seed variance study (seeds 42, 7). Seed 1337 already completed at
-# logs/wikitext-103_2026-04-22_01-36-47 (BPB 1.0140, PPL 23.7490). Each run
-# below edits config.json's seed, trains, runs generate.py (standard +
-# strategies), commits and pushes.
+# PG-19 pre-release run. Uses the best-of-3-seeds recipe (seed=1337, WD=1e-6,
+# everything else unchanged from the WT-103 best config) on PG-19 for 1 epoch.
+# The tokenizer auto-resolves to a 32K SentencePiece BPE trained on PG-19 train
+# split; on first run this is trained and cached at .cache/pg19_sp32k.model
+# (adds ~5–30 min one-time setup). The trained SP model bytes are embedded in
+# the saved checkpoint so users who download best_model.pt from HF can run
+# generate.py out of the box.
+#
+# After the PG-19 run finishes, config.json is reset to the WT-103 best-run
+# defaults (dataset=wikitext-103, epochs=5) so the repo's default always
+# reflects the released headline recipe.
 
-set_seed() {
+set_keys() {
     python -c "
 import json
 cfg = json.load(open('config.json'))
-cfg['seed'] = $1
+patch = json.loads('''$1''')
+cfg.update(patch)
 json.dump(cfg, open('config.json', 'w'), indent=4)
 "
 }
 
-run_seed() {
-    local SEED="$1"
+echo ""
+echo "============================================================"
+echo "=== PG-19 pre-release run (1 epoch, SentencePiece auto)"
+echo "============================================================"
+set_keys '{"dataset": "pg19", "epochs": 1, "eval_interval": 2500}'
+python train.py
+LATEST_CKPT=$(ls -dt logs/pg19_*/best_model.pt 2>/dev/null | head -1)
+if [ -n "$LATEST_CKPT" ]; then
+    python generate.py --checkpoint "$LATEST_CKPT"
+    python generate.py --checkpoint "$LATEST_CKPT" --strategies
+fi
 
-    echo ""
-    echo "============================================================"
-    echo "=== 3-seed run: seed=$SEED"
-    echo "============================================================"
-    set_seed "$SEED"
-    python train.py
-    LATEST_CKPT=$(ls -dt logs/wikitext-103_*/best_model.pt 2>/dev/null | head -1)
-    if [ -n "$LATEST_CKPT" ]; then
-        python generate.py --checkpoint "$LATEST_CKPT"
-        python generate.py --checkpoint "$LATEST_CKPT" --strategies
-    fi
-    git add .
-    git commit --no-edit -m "3-seed variance study: seed=$SEED"
-    git pull --no-edit
-    git push
-}
+# Reset config.json to the WT-103 best-run defaults before committing, so the
+# repo's default always reflects the released headline recipe.
+set_keys '{"dataset": "wikitext-103", "epochs": 5, "eval_interval": 250}'
 
-run_seed 42
-run_seed 7
-
-# Reset seed to the primary.
-set_seed 1337
+git add .
+git commit --no-edit -m "PG-19 pre-release benchmark run"
+git pull --no-edit
+git push
 
 echo ""
 echo "============================================================"
-echo "=== 3-seed sweep complete"
-echo "===   Update runs.md with BPB/PPL for seeds 42 and 7,"
-echo "===   compute mean BPB ± std across all three seeds."
+echo "=== PG-19 run complete"
+echo "===   Update runs.md with BPB/PPL for the PG-19 table,"
+echo "===   then proceed to the HuggingFace upload."
 echo "============================================================"
