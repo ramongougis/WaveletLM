@@ -242,13 +242,16 @@ Output tokens
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 19.3[^3] |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 20.9[^4]* |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 22.1[^3] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **23.7** |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **23.7†** |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
 /* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
-See [training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt) and [benchmark.txt](logs/wikitext-103_2026-04-22_01-36-47/benchmark.txt) for the results (5 epochs, 2.0× dropout, weight decay 1e-6).
+† Best of 3 seeds with mean PPL __ ± __.
+
+- [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
+- [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
 
 See [`runs.md`](runs.md) for a full log of training runs, configs, and benchmark results.
 
@@ -317,7 +320,7 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 
 ### Multinodal Mode
 
-WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. Broader multi-expert training techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, ensemble distillation) surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. Broader multi-expert training techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
 
 ### Adaptive Decompose Bypass
 

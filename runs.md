@@ -455,13 +455,13 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 
 Locked recipe: L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, per_scale_mixer_widths, cross_scale_gating, wavelet_crawl K=3, shared_lifting_weights, eval_interval=250, **5 epochs, 2.0× dropout, WD=1e-6**. Seeds: 1337, 42, 7.
 
-| Run | Seed | Folder | BPB (sliding) | PPL (sliding) | Train/Val loss | Params | Time | Notes |
+| Run | Seed | Folder | BPB (sliding) | PPL (sliding) | Best val loss | Params | Time | Notes |
 |-----|------|--------|---------------|---------------|----------------|--------|------|-------|
-|   | 1337 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | **1.0140** | **23.7490** | — | 882.51M | ~17h | Primary; new best. WD=1e-6 adopted. |
-|   | 42   | | | | | 882.51M | ~17h | |
+|   | 1337 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | **1.0140** | **23.7490** | 3.1593 | 882.51M | ~17h | Primary; new best. WD=1e-6 adopted. |
+|   | 42   | [link](logs/wikitext-103_2026-04-23_12-43-30/log.txt) | 1.0155 | 23.8604 | 3.1757 | 882.51M | ~17h | +0.0015 BPB / +0.11 PPL vs seed 1337. |
 |   | 7    | | | | | 882.51M | ~17h | |
 
-Mean BPB: _ ± _.
+Mean PPL: _ ± _.
 
 ### PG-19 pre-release benchmark: best seed, 1 epoch
 
