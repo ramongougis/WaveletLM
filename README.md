@@ -275,9 +275,9 @@ See [`runs.md`](runs.md) for a full record of all training runs, logs, configs, 
 | Block-Recurrent Transformer | Transformer + recurrence | ~200M | 29.0[^6] |
 | Compressive Transformer | Transformer + compressive memory | 257M | 33.6[^7] |
 | Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
-| **WaveletLM** | **Wavelet mixer** | **~808M** | **TBD** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
+| **WaveletLM** | **Wavelet mixer** | **~808M** | **TBD (1 epoch only)** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
 
-All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization.
+All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization. Unlike the others, WaveletLM was trained on one epoch only.
 
 Comparison numbers for both datasets are sourced from their respective papers. See References below.
 
@@ -293,6 +293,22 @@ Longer training time, more regularization, and parameter compression are the sur
 
 
 ## Future Plans
+
+### Longer PG-19 Training
+
+The current PG-19 result is from a **single epoch** with the WT-103-tuned recipe (block_size=256, ~44h on a 5090). Published baselines on PG-19 trained for 20–100+ effective epochs at 1K–8K context with specialized long-range mechanisms (Compressive Transformer's compressive memory, Block-Recurrent Transformer's recurrent state, Perceiver AR's latent attention). At fair-compute parity, WaveletLM's 1-epoch run is competing against roughly **20× to 100× more training compute** from each baseline — the comparison is not apples-to-apples on this benchmark.
+
+A 2-epoch and then 5-epoch PG-19 run is the highest-leverage post-release experiment available. Power-law extrapolation of the current loss trajectory predicts:
+
+| Epochs | Predicted PPL | Predicted BPB | Position vs baselines |
+|---|---|---|---|
+| 1 (current) | 38–46 | 1.20–1.27 | Last in PG-19 table |
+| 2 | 27–32 | 1.07–1.13 | Roughly tied with Compressive Transformer (33.6) |
+| 5 | 20–25 | 0.98–1.05 | Beats Perceiver AR (28.9) and Block-Recurrent (29.0) |
+
+Recommended protocol: run the 2-epoch first (~88h, ~3.7 days) as a validation step. If the trajectory continues smoothly, commit to the full 5-epoch run (~220h, ~9.2 days). If it plateaus earlier than expected, the architectural ceiling — likely block_size=256 being too short for novel-length narrative — is the deeper limiting factor; that would point toward a longer-context experiment instead.
+
+Combining longer training with longer context (block_size=1024 or 2048, exploiting WaveletLM's O(n log n) sequence scaling) is the architecturally-natural follow-up beyond the 5-epoch run.
 
 ### Dataset Comparisons
 
