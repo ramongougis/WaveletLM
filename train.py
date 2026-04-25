@@ -100,6 +100,8 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
     written = 0
     n_books = 0
     n_chunks = 0
+    pbar = tqdm(total=sample_cap_bytes, unit="B", unit_scale=True,
+                desc="Streaming PG-19 → SP corpus", mininterval=1.0)
     try:
         with open(sample_path, 'w', encoding='utf-8') as fout:
             ds = load_dataset("pg19", split="train", streaming=True, trust_remote_code=True)
@@ -114,12 +116,16 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
                         continue  # skip page numbers, headers, fragments
                     line = para + "\n"
                     fout.write(line)
-                    written += len(line.encode("utf-8"))
+                    n = len(line.encode("utf-8"))
+                    written += n
                     n_chunks += 1
+                    pbar.update(n)
                     if written >= sample_cap_bytes:
                         break
+                pbar.set_postfix(books=n_books, chunks=n_chunks)
                 if written >= sample_cap_bytes:
                     break
+        pbar.close()
         log(f"[SentencePiece] Wrote {written/1e9:.2f} GB of training text "
             f"({n_books} books, {n_chunks:,} chunks).")
 
@@ -203,7 +209,7 @@ def load_and_encode_dataset(config, logger):
     else:
         ds = load_dataset(dataset_name, trust_remote_code=True)
 
-    def encode_split(split_data):
+    def encode_split(split_data, split_name=""):
         # Per-example streaming encode. The previous "\n\n".join(...) approach
         # materialized the entire split as a single Python string before
         # encoding, which OOM'd at PG-19 scale (~11 GB joined string → ~22 GB
@@ -226,7 +232,11 @@ def load_and_encode_dataset(config, logger):
 
         chunks = []
         total_bytes = 0
-        for i, example in enumerate(split_data):
+        n_examples = len(split_data)
+        desc = f"Encoding {split_name}" if split_name else "Encoding"
+        iterator = tqdm(split_data, total=n_examples, desc=desc, unit="ex",
+                        mininterval=1.0, smoothing=0.05)
+        for i, example in enumerate(iterator):
             example_text = example["text"]
             if i > 0:
                 chunks.append(sep_tensor)
@@ -236,6 +246,8 @@ def load_and_encode_dataset(config, logger):
             chunks.append(torch.tensor(example_tokens, dtype=torch.long))
 
         if chunks:
+            logger.log(f"[Dataset] Concatenating {len(chunks):,} {split_name} chunks "
+                       f"({sum(c.numel() for c in chunks):,} tokens) into final tensor...")
             tokens_tensor = torch.cat(chunks)
         else:
             tokens_tensor = torch.empty(0, dtype=torch.long)
@@ -243,13 +255,13 @@ def load_and_encode_dataset(config, logger):
 
     logger.log(f"[Dataset] Loading {dataset_name}...")
     logger.log(f"[Dataset] Encoding train split (this may take a while for large datasets)...")
-    train_data, _ = encode_split(ds["train"])
+    train_data, _ = encode_split(ds["train"], split_name="train")
     logger.log(f"[Dataset] Train: {len(train_data):,} tokens.")
     logger.log(f"[Dataset] Encoding validation split...")
-    val_data, _ = encode_split(ds["validation"])
+    val_data, _ = encode_split(ds["validation"], split_name="val")
     logger.log(f"[Dataset] Val: {len(val_data):,} tokens.")
     logger.log(f"[Dataset] Encoding test split...")
-    test_data, test_bytes = encode_split(ds["test"])
+    test_data, test_bytes = encode_split(ds["test"], split_name="test")
     logger.log(f"[Dataset] Test: {len(test_data):,} tokens, {test_bytes:,} bytes.")
 
     # Cache for future runs (stored as int32 to save space; cast back on load)
