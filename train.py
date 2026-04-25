@@ -321,18 +321,25 @@ def get_lr(step, config, total_steps, warmup_steps):
 # ==============================================================================
 
 def make_get_batch(train_data, val_data, config, device):
-    """Create get_batch closure with cached arange."""
+    """Create get_batch closure with cached arange.
+
+    Datasets stay on CPU; per-batch slices are transferred to GPU. Keeping
+    multi-GB datasets (e.g. PG-19 ~16 GB tokenized) on CPU is essential —
+    moving the full encoded train tensor onto a 32 GB GPU consumes half the
+    VRAM and triggers OOM at the first optimizer step. Per-batch transfers
+    are tiny (MBS × T × 8 bytes ≈ 16 KB at MBS=8, T=256) and nearly free.
+    """
     T = config['block_size']
-    _arange_T = torch.arange(T, device=device)[None, :]
+    _arange_T_cpu = torch.arange(T)[None, :]
 
     def get_batch(split):
         data = train_data if split == 'train' else val_data
         bs = config['micro_batch_size']
         max_start = len(data) - T - 1
-        ix = torch.randint(0, max_start, (bs,), device=device)
-        offsets = ix[:, None] + _arange_T
-        x = data[offsets]
-        y = data[offsets + 1]
+        ix = torch.randint(0, max_start, (bs,))  # CPU
+        offsets = ix[:, None] + _arange_T_cpu     # CPU
+        x = data[offsets].to(device, non_blocking=True)
+        y = data[offsets + 1].to(device, non_blocking=True)
         return x, y
 
     return get_batch
@@ -838,9 +845,11 @@ def train():
 
     # Load dataset
     train_data, val_data, test_data, enc, bytes_per_token = load_and_encode_dataset(config, logger)
-    train_data = train_data.to(device)
-    val_data = val_data.to(device)
-    test_data = test_data.to(device)
+    # Datasets stay on CPU; per-batch slices move to GPU in get_batch / eval
+    # functions. Moving the full encoded train tensor to GPU consumes ~16 GB
+    # for PG-19 alone (8 bytes/token × 2B tokens) and triggers OOM at the
+    # first optimizer step on a 32 GB 5090. Per-batch transfer cost is
+    # negligible (~16 KB/batch).
     vocab_size = enc.vocab_size
 
     # Compute training schedule
