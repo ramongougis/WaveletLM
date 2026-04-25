@@ -46,14 +46,31 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
     Called automatically on first PG-19 run if the cached model is missing.
     Output: .cache/pg19_sp32k.model. Single-threaded SP training; sample-capped
     to keep wall time reasonable on first setup.
+
+    Implementation notes:
+    - PG-19 entries are full books (often millions of chars). We split each
+      book into paragraph-sized chunks at "\n\n" boundaries before writing,
+      so SentencePiece sees many short "sentences" rather than a handful of
+      multi-million-char lines (which would be truncated by max_sentence_length
+      to ~4 KB each, leaving the BPE algorithm with insufficient training data).
+    - sample_path is cleaned up in a finally block so a failed SP training
+      does not leave a 2 GB orphan.
+    - Any partial .model file from a prior failed run is deleted up front so
+      the existence check at the top of this function is reliable.
     """
     import sentencepiece as spm
 
     log = (lambda s: logger.log(s)) if logger is not None else print
     model_prefix = os.path.join(cache_dir, "pg19_sp32k")
     model_path = model_prefix + ".model"
+    vocab_path = model_prefix + ".vocab"
     if os.path.exists(model_path):
         return model_path
+
+    # Clear any partial outputs from a previous failed run
+    for stale in (model_path, vocab_path):
+        if os.path.exists(stale):
+            os.remove(stale)
 
     os.makedirs(cache_dir, exist_ok=True)
     log("[SentencePiece] Training 32K BPE on PG-19 train split (one-time setup).")
@@ -63,30 +80,49 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
 
     log(f"[SentencePiece] Streaming PG-19 train text (cap {sample_cap_bytes/1e9:.1f} GB)...")
     written = 0
-    with open(sample_path, 'w', encoding='utf-8') as fout:
-        ds = load_dataset("pg19", split="train", streaming=True, trust_remote_code=True)
-        for example in ds:
-            line = example["text"].replace("\n", " ").strip() + "\n"
-            fout.write(line)
-            written += len(line.encode("utf-8"))
-            if written >= sample_cap_bytes:
-                break
-    log(f"[SentencePiece] Wrote {written/1e9:.2f} GB of training text.")
+    n_books = 0
+    n_chunks = 0
+    try:
+        with open(sample_path, 'w', encoding='utf-8') as fout:
+            ds = load_dataset("pg19", split="train", streaming=True, trust_remote_code=True)
+            for example in ds:
+                n_books += 1
+                # Split book into paragraph-like chunks so SP gets many short
+                # "sentences" rather than one multi-million-char line.
+                paragraphs = example["text"].split("\n\n")
+                for para in paragraphs:
+                    para = para.replace("\n", " ").strip()
+                    if len(para) < 20:
+                        continue  # skip page numbers, headers, fragments
+                    line = para + "\n"
+                    fout.write(line)
+                    written += len(line.encode("utf-8"))
+                    n_chunks += 1
+                    if written >= sample_cap_bytes:
+                        break
+                if written >= sample_cap_bytes:
+                    break
+        log(f"[SentencePiece] Wrote {written/1e9:.2f} GB of training text "
+            f"({n_books} books, {n_chunks:,} chunks).")
 
-    log("[SentencePiece] Training BPE model (this may take 5–30 minutes)...")
-    spm.SentencePieceTrainer.train(
-        input=sample_path,
-        model_prefix=model_prefix,
-        vocab_size=32000,
-        model_type="bpe",
-        character_coverage=0.9995,
-        normalization_rule_name="identity",
-        input_sentence_size=10_000_000,
-        shuffle_input_sentence=True,
-        train_extremely_large_corpus=True,
-    )
-    os.remove(sample_path)
-    log(f"[SentencePiece] Trained model saved to {model_path}")
+        log("[SentencePiece] Training BPE model (this may take 5–30 minutes)...")
+        spm.SentencePieceTrainer.train(
+            input=sample_path,
+            model_prefix=model_prefix,
+            vocab_size=32000,
+            model_type="bpe",
+            character_coverage=0.9995,
+            normalization_rule_name="nmt_nfkc",
+            max_sentence_length=8192,  # raised from 4192 default; chunks comfortably fit
+            shuffle_input_sentence=True,
+            num_threads=8,
+        )
+        log(f"[SentencePiece] Trained model saved to {model_path}")
+    finally:
+        # Always clean up the 2 GB intermediate, even on failure.
+        if os.path.exists(sample_path):
+            os.remove(sample_path)
+
     return model_path
 
 
