@@ -106,14 +106,53 @@ These fixes address the root cause (unbounded weight growth) rather than the sym
 
 ---
 
+## 6. Optimizer sweep (Adagrad / AdamW / Muon)
+
+**What:** A controlled comparison of three optimizers on the locked WaveletLM recipe to determine whether the current Adagrad choice is genuinely best or simply the first-validated one. Specifically:
+
+- **Adagrad** (current best, lr=0.01) — already tuned; serves as the baseline. No additional sweep needed.
+- **AdamW** (Loshchilov & Hutter, 2017, [arXiv:1711.05101](https://arxiv.org/abs/1711.05101)) — the modern transformer default; previously tried and rejected for WaveletLM but without a dedicated LR sweep. Standard LR ranges typically fall in 1e-5 to 1e-3.
+- **Muon** (Jordan et al., 2025, [arXiv:2502.16982](https://arxiv.org/abs/2502.16982)) — orthogonalizes matrix-parameter gradient updates via Newton-Schulz iteration. Reported 1.5–2× wall-clock speedups vs AdamW on small transformers. Untested on wavelet/spectral architectures. Standard LR ranges typically fall in 3e-3 to 3e-2.
+
+**Why this matters:** WaveletLM is matrix-parameter-heavy (MLP at expansion=20 produces Linear(2048, 40960) weights; per-scale mixers, lifting, cross_layer_mix, proj_out are all matrices), which is exactly where Muon's orthogonalization should pay off. If even a 30% wall-clock speedup transfers, every subsequent ablation and the B200 scale-up benefits compoundedly. The current Adagrad result (BPB 1.0149 ± 0.0008 across 3 seeds) was a defensible choice but never directly compared to a properly-tuned Muon or AdamW, so we don't actually know whether it's optimal.
+
+**Experimental protocol (tiered, ~45–65h total):**
+
+- **Phase 1 — 1-epoch LR screening.** ~10–30h.
+  - AdamW: 3 LRs (1e-4, 3e-4, 1e-3), one 1-epoch run each.
+  - Muon: 3 LRs (3e-3, 1e-2, 3e-2), one 1-epoch run each.
+  - Identifies catastrophic failures (NaN), establishes viable LR range per optimizer, gives rough convergence-rate ranking.
+  - Adagrad's 1-epoch number is already known from prior runs — no sweep needed.
+
+- **Phase 2 — 5-epoch validation of finalists.** ~17–34h.
+  - Take the best LR per optimizer from Phase 1.
+  - Run a full 5-epoch training using the locked WaveletLM recipe (L=2, C=2048, MLP=20, PLE, PKM+FwPKM=16384, block_size=256, WD=1e-6, 2.0× dropout). Only the optimizer + its LR change.
+  - Compare against the existing Adagrad@5ep BPB 1.0149 ± 0.0008 baseline.
+
+**Per-optimizer parameter-group handling:** Muon should be applied only to "regular" matrix parameters. Embeddings, LM head, PKM/FwPKM value tables, lifting predict/update networks (Haar-initialized, near-orthogonal already), and all scalar/vector parameters (LayerNorm gains, residual α, history_gains, per-scale weights) should stay on AdamW. This is a parameter-group split, ~30–50 lines in [train.py](../train.py)'s optimizer construction.
+
+**Expected outcomes:**
+
+1. **Muon hits BPB ≤ 1.0140 in 3 epochs** → adopt Muon as default; ~40% training-time savings on every future experiment.
+2. **Muon matches Adagrad at 5 epochs** → no swap; useful negative result confirming Adagrad's appropriateness.
+3. **AdamW also competitive when properly tuned** → revisit the original Adagrad-vs-AdamW decision.
+4. **Muon NaNs or destabilizes** (most likely failure mode given the lifting Haar-init interaction) → either fix with parameter-group exclusions or rule it out.
+
+**Why 1-epoch alone is insufficient:** the EMA decompose-bypass probe showed a +0.30 nat val-loss improvement at 1 epoch but regressed at 5 epochs (see [plans/ema_post_release.md](ema_post_release.md)). 1→N epoch inversions are a real risk — Adagrad's accumulator effect is progressive, Muon's orthogonalization compounds across the LR schedule, and warmup/decay durations differ between 1-epoch and 5-epoch runs. 1-epoch screening is good for catching catastrophic failures and ranking by margin; final claims need full-length validation.
+
+**Recommended framing:** This is the highest-impact-per-compute post-release experiment. A successful Muon adoption produces a multiplicative speedup that compounds across the entire post-release roadmap (B200 scaling, MoE-on-MLP investigation, semantic embedding work, etc.). Worth scheduling early in the post-release workstream, before any major architectural sweeps that would benefit from faster training cadence.
+
+---
+
 ## Prioritization order for post-release
 
-1. **Data-dependent EMA** (further investigation; see [plans/ema_post_release.md](ema_post_release.md) — superseded by post-release work since the 1→5 epoch inversion rejected it pre-release).
-2. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
-3. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
-4. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
-5. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-6. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+1. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up. Run first.
+2. **Data-dependent EMA** (further investigation; see [plans/ema_post_release.md](ema_post_release.md) — superseded by post-release work since the 1→5 epoch inversion rejected it pre-release).
+3. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
+4. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
+5. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
+6. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
+7. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
 
 ## Provenance
 
