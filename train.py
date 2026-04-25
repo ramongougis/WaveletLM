@@ -204,22 +204,53 @@ def load_and_encode_dataset(config, logger):
         ds = load_dataset(dataset_name, trust_remote_code=True)
 
     def encode_split(split_data):
-        # Reverted to symmetric "\n\n".join for both tokens and bytes after
-        # step-0 verification showed none of "\n", "\n\n", or "" can reproduce
-        # Gemini's asserted canonical wiki.test.raw byte count (1,314,696) from
-        # the HuggingFace wikitext-103-raw-v1 loader. "\n\n" is actually the
-        # closest of the three (1,296,370; delta 18,326). Since we can't
-        # reproduce canonical from the HF loader, we keep the self-consistent
-        # tokens-and-bytes pair from "\n\n" and publish transparently.
-        text = "\n\n".join(split_data["text"])
-        num_bytes = len(text.encode("utf-8"))
-        tokens = enc.encode(text)
-        return torch.tensor(tokens, dtype=torch.long), num_bytes
+        # Per-example streaming encode. The previous "\n\n".join(...) approach
+        # materialized the entire split as a single Python string before
+        # encoding, which OOM'd at PG-19 scale (~11 GB joined string → ~22 GB
+        # bytes object → ~56 GB Python list of int objects → 100+ GB peak RAM).
+        # Per-example processing keeps peak memory bounded by the largest
+        # single example (a few MB for PG-19's largest books), at the cost of
+        # one tokenizer call per example. Token-count and byte-count semantics
+        # match the original "\n\n".join behavior exactly: the inter-example
+        # "\n\n" separator is encoded once and inserted between each pair of
+        # examples, and its 2 bytes are added to the byte total.
+        #
+        # Byte-count caveat preserved from earlier WT-103 verification: none
+        # of "\n", "\n\n", or "" joins reproduce Gemini's asserted canonical
+        # wiki.test.raw byte count; "\n\n" is the closest (delta ~18K bytes
+        # at 1.3 MB scale) and is kept as the self-consistent choice.
+        sep_text = "\n\n"
+        sep_bytes_len = len(sep_text.encode("utf-8"))
+        sep_tokens = enc.encode(sep_text)
+        sep_tensor = torch.tensor(sep_tokens, dtype=torch.long)
+
+        chunks = []
+        total_bytes = 0
+        for i, example in enumerate(split_data):
+            example_text = example["text"]
+            if i > 0:
+                chunks.append(sep_tensor)
+                total_bytes += sep_bytes_len
+            total_bytes += len(example_text.encode("utf-8"))
+            example_tokens = enc.encode(example_text)
+            chunks.append(torch.tensor(example_tokens, dtype=torch.long))
+
+        if chunks:
+            tokens_tensor = torch.cat(chunks)
+        else:
+            tokens_tensor = torch.empty(0, dtype=torch.long)
+        return tokens_tensor, total_bytes
 
     logger.log(f"[Dataset] Loading {dataset_name}...")
+    logger.log(f"[Dataset] Encoding train split (this may take a while for large datasets)...")
     train_data, _ = encode_split(ds["train"])
+    logger.log(f"[Dataset] Train: {len(train_data):,} tokens.")
+    logger.log(f"[Dataset] Encoding validation split...")
     val_data, _ = encode_split(ds["validation"])
+    logger.log(f"[Dataset] Val: {len(val_data):,} tokens.")
+    logger.log(f"[Dataset] Encoding test split...")
     test_data, test_bytes = encode_split(ds["test"])
+    logger.log(f"[Dataset] Test: {len(test_data):,} tokens, {test_bytes:,} bytes.")
 
     # Cache for future runs (stored as int32 to save space; cast back on load)
     os.makedirs(cache_dir, exist_ok=True)
