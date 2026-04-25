@@ -275,7 +275,7 @@ See [`runs.md`](runs.md) for a full record of all training runs, logs, configs, 
 | Block-Recurrent Transformer | Transformer + recurrence | ~200M | 29.0[^6] |
 | Compressive Transformer | Transformer + compressive memory | 257M | 33.6[^7] |
 | Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
-| **WaveletLM - 1 epoch** | **Wavelet mixer** | **~808M** | **TBD (1 epoch)** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
+| **WaveletLM (1 epoch)** | **Wavelet mixer** | **~808M** | **TBD (1 epoch)** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
 
 All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization. Unlike the others, WaveletLM was trained on one epoch only.
 
