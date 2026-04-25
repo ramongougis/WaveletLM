@@ -104,7 +104,10 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
                 desc="Streaming PG-19 → SP corpus", mininterval=1.0)
     try:
         with open(sample_path, 'w', encoding='utf-8') as fout:
-            ds = load_dataset("pg19", split="train", streaming=True, trust_remote_code=True)
+            # emozilla/pg19 is a parquet mirror of DeepMind's PG-19 (identical
+            # text, much faster download). Avoids trust_remote_code and the
+            # ~28K-file sequential per-file download.
+            ds = load_dataset("emozilla/pg19", split="train", streaming=True)
             for example in ds:
                 n_books += 1
                 # Split book into paragraph-like chunks so SP gets many short
@@ -199,13 +202,19 @@ def load_and_encode_dataset(config, logger):
         logger.log(f"[Dataset] Vocab size: {vocab_size}")
         return train_data, val_data, test_data, enc, bytes_per_token
 
-    # Encode from scratch. trust_remote_code=True is required for legacy
-    # script-based loaders (e.g. pg19) on datasets >=2.20; safe for the
-    # canonical datasets used here (DeepMind's pg19, HF's wikitext).
+    # Encode from scratch. We map "pg19" to a parquet-based community mirror
+    # (emozilla/pg19) instead of the canonical script-based pg19 loader, since
+    # the canonical loader downloads ~28K files sequentially at ~4 MB/s, while
+    # the parquet mirror downloads in parallel via hf_transfer (10–60× faster
+    # for the same ~11 GB). Underlying book text is identical to DeepMind's
+    # PG-19 release. trust_remote_code is only needed for the canonical script
+    # path; safe for the loaders below.
     if dataset_name == "wikitext-103":
         ds = load_dataset("wikitext", "wikitext-103-raw-v1")
     elif dataset_name == "wikitext-2":
         ds = load_dataset("wikitext", "wikitext-2-raw-v1")
+    elif dataset_name == "pg19":
+        ds = load_dataset("emozilla/pg19")
     else:
         ds = load_dataset(dataset_name, trust_remote_code=True)
 
