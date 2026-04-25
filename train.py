@@ -24,10 +24,28 @@ import shutil
 import argparse
 import datetime
 
+# Silence HuggingFace per-file download progress bars before importing datasets.
+# Streaming PG-19 emits one bar per book file (~28K bars total), which spams
+# the log without adding useful information. Set before import so the env vars
+# are picked up at module-load time.
+os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from datasets import load_dataset
+
+# Defensive belt-and-suspenders: also call the programmatic disable in case
+# the env vars are read after this module imports (older datasets API).
+try:
+    import datasets
+    datasets.disable_progress_bars()
+except (ImportError, AttributeError):
+    try:
+        datasets.disable_progress_bar()  # singular, older API
+    except (ImportError, AttributeError, NameError):
+        pass
 
 from model import (
     set_seed, WaveletLM, MultiNodeWaveletLM,
