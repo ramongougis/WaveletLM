@@ -296,9 +296,9 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### Longer PG-19 Training
 
-The PG-19 run above was trained for a single epoch using the WikiText-optimized config. Published baselines for other models on the same dataset were likely trained with much more effective compute. 
+The PG-19 run above was trained for a single epoch using the WikiText-optimized config. Published baselines for other models on the same dataset were likely trained for many more epochs or with much more effective compute. 
 
-Once it is possible, the first post-release goal will be to train on PG-19 for 2 epochs, and loss curve permitting, 5 epochs, in order to better gauge language modeling on a large dataset at the present parameter size.
+Once it is possible, the first post-release goal will be to train on PG-19 for 2 epochs, and loss permitting, 5 epochs, in order to better gauge language modeling on a large dataset at the current parameter size.
 
 ### Dataset Comparisons
 
