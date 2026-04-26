@@ -168,12 +168,7 @@ Selections from the [WikiText-103 best PPL run with strategies enabled](https://
 > P. nigriceps was originally classified under its current binomial name 
 > Sirmuellera speciosa; however, this has been rejected on the grounds 
 > that Lactarius deterrimus may not be closely related to Boletus edulis 
-> or other similar fungi in general. However, molecular analysis has 
-> shown B. ananas to have priority over A. ceciliae because its fruit 
-> bodies are smaller than those of R. virescens, but noted that they 
-> differ in their microscopic characteristics: while some authors consider 
-> the species distinct enough for Fries's placement, others suggest that 
-> they share more similarities.
+> or other similar fungi in general. 
 
 
 ## Architecture
