@@ -11,6 +11,7 @@ WaveletLM is a fully causal, attention-free language model that mixes tokens thr
 <a href="#installation">Installation</a><br>
 <a href="#training">Training</a><br>
 <a href="#generation">Generation</a><br>
+<a href="#sample-generations">Sample Generations</a></br>
 <a href="#architecture">Architecture</a><br>
 <a href="#results">Results</a><br>
 <a href="#future-plans">Future Plans</a><br>
@@ -121,6 +122,39 @@ PTQ effects:
 - 10% less inference VRAM
 - 50% less checkpoint file size
 - 12% less tok/s currently. However, PTQ is expected to be 1.4-2.2x faster than the baseline 28.8 tok/s with bit-packed kernels. See [Future Plans → Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels) and [`runs.md`](runs.md#post-release-bit-packed-ptq-kernels)).
+
+
+## Sample Generations
+
+Generations are for the WikiText-103 best PPL run with strategies enabled: [generations.txt}(https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) 
+
+*Sample 19, strategies — first paragraph (~70 tokens):*
+
+> The history of the city is reflected in its architecture, which includes 
+> the historic Old Town and New Castle County Courthouse Square Historic 
+> District. The building was designed by John H. Stevens, who also designed 
+> the Albany-Fulton Celebration in 1906 and built a steel-hulled shipyard 
+> on the lake shore.
+
+*Sample 14, strategies (~70 tokens):*
+
+> The history of the city, with its extensive architecture and many unique 
+> features, is the most important building in Istanbul. The city's cultural 
+> heritage has been shaped by various works including the J.P. Gomorrah 
+> Museum in Belgrade, the Istrian Y in Kraków (which was built in 1852), 
+> the Vilnius City Hall, the Słowacki Palace, the University of Zagreb, 
+> the National Library of Lithuania, the University of St. Petersburg and 
+> the University of Kiev.
+
+*Sample 15, strategies (~95 tokens):*
+
+> The history of the city is unique in its own right. It was built by the 
+> Romans and spread over a period of about 400 years, from around 6,000 to 
+> 8,500 BC with a population that grew to more than 2 million by the end of 
+> the Bronze Age. The Celtic tribes were further divided into three major 
+> groups: the Britons (who lived between 600 and 900), the Angles (Roman 
+> people or "Britons"); and the Germanic peoples (the Illyrian, Etruscan 
+> and Pictish).
 
 
 ## Architecture
