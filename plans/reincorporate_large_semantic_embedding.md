@@ -2,31 +2,22 @@
 
 ## Summary
 
-Scale the semantic embedding approach to C=2048+ by replacing human-interpretable
-concept labels with structural, statistical, and syntactic features derived from
-corpus analysis. Instead of "violence" or "happiness," dimensions would encode
-n-gram co-occurrence patterns, positional statistics, and token-level structural
-properties that more closely mirror what learned embeddings discover on their own.
+Scale the semantic embedding approach to C=2048+ by replacing human-interpretable concept labels with structural, statistical, and syntactic features derived from corpus analysis. Instead of "violence" or "happiness," dimensions would encode n-gram co-occurrence patterns, positional statistics, and token-level structural properties that more closely mirror what learned embeddings discover on their own.
 
 ## Motivation
 
 - EXARCH ("Explicit Attentionless Reasoning with Causal Harmonics", the previous version of WaveletLM) achieved BPB 1.0112 at C=512 with 256 human-defined concepts. Note this was before the v2 benchmark test fixes, so its BPB numbers are underestimates of true performance.
 - Learned embeddings at C=2048 achieve BPB 1.1431 at 1 epoch (and improving)
-- Human-interpretable concepts hit a ceiling around ~500 orthogonal dimensions -
-  language doesn't have 2048 independent semantic categories
-- But structural/statistical features can scale indefinitely: there are far more
-  n-gram patterns, positional encodings, and co-occurrence statistics than there
-  are human concepts
-- Question: can a hand-crafted structural embedding match or beat learned embeddings
-  at high C, while retaining the interpretability benefits of prescribed features?
+- Human-interpretable concepts previously hit a ceiling at around 500 orthogonal dimensions. However, the expressivity and numerical representation of these dimensions as well-chosen coefficients matters.
+- But structural/statistical features can scale indefinitely: there are far more n-gram patterns, positional encodings, and co-occurrence statistics than there are human concepts.
+- Question: can a hand-crafted structural embedding match or beat learned embeddings at high C while retaining the potential interpretability benefits of prescribed features?
 
 ## Proposed feature categories
 
 ### 1. N-gram identity features (scalable)
 - Common 3-grams from the training corpus
 - Each dimension indicates whether the current token participates in a specific 3-gram
-- With vocab=50257 and n=3, there are billions of possible 3-grams, but the top
-  10,000-50,000 cover most of the distribution
+- With vocab=50257 and n=3, there are billions of possible 3-grams, but the top 10,000-50,000 cover most of the distribution
 - Dimensionality: as many as needed (easily 1000+)
 
 ### 2. Positional/structural features
@@ -68,10 +59,7 @@ properties that more closely mirror what learned embeddings discover on their ow
 | Headroom / learned residual | ~392 | Learnable (hybrid) |
 | **Total** | **2048** | |
 
-The "headroom" dimensions could be left as learnable (zero-initialized), creating
-a hybrid embedding where ~80% is prescribed and ~20% is learned. This tests whether
-the prescribed features cover the important dimensions and the model only needs to
-learn the remainder.
+The "headroom" dimensions could be left as learnable (zero-initialized), creating a hybrid embedding where ~80% is prescribed and ~20% is learned. This tests whether the prescribed features cover the important dimensions and the model only needs to learn the remainder.
 
 ## Coefficient assignment: how feature values are determined
 
@@ -165,18 +153,14 @@ Sense-separated tokenization was explored in sense2vec (Trask et al., 2015), Ada
 
 ## Key differences from EXARCH's current approach
 
-1. **Feature construction**: Statistical/structural extraction from corpus, not
-   LLM-based concept labeling. Much cheaper ($0 vs $200+/concept for FDA).
+1. **Feature construction**: Statistical/structural extraction from corpus, not LLM-based concept labeling. Much cheaper ($0 vs $200+/concept for FDA).
 2. **Scalability**: N-gram features scale to any dimensionality needed.
-3. **Alignment with wavelet processing**: Structural features (positional, periodic,
-   co-occurrence at specific distances) directly correspond to what the wavelet
-   decomposition captures at different scales.
+3. **Alignment with wavelet processing**: Structural features (positional, periodic, co-occurrence at specific distances) directly correspond to what the wavelet decomposition captures at different scales.
 4. **Hybrid approach**: Mix prescribed and learned dimensions rather than all-or-nothing.
 
 ## Implementation sketch
 
-1. Run corpus analysis on WikiText-103: extract top-K 3-grams, compute token-level
-   statistics (PMI, frequency, positional distributions)
+1. Run corpus analysis on WikiText-103: extract top-K 3-grams, compute token-level statistics (PMI, frequency, positional distributions)
 2. Build a feature extraction function: `token_id -> feature_vector (C=2048)`
 3. Store as a frozen embedding table (same as EXARCH's conceptual_embedding)
 4. Optional: leave last N dimensions learnable (hybrid mode)
@@ -192,8 +176,7 @@ Sense-separated tokenization was explored in sense2vec (Trask et al., 2015), Ada
 
 ## Open questions
 
-- Does prescribing features that the model would learn anyway help (faster convergence)
-  or hurt (suboptimal feature space)?
+- Does prescribing features that the model would learn anyway help (faster convergence) or hurt (suboptimal feature space)?
 - Are n-gram features redundant with what the wavelet decomposition already captures?
 - What's the optimal prescribed/learned ratio in hybrid mode?
 - Can structural features transfer across datasets better than learned embeddings?

@@ -260,7 +260,7 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
-† Best of 3 seeds; mean PPL **23.82 ± 0.06** (sample std, n=3).
+† Best of 3 seeds PPL of **23.749** with mean PPL of 23.82.
 
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
