@@ -223,7 +223,7 @@ Selections from the [WikiText-103 best PPL run with strategies enabled](https://
 <details>
 <summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
 
-- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`): σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (−0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md).
+- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`): σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (-0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md).
 - Cross-layer decompose bypass state carry (`decompose_bypass_cross_window`)
 - Stable-parametrization master flag (`stable_parametrization`)
 - Spectral-norm constraint on mixer weights (`stab_spectral_norm`)
@@ -367,7 +367,7 @@ WaveletLM supports a product-of-experts mode where multiple independent nodes pr
 
 ### Adaptive Decompose Bypass
 
-Replacing the parameter-free cumulative running mean with a data-dependent EMA (`decompose_bypass_ema`) gained −0.30 nats at 1 epoch, but regressed at 5 epochs (BPB 1.0226 vs 1.0201). The inversion likely due to short-horizon forgetting and learned gate overfitting. Post-release plan: develop freeze-gate/bias correction probes and alternative formulations with a selective SSM bypass as fallback. See [plans/ema_post_release.md](plans/ema_post_release.md).
+Replacing the parameter-free cumulative running mean with a data-dependent EMA (`decompose_bypass_ema`) gained -0.30 nats at 1 epoch, but regressed at 5 epochs (BPB 1.0226 vs 1.0201). The inversion likely due to short-horizon forgetting and learned gate overfitting. Post-release plan: develop freeze-gate/bias correction probes and alternative formulations with a selective SSM bypass as fallback. See [plans/ema_post_release.md](plans/ema_post_release.md).
 
 ### Other Post-Release Plans
 
