@@ -65,27 +65,27 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Inference
 
-Obtain weights from [HuggingFace](https://huggingface.co/ragou19/WaveletLM/tree/main), then replace `best_model.pt` in the commands below with the path to the file. 
+Obtain weights from [HuggingFace](https://huggingface.co/ragou19/WaveletLM/tree/main), then replace `best_model_wikitext-103.pt` in the commands below with the path to the file. 
 
 The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
 Recommended generation command:
 
 ```bash
-python generate.py --checkpoint best_model.pt --strategies /
+python generate.py --checkpoint best_model_wikitext-103.pt --strategies /
     --prompt "Your prompt here"
 ```
 
 Default generation:
 
 ```bash
-python generate.py --checkpoint best_model.pt
+python generate.py --checkpoint best_model_wikitext-103.pt
 ```
 
 Additional options:
 
 ```bash
-python generate.py --checkpoint best_model.pt /
+python generate.py --checkpoint best_model_wikitext-103.pt /
     --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 /
     --n 1 --temperature 1.0 --strategies --ptq8 --num_tokens 9000
 ```
@@ -97,13 +97,13 @@ Can run all strategies together with `--strategies` or individual ones. Use `--h
 Use all inference strategies:
 
 ```bash
-python generate.py --checkpoint best_model.pt --strategies
+python generate.py --checkpoint best_model_wikitext-103.pt --strategies
 ```
 
 Some strategies options:
 
 ```bash
-python generate.py --checkpoint best_model.pt --entropy_adaptive /
+python generate.py --checkpoint best_model_wikitext-103.pt --entropy_adaptive /
     --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing /
     --wavelet_coherence
 ```
@@ -113,7 +113,7 @@ python generate.py --checkpoint best_model.pt --entropy_adaptive /
 Near-lossless uniform 8-bit PTQ:
 
 ```bash
-python generate.py --checkpoint best_model.pt --ptq8
+python generate.py --checkpoint best_model_wikitext-103.pt --ptq8
 ```
 
 PTQ effects:
@@ -129,7 +129,7 @@ PTQ effects:
 Below are selections from the [generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) for the WikiText-103 best PPL run, which contains both naive and strategies-mode samples. Samples A, B, and C below were generated with inference strategies enabled:
 
 ```bash
-python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model.pt --strategies --n 20
+python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model_wikitext-103.pt --strategies --n 20
 ```
 
 The `--strategies` flag enables:
