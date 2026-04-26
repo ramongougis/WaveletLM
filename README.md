@@ -129,7 +129,7 @@ PTQ effects:
 Below are selections from the [generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) for the WikiText-103 best PPL run, which contains both naive and strategies-mode samples. Samples A, B, and C below were generated with inference strategies enabled:
 
 ```bash
-python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model_wikitext-103.pt --strategies --n 20
+python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model.pt --strategies --n 20
 ```
 
 The `--strategies` flag enables:
