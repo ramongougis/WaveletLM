@@ -19,7 +19,6 @@ import os
 import random
 import warnings
 import math
-import json
 import datetime
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -32,7 +31,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple
 from torch.utils.checkpoint import checkpoint
-
 
 # ==============================================================================
 # 1. UTILITIES
@@ -47,20 +45,17 @@ def set_seed(seed, deterministic=False):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-
 def next_pow2(x: int) -> int:
     return 1 << (x - 1).bit_length()
 
-
 def pad_features_to_pow2(x: torch.Tensor, C_pad: int):
-    B, T, C = x.shape
+    _, _, C = x.shape
     if C == C_pad:
         return x
     return F.pad(x, (0, C_pad - C))
 
-
 # ==============================================================================
-# 2. FREQUENCY SPACE — Fast Hadamard Transform
+# 2. FREQUENCY SPACE - Fast Hadamard Transform
 # ==============================================================================
 
 def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
@@ -79,7 +74,6 @@ def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
         h *= 2
     scale = torch.rsqrt(torch.tensor(n, device=x.device, dtype=x.dtype))
     return y * scale
-
 
 class FastHadamardTransform(nn.Module):
     """Hybrid FWHT: matrix multiply for dim < 2048, iterative butterfly otherwise."""
@@ -109,7 +103,6 @@ class FastHadamardTransform(nn.Module):
         else:
             return fwht_ortho_iterative(x)
 
-
 # ==============================================================================
 # 3. WAVELET TRANSFORMS
 # ==============================================================================
@@ -128,7 +121,6 @@ def causal_haar_decompose(x: torch.Tensor, levels: int) -> Tuple[torch.Tensor, L
         cur = approx
     return cur, details
 
-
 def causal_haar_reconstruct(approx: torch.Tensor, details: List[torch.Tensor]) -> torch.Tensor:
     """Inverse causal Haar: x[t] = (approx[t] + detail[t]) / sqrt(2)."""
     inv_sqrt2 = 0.7071067811865476
@@ -136,7 +128,6 @@ def causal_haar_reconstruct(approx: torch.Tensor, details: List[torch.Tensor]) -
     for level in range(len(details) - 1, -1, -1):
         cur = (cur + details[level]) * inv_sqrt2
     return cur
-
 
 class LiftingWaveletDecompose(nn.Module):
     """Learnable wavelet decomposition via parameterized lifting scheme.
@@ -325,7 +316,6 @@ class LiftingWaveletDecompose(nn.Module):
 
         return cur, details
 
-
 class LiftingWaveletReconstruct(nn.Module):
     """Inverse lifting wavelet transform. Shares P/U networks with Decompose."""
 
@@ -343,7 +333,6 @@ class LiftingWaveletReconstruct(nn.Module):
             update = self.decompose.update_nets[level](detail)
             cur = cur * self.sqrt2 - update
         return cur
-
 
 class MultiBasisLiftingWavelet(nn.Module):
     """K parallel learnable lifting wavelets with per-scale learned blending.
@@ -373,11 +362,6 @@ class MultiBasisLiftingWavelet(nn.Module):
             torch.zeros(self.K, levels + 1, device=device, dtype=dtype)
         )
         with torch.no_grad():
-            # Strong bias toward wavelet 0 at init so other bases have negligible
-            # contribution early — they earn their weight only as gradient descent
-            # accumulates evidence they help. Raised from 5.0 to 10.0 after the
-            # first multi-basis run NaN'd at step 1800 (LR=4.10e-03); 10.0 gives
-            # softmax weight ~0.99995 on wavelet 0 initially (vs ~0.993 at 5.0).
             self.basis_weights.data[0, :] = 10.0
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
@@ -390,7 +374,6 @@ class MultiBasisLiftingWavelet(nn.Module):
             for lvl in range(num_levels)
         ]
         return approx, details
-
 
 class MultiBasisLiftingReconstruct(nn.Module):
     """K parallel reconstruction paths blended with the multi-basis softmax weights.
@@ -412,7 +395,6 @@ class MultiBasisLiftingReconstruct(nn.Module):
         weights = F.softmax(self.multi_basis.basis_weights, dim=0)
         return sum(weights[k, 0] * outs[k] for k in range(self.multi_basis.K))
 
-
 # ==============================================================================
 # 4. SPECTRAL MIXER
 # ==============================================================================
@@ -423,7 +405,6 @@ _MIXER_GATE_ACTIVATIONS = {
     "gelu": F.gelu,
     "relu": F.relu,
 }
-
 
 class GatedSpectralMixer(nn.Module):
     def __init__(self, Cp: int, num_blocks: int, rank: int = 4, eps: float = 1e-3,
@@ -487,7 +468,6 @@ class GatedSpectralMixer(nn.Module):
             out = out + self.bias
         return out
 
-
 class PerScaleMixer(nn.Module):
     """Wraps GatedSpectralMixer with Cp <-> width projections for asymmetric
     per-scale capacity. When width == Cp, projections are skipped (no overhead)."""
@@ -528,7 +508,6 @@ class PerScaleMixer(nn.Module):
             Y = self.proj_out(Y)
         return Y
 
-
 # ==============================================================================
 # 5. FEED-FORWARD (MLP)
 # ==============================================================================
@@ -560,7 +539,6 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return self.net(x)
-
 
 # ==============================================================================
 # 5b. PRODUCT KEY MEMORY (PKM)
@@ -661,19 +639,17 @@ class ProductKeyMemory(nn.Module):
         # Sum across heads
         return out.sum(dim=2)  # [B, T, C]
 
-
 # ==============================================================================
 # 5b. FAST-WEIGHT PRODUCT KEY MEMORY (FwPKM)
 # ==============================================================================
 
 class FastWeightPKM(nn.Module):
-    """Fast-Weight Product Key Memory.
+    """
+    Fast-Weight Product Key Memory.
 
     Structurally identical to ProductKeyMemory during training. At inference,
     an optional update_fast_weights() method updates value deltas per chunk,
     enabling episodic/contextual memory without retraining.
-
-    Sits on top of the MLP+PKM gated output (chained, not parallel).
     """
 
     def __init__(self, C: int, num_keys: int = 529, top_k: int = 32,
@@ -814,9 +790,8 @@ class FastWeightPKM(nn.Module):
         """Reset deltas to zero. Call at start of new document/sequence."""
         self.value_deltas.zero_()
 
-
 # ==============================================================================
-# 6. DECOMPOSE BYPASS — Running Mean
+# 6. DECOMPOSE BYPASS - Running Mean
 # ==============================================================================
 
 @torch.compiler.disable
@@ -834,39 +809,15 @@ def _compute_running_mean(x: torch.Tensor, prev_mean: torch.Tensor = None,
         divisors = torch.arange(1, T + 1, device=x.device).view(1, -1, 1)
     return history_sum / divisors
 
-
 @torch.compiler.disable
 def _compute_data_dependent_ema(x: torch.Tensor,
                                 gate_weight: torch.Tensor,
                                 gate_bias: torch.Tensor,
                                 prev_ema: torch.Tensor = None) -> torch.Tensor:
-    """Data-dependent EMA for decompose_bypass — selective forgetting variant.
-
-    α_t = σ(W · x_t + b)               per-token, per-channel gate
-    μ_t = α_t ⊙ μ_{t-1} + (1 - α_t) ⊙ x_t
-
-    This is a 1st-order IIR low-pass filter with a dynamic cutoff frequency.
-    When α ≈ 1 the model remembers perfectly; when α ≈ 0 it flushes history
-    and focuses on new content. Replaces the cumulative running mean, which
-    cannot forget.
-
-    Implementation: Hillis–Steele parallel associative scan. The recurrence
-    can be written as a composition of linear functions f_t(y) = A_t y + B_t
-    with A_t = α_t, B_t = (1-α_t) x_t. Two such functions compose as
-    (A_o, B_o) ∘ (A_i, B_i) = (A_o A_i, A_o B_i + B_o), which is associative
-    and enables a log-depth prefix scan over T tokens.
-
-    Complexity: O(N log N) work, O(log N) GPU-dispatch depth. At T=256 this
-    is log2(256)=8 passes, each a fused cat/mul/add over the time dimension.
-    Expected ~1.5–2× slowdown vs the cumsum running mean (much better than
-    the ~2.5–4× cost of a naive sequential for-loop). Numerics run in fp32
-    inside the scan to avoid fp16 underflow on products of small α values.
-    """
     T = x.size(1)
     alphas = torch.sigmoid(F.linear(x, gate_weight, gate_bias))  # [B, T, C]
 
-    # Cast scan state to fp32: products of α_t decay toward 0 over long T and
-    # underflow in fp16 (e.g. 0.5**256 ≈ 1e-77).
+    # Cast scan state to fp32
     A = alphas.float()
     B_out = ((1.0 - alphas) * x).float()
 
@@ -874,10 +825,7 @@ def _compute_data_dependent_ema(x: torch.Tensor,
         B_out = B_out.clone()
         B_out[:, 0] = B_out[:, 0] + alphas[:, 0].float() * prev_ema.float()
 
-    # Slice-based scan: skips the redundant identity math on the first `step`
-    # positions per pass (no counterpart `step` tokens back, so they stay
-    # unchanged). Eliminates the pad-tensor allocations and ~12.5% of the
-    # multiplications vs a cat-based scan.
+    # Slice-based scan
     step = 1
     while step < T:
         new_A = A.clone()
@@ -892,7 +840,6 @@ def _compute_data_dependent_ema(x: torch.Tensor,
         step *= 2
 
     return B_out.to(x.dtype)
-
 
 # ==============================================================================
 # 7. WaveletLM BLOCK
