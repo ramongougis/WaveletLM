@@ -123,6 +123,6 @@ Ranked by expected value per compute-hour spent, given budget constraints:
 
 ## Not pursued
 
-- **Naive model soup across 3-seed runs** — overclaimed earlier; for independent-init from-scratch runs, expected outcome is degradation, not improvement. Listed here to prevent future us from re-trying it.
-- **Classical Product of Experts (Hinton 2002)** — intractable normalization for LMs; modern sparse MoE is the practical descendant.
-- **Co-training** — no natural "different views" of language data.
+- **Naive model soup across 3-seed runs**: overclaimed earlier; for independent-init from-scratch runs, expected outcome is degradation, not improvement. Listed here to prevent future us from re-trying it.
+- **Classical Product of Experts (Hinton 2002)**: intractable normalization for LMs; modern sparse MoE is the practical descendant.
+- **Co-training**: no natural "different views" of language data.
