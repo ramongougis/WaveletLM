@@ -1,4 +1,4 @@
-# Decoding strategy ablations
+# Strategies ablations
 
 The `--strategies` bundle currently enables four real decoding interventions (entropy-adaptive temperature with cap 0.9, `top_p=0.85`, `repetition_penalty=1.2`, plus metrics + spacing cleanup). Three heavier strategies — `best_of_n`, multi-token `lookahead`, and `wavelet_coherence` decoding bias — were tested pre-WaveletLM and excluded from the bundle on a cost-vs-benefit basis (too slow, too VRAM-hungry, or quality-equivalent to lighter alternatives). Per-strategy contribution within the active bundle is unmeasured. The pre-WaveletLM rejection of the heavier strategies has not been re-validated against the current architecture.
 
