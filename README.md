@@ -126,35 +126,54 @@ PTQ effects:
 
 ## Sample Generations
 
-Generations are for the WikiText-103 best PPL run with strategies enabled: [generations.txt}(https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) 
+Selections from the [WikiText-103 best PPL run with strategies enabled](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt). Post-processing spacing fixes were added on 2026-04-26. Generations in the linked file from before that date contain raw WikiText artifacts (`@-@` for hyphens, spaces around commas, etc.); the samples below have been formatted manually for readability.
 
-- Sample 19 with strategies: first paragraph:
+**Sample A** with prompt "The history of":
 
 > The history of the city is reflected in its architecture, which includes 
 > the historic Old Town and New Castle County Courthouse Square Historic 
-> District. The building was designed by John H. Stevens, who also designed 
-> the Albany-Fulton Celebration in 1906 and built a steel-hulled shipyard 
-> on the lake shore.
+> District. The building was designed by John H. Stevens, who also 
+> designed the Albany-Fulton Celebration in 1906 and built a steel-hulled 
+> shipyard on the lake shore.
+>
+> In 1909, Fort Wayne became home to the first naval base for military 
+> aviation in the United States. The Navy Yard at the former Naval Air 
+> Station Pensacola (now known as the Georgia Tech Research Institute), 
+> located on the campus' eastern boundary, was constructed in 1925–1926 
+> near the site of the original schoolhouse.
 
-- Sample 14 with strategies, first paragraph:
+**Sample B** with prompt "The album was released":
 
-> The history of the city, with its extensive architecture and many unique 
-> features, is the most important building in Istanbul. The city's cultural 
-> heritage has been shaped by various works including the J.P. Gomorrah 
-> Museum in Belgrade, the Istrian Y in Kraków (which was built in 1852), 
-> the Vilnius City Hall, the Słowacki Palace, the University of Zagreb, 
-> the National Library of Lithuania, the University of St. Petersburg and 
-> the University of Kiev.
+> The album was released on August 25, 2007 by Sony Music Entertainment 
+> and features several songs from the record including "Never Say Die", 
+> "The Show", "Don't Cry for Me Argentina" and a cover of "I Can Only 
+> Imagine (But You Are Not Alone)".
+>
+> In 2009, Tyler performed at the Rock in Rio festival held in Lisbon, 
+> Portugal; a performance which included performances of his own 
+> compositions by Queen Latifah and Ali Zardari. On July 1, 2010 he sang 
+> "O Holy Night" during the closing ceremony of the 2012 Summer Olympics 
+> opening ceremony at London Olympic Stadium as part of the celebrations 
+> of the 75th anniversary of the United States Declaration of Independence.
 
-- Sample 15 with strategies, first paragraph:*
+**Sample C** with prompt "The species was first described":
 
-> The history of the city is unique in its own right. It was built by the 
-> Romans and spread over a period of about 400 years, from around 6,000 to 
-> 8,500 BC with a population that grew to more than 2 million by the end of 
-> the Bronze Age. The Celtic tribes were further divided into three major 
-> groups: the Britons (who lived between 600 and 900), the Angles (Roman 
-> people or "Britons"); and the Germanic peoples (the Illyrian, Etruscan 
-> and Pictish).
+> The species was first described by Swedish zoologist Carl Linnaeus 
+> in 1758 as Agaricus adustus. The genus name is derived from the Latin 
+> words perma "to tie", and pous ("like") means "with a large head". In 
+> 1821, French mycologists Jean-Baptiste de Lacaille placed it in section 
+> Cricetae of the order Carnivora. He later renamed it Spongiforma 
+> punctata after the Greek kribensis.
+>
+> P. nigriceps was originally classified under its current binomial name 
+> Sirmuellera speciosa; however, this has been rejected on the grounds 
+> that Lactarius deterrimus may not be closely related to Boletus edulis 
+> or other similar fungi in general. However, molecular analysis has 
+> shown B. ananas to have priority over A. ceciliae because its fruit 
+> bodies are smaller than those of R. virescens, but noted that they 
+> differ in their microscopic characteristics: while some authors consider 
+> the species distinct enough for Fries's placement, others suggest that 
+> they share more similarities.
 
 
 ## Architecture

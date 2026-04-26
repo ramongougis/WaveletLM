@@ -40,16 +40,19 @@ def clean_text_spacing(txt):
     """Clean WikiText-103 spacing artifacts from generated text.
 
     Fixes:
-    - Space before periods, semicolons, question marks, and exclamation points
+    - WikiText punctuation markers: @-@ (hyphen), @,@ (thousands separator), @.@ (decimal)
+    - Space before periods, commas, colons, semicolons, question marks, and exclamation points
     - Space after opening brackets, space before closing brackets
     - Space before contraction apostrophes (e.g., "don 't" -> "don't")
     - Quotation mark spacing using odd/even series logic
     """
-    # 1. Punctuation: remove space before
-    txt = re.sub(r' \.', '.', txt)
-    txt = re.sub(r' ;', ';', txt)
-    txt = re.sub(r' \?', '?', txt)
-    txt = re.sub(r' !', '!', txt)
+    # 0. WikiText markers: @-@ for hyphens, @,@ for "1 @,@ 000" thousands, @.@ for "2 @.@ 5" decimals
+    txt = txt.replace('@-@', '-')
+    txt = txt.replace('@,@', ',')
+    txt = txt.replace('@.@', '.')
+
+    # 1. Punctuation: remove space before (now includes commas and colons)
+    txt = re.sub(r' ([.,;:!?])', r'\1', txt)
 
     # 2. Parenthetical marks: remove space on the "open" side
     txt = re.sub(r'\( ', '(', txt)   # space after (
