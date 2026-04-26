@@ -142,13 +142,52 @@ These fixes address the root cause (unbounded weight growth) rather than the sym
 
 ---
 
+## 7. Inference strategies ablations
+
+The `--strategies` bundle currently enables four real decoding interventions (entropy-adaptive temperature with cap 0.9, `top_p=0.85`, `repetition_penalty=1.2`, plus metrics + spacing cleanup). Three heavier strategies — `best_of_n`, multi-token `lookahead`, and `wavelet_coherence` decoding bias — were tested pre-WaveletLM and excluded from the bundle on a cost-vs-benefit basis (too slow, too VRAM-hungry, or quality-equivalent to lighter alternatives). Per-strategy contribution within the active bundle is unmeasured. The pre-WaveletLM rejection of the heavier strategies has not been re-validated against the current architecture.
+
+### Open questions
+
+1. Within the active `--strategies` bundle, which of the four interventions contributes the most to subjective sample quality? Plausible top contender: `repetition_penalty=1.2` (suppresses the model's natural tendency to loop, which would otherwise be visible).
+2. Is the entropy-adaptive temperature with cap 0.9 doing useful work, or is it indistinguishable in practice from a static `temperature=0.8`?
+3. Does `top_p=0.85` strictly dominate `top_p=0.95` for this model, or is the difference within sample noise?
+4. **Re-validation question:** were the heavier strategies (`best_of_n`, `lookahead`, `wavelet_coherence`) actually worse-or-equivalent for *WaveletLM*, or were they tested on an earlier architecture where the cost/benefit shifted? The wavelet_coherence component in particular is wavelet-architecture-specific and may behave differently here than in pre-WaveletLM testing.
+
+### Proposed study
+
+N=20 samples per condition, single prompt ("The history of"), single seed, on the WT-103 best checkpoint.
+
+**Phase 1 — within-bundle ablation:**
+
+- Naive (`temp=1.0, top_p=0.95`, no other strategies)
+- `--strategies` (full bundle — current default)
+- `--strategies` minus `repetition_penalty` (set to 1.0)
+- `--strategies` minus `entropy_adaptive` (replace with static `temperature=0.8`)
+- `--strategies` with `top_p=0.95` instead of `0.85`
+
+**Phase 2 — re-validate the excluded strategies:**
+
+- `--strategies` plus `--best_of_n 5`
+- `--strategies` plus `--lookahead_k 5 --lookahead_depth 5`
+- `--strategies` plus `--wavelet_coherence`
+- `--strategies` plus all three above (the maximum-strategies regime)
+
+Metrics: mean log-probability (already logged), Distinct-1/2/3 (already logged), Rep-4 (already logged), per-token wall-clock time, peak VRAM, and human qualitative ranking on a 5-point scale across blinded conditions.
+
+Compute cost: ~3-4 hours total on a 5090 (single checkpoint, no retraining; Phase 2 conditions are individually slower than Phase 1).
+
+### Why this matters
+
+Phase 1 attributes the visible quality gap between Sample D (naive) and Samples A–C (strategies-on) in the README to specific decoding interventions, which closes a residual interpretation gap for adversarial readers. Phase 2 either re-confirms the pre-WaveletLM rejection of the heavier strategies (in which case the bundle is well-chosen) or surfaces a case for re-bundling them (in which case `--strategies` should be expanded). The wavelet-coherence component in particular has no other validation in the literature — its inclusion in or exclusion from the bundle should rest on a measurement, not on an inherited heuristic.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up. Run first.
-2. **Data-dependent EMA** (further investigation; see [plans/ema_post_release.md](ema_post_release.md): superseded by post-release work since the 1→5 epoch inversion rejected it pre-release).
-3. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
-4. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
-5. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
-6. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-7. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-
+2. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
+3. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
+4. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
+5. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
+6. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+7. **Inference strategies ablations**: self-explanatory.
