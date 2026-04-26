@@ -131,7 +131,7 @@ PTQ effects:
 
 ### Key Components
 
-- **Learnable lifting wavelet decomposition**: Haar-initialized predict/update networks decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Decompose/reconstruct weights are shared — untying yielded no BPB improvement.
+- **Learnable lifting wavelet decomposition**: Haar-initialized predict/update networks decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Decompose/reconstruct weights are shared. Untying them had negligible performance impact while saving parameters.
 
 - **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
 
@@ -175,7 +175,7 @@ PTQ effects:
 <details>
 <summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
 
-- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`) — σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (−0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md).
+- Data-dependent EMA decompose-bypass (`decompose_bypass_ema`): σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (−0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md).
 - Cross-layer decompose bypass state carry (`decompose_bypass_cross_window`)
 - Stable-parametrization master flag (`stable_parametrization`)
 - Spectral-norm constraint on mixer weights (`stab_spectral_norm`)
@@ -297,7 +297,7 @@ Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with 
 
 ### Optimizer Sweep (Adagrad / AdamW / Muon)
 
-Adagrad (lr=0.01) is the validated optimizer for the released model but has not been directly compared against properly-tuned alternatives. WaveletLM is matrix-parameter-heavy (MLP at expansion=20 produces Linear(2048, 40960) weights, plus per-scale mixers and lifting matrices), so [Muon (Jordan et al., 2025)](https://arxiv.org/abs/2502.16982) — which orthogonalizes matrix gradient updates via Newton-Schulz iteration and reports 1.5–2× wall-clock speedups vs AdamW on small transformers — is a strong candidate. Plan: a 2-phase sweep (1-epoch LR screening + 5-epoch finalist validation) across Adagrad, AdamW, and Muon. Even a 30% wall-clock speedup compounds across every subsequent ablation and the B200 scale-up. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
+Adagrad (lr=0.01) is the validated optimizer for the released model but has not been directly compared against properly-tuned alternatives. WaveletLM is matrix-parameter-heavy (MLP at expansion=20 produces Linear(2048, 40960) weights, plus per-scale mixers and lifting matrices), so [Muon (Jordan et al., 2025)](https://arxiv.org/abs/2502.16982) - which orthogonalizes matrix gradient updates via Newton-Schulz iteration and reports 1.5–2× wall-clock speedups vs AdamW on small transformers - is a strong candidate. Plan: a 2-phase sweep (1-epoch LR screening + 5-epoch finalist validation) across Adagrad, AdamW, and Muon. Even a 30% wall-clock speedup compounds across every subsequent ablation and the B200 scale-up. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
 
 ### Bit-Packed PTQ Kernels
 
@@ -326,7 +326,7 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for info on each.
 
 - Cross-scale phase gating (coarse-modulates-fine)
-- Stable parametrization — validation and finishing gaps 
+- Stable parametrization: validation and finishing gaps 
 - Data-dependent lifting networks (Mamba-style)
 - Wavelet Packet Decomposition (WPD)
 - Top-K / hard thresholding in the Hadamard domain
