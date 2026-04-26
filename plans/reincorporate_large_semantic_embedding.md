@@ -10,7 +10,7 @@ properties that more closely mirror what learned embeddings discover on their ow
 
 ## Motivation
 
-- EXARCH-semantic achieved BPB 1.0112 at C=512 with 256 human-defined concepts
+- EXARCH-semantic (the previous version of WaveletLM) achieved BPB 1.0112 at C=512 with 256 human-defined concepts
 - Learned embeddings at C=2048 achieve BPB 1.1431 at 1 epoch (and improving)
 - Human-interpretable concepts hit a ceiling around ~500 orthogonal dimensions -
   language doesn't have 2048 independent semantic categories
