@@ -10,7 +10,7 @@ WaveletLM is a fully causal, attention-free language model that mixes tokens thr
 <p align="center">
 <a href="#installation">Installation</a><br>
 <a href="#training">Training</a><br>
-<a href="#generation">Generation</a><br>
+<a href="#inference">Inference</a><br>
 <a href="#sample-generations">Sample Generations</a></br>
 <a href="#architecture">Architecture</a><br>
 <a href="#results">Results</a><br>
@@ -63,7 +63,7 @@ Key config options:
 Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>/`. Results from all runs are tracked in [`runs.md`](runs.md). The full default run takes ~14h on an RTX 5090; drop `epochs` to 1 for a quick smoke test.
 
 
-## Generation
+## Inference
 
 Obtain weights from [HuggingFace](https://huggingface.co/ragou19/WaveletLM/tree/main), then replace `best_model.pt` in the commands below with the path to the file. 
 
