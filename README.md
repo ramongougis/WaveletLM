@@ -128,7 +128,7 @@ PTQ effects:
 
 Generations are for the WikiText-103 best PPL run with strategies enabled: [generations.txt}(https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) 
 
-*Sample 19, strategies — first paragraph (~70 tokens):*
+- Sample 19 with strategies: first paragraph:
 
 > The history of the city is reflected in its architecture, which includes 
 > the historic Old Town and New Castle County Courthouse Square Historic 
@@ -136,7 +136,7 @@ Generations are for the WikiText-103 best PPL run with strategies enabled: [gene
 > the Albany-Fulton Celebration in 1906 and built a steel-hulled shipyard 
 > on the lake shore.
 
-*Sample 14, strategies (~70 tokens):*
+- Sample 14 with strategies, first paragraph:
 
 > The history of the city, with its extensive architecture and many unique 
 > features, is the most important building in Istanbul. The city's cultural 
@@ -146,7 +146,7 @@ Generations are for the WikiText-103 best PPL run with strategies enabled: [gene
 > the National Library of Lithuania, the University of St. Petersburg and 
 > the University of Kiev.
 
-*Sample 15, strategies (~95 tokens):*
+- Sample 15 with strategies, first paragraph:*
 
 > The history of the city is unique in its own right. It was built by the 
 > Romans and spread over a period of about 400 years, from around 6,000 to 
