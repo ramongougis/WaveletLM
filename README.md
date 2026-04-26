@@ -126,7 +126,7 @@ PTQ effects:
 ## Architecture
 
 <p align="center">
-  <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="60%"/>
+  <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="75%"/>
 </p>
 
 ### Key Components
