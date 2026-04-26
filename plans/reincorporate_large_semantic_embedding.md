@@ -10,7 +10,7 @@ properties that more closely mirror what learned embeddings discover on their ow
 
 ## Motivation
 
-- EXARCH (the previous version of WaveletLM) achieved BPB 1.0112 at C=512 with 256 human-defined concepts
+- EXARCH ("Explicit Attentionless Reasoning with Causal Harmonics", the previous version of WaveletLM) achieved BPB 1.0112 at C=512 with 256 human-defined concepts. Note this was before the v2 benchmark test fixes, so its BPB numbers are underestimates of true performance.
 - Learned embeddings at C=2048 achieve BPB 1.1431 at 1 epoch (and improving)
 - Human-interpretable concepts hit a ceiling around ~500 orthogonal dimensions -
   language doesn't have 2048 independent semantic categories
