@@ -563,7 +563,7 @@ def main():
 
     # Inference strategies
     parser.add_argument("--strategies", action="store_true",
-                        help="Enable all inference strategies (entropy_adaptive, lookahead, wavelet_coherence, best_of_n=5, metrics)")
+                        help="Enable the recommended low-overhead inference strategies: entropy_adaptive (cap 0.9), top_p=0.85, repetition_penalty=1.2, metrics, clean_spacing. Heavier strategies (best_of_n, lookahead, wavelet_coherence) are available as separate flags but not bundled here — they were excluded after testing showed they cost meaningful generation time and/or VRAM without commensurate quality gains.")
     parser.add_argument("--best_of_n", type=int, default=1)
     parser.add_argument("--entropy_adaptive", action="store_true")
     parser.add_argument("--entropy_temp_min", type=float, default=0.3)

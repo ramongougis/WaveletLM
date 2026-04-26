@@ -126,7 +126,23 @@ PTQ effects:
 
 ## Sample Generations
 
-Selections from the [WikiText-103 best PPL run with strategies enabled](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt). Post-processing spacing fixes were added on 2026-04-26. Generations in the linked file from before that date contain raw WikiText artifacts (`@-@` for hyphens, spaces around commas, etc.); the samples below have been formatted manually for readability.
+Below are selections from the [generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) for the WikiText-103 best PPL run, which contains both naive and strategies-mode samples. Samples A, B, and C below were generated with inference strategies enabled:
+
+```bash
+python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model.pt --strategies --n 20
+```
+
+The `--strategies` flag enables:
+
+- Entropy-adaptive temperature (capped at 0.9)
+- `top_p=0.85`
+- `repetition_penalty=1.2`
+- Metrics logging (`mean_log_prob`, `Distinct-n`, `Rep-4`)
+- WikiText-103 spacing cleanup
+
+Throughput in this mode is comparable to naive sampling (28.8 tok/sec on a 5090). Other strategies, such as `best_of_n`, multi-token `lookahead`, and `wavelet_coherence` decoding bias, are available as separate flags, but are not enabled by `--strategies`.
+
+A naive sampling baseline ("Sample D") is included below for direct comparison. The strategies-on samples were post-processed to clean WikiText-103 spacing artifacts (`@-@`, `@,@`, spaces before punctuation). Raw outputs in the linked log preserve those markers.
 
 **Sample A** with prompt "The history of":
 
@@ -169,6 +185,19 @@ Selections from the [WikiText-103 best PPL run with strategies enabled](https://
 > Sirmuellera speciosa; however, this has been rejected on the grounds 
 > that Lactarius deterrimus may not be closely related to Boletus edulis 
 > or other similar fungi in general. 
+
+**Sample D** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+
+> The history of the tropical cyclone is unknown, but official records 
+> suggest it formed on May 31. It developed into a tropical storm later 
+> that day. After turning to the northeast, on September 20 Huron 
+> strengthened into a hurricane while east-southeast of Bermuda. During 
+> that time, Hurricane Humberto destroyed another ship in a prolonged 
+> action. In late October, Ione crossed into the eastern Gulf of Mexico; 
+> however, it reintensified slightly and later peaked with winds of 100 
+> mph (160 km/h) as it drifted through western Cuba.
+
+Note the typical failure mode: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model is prevented from employing a more conservative sampling regime.
 
 
 ## Architecture
