@@ -1,14 +1,5 @@
 # Structural Semantic Embedding: Beyond Concept Labels
 
-> This plan is duplicated in EXARCH-semantic (formerly EXARCH-research) in ../EXARCH-research/plans/reincorporate_large_semantic_embedding.md
-
-## Status: Post-release exploration
-
-## Approach: Fork current WaveletLM project post-release and selectively reincorporate
-semantic embedding functionality. This keeps the main WaveletLM repo clean (learned
-embedding only) while the fork adds optional prescribed embedding support as a
-separate, well-structured codebase suitable for its own paper.
-
 ## Summary
 
 Scale the semantic embedding approach to C=2048+ by replacing human-interpretable
