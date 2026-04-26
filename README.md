@@ -125,37 +125,10 @@ PTQ effects:
 
 ## Architecture
 
-```
-Input tokens
-    |
-    v
-Learned Embedding (C)
-    |
-    v
-+---------------------------------+
-|  WaveletLM Block (x N layers)   |
-|                                 |
-|  LayerNorm                      |
-|  Lifting Wavelet Decompose      |
-|  Fast Walsh-Hadamard Transform  |
-|  Gated Spectral Mixer           |
-|  Fast Walsh-Hadamard Inverse    |
-|  Lifting Wavelet Reconstruct    |
-|  Learned Residual 1             |
-|  LayerNorm                      |
-|  Feedforward Layers (MLP)       |
-|  Learned Residual 2             |
-+---------------------------------+
-    |
-    v
-LayerNorm 
-    |
-    v
-LM Head
-    |
-    v
-Output tokens
-```
+<p align="center">
+  <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="60%"/>
+</p>
+
 ### Key Components
 
 - **Learnable lifting wavelet decomposition**: Haar-initialized predict/update networks decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Decompose/reconstruct weights are shared — untying yielded no BPB improvement.
