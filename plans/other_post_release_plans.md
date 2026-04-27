@@ -182,12 +182,80 @@ Phase 1 attributes the visible quality gap between Sample D (naive) and Samples 
 
 ---
 
+## 8. Combined parameter reduction and VRAM reallocation
+
+The current best WikiText-103 run uses 882.5M parameters chosen to maximize quality within budget. Several individual ablations from `runs.md` suggest substantial parameter savings are available with modest quality cost — and the freed VRAM can be reallocated to longer block size, larger effective batch size, or more training steps per second to recover (and potentially exceed) the lost quality.
+
+### Parameter reductions in the proposed bundle
+
+Combining the four cheapest reductions:
+
+| Change | Param savings | Projected BPB cost (vs prior baseline) | Notes |
+|---|---|---|---|
+| `mlp_expansion: 10` (from 20) | 167.8M | +0.0045 BPB | Per [`runs.md` line 109](../runs.md). Largest activation-memory saving as well — halves MLP intermediate at any context length. |
+| `fwpkm_enabled: false` | 76.0M | small (~0.005 BPB) | FwPKM showed minor improvement on top of PKM. Cost: removes the optional `fwpkm_inference_updates` feature path, untested but potentially useful. |
+| `pkm_num_keys: 8281` (from 16384) | 38.0M | ~0.009 BPB (interpolated) | 8281 = 91² (PKM requires perfect-square num_keys). Halves PKM value table; key-table savings minor. |
+| `tie_embedding_to_lm_head: true` | 102.9M | +0.0064 BPB | Per [`runs.md` line 85](../runs.md). Standard practice in modern LMs; sometimes helps via regularization. |
+| **Bundle total** | **~384.7M (-43.6%)** | **~+0.025 BPB additive estimate** | Additivity is a leap — true cost could be 0.5×–2× the predicted value. |
+
+Resulting model size: **~497.8M parameters** (from 882.5M).
+
+### Projected quality cost (worst-case additive)
+
+Additive estimate of +0.025 BPB at the prior baseline scale translates to roughly +1.7 PPL on WT-103 (using the conversion `ΔPPL ≈ PPL × bytes_per_token × ln(2) × ΔBPB`). This would put a reduced model at ~25.5 PPL on WT-103 if naively applied to the current best run. **At that level, WaveletLM would beat only vanilla GPT-2 (29.4) in the comparison table — losing to Transformer-XL Standard (24.0) and everything above it.**
+
+This worst-case framing assumes the bundle costs add linearly *and* that the prior-baseline deltas hold at the current best-run scale. Both are unverified.
+
+### Why this might not be the worst case
+
+Several factors plausibly reduce the actual cost:
+
+- **Additivity is rarely exact.** Stacked changes often have sub-additive interactions (one change's loss is partly absorbed by another's slack). Could shrink the realized cost meaningfully.
+- **Better baselines lose less per ablation.** The prior-baseline deltas were measured at higher BPB. At a lower-PPL regime, the same architectural change typically costs less.
+- **Freed VRAM can reallocate to recovery.** Reducing parameters frees substantial memory and compute. That budget can be spent on:
+  - Larger `micro_batch_size` (better gradient statistics per step)
+  - Longer `block_size` (genuine architectural improvement; most beneficial on long-dependency corpora like PG-19)
+  - More epochs at fixed wall-clock budget (more training)
+  - Re-tuned dropout (the prior dropout-doubling ablation gave -0.0221 BPB at the prior baseline — almost exactly cancels the projected reduction cost)
+
+The reallocation potential is the main reason this bundle is worth running: parameter reduction is not just an efficiency story, it's an *enabler* for context-length and training-time experiments that aren't currently feasible at the 882.5M scale on consumer hardware.
+
+### Proposed test
+
+**Single combined run**, on WT-103, current best-run config except for the four bundled changes above. 5 epochs, single seed, on a 5090. Goal: measure realized BPB vs the additive projection.
+
+After that run completes, the natural follow-ups are:
+
+1. **Same reduced config + extended block size**: at ~497.8M, the freed activation memory enables `block_size: 1024` or higher on a 5090 (currently bounded near 256–512 at the 882.5M config). Run on WT-103 first to verify the architecture is stable at longer context, then port to PG-19 where long-range dependencies actually matter.
+2. **Same reduced config + larger micro_batch_size**: VRAM headroom probably allows MBS=16–32 vs current MBS=8. Larger effective batch may help with gradient noise.
+3. **Same reduced config + dropout sweep**: re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, `dropout_embedding`) at the new scale. Most likely place to recover the projected BPB cost.
+4. **Same reduced config + more epochs**: at ~43% fewer parameters, per-step wall-clock drops meaningfully. The same compute budget buys more epochs.
+
+The strategic frame: **the parameter reduction is a means to enable longer context, larger batch, and more training within the same hardware budget — not an end in itself.** The realized quality should be evaluated against "current best at fixed compute," not against "current best at fixed config."
+
+### Open questions
+
+1. Does the additive BPB cost estimate hold at the current best-run scale, or do the cost terms compound super-additively when stacked?
+2. Does the freed VRAM, reallocated to longer context (e.g., `block_size: 1024`), recover or exceed the parameter-reduction quality cost on WT-103? On PG-19?
+3. Does the freed wall-clock per step let more epochs of training compensate within the same total compute budget?
+4. Is the FwPKM removal's loss of the `fwpkm_inference_updates` feature worth the parameter savings, or should that feature be tested before the FwPKM module is permanently removed?
+5. Where is the Pareto frontier? At what reduced parameter count does quality degradation become non-recoverable by the reallocation strategies above?
+
+### Why this matters
+
+Parameter efficiency was the second of the two substantive critiques received in the public comment thread on the post-release announcement. The current 882.5M parameter count is a "maximize quality within budget" choice, not a Pareto-optimal point — that's fine as a research configuration but reads as parameter-inefficient relative to baselines like Transformer-XL Standard (151M) that achieve comparable quality with 5.8× fewer parameters. A measured Pareto-trade study would either (a) demonstrate that the architecture *can* be parameter-efficient when configured for it, closing the critique vector, or (b) confirm the current architecture is genuinely parameter-inefficient at its quality regime, which is itself useful information for future development direction.
+
+The bundle is also the prerequisite for the long-context experiments needed to validate WaveletLM's central O(n log n) architectural claim (currently theoretical, since `block_size: 256` is below the regime where the asymptotic advantage matters). Running it serves both the efficiency story and the architectural-validation story.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up. Run first.
-2. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
-3. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
-4. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
-5. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-6. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-7. **Inference strategies ablations**: self-explanatory.
+2. **Combined parameter reduction (8)**: addresses the strongest public critique, enables longer-context experiments, single combined run is cheap. Run early.
+3. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
+4. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
+5. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
+6. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
+7. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+8. **Inference strategies ablations**: self-explanatory.
