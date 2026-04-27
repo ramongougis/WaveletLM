@@ -65,7 +65,7 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Inference
 
-Obtain weights from [HuggingFace](https://huggingface.co/ragou19/WaveletLM/tree/main), then replace `best_model_wikitext-103.pt` in the commands below with the path to the file. 
+Obtain weights from [HuggingFace](https://huggingface.co/anarmorarm/WaveletLM/tree/main), then replace `best_model_wikitext-103.pt` in the commands below with the path to the file. 
 
 The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
