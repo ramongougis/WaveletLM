@@ -356,7 +356,7 @@ The best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, an
 
 ### Model Comparisons
 
-Side-by-side benchmarks against Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
+Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
 
 ### Scaled-Up Model (B200)
 
