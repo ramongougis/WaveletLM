@@ -1,10 +1,10 @@
-# 2D wavelet decomposition over (segment, time) with sequential training
+# 2D wavelet decomposition over (batch, token) with sequential training
 
 Extend WaveletLM's lifting wavelet decomposition from a 1D operator over the token axis (`T`) to a 2D operator over the joint axis pair (`B`, `T`), where the batch dimension `B` carries the same multi-scale temporal structure as `T` when training proceeds in document-sequential order. Both axes are time-related — `T` over tokens within a chunk, `B` over chunks across the document — and the same wavelet machinery applies to both. This adds two new sub-bands per level on top of the existing within-chunk decomposition, providing a multi-scale architectural mechanism for long-range structure that current `block_size=256` training cannot capture.
 
 ## The architectural insight
 
-The current WaveletLM lifting wavelet operates only along T (sequence positions within a chunk). When training is randomly shuffled, the batch axis `B` carries no temporal structure — different samples are independent. But **when training proceeds in document-sequential order** (chunks of the same document loaded in source order, with chunk N+1 immediately following chunk N), `B` acquires the same three properties that justify wavelet decomposition along T:
+The current WaveletLM lifting wavelet operates only along T (token positions within a chunk). When training is randomly shuffled, the batch axis `B` carries no temporal structure — different samples are independent. But **when training proceeds in document-sequential order** (chunks of the same document loaded in source order, with chunk N+1 immediately following chunk N), `B` acquires the same three properties that justify wavelet decomposition along T:
 
 1. **Locality**: chunk i+1 is more related to chunk i than to chunk i+5.
 2. **Shift-relevance**: book-level patterns recur across chunks (chapter structure, character introductions).
@@ -30,6 +30,8 @@ The 2D version is also the *strict* extension of the existing architecture: it c
 The 2D wavelet's value collapses to zero if `B` is randomly shuffled.
 
 A subtlety worth acknowledging: the standard "i.i.d. samples" assumption underlying random-shuffled SGD is an *architectural idealization*, not a property of real corpora. Natural language data carries dependence structure at multiple granularities — within-document (chapters of a novel), within-series (sequels and connected works), within-author (themes recurring across a bibliography), and cross-author (intertextual references). Random shuffling does not eliminate these dependencies; it merely hides them from the architecture, where they degrade to noise in gradient estimation. Sequential training preserves and exposes the dependence structure to the architecture, which the 2D wavelet then provides a mechanism to exploit.
+
+Concrete example: PG-19 contains series of novels with cross-book plot dependencies (one book's events depend on a prior book's events). Random sampling pairs unrelated chunks together and discards this dependence; sequential training preserves it. The same logic applies more broadly to authored intertextual universes (e.g., Star Wars Expanded Universe, Forgotten Realms) where works are explicitly designed to depend on other works.
 
 The architecture therefore commits to:
 
@@ -102,7 +104,7 @@ This plan is naturally composable with several other post-release items:
 - **Parameter reduction (Section 8)**: reduces the per-block VRAM cost, freeing memory for the 2D wavelet's increased mixer count and for longer effective context.
 - **Optimizer sweep (Section 6)**: sequential training may interact differently with Adagrad vs AdamW vs Muon than random-shuffled training does. Worth re-validating optimizer choice once sequential training is in place.
 - **Stable parametrization (Section 5)**: more cascade depth (2D wavelet has more sequential operations per block) increases gradient-depth pressure. Stable parametrization may become more important.
-- **Long-context Hyena head-to-head**: the 2D wavelet provides one cross-segment mechanism; Hyena's 16k-context training is another. The eventual Hyena comparison is more meaningful when both architectures have access to long context via their respective mechanisms.
+- **Long-context Hyena head-to-head**: the 2D wavelet provides one cross-batch mechanism; Hyena's 16k-context training extends within-context capacity differently. The eventual Hyena comparison is more meaningful when both architectures have access to long context via their respective mechanisms.
 
 Suggested ordering: parameter reduction → optimizer sweep → sequential-training baseline (Phase 1) → 2D wavelet extension (Phase 2) → long-context model comparisons.
 
@@ -110,15 +112,14 @@ Suggested ordering: parameter reduction → optimizer sweep → sequential-train
 
 - **Engineering complexity**: 2D wavelet code is meaningfully more involved than 1D. Cross-batch state machinery, document-aware data loading, document-boundary handling, and 2D causality all add implementation effort.
 - **Data loader requirements**: the existing data loader needs significant changes to support document-sequential parallel-stream batching with proper document-boundary signaling.
-- **Compute cost is real**: phases 1-3 collectively are weeks-of-5090 work, not days. This is post-parameter-reduction territory.
+- **Compute cost is real**: phases 1-2 collectively are weeks-of-5090 work, not days. This is post-parameter-reduction territory.
 - **Catastrophic forgetting may emerge as a practical issue**: standard continual-learning mitigations may be needed; budget time for that.
-- **Headline framing should not lean on biological-plausibility**: the architecture has structural similarities to sequential human language processing, but the empirical case must stand on benchmark results, not on cognitive-analogy motivation. Reserve the cognitive framing for hypothesis-generation and discussion sections, not headline claims.
 
 ## Why this matters
 
 WaveletLM's central architectural commitment is "multi-scale decomposition is the right inductive bias for sequence modeling." The 1D wavelet over the token axis validates this within a single context window. The 2D extension generalizes the same commitment across the batch axis when sequential training is available, providing an architecturally homogeneous pathway to long-context modeling — same operator, generalized to a second axis — rather than introducing a separate cross-batch mechanism.
 
-If the hypothesis holds, this is a real architectural contribution: **multi-scale wavelet decomposition as a unified mechanism for both within-chunk and cross-chunk information flow, generalizing the central architectural primitive across both time-related axes with a single principled operator.** That's the strongest possible thesis statement for the eventual paper.
+If the hypothesis holds, this is a real architectural contribution: **multi-scale wavelet decomposition as a unified mechanism for both within-chunk and cross-batch information flow, generalizing the central architectural primitive across both time-related axes with a single principled operator.** That's the strongest possible thesis statement for the eventual paper.
 
 If the hypothesis doesn't hold, the negative result is also informative: it would suggest that the multi-scale prior is genuinely token-axis-specific and doesn't generalize naturally to the cross-batch axis. That's useful information about what wavelet inductive bias actually buys.
 
