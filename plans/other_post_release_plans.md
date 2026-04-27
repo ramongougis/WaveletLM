@@ -193,10 +193,10 @@ Combining the four cheapest reductions:
 | Change | Param savings | Projected BPB cost (vs prior baseline) | Notes |
 |---|---|---|---|
 | `mlp_expansion: 10` (from 20) | 167.8M | +0.0045 BPB | Per [`runs.md` line 109](../runs.md). Largest activation-memory saving as well — halves MLP intermediate at any context length. |
-| `fwpkm_enabled: false` | 76.0M | small (~0.005 BPB) | FwPKM showed minor improvement on top of PKM. Cost: removes the optional `fwpkm_inference_updates` feature path, untested but potentially useful. |
-| `pkm_num_keys: 8281` (from 16384) | 38.0M | ~0.009 BPB (interpolated) | 8281 = 91² (PKM requires perfect-square num_keys). Halves PKM value table; key-table savings minor. |
+| `pkm_enabled: false` | 76.0M | small (~0.0022 BPB) | Per [`runs.md` line 119, runs 23 vs 25](../runs.md): FwPKM-only (-0.0025 BPB vs baseline) and PKM-only (-0.0022 BPB) perform comparably, with FwPKM slightly better. Drop PKM rather than FwPKM to preserve the optional `fwpkm_inference_updates` feature path. |
+| `fwpkm_num_keys: 8281` (from 16384) | 38.0M | ~0.009 BPB (interpolated) | 8281 = 91² (FwPKM requires perfect-square num_keys, same as PKM). Halves FwPKM value table; key-table savings minor. |
 | `tie_embedding_to_lm_head: true` | 102.9M | +0.0064 BPB | Per [`runs.md` line 85](../runs.md). Standard practice in modern LMs; sometimes helps via regularization. |
-| **Bundle total** | **~384.7M (-43.6%)** | **~+0.025 BPB additive estimate** | Additivity is a leap — true cost could be 0.5×–2× the predicted value. |
+| **Bundle total** | **~384.7M (-43.6%)** | **~+0.022 BPB additive estimate** | Additivity is a leap — true cost could be 0.5×–2× the predicted value. |
 
 Resulting model size: **~497.8M parameters** (from 882.5M).
 
@@ -249,13 +249,65 @@ The bundle is also the prerequisite for the long-context experiments needed to v
 
 ---
 
+## 9. Cross-layer parameter sharing (ALBERT-style)
+
+With `layers: 2` in the current best run, every component (Mixer, MLP, PKM, FwPKM, plus the unlisted per-layer items) has two independent copies. ALBERT (Lan et al. 2019) demonstrated that for transformers, sharing weights across layers can reduce parameter count substantially while preserving most quality, on the hypothesis that depth-via-iteration substitutes for depth-via-distinct-parameters. This plan tests whether the same holds for WaveletLM's wavelet-based architecture.
+
+Note that lifting weights are already shared across layers via `shared_lifting_weights: True`. This plan tests sharing the *remaining* per-layer components on top of that.
+
+### Components and potential savings (with `layers: 2`)
+
+Per the parameter breakdown, per-layer component costs are:
+
+- Mixer: 44.11M → tying saves 44.11M
+- MLP: 167.82M → tying saves 167.82M (largest single lever)
+- PKM: 38.01M → tying saves 38.01M (mostly value table)
+- FwPKM: 38.01M → tying saves 38.01M (mostly value table)
+- Per-layer unlisted (proj_out, decompose_bypass, cross_scale_gating, etc.): ~50M → tying saves ~50M
+
+**Maximum possible savings via full layer-tying: ~338M (~38% of current 882.5M).** Combined with the parameter-reduction bundle (Section 8), this could bring the model to roughly 300M parameters at the same architectural depth.
+
+### Proposed test sequence
+
+The order is designed for ablation-style attribution: full tying first to establish the ceiling, then component-isolated tying to identify which sharing carries the cost (or savings) most cleanly.
+
+**Phase 1 — Full layer-block tying.**
+Share every per-layer component across both layers. The two layers become structurally identical. Compares against the parameter-reduced baseline from Section 8. If quality holds (or approaches), this is the strongest possible parameter-efficiency result.
+
+**Phase 2 — MLP-only tying.**
+Un-tie everything except the MLP. The MLP is 167.82M of per-layer cost — the single largest component — so MLP-only tying is the most likely to carry meaningful savings. If Phase 1 hurts but Phase 2 holds, the MLP is the safe component to share and other components must remain distinct.
+
+**Phase 3 — PKM/FwPKM-only tying.**
+Un-tie everything except the sparse memory modules. PKM and FwPKM together carry per-layer cost ~76M, mostly in the value tables. Tests whether the sparse-memory access patterns are tolerant of sharing (different layers querying the same memory bank) or whether layer-distinct value tables matter.
+
+### Implementation considerations
+
+- **Tying is structural, not just parameter-equality**: requires constructing the model with a single ModuleList for the shared component and referencing it twice in the layer stack. Not a config change — a model-construction change.
+- **Gradient flow**: shared parameters receive gradient contributions from both layers. Effective learning rate on shared parameters is ~2× higher than on un-shared ones; may need adjustment.
+- **Initialization**: shared parameters need a single initialization that works for both layers' use cases, rather than per-layer init.
+- **Inference behavior**: identical. Tied parameters add no inference cost overhead — they just save VRAM on the parameter count side.
+
+### Open questions
+
+1. Does full layer-tying preserve quality, or does WaveletLM (with only 2 layers) lack the depth to make iteration-based capacity work the way ALBERT does (which had 12+ layers)?
+2. Is MLP-tying alone enough to capture most of the parameter savings without the quality hit of full tying?
+3. Does PKM/FwPKM tying interact pathologically with the sparse-key access pattern?
+4. At only 2 layers, is "tying" effectively the same as "use 1 layer with twice the depth-equivalent processing"? If so, that suggests the test is really "is 1 unique layer enough?" — which is itself an interesting result.
+
+### Why this matters
+
+Combined with the parameter-reduction bundle, full layer-tying would bring WaveletLM from 882.5M to potentially under 300M parameters — putting it in direct parameter-count competition with Transformer-XL Standard (151M) at hopefully comparable quality. The combination addresses the parameter-inefficiency critique decisively if it works, and provides architecturally interesting negative results if it doesn't.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up. Run first.
 2. **Combined parameter reduction (8)**: addresses the strongest public critique, enables longer-context experiments, single combined run is cheap. Run early.
-3. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
-4. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
-5. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
-6. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-7. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-8. **Inference strategies ablations**: self-explanatory.
+3. **Cross-layer parameter sharing (9)**: builds directly on the parameter reduction; full-tying → MLP-only → PKM/FwPKM-only ablation series. Largest remaining parameter-efficiency lever.
+4. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
+5. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
+6. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
+7. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
+8. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+9. **Inference strategies ablations**: self-explanatory.

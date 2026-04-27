@@ -346,7 +346,11 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### Combined Parameter Reduction and VRAM Reallocation
 
-Combine four cheap reductions (`mlp_expansion: 10`, `fwpkm_enabled: false`, `pkm_num_keys: 8281`, and `tie_embedding_to_lm_head: true`) to bring the model from 882.5M parameters to ~497.8M (~44% reduction) at a projected +0.025 BPB additive cost. The freed VRAM can be reallocated to longer block size, larger effective batch size, more epochs, or dropout retuning at the same hardware budget. See [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation) for more.
+Combine four cheap reductions (`mlp_expansion: 10`, `pkm_enabled: false`, `fwpkm_num_keys: 8281`, and `tie_embedding_to_lm_head: true`) to bring the model from 882.5M parameters to ~497.8M (~44% reduction) at a projected +0.025 BPB additive cost. PKM is dropped (rather than FwPKM) since the two perform comparably on quality and FwPKM also retains the optional `fwpkm_inference_updates` capability. The freed VRAM can be reallocated to longer block size, larger effective batch size, more epochs, or dropout retuning at the same hardware budget. See [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation) for more.
+
+### Cross-Layer Parameter Sharing
+
+ALBERT-style weight tying across the two WaveletLM blocks. Test sequence: full-block tying first (~338M potential savings), then component-isolated tying with MLP only (~168M), then PKM/FwPKM only (~76M). Tests whether depth-via-iteration substitutes for depth-via-distinct-parameters in the wavelet architecture, as it does in transformers. See [plans/other_post_release_plans.md §9](plans/other_post_release_plans.md#9-cross-layer-parameter-sharing-albert-style) for the full design.
 
 ### Dropout Sweep
 
