@@ -147,18 +147,19 @@ Selections from the [PG-19 best run's generations log](https://github.com/ramong
 
 **Sample A** with prompt "The history of":
 
-> The history of the world is a long and painful one. It has been so much 
-> neglected, that it may be said to have become known through all ages; 
-> but its influence is not confined solely to the individual or class, nor 
-> even to those who are in any way connected with it. The first thing 
-> which strikes us on entering into this subject is, that there is no 
-> other mode by which we can bring ourselves to do justice to our 
-> fellow-men; for what is more extraordinary than that they should be 
-> able to find out the real character of those whom we are about to see?
->
-> Thus it was that, during my stay here, I had often observed persons, 
-> whose minds seemed to me to be possessed of the same kind of 
-> sensibility. 
+> The history of the world is a long and painful one. It has been so 
+> much neglected, that it may be said to have become known through all 
+> ages; but its influence is not confined solely to the individual or 
+> class, nor even to those who are in any way connected with it. The 
+> first thing which strikes us on entering into this subject is, that 
+> there is no other mode by which we can bring ourselves to do justice 
+> to our fellow-men; for what is more extraordinary than that they 
+> should be able to find out the real character of those whom we are 
+> about to see? If such were their intentions, as I have before stated, 
+> then it would be very difficult indeed for them to keep themselves 
+> alive at the present moment; because, if we take away from them 
+> anything that makes life pleasant, or comfortable, or agreeable, they 
+> must give up all thoughts of it.
 
 <details>
 <summary><h3 style="display:inline">More PG-19 samples</h3></summary>
