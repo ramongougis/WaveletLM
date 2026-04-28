@@ -304,13 +304,13 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 19.3[^3] |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 20.9[^4]* |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 22.1[^3] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)** | **883M** | **23.8†** |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **883M** | **23.8†** |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
-† Best of 3 seeds PPL of 23.749 with mean PPL of 23.818.
+† Best of 3 seeds PPL of 23.749 with mean PPL of 23.818. Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
 
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
