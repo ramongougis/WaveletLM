@@ -419,15 +419,19 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 | Model | Type | Params | Context | Epochs | PPL |
 |-------|------|--------|---------|--------|-----|
 | Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^8] |
-| **WaveletLM (1 epoch)** | **Wavelet mixer** | **~808M** | **256** | **1** | **27.40†** |
-| Perceiver AR | Cross-attn + latents | 974M | — | — | 28.9[^5] |
-| Block-Recurrent Transformer | Transformer + recurrence | ~200M | — | — | 29.0[^6] |
-| Compressive Transformer | Transformer + compressive memory | 257M | — | — | 33.6[^7] |
-| Transformer-XL | Transformer + recurrence | 257M | — | — | 36.3[^7] |
+| **WaveletLM (1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **27.40†** |
+| Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^5] |
+| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^6] |
+| Compressive Transformer | Transformer + compressive memory | 257M | 2,048 effective | ~50 | 33.6[^7] |
+| Transformer-XL | Transformer + recurrence | 257M | 1,024 effective | ~50 | 36.3[^7] |
 
-All models in this table were trained and evaluated on PG-19. Most use SentencePiece tokenization; Hyena uses GPT-2 BPE. WaveletLM was trained for one epoch only, while Hyena was trained for 8 epochs.
+All models in this table were trained and evaluated on PG-19. Most use SentencePiece tokenization; Hyena uses GPT-2 BPE. WaveletLM was trained for one epoch only at the smallest context length of any entry.
 
-Em-dashes (—) indicate values reported indirectly in the source papers. Actual epoch counts have not been verified for those models.
+Context and epoch derivations from source papers:
+
+- **Compressive Transformer / Transformer-XL** (Rae et al. 2019): `~100B tokens / 2B PG-19 tokens ≈ 50 epochs`. Effective context: `512 (window) + 512 (memory) + 512 × 2 (compressed, C=2) = 2,048` (CT); `512 (window) + 512 (cache) = 1,024` (TX-L).
+- **Block-Recurrent Transformer**: Context: `4,096-token segments + 512-vector recurrent state`, trained for 500k steps. Epoch count cannot be derived because the batch size was not reported.
+- **Perceiver AR**: `~200k steps per batch × 2048 batches ≈ 420B tokens`; `420B / 2B PG-19 tokens ≈ 210 epochs` at `4,096-token context`.
 
 † 27.40 sliding-window PPL. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Increased regularization and training time are in the [Future Plans](#future-plans) section.
 
