@@ -7,9 +7,9 @@ Scale the semantic embedding approach from EXARCH to C=2048+ by replacing human-
 ## Motivation
 
 - EXARCH ("Explicit Attentionless Reasoning with Causal Harmonics", the previous version of WaveletLM) achieved BPB 1.0112 at C=512 with 256 human-defined concepts. Note this was before the v2 benchmark test fixes, so its BPB numbers are underestimates of true performance.
-- Learned embeddings at C=2048 achieve BPB 1.1431 at 1 epoch (and improving)
-- Human-interpretable concepts previously hit a ceiling at around 500 orthogonal dimensions. However, the expressivity and numerical representation of these dimensions as well-chosen coefficients matters.
-- But structural/statistical features can scale indefinitely: there are far more n-gram patterns, positional encodings, and co-occurrence statistics than there are human concepts.
+- Learned embeddings at C=2048 achieve BPB 1.1431 at 1 epoch (and improving).
+- Human-interpretable concepts previously hit a ceiling at 512 orthogonal dimensions. Increasing C beyond that number slightly degraded performance. However, the expressivity and numerical representation of the dimensions as well-chosen coefficients matters. Previously, only one-hot coefficients were used in a "yes/no" format.
+- However, structural/statistical features can scale indefinitely: there are far more n-gram patterns, positional encodings, and co-occurrence statistics than there are single-word human concepts.
 - Question: can a hand-crafted structural embedding match or beat learned embeddings at high C while retaining the potential interpretability benefits of prescribed features?
 
 ## Proposed feature categories
