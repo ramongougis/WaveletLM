@@ -728,7 +728,8 @@ def train():
         if os.path.exists(run_config_path):
             with open(run_config_path, 'r') as f:
                 run_config = json.load(f)
-            for k in ['C', 'layers', 'levels', 'low_rank', 'mlp_expansion', 'mlp_layers',
+            for k in ['dataset', 'tokenizer',
+                       'C', 'layers', 'levels', 'low_rank', 'mlp_expansion', 'mlp_layers',
                        'block_size',
                        'pkm_enabled', 'pkm_num_keys', 'pkm_top_k', 'pkm_heads',
                        'fwpkm_enabled', 'fwpkm_num_keys', 'fwpkm_top_k', 'fwpkm_heads',
