@@ -65,13 +65,20 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 ## Inference
 
-Obtain weights from [HuggingFace](https://huggingface.co/anarmorarm/WaveletLM/tree/main), then replace `best_model_wikitext-103.pt` in the commands below with the path to the file. 
+Obtain weights from [HuggingFace](https://huggingface.co/anarmorarm/WaveletLM/tree/main), then use `best_model_pg-19.pt`, `best_model_wikitext-103.pt`, or whichever weights file is desired as the checkpoint in the commands below.
 
-The [current best 883M parameter model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
+The [current best PG-19 model](logs\pg19_2026-04-25_13-34-46\benchmark.txt) requires 4,544 MiB for inference and generates at 28.3 tokens/s on a 5090.
 
-Recommended generation command:
+The [current best WikiText-103 model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
+
+Recommended commands:
 
 ```bash
+# PG-19
+python generate.py --checkpoint best_model_pg-19.pt --strategies /
+    --prompt "Your prompt here"
+
+# WikiText-103
 python generate.py --checkpoint best_model_wikitext-103.pt --strategies /
     --prompt "Your prompt here"
 ```
@@ -79,13 +86,13 @@ python generate.py --checkpoint best_model_wikitext-103.pt --strategies /
 Default generation:
 
 ```bash
-python generate.py --checkpoint best_model_wikitext-103.pt
+python generate.py --checkpoint best_model_pg-19.pt
 ```
 
 Additional options:
 
 ```bash
-python generate.py --checkpoint best_model_wikitext-103.pt /
+python generate.py --checkpoint best_model_pg-19.pt /
     --prompt "Your prompt goes here." --num_tokens 1024 --seed 1337 /
     --n 1 --temperature 1.0 --strategies --ptq8 --num_tokens 9000
 ```
@@ -97,13 +104,13 @@ Can run all strategies together with `--strategies` or individual ones. Use `--h
 Use all inference strategies:
 
 ```bash
-python generate.py --checkpoint best_model_wikitext-103.pt --strategies
+python generate.py --checkpoint best_model_pg-19.pt --strategies
 ```
 
 Some strategies options:
 
 ```bash
-python generate.py --checkpoint best_model_wikitext-103.pt --entropy_adaptive /
+python generate.py --checkpoint best_model_pg-19.pt --entropy_adaptive /
     --lookahead_k 3 --lookahead_depth 5 --best_of_n 5 --clean_spacing /
     --wavelet_coherence
 ```
@@ -113,7 +120,7 @@ python generate.py --checkpoint best_model_wikitext-103.pt --entropy_adaptive /
 Near-lossless uniform 8-bit PTQ:
 
 ```bash
-python generate.py --checkpoint best_model_wikitext-103.pt --ptq8
+python generate.py --checkpoint best_model_pg-19.pt --ptq8
 ```
 
 PTQ effects:
@@ -407,6 +414,27 @@ My current run budget is limited. Other researchers are encouraged to train the 
 
 See [Areas for Improvement](#areas-for-improvement) below for more info on optimization, and [Future Plans](#future-plans) for ways to push WaveletLM further post-release.
 
+### PG-19 Test Set Perplexity Comparison
+
+| Model | Type | Params | Context | Epochs | PPL |
+|-------|------|--------|---------|--------|-----|
+| Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^8] |
+| **WaveletLM (1 epoch)** | **Wavelet mixer** | **~808M** | **256** | **1** | **27.40†** |
+| Perceiver AR | Cross-attn + latents | 974M | — | — | 28.9[^5] |
+| Block-Recurrent Transformer | Transformer + recurrence | ~200M | — | — | 29.0[^6] |
+| Compressive Transformer | Transformer + compressive memory | 257M | — | — | 33.6[^7] |
+| Transformer-XL | Transformer + recurrence | 257M | — | — | 36.3[^7] |
+
+All models in this table were trained and evaluated on PG-19. Most use SentencePiece tokenization; Hyena uses GPT-2 BPE. WaveletLM was trained for one epoch only, while Hyena was trained for 8 epochs.
+
+Em-dashes (—) indicate values reported indirectly in the source papers. Actual epoch counts have not been verified for those models.
+
+† 27.40 sliding-window PPL. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Increased regularization and training time are in the [Future Plans](#future-plans) section.
+
+‡ Hyena was trained with `block_size=16384` (64× WaveletLM's) and 8 epochs (8× WaveletLM's), totaling roughly 2.6× more training compute than WaveletLM's setup. It is also incredibly efficient parameter-wise with 153M vs. WaveletLM's 807M. Increasing both block size and epochs for WaveletLM while decreasing parameters are some of the [Future Plans](#future-plans).
+
+Comparison numbers for both datasets are sourced from their respective papers. See References below.
+
 ### WikiText-103 Test Set Perplexity Comparison
 
 | Model | Type | Trained on | Params | PPL |
@@ -428,22 +456,6 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
 
 See [`runs.md`](runs.md) for a record of all training runs, logs, configs, and benchmark results with fully-reproducible point-in-time code snapshots.
-
-### PG-19 Test Set Perplexity Comparison
-
-| Model | Type | Params | PPL |
-|-------|------|--------|-----|
-| **WaveletLM (1 epoch)** | **Wavelet mixer** | **~808M** | **27.40†** |
-| Perceiver AR | Cross-attn + latents | 974M | 28.9[^5] |
-| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 29.0[^6] |
-| Compressive Transformer | Transformer + compressive memory | 257M | 33.6[^7] |
-| Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
-
-All models in this table were trained and evaluated on PG-19 with SentencePiece tokenization. Unlike the others, WaveletLM was trained for one epoch only.
-
-† 27.40 sliding-window PPL / 1.085 BPB at `block_size=256`, 1 epoch. Non-overlapping PPL: 29.13. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Significant headroom remains via more epochs and longer block size — see [Future Plans](#future-plans).
-
-Comparison numbers for both datasets are sourced from their respective papers. See References below.
 
 ### Areas for Improvement
 
@@ -555,3 +567,5 @@ Apache License 2.0
 [^5]: Hawthorne et al. "General-purpose, long-context autoregressive modeling with Perceiver AR." arXiv:2202.07765, 2022.
 [^6]: Hutchins et al. "Block-Recurrent Transformers." arXiv:2203.07852, 2022.
 [^7]: Rae et al. "Compressive Transformers for Long-Range Sequence Modelling." arXiv:1911.05507, 2019. (PG-19 dataset introduction; reports both Compressive Transformer and Transformer-XL on PG-19.)
+
+[^8]: Poli et al. "Hyena Hierarchy: Towards Larger Convolutional Language Models." arXiv:2302.10866, 2023. PG-19 result on page 20: Hyena 153M reaches 14.6 test PPL with 16k context length, 8 epochs, GPT-2 BPE tokenization.
