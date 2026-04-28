@@ -161,7 +161,7 @@ Selections from the [PG-19 best run's generations log](https://github.com/ramong
 > sensibility. 
 
 <details>
-<summary><b>More PG-19 samples</b></summary>
+<summary><h4 style="display:inline">More PG-19 samples</h4></summary>
 
 **Sample B** with prompt "She turned to him and said":
 
@@ -251,7 +251,7 @@ Selections from the [WikiText-103 best run's generations log](https://github.com
 > near the site of the original schoolhouse.
 
 <details>
-<summary><b>More WikiText-103 samples</b></summary>
+<summary><h4 style="display:inline">More WikiText-103 samples</h4></summary>
 
 **Sample B** with prompt "The album was released":
 
