@@ -115,6 +115,14 @@ python generate.py --checkpoint best_model_pg-19.pt --entropy_adaptive /
     --wavelet_coherence
 ```
 
+The `--strategies` flag enables:
+
+- Entropy-adaptive temperature (capped at 0.9)
+- `top_p=0.85`
+- `repetition_penalty=1.2`
+- Metrics logging (`mean_log_prob`, `Distinct-n`, `Rep-4`)
+- WikiText-103 spacing cleanup
+
 ### Post-Training Quantization (PTQ; optional)
 
 Near-lossless uniform 8-bit PTQ:
@@ -234,16 +242,6 @@ Below are selections from the [WikiText-103 best run's generations log](https://
 ```bash
 python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model.pt --strategies --n 20
 ```
-
-The `--strategies` flag enables:
-
-- Entropy-adaptive temperature (capped at 0.9)
-- `top_p=0.85`
-- `repetition_penalty=1.2`
-- Metrics logging (`mean_log_prob`, `Distinct-n`, `Rep-4`)
-- WikiText-103 spacing cleanup
-
-Throughput in this mode is comparable to naive sampling (28.8 tok/sec on a 5090). Other strategies, such as `best_of_n`, multi-token `lookahead`, and `wavelet_coherence` decoding bias, are available as separate flags, but are not enabled by `--strategies`.
 
 A naive sampling baseline ("Sample E") is included below for direct comparison. The strategies-on samples were post-processed to clean WikiText-103 spacing artifacts (`@-@`, `@,@`, spaces before punctuation). Raw outputs in the linked log preserve those markers.
 
