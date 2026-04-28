@@ -1049,11 +1049,19 @@ def train():
 
     try:
         ckpt = torch.load(best_model_path, map_location=device)
+        # Unwrap the save_with_retry payload format. Bare state_dict (legacy)
+        # is used as-is; the wrapped format embeds tokenizer metadata alongside
+        # the weights and must have its 'model_state' key extracted before load.
+        # Iterating the wrapper directly with strict=False silently produces a
+        # randomly-initialized model — see PG-19 run 2026-04-25 for the exact
+        # failure mode (loss ≈ ln(vocab), gibberish generation).
+        if isinstance(ckpt, dict) and "model_state" in ckpt:
+            ckpt = ckpt["model_state"]
         new_state_dict = {}
         for k, v in ckpt.items():
             new_key = k[10:] if k.startswith("_orig_mod.") else k
             new_state_dict[new_key] = v
-        model.load_state_dict(new_state_dict, strict=False)
+        model.load_state_dict(new_state_dict, strict=True)
         logger.log("Best model loaded.")
     except Exception as e:
         logger.log(f"Could not load best model: {e}")
