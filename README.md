@@ -143,15 +143,7 @@ PTQ effects:
 
 ### PG-19
 
-Below are selections from the [PG-19 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/pg19_2026-04-25_13-34-46/generations.txt), generated with inference strategies enabled across multiple prompts:
-
-```bash
-# Command with prompt "The history of" and n = 20
-python generate.py --checkpoint logs/pg19_2026-04-25_13-34-46/best_model.pt --strategies --n 20 --prompt "The history of"
-
-# With prompt "She turned to him and said" and n = 2
-python generate.py --checkpoint logs/pg19_2026-04-25_13-34-46/best_model.pt --strategies --n 2 --prompt "She turned to him and said"
-```
+Selections from the [PG-19 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/pg19_2026-04-25_13-34-46/generations.txt):
 
 **Sample A** with prompt "The history of":
 
@@ -167,6 +159,9 @@ python generate.py --checkpoint logs/pg19_2026-04-25_13-34-46/best_model.pt --st
 > Thus it was that, during my stay here, I had often observed persons, 
 > whose minds seemed to me to be possessed of the same kind of 
 > sensibility. 
+
+<details>
+<summary><b>More PG-19 samples</b></summary>
 
 **Sample B** with prompt "She turned to him and said":
 
@@ -235,15 +230,11 @@ A second out-of-distribution prompt. The model has no training data on spaceship
 
 Randomly selected naive (without `--strategies`) sample out of 20. Naive samples retain more of the model's raw distribution and tend to mix domains more loosely.
 
+</details>
+
 ### WikiText-103
 
-Below are selections from the [WikiText-103 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt), which contains both naive and strategies-mode samples. Samples A, B, C, and D below were generated with inference strategies enabled:
-
-```bash
-python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model.pt --strategies --n 20
-```
-
-A naive sampling baseline ("Sample E") is included below for direct comparison. The strategies-on samples were post-processed to clean WikiText-103 spacing artifacts (`@-@`, `@,@`, spaces before punctuation). Raw outputs in the linked log preserve those markers.
+Selections from the [WikiText-103 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt):
 
 **Sample A** with prompt "The history of":
 
@@ -258,6 +249,9 @@ A naive sampling baseline ("Sample E") is included below for direct comparison. 
 > Station Pensacola (now known as the Georgia Tech Research Institute), 
 > located on the campus' eastern boundary, was constructed in 1925–1926 
 > near the site of the original schoolhouse.
+
+<details>
+<summary><b>More WikiText-103 samples</b></summary>
 
 **Sample B** with prompt "The album was released":
 
@@ -315,6 +309,8 @@ A naive sampling baseline ("Sample E") is included below for direct comparison. 
 > mph (160 km/h) as it drifted through western Cuba.
 
 Note the typical failure mode with the naive generation: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model is prevented from employing a more conservative sampling regime.
+
+</details>
 
 
 ## Architecture
