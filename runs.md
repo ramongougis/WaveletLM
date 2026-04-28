@@ -475,11 +475,13 @@ Final pre-release run. Takes the best seed from the 3-seed WT103 study and train
 
 **Block_size tradeoff:** PG-19 benefits from longer context in principle (long narrative arcs), but keeping `block_size=256` preserves apples-to-apples with WT103 at the same compute cost per step. Raising to 512 or 1024 is a post-release experiment.
 
-**Estimated runtime:** ~63h (~2.6 days) on 5090 using WT103's 3h/epoch × ~21× token ratio. Schedule at current MBS=8/GA=1: ~1.2M steps/epoch, warmup ~360k steps (30%).
+**Estimated runtime:** ~63h (~2.6 days) on 5090 using WT103's 3h/epoch × ~21× token ratio. Schedule at current MBS=8/GA=1: ~1.2M steps/epoch, warmup ~360k steps (30%). **Realized: 63.77h.**
 
-| Run | Seed | Folder | BPB (sliding) | Perplexity | Params | Time | Notes |
-|-----|------|--------|---------------|------------|--------|------|-------|
-|   | *best from 3-seed study* | | | | ~808M | ~63h | Pre-release anchor on PG-19; SentencePiece 32K tokenizer; compare to Transformer-XL / Compressive Transformer |
+| Run | Seed | Folder | BPB (sliding) | Perplexity | BPB (non-overlap) | PPL (non-overlap) | Params | Time | Notes |
+|-----|------|--------|---------------|------------|-------------------|-------------------|--------|------|-------|
+|   | 1337 | [link](logs/pg19_2026-04-25_13-34-46/log.txt) | **1.0853** | **27.4010** | 1.1054 | 29.1302 | 807.73M | 63.77h | Pre-release anchor on PG-19; SentencePiece 32K tokenizer; beats Perceiver AR (28.9), Block-Recurrent Transformer (29.0), Compressive Transformer (33.6), and Transformer-XL (36.3) at 1 epoch / `block_size=256`. Best val loss 3.5238 at step 1.255M / 1.273M. |
+
+**Result note:** the in-process post-training benchmark on this run was initially affected by a checkpoint-loader bug ([`save_with_retry`](../train.py)'s wrapper format vs. the loader's bare-state-dict assumption + `strict=False` masking the failure). Numbers above are from the corrected benchmark re-run via `benchmark_only=true` after the loader fix. The model itself trained correctly — see the [generation samples](logs/pg19_2026-04-25_13-34-46/generations.txt) for register-quality verification.
 
 After this run completes, release proceeds: HuggingFace upload of the best checkpoint (with HF model card), and the post-release items (model comparisons, dataset comparisons, scaled-up B200) follow.
 

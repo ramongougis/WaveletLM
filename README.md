@@ -126,6 +126,10 @@ PTQ effects:
 
 ## Sample Generations
 
+### PG-19
+
+### WikiText-103
+
 Below are selections from the [generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) for the WikiText-103 best PPL run, which contains both naive and strategies-mode samples. Samples A, B, and C below were generated with inference strategies enabled:
 
 ```bash
@@ -321,13 +325,15 @@ See [`runs.md`](runs.md) for a record of all training runs, logs, configs, and b
 
 | Model | Type | Params | PPL |
 |-------|------|--------|-----|
+| **WaveletLM (1 epoch)** | **Wavelet mixer** | **~808M** | **27.40†** |
 | Perceiver AR | Cross-attn + latents | 974M | 28.9[^5] |
 | Block-Recurrent Transformer | Transformer + recurrence | ~200M | 29.0[^6] |
 | Compressive Transformer | Transformer + compressive memory | 257M | 33.6[^7] |
 | Transformer-XL | Transformer + recurrence | 257M | 36.3[^7] |
-| **WaveletLM (1 epoch)** | **Wavelet mixer** | **~808M** | **TBD (1 epoch)** (pending [pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch)) |
 
-All models in this table were trained and evaluated on PG-19 with its standard SentencePiece tokenization. Unlike the others, WaveletLM was trained on one epoch only.
+All models in this table were trained and evaluated on PG-19 with SentencePiece tokenization. Unlike the others, WaveletLM was trained for one epoch only.
+
+† 27.40 sliding-window PPL / 1.085 BPB at `block_size=256`, 1 epoch. Non-overlapping PPL: 29.13. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Significant headroom remains via more epochs and longer block size — see [Future Plans](#future-plans).
 
 Comparison numbers for both datasets are sourced from their respective papers. See References below.
 
