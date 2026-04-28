@@ -128,9 +128,101 @@ PTQ effects:
 
 ### PG-19
 
+Below are selections from the [PG-19 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/pg19_2026-04-25_13-34-46/generations.txt), generated with inference strategies enabled across multiple prompts:
+
+```bash
+# Command with prompt "The history of" and n = 20
+python generate.py --checkpoint logs/pg19_2026-04-25_13-34-46/best_model.pt --strategies --n 20 --prompt "The history of"
+
+# With prompt "She turned to him and said" and n = 2
+python generate.py --checkpoint logs/pg19_2026-04-25_13-34-46/best_model.pt --strategies --n 2 --prompt "She turned to him and said"
+```
+
+**Sample A** with prompt "The history of":
+
+> The history of the world is a long and painful one. It has been so much 
+> neglected, that it may be said to have become known through all ages; 
+> but its influence is not confined solely to the individual or class, nor 
+> even to those who are in any way connected with it. The first thing 
+> which strikes us on entering into this subject is, that there is no 
+> other mode by which we can bring ourselves to do justice to our 
+> fellow-men; for what is more extraordinary than that they should be 
+> able to find out the real character of those whom we are about to see?
+>
+> Thus it was that, during my stay here, I had often observed persons, 
+> whose minds seemed to me to be possessed of the same kind of 
+> sensibility. 
+
+**Sample B** with prompt "She turned to him and said":
+
+> She turned to him and said, "I have been thinking a great deal about 
+> you. I know that your father is a very good man; but he would not give 
+> me his consent if I were to marry him. But it will be all the same with 
+> me." He looked at her as though she had spoken to him out of a book 
+> which was lying on the table. When he spoke again there came into her 
+> face the expression of a most intense earnestness--a look of deep 
+> emotion. It seemed to him that she felt for one moment as if she could 
+> read his soul through this wonderful eyes: they were full of tenderness 
+> and affection, and she knew that in them lay love's highest hope and 
+> joy. Then she rose and walked slowly back to the house, leaving him 
+> alone with the dead.
+>
+> CHAPTER XXXV. A CONFESSION OF ROMANCE.
+
+**Sample C** with prompt "'Beware the High Elf mage,' exclaimed Antimour...":
+
+> 'Beware the High Elf mage,' exclaimed Antimour. 'Although a novice, I 
+> sense much arcane affinity within him.' Then he added: 'You have been 
+> taught to read and write; but you are now in the seventh heaven of 
+> bliss!' 'I am not so old as that, my lord,' replied the astrologer; 
+> 'but there is no reason why I should be happy without you.' The 
+> astrologer shook his head doubtfully. 'There is nothing for it, then,' 
+> said he; 'for the present at least we will talk about the matter. 
+> Meanwhile I must tell thee how thou didst come into this world. In what 
+> way didst thou escape from thine enemies?' 'By means of some magic 
+> wand which I possessed,' answered the magician.
+
+Since PG-19 contains data from 1919 and earlier, this prompt is out of distribution. It uses post-Tolkien fantasy diction which the model routes to the closest pre-1919 register: Edwardian fairy-tale and Arabian Nights prose.
+
+**Sample D** with prompt "The spaceship finally arrived in the Alpha Centauri system":
+
+> The spaceship finally arrived in the Alpha Centauri system. It was 
+> found that this would be very much like a double-acting motor, but it 
+> was not to be compared with one of these machines which had been 
+> invented by Professor Thomson and constructed for him by himself at 
+> his own expense. In order to make use of such a machine he must have 
+> an efficient engine capable of performing its work as soon as possible.
+>
+> [Illustration: FIGS. 1, 2, 3 and 4.--DIAGRAM OF ELECTRICAL DICTIONARY 
+> INVENTION. A simple form of the principle shown is shown on the 
+> accompanying diagram (Fig. 7), which represents a rectangular piece of 
+> wire attached to the base of a cylinder.
+
+A second out-of-distribution prompt. The model has no training data on spaceships or interstellar travel, so it routes these to the closest pre-1919 register: a Victorian mechanical-engineering treatise with a figure caption.
+
+**Sample E** with prompt "The history of" — naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+
+> The history of her interest in the modern world during this quarter, 
+> has been given to the journal in which she appeared during her stay; 
+> and I could mention no names more memorable than those connected with 
+> the several sessions at this distinguished lady's house. In 1856, Mr. 
+> Ramsey began the voyage along one of the many channels by which Boston 
+> had heretofore eluded him, with very valuable additions to his papers.
+>
+> On January 30, 1833, a small packet arrived at Charleston from Jamaica, 
+> designed for the benefit of George (afterwards Lord) Wilmot, an officer 
+> in the American army--a man well qualified to fulfill all the duties 
+> of a seaman as before stated. He remained at Point Cotterand until 
+> October, 1827, when he died in his lodgings, without either pecuniary 
+> credit or pecuniary obligations. At the close of 1805 Mrs. Fry visited 
+> us. She had previously known her husband, who held an appointment 
+> within a few miles of Camden Town.
+
+Randomly selected naive (without `--strategies`) sample out of 20. Naive samples retain more of the model's raw distribution and tend to mix domains more loosely.
+
 ### WikiText-103
 
-Below are selections from the [generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt) for the WikiText-103 best PPL run, which contains both naive and strategies-mode samples. Samples A, B, and C below were generated with inference strategies enabled:
+Below are selections from the [WikiText-103 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/wikitext-103_2026-04-22_01-36-47/generations.txt), which contains both naive and strategies-mode samples. Samples A, B, C, and D below were generated with inference strategies enabled:
 
 ```bash
 python generate.py --checkpoint logs/wikitext-103_2026-04-22_01-36-47/best_model.pt --strategies --n 20
@@ -146,7 +238,7 @@ The `--strategies` flag enables:
 
 Throughput in this mode is comparable to naive sampling (28.8 tok/sec on a 5090). Other strategies, such as `best_of_n`, multi-token `lookahead`, and `wavelet_coherence` decoding bias, are available as separate flags, but are not enabled by `--strategies`.
 
-A naive sampling baseline ("Sample D") is included below for direct comparison. The strategies-on samples were post-processed to clean WikiText-103 spacing artifacts (`@-@`, `@,@`, spaces before punctuation). Raw outputs in the linked log preserve those markers.
+A naive sampling baseline ("Sample E") is included below for direct comparison. The strategies-on samples were post-processed to clean WikiText-103 spacing artifacts (`@-@`, `@,@`, spaces before punctuation). Raw outputs in the linked log preserve those markers.
 
 **Sample A** with prompt "The history of":
 
@@ -190,7 +282,23 @@ A naive sampling baseline ("Sample D") is included below for direct comparison. 
 > that Lactarius deterrimus may not be closely related to Boletus edulis 
 > or other similar fungi in general. 
 
-**Sample D** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample D** with prompt "Born in":
+
+> Born in the city, and the people who have been living there. The town's 
+> only synagogue is located on a hill overlooking the street; it was 
+> built by John D. Rockefeller, Jr.
+>
+> A museum dedicated to the history of Jewish culture in Israel opened 
+> in 2008 at the former Beth Elohim building. It features an original 
+> painting from the Al-Fakhri Mosque that hangs in the Temple. This is 
+> one of four mosques in the district named after Abraham Lincoln.
+>
+> Hebron Church (Hebrew: בית לחברג 'ה) is believed to be the oldest part 
+> of Jerusalem's Old City. The name means "holy place" or "place of 
+> prayer" in Islamic law and Arabic texts dating back to prehistory as 
+> early as the 6th century BCE.
+
+**Sample E** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
 
 > The history of the tropical cyclone is unknown, but official records 
 > suggest it formed on May 31. It developed into a tropical storm later 
@@ -201,7 +309,7 @@ A naive sampling baseline ("Sample D") is included below for direct comparison. 
 > however, it reintensified slightly and later peaked with winds of 100 
 > mph (160 km/h) as it drifted through western Cuba.
 
-Note the typical failure mode: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model is prevented from employing a more conservative sampling regime.
+Note the typical failure mode with the naive generation: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model is prevented from employing a more conservative sampling regime.
 
 
 ## Architecture
