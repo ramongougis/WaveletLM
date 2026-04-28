@@ -2,7 +2,7 @@
 
 ## Summary
 
-Scale the semantic embedding approach from EXARCH to C=2048+ by replacing human-interpretable concept labels with structural, statistical, and syntactic features derived from corpus analysis. Instead of "violence" or "happiness," dimensions would encode n-gram co-occurrence patterns, positional statistics, and token-level structural properties that more closely mirror what learned embeddings discover on their own.
+Scale the semantic embedding approach from EXARCH to C=2048+ by replacing human-interpretable concept labels with structural, statistical, and syntactic features derived from corpus analysis. Instead of "violence" or "happiness," dimensions would encode n-gram co-occurrence patterns, positional statistics, and token-level structural properties that more closely mirror what learned embeddings (likely) discover on their own.
 
 ## Motivation
 
