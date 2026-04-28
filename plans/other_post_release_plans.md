@@ -300,6 +300,32 @@ Combined with the parameter-reduction bundle, full layer-tying would bring Wavel
 
 ---
 
+## 10. Per-scale mixer transform ablation
+
+The FWHT slot in the per-scale mixer between the wavelet decomposition and gated SwiGLU is currently fixed. Whether FWHT specifically is necessary for the architecture's quality, or whether any orthogonal mixer of similar structure (or none at all, in the current learned-embedding context) achieves equivalent performance, has not been measured directly.
+
+This is testable on WaveletLM via four ablation conditions:
+
+1. **Identity (no transform)**: Baseline. Tests whether the FWHT slot is architecturally inert. If BPB matches the FWHT-baseline, the slot can be removed for compute savings. Previously catastrophic with the binary conceptual embedding, but potentially survivable now with the learned embedding.
+2. **Hartley (DHT)**: Drop-in replacement; same self-inverse and real-valued properties as FWHT, but with sinusoidal (continuous) basis rather than Walsh (discontinuous). Tests whether the discontinuous nature of the Walsh basis matters.
+3. **DCT-II / DCT-III pair**: `dct2 → mixer → dct3` round-trip. Continuous cosine basis with strong energy-compaction properties (provably optimal for Markov-1 signals). Slightly higher constant-factor compute than FWHT (~2-4×) but preserves O(n log n).
+4. **Butterfly-parametrized learned orthogonal mixer**: Same butterfly cascade structure as FWHT, but each ±1 weight becomes a learned scalar with orthogonality constraints. Adds O(n log n) parameters and compute, and tests whether *any* learned orthogonal mixer matches or exceeds the fixed Walsh basis.
+
+### Setup
+
+1-epoch WT-103 runs at the current best-run config, single seed each. Around 2.5-3h on a 5090 per test, and 10-12h total across all four. Document each result in `runs.md` with BPB and quick generation samples for quality verification.
+
+### Why this matters
+
+WaveletLM names FWHT as one of its central features. Validating whether FWHT is optimal, or whether any orthogonal mixer of similar structure works equivalently, sharpens the architectural contribution:
+
+- If condition 1 collapses, "wavelets + structured orthogonal channel rotation + gated SwiGLU" becomes the load-bearing claim. The orthogonal mixer is genuinely necessary.
+- If condition 1 survives, "wavelets + per-position SwiGLU mixing - transformation" is enough with a learned embedding, and the architecture simplifies.
+- If conditions 2-3 match condition 0 (the current FWHT), the orthogonal-mixing role is what matters, making the specific Walsh basis a convenient default, but not unique.
+- If condition 4 substantially exceeds condition 0, fixed FWHT is leaving capability on the table, and a learned mixer is the upgrade path.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up. Run first.
@@ -309,5 +335,6 @@ Combined with the parameter-reduction bundle, full layer-tying would bring Wavel
 5. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
 6. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
 7. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-8. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-9. **Inference strategies ablations**: self-explanatory.
+8. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (50h total of 5090 time) and decisive — sharpens the architectural contribution regardless of outcome.
+9. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+10. **Inference strategies ablations**: self-explanatory.
