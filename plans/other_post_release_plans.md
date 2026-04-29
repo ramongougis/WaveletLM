@@ -328,13 +328,14 @@ WaveletLM names FWHT as one of its central features. Validating whether FWHT is 
 
 ## Prioritization order for post-release
 
-1. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up. Run first.
-2. **Combined parameter reduction (8)**: addresses the strongest public critique, enables longer-context experiments, single combined run is cheap. Run early.
-3. **Cross-layer parameter sharing (9)**: builds directly on the parameter reduction; full-tying → MLP-only → PKM/FwPKM-only ablation series. Largest remaining parameter-efficiency lever.
-4. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
-5. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
-6. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
-7. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
-8. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (50h total of 5090 time) and decisive — sharpens the architectural contribution regardless of outcome.
-9. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-10. **Inference strategies ablations**: self-explanatory.
+1. **Single-Layer WaveletLM (`single_layer_waveletlm.md`)**: highest priority. Four-run test matrix (~10-12h on a 5090) measures whether L=1 with the modern feature stack approaches the L=2 baseline. Pairs with parameter reduction (cuts model to ~250-300M params), enables interpretability work, and clarifies what depth is actually doing in WaveletLM. Decisive regardless of outcome.
+2. **Optimizer sweep (6)**: highest impact-per-compute; potential ~1.5–2× wall-clock speedup compounds across all subsequent ablations and the B200 scale-up.
+3. **Combined parameter reduction (8)**: addresses the strongest public critique, enables longer-context experiments, single combined run is cheap. Naturally pairs with the L=1 test (combined L=1 + reduced parameters = ~250-300M-param config).
+4. **Cross-layer parameter sharing (9)**: builds directly on the parameter reduction; full-tying → MLP-only → PKM/FwPKM-only ablation series. Largely irrelevant if L=1 wins, since there's no second layer to share with.
+5. **Cross-scale phase gating (3)**: cheapest to test, complements existing CSG.
+6. **Stable parametrization validation (5)**: gates multiple latent-win runs and the B200 scale-up; small-scale sweep is cheap.
+7. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
+8. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
+9. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (~10-12h total) and decisive. Cleaner attribution at L=1 — pair with the L=1 plan if (1) above shows L=1 is competitive.
+10. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+11. **Inference strategies ablations**: self-explanatory.
