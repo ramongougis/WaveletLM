@@ -570,6 +570,10 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 
 Apache License 2.0
 
+## Project status
+
+Static analysis: [![CodeQL](https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml/badge.svg)](https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml)
+
 ## References
 
 [^2]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
