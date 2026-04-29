@@ -471,9 +471,9 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### Single-Layer WaveletLM with Current Best Config
 
-Re-test L=1 with the current best feature stack and the parameter-reduction bundle below. L=1 nearly halves runtime and parameter count — meaning it can train for ~2× as many epochs as L=2 at fixed compute. Headline test: L=1 / L=2 at 1 / 5 epochs each on WikiText-103 (the existing L=2 5-epoch baseline reused as one of the four).
+Re-test L=1 with the current best feature stack and the parameter-reduction bundle below. L=1 nearly halves runtime and parameter count, meaning it can train for twice the epochs as L=2 at fixed compute. 3 tests: L=1 with epochs=1, L=2 with epochs=1, and L=1 with epochs=5, each on WikiText-103. The existing L=2 with epochs=5 baseline completes the comparison matrix.
 
-**Interpretability motivation**: single-hop information flow makes per-scale activation patching, embedding-to-coefficient mapping, and per-component ablation tractable. Compounds with the eventual semantic embedding reintroduction, where L=1 enables end-to-end conceptual traceability through human-readable dimensions.
+**Interpretability motivation**: single-hop information flow makes targeted interpretability techniques such as per-scale activation patching, embedding-to-coefficient mapping, and per-component ablation tractable. This compounds with the eventual semantic embedding reintroduction, where L=1 enables end-to-end conceptual traceability through human-readable dimensions.
 
 See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) for the full design.
 
