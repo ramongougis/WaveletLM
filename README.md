@@ -7,7 +7,9 @@
 ---
 
 <p align="center">
+
 [![CodeQL](https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml/badge.svg)](https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml)
+
 [![Scorecard supply-chain security](https://github.com/ramongougis/WaveletLM/actions/workflows/scorecard.yml/badge.svg)](https://github.com/ramongougis/WaveletLM/actions/workflows/scorecard.yml)
 </p>
 
