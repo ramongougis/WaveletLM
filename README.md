@@ -469,7 +469,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
-### Single-Layer WaveletLM (L=1) with Current Best Config
+### Single-Layer WaveletLM with Current Best Config
 
 Currently, WaveletLM runs with 2 layers, but the single-layer solution has not been tested in a while. 1 layer, if properly optimized, nearly halves runtime and parameter count while retaining the majority of the 2-layer solution's performance. Goal: retest L=1 with the [best run config at release time](logs\pg19_2026-04-25_13-34-46\log.txt), as well as with the >= 44% parameter reduction bundle in the separate plan below. At least three additional runs are planned: layers=1 with epochs=1, layers=2 with epochs=1, and layers=1 with epochs=5 (tested on WikiText-103 for quicker iterations). The current config of L=2 with 5 epochs completes the preliminary comparison matrix. Per-step compute roughly halves at L=1, so a 5-epoch L=1 run trains in roughly half the time, meaning L=1 can train for 2 times as many epochs as L=2 within the same compute budget. Additional variations to test if the 1-layer results are competitive: smaller effective batch with higher learning rate, extended block size, and eventual pairing with the semantic embedding reintroduction work.
 
