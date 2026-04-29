@@ -2,15 +2,12 @@
   <img src="assets/waveletlm-header.svg" alt="WaveletLM" width="90%"/>
 </p>
 
-<br>
-
 ---
 
 <p align="center">
-
-[![CodeQL](https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml/badge.svg)](https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml)
-
-[![Scorecard supply-chain security](https://github.com/ramongougis/WaveletLM/actions/workflows/scorecard.yml/badge.svg)](https://github.com/ramongougis/WaveletLM/actions/workflows/scorecard.yml)
+  <a href="https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml"><img src="https://github.com/ramongougis/WaveletLM/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"/></a>
+  &nbsp;
+  <a href="https://github.com/ramongougis/WaveletLM/actions/workflows/scorecard.yml"><img src="https://github.com/ramongougis/WaveletLM/actions/workflows/scorecard.yml/badge.svg" alt="Scorecard supply-chain security"/></a>
 </p>
 
 WaveletLM is a wavelet-based, attention-free language model that mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and sparse product-key memory, this yields an architecture with no attention and O(n log n) scaling in sequence length.
