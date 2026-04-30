@@ -54,24 +54,6 @@ run_one() {
 }
 
 # ============================================================
-# Run A — L=1, 1 epoch (modernized L=1 baseline)
-# ============================================================
-run_one "Run A: layers=1, epochs=1" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 1, "eval_interval": 250}'
-
-# ============================================================
-# Run B — L=2, 1 epoch (head-to-head against Run A at fixed epochs)
-# ============================================================
-run_one "Run B: layers=2, epochs=1" \
-    '{"dataset": "wikitext-103", "layers": 2, "epochs": 1, "eval_interval": 250}'
-
-# ============================================================
-# Run C — L=1, 5 epochs (the headline test: L=1 with full training time)
-# ============================================================
-run_one "Run C: layers=1, epochs=5" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "eval_interval": 250}'
-
-# ============================================================
 # Run E — L=1, 8 epochs (compute-equalized to D: L=1 ~1.93h/ep × 8 ≈ 15.4h vs D's 16.25h)
 # ============================================================
 run_one "Run E: layers=1, epochs=8" \
