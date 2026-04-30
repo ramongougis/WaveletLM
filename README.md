@@ -483,13 +483,17 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
-### Single-Layer WaveletLM with Current Best Config
+### (In Progress) Single-Layer WaveletLM with Current Best Config
 
 Re-test L=1 with the current best feature stack and the parameter-reduction bundle below. L=1 nearly halves runtime and parameter count, meaning it can train for twice the epochs as L=2 at fixed compute. 3 tests: L=1 with epochs=1, L=2 with epochs=1, and L=1 with epochs=5, each on WikiText-103. The existing L=2 with epochs=5 baseline completes the comparison matrix. A fourth run, L=1 with epochs=8 (~15.4h vs D's 16.25h), adds a compute-equalized comparison: same wall-clock budget with depth traded for ~60% more epochs.
 
 **Interpretability motivation**: single-hop information flow makes targeted interpretability techniques such as per-scale activation patching, embedding-to-coefficient mapping, and per-component ablation tractable. This compounds with the eventual semantic embedding reintroduction, where L=1 enables end-to-end conceptual traceability through human-readable dimensions.
 
 See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) for the full design.
+
+#### Current Findings
+
+Equal-compute analysis suggests the L=1 vs L=2 gap is regularization-bound rather than capacity-bound. See [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the train/val gap analysis.
 
 ### Combined Parameter Reduction and VRAM Reallocation
 

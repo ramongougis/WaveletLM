@@ -587,7 +587,7 @@ Tests whether L=1 with the full modernized feature stack and longer training clo
 |-----|--------|--------|--------|---------------|-----|--------|-------|
 | A | 1 | 1 | [link](logs/wikitext-103_2026-04-29_20-45-37/log.txt) | 1.1648 | 38.04 | 586.15M | Modernized L=1 baseline at 1 epoch |
 | B | 2 | 1 | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) | 1.1129 | 32.35 | 882.51M | L=2 head-to-head at fixed epochs |
-| C | 1 | 5 | TBD | TBD | TBD | 586.15M | Headline test: L=1 + full training |
+| C | 1 | 5 | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 586.15M | Headline test: L=1 + full training; best val at epoch 4 (overfit by ep 5) |
 | D | 2 | 5 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | 1.0140 | 23.75 | 882.51M | Existing baseline (no re-run) |
 | E | 1 | 8 | TBD | TBD | TBD | 586.15M | Compute-equalized to D (L=1 ~1.93h/ep × 8 ≈ 15.4h vs D's 16.25h) |
 
