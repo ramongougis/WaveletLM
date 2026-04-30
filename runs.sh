@@ -72,12 +72,18 @@ run_one "Run C: layers=1, epochs=5" \
     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "eval_interval": 250}'
 
 # ============================================================
+# Run E — L=1, 8 epochs (compute-equalized to D: L=1 ~1.93h/ep × 8 ≈ 15.4h vs D's 16.25h)
+# ============================================================
+run_one "Run E: layers=1, epochs=8" \
+    '{"dataset": "wikitext-103", "layers": 1, "epochs": 8, "eval_interval": 250}'
+
+# ============================================================
 # Reset config to baseline and commit
 # ============================================================
 set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "eval_interval": 250}'
 
 git add .
-git commit --no-edit -m "L=1 ablation series: A (L=1, 1ep), B (L=2, 1ep), C (L=1, 5ep)"
+git commit --no-edit -m "L=1 ablation series: A (L=1, 1ep), B (L=2, 1ep), C (L=1, 5ep), E (L=1, 8ep)"
 git pull --no-edit
 git push
 
