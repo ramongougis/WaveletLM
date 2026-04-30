@@ -45,11 +45,15 @@
 41. [PTQ: Component isolation](#ptq-component-isolation-quantize-one-component-keep-the-rest-at-fp16)
 42. [Best PTQ combination](#best-ptq-combination)
 43. [PTQ sweep summary](#ptq-sweep-summary)
-44. [Post-release: bit-packed PTQ kernels](#post-release-bit-packed-ptq-kernels)
-45. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
-46. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
-47. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
-48. [Run Details](#run-details)
+
+**Post-release**
+
+44. [Layers = 1 ablation series: modern stack](#layers--1-ablation-series-modern-stack-c2048-mlp20-full-feature-set)
+45. [Post-release: bit-packed PTQ kernels](#post-release-bit-packed-ptq-kernels)
+46. [Planned: model comparisons (WikiText-103, matched compute)](#planned-model-comparisons-wikitext-103-matched-compute)
+47. [Planned: dataset comparisons (B200, 20+ epochs, max EBS)](#planned-dataset-comparisons-b200-20-epochs-max-ebs)
+48. [Post-release: scaled-up B200 configuration](#post-release-scaled-up-b200-configuration)
+49. [Run Details](#run-details)
 
 ---
 
@@ -569,6 +573,30 @@ All 17 variants, full table. Logs folder: [`logs/wikitext-103_2026-04-19_13-16-2
 - **MLP, embedding, lifting are highly tolerant.** Each individually survives 4-bit with ≤0.003 BPB degradation. MLP is 76% of layer params — biggest bit-packing opportunity.
 - **Generation is slightly slower under quantization** (21-25 vs 27 tok/s baseline) because we pay dequantize cost on every forward pass without a matching bandwidth win. Flips once packed kernels land.
 - **VRAM savings are modest** (~10%) for the same reason — dequantize-to-fp16 on forward briefly holds the full fp16 weight.
+
+---
+
+## Post-release
+
+The runs below were conducted after the v1 release of WaveletLM. Comparisons across this boundary should be made carefully — the pre-release L=1 entries (sections 14-16) used the v1 baseline (no `per_scale_mixer_widths`, no `cross_scale_gating`, no `wavelet_crawl`, no `decompose_bypass_cross_window`, smaller dropout values, 1-epoch training). Their numbers are not directly comparable to the post-release L=1 series here.
+
+### Layers = 1 ablation series: modern stack (C=2048, MLP=20, full feature set)
+
+Tests whether L=1 with the full modernized feature stack and longer training closes the gap to the L=2 / 5-epoch baseline (BPB sliding 1.0140). See [`plans/single_layer_waveletlm.md`](plans/single_layer_waveletlm.md) for motivation, hypothesis, and projection ranges.
+
+| Run | Layers | Epochs | Folder | BPB (sliding) | PPL | Params | Notes |
+|-----|--------|--------|--------|---------------|-----|--------|-------|
+| A | 1 | 1 | [link](logs/wikitext-103_2026-04-29_20-45-37/log.txt) | 1.1648 | 38.04 | 586.15M | Modernized L=1 baseline at 1 epoch |
+| B | 2 | 1 | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) | TBD | TBD | 882.5M | L=2 head-to-head at fixed epochs |
+| C | 1 | 5 | TBD | TBD | TBD | 586.15M | Headline test: L=1 + full training |
+| D | 2 | 5 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | 1.0140 | 23.75 | 882.5M | Existing baseline (no re-run) |
+
+**Comparison logic** (per the plan):
+- (A) vs (B) isolates L=1 vs L=2 architectural difference at fixed epochs.
+- (A) vs (C) isolates 1-epoch vs 5-epoch contribution at fixed L=1 architecture.
+- (C) vs (D) is the headline. If (C) is within ~0.05 BPB of (D), L=1 is a viable lightweight variant.
+
+**Notes on Run A vs the prior v1 L=1 baseline:** The pre-release L=1 result of BPB 1.1538 (2026-04-11) was on the v1 baseline; that number should not be read as a direct comparator to Run A's 1.1648. The v1 stack lacked refined dropout, cross-scale gating, wavelet crawl, and other features that have been tuned at L=2 since.
 
 ### Post-release: bit-packed PTQ kernels
 
