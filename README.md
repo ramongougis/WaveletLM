@@ -485,7 +485,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### (In Progress) Single-Layer WaveletLM with Current Best Config
 
-Re-test L=1 with the current best feature stack and the parameter-reduction bundle below. L=1 nearly halves runtime and parameter count, meaning it can train for twice the epochs as L=2 at fixed compute. 3 tests: L=1 with epochs=1, L=2 with epochs=1, and L=1 with epochs=5, each on WikiText-103. The existing L=2 with epochs=5 baseline completes the comparison matrix. A fourth run, L=1 with epochs=8 (~15.4h vs D's 16.25h), adds a compute-equalized comparison: same wall-clock budget with depth traded for ~60% more epochs.
+Re-test L=1 with the current best feature stack and the parameter reduction plan below. L=1 nearly halves runtime and parameter count, meaning it can train for nearly twice the epochs as L=2 at fixed compute. 3 tests: L=1 with epochs=1, L=2 with epochs=1, and L=1 with epochs=5, each on WikiText-103. The existing L=2 with epochs=5 baseline completes the comparison matrix. A fourth run, L=1 with epochs=8 (~15.4h vs D's 16.25h), adds a compute-equalized comparison: same wall-clock budget with depth traded for ~60% more epochs.
 
 **Interpretability motivation**: single-hop information flow makes targeted interpretability techniques such as per-scale activation patching, embedding-to-coefficient mapping, and per-component ablation tractable. This compounds with the eventual semantic embedding reintroduction, where L=1 enables end-to-end conceptual traceability through human-readable dimensions.
 
@@ -493,7 +493,7 @@ See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) for the f
 
 #### Current Findings
 
-Equal-compute analysis suggests the L=1 vs L=2 gap is regularization-bound rather than capacity-bound. See [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the train/val gap analysis.
+Equal-compute analysis suggests the L=1 vs L=2 gap is regularization-bound rather than capacity-bound on WT-103. See [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the train/val gap analysis.
 
 ### Combined Parameter Reduction and VRAM Reallocation
 
@@ -506,6 +506,8 @@ ALBERT-style weight tying across the two WaveletLM blocks. Test sequence: full-b
 ### Dropout Sweep
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
+
+Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regularization signal). The resulting optimal values will then be retroactively applied to L=2 (and any other higher-layer formulations) for performance measurement and benchmarking to verify whether L=2's (or higher level's) val loss also improves under the L=1-tuned regularization recipe. Headline numbers accordingly.
 
 ### Weight Decay Sweep
 
@@ -568,6 +570,8 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 ### Multinodal Mode
 
 WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. Broader multi-expert training techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+
+A WaveletLM-native combination strategy worth exploring is **wavelet-domain combination**: instead of averaging final logits across nodes, decompose each node's output and combine matching wavelet coefficients per-scale before reconstruction. This allows nodes to specialize at different scales (coarse-vs-fine), and the combination happens inside the wavelet pipeline rather than after the LM head. See [plans/multinodal_training_techniques.md §6](plans/multinodal_training_techniques.md#6-waveletlm-native-combination-strategies) for the full design and three combination variants (equal-weight per-scale, learned per-scale gating, hard scale-specialization).
 
 ### Adaptive Decompose Bypass
 

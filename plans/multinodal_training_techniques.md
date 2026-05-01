@@ -101,18 +101,50 @@ Auxiliary losses that shape expert behavior regardless of the architecture choic
 
 ---
 
+### 6. WaveletLM-native combination strategies
+
+Combination methods that exploit WaveletLM's specific structure (multi-scale decomposition, per-scale gated mixing) and don't cleanly map to generic MoE or ensemble literature. Distinct from logit averaging or weight averaging because the combination happens *inside* the wavelet pipeline rather than after the final logits. Distinct from sparse MoE because all nodes still process every input — the specialization is in *which scales* each node contributes to, not *which inputs* each node sees.
+
+**Wavelet-domain combination (primary proposal):** Each node produces its full multi-scale output (S=6 scales from the standard `levels=5` setup). Instead of averaging final logits across nodes (current `multinodal_combination: average`), each node's output is decomposed into wavelet coefficients, and matching coefficients are combined across nodes *per-scale* before inverse transform and reconstruction. Three variants:
+
+- **Equal-weight per-scale averaging** — identical to logit averaging in expectation, but operates on wavelet coefficients before the final reconstruction. Differs primarily in gradient flow (per-scale gradients reach each node directly rather than mediated by the LM head).
+- **Learned per-scale gating across nodes** — each scale has a learned (S × N) gate matrix that weights node contributions per scale. Lets nodes naturally specialize: node A's coarse coefficients dominate at scales 0-2, node B's fine coefficients dominate at scales 3-5. Differentiable; no hard routing needed. Adds N×S learned scalars per layer (negligible parameter cost).
+- **Hard scale-specialization** — assign nodes to scales statically (node A handles scales 0-2, node B handles scales 3-5). Combine by zero-padding non-assigned scales and summing. Reduces per-node compute since each node only needs to compute a subset of scales — potential 2× speedup when paired correctly. Forces specialization but loses adaptability.
+
+**Spatial topology between nodes:** Add adjacency relationships ("brain patches" metaphor — neighboring nodes share more representational structure than distant ones). Implementations: shared lifting weights between neighboring nodes only (not all-shared), or a learned (N × N) coupling matrix that lets one node's per-scale outputs propagate into a neighbor's mixer input as side-channel information. Most useful when nodes are not functionally identical (e.g., when paired with hard scale-specialization or capacity-aware routing).
+
+**Capacity-aware routing:** Most MoE routes by content affinity (token-to-expert similarity). For WaveletLM, *load* signals are available without additional machinery: FwPKM key utilization (how saturated is each node's sparse memory), per-scale mixer activation magnitudes (which scales is each node "full" in), gradient magnitudes (which nodes are still actively learning vs. plateaued). A small router — a single linear layer over a concatenation of these signals plus the input embedding — could route to the least-loaded node, balancing memorization across nodes without requiring an explicit load-balancing auxiliary loss.
+
+**Fit for WaveletLM:** Native — all three strategies use machinery WaveletLM already has (per-scale wavelet outputs, FwPKM utilization, multi-scale decomposition). No transformer-derived machinery (attention, position encodings, key-value caches) is required for any of them. The wavelet-domain combination in particular is essentially "do what's already happening at the per-cell level, but stop averaging at the wrong layer of abstraction."
+
+**Compute to test:** Wavelet-domain combination is the cheapest first step. Code change is in the multinodal combiner only (existing infrastructure already provides per-node outputs; the combiner just needs to switch from averaging final logits to combining per-scale wavelet coefficients before reconstruction). No new training pipeline. ~5h for a first 5-epoch validation run on top of the existing 4-cell multinodal config.
+
+**Open questions:**
+
+1. Does wavelet-domain combination produce meaningfully different fits than logit averaging at equal compute? Same N-cell run with both combiners as a clean A/B test.
+2. Does learned per-scale gating across nodes naturally produce the specialization the gating architecture allows, or do nodes converge to uniform contributions? (Mode-collapse risk.)
+3. Does hard scale-specialization recover the per-node compute savings without quality loss? (If node A can skip computing scales 3-5 entirely, that's a real wall-clock win.)
+4. Does spatial topology between nodes provide any benefit over independent nodes, given WaveletLM's wavelet pipeline already provides natural multi-scale locality at the within-node level?
+5. How does this interact with the L=1 + parameter reduction direction? The reduced model has less per-node capacity, which may make scale-specialization more attractive (each node has a tighter functional ceiling and might benefit from focusing on fewer scales).
+
+---
+
 ## Tentative priority order
 
 Ranked by expected value per compute-hour spent, given budget constraints:
 
-1. **Deep Mutual Learning on multinodal (§4)** — Small code change; adds KL loss between cells. Cheap to test, known-positive technique.
-2. **Sparse MoE on MLP (§1)** — Largest architectural lever available. One 17h run validates the direction.
-3. **SWA within a single seed run (§2)** — Free; reuse late-training checkpoints from the 3-seed study.
-4. **Orthogonality loss on multinodal cells (§5)** — Tiny code change; strengthens existing multinodal mode.
-5. **Git Re-Basin cross-seed weight merging (§2)** — Research-grade; potential novel finding about wavelet inductive bias and basin structure. Low compute; high intellectual yield.
-6. **Ensemble distillation of multinodal → single-cell (§4)** — Gets ensemble quality at release-time single-model cost. Needs second training pass.
-7. **Multi-basis lifting (§3)** — Blocked behind stable_parametrization validation.
-8. **BranchyNet LM heads (§3)** — Only worth doing if we push to L=8+ at B200.
+1. **Wavelet-domain combination on multinodal (§6)** — Combiner-only code change; tests whether per-scale combination outperforms logit averaging at the same compute. Architecturally native to WaveletLM and untested elsewhere.
+2. **Deep Mutual Learning on multinodal (§4)** — Small code change; adds KL loss between cells. Cheap to test, known-positive technique.
+3. **Sparse MoE on MLP (§1)** — Largest architectural lever available. One 17h run validates the direction.
+4. **SWA within a single seed run (§2)** — Free; reuse late-training checkpoints from the 3-seed study.
+5. **Orthogonality loss on multinodal cells (§5)** — Tiny code change; strengthens existing multinodal mode.
+6. **Learned per-scale gating across nodes (§6)** — Follow-up to #1. Adds N×S learned scalars; tests whether nodes naturally specialize across scales.
+7. **Git Re-Basin cross-seed weight merging (§2)** — Research-grade; potential novel finding about wavelet inductive bias and basin structure. Low compute; high intellectual yield.
+8. **Ensemble distillation of multinodal → single-cell (§4)** — Gets ensemble quality at release-time single-model cost. Needs second training pass.
+9. **Hard scale-specialization (§6)** — Follow-up to #6. Tests whether per-node compute can drop by skipping non-assigned scales.
+10. **Capacity-aware routing (§6)** — Most ambitious of the §6 trio. Requires a small router and load signal aggregation; only worth pursuing if §6 #1-#3 show wavelet-domain combination is a real lever.
+11. **Multi-basis lifting (§3)** — Blocked behind stable_parametrization validation.
+12. **BranchyNet LM heads (§3)** — Only worth doing if we push to L=8+ at B200.
 
 ## Open questions
 
