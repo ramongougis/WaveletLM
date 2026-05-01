@@ -148,18 +148,20 @@ nan_safe_run() {
 # Test 2b removes the eval-coarseness confound while leaving everything else
 # the same as Test 2.
 #
-# Noise context: 3-seed variance study established noise floor at ~±0.004 BPB.
-# Test 2's 0.0064 regression vs Test 1 is only ~1.6σ — directionally suggestive
-# but not conclusive against noise.
+# Noise context: 3-seed variance study established noise floor at ~±0.0015 BPB
+# (3-seed BPBs: 1.0140, 1.0155, 1.0152; sample σ ≈ 0.0008). Test 2's 0.0064
+# regression vs Test 1 is ~4× the noise threshold — comfortably significant
+# for a single-seed comparison.
 #
-# Decision rule (with noise band acknowledged):
-#   - Test 2b BPB ≤ ~1.082: eval coarseness was likely the dominant factor;
-#     gradient-noise hypothesis weakens
-#   - Test 2b BPB ≥ ~1.084: gradient-noise hypothesis strengthens (independent
-#     replication of Test 2's direction with finer eval)
-#   - Test 2b BPB in [1.082, 1.084]: ambiguous; both effects probably present
-#     OR all single-run gaps so far are within noise. Would need 3-seed runs at
-#     each MBS to resolve cleanly.
+# Decision rule (with corrected noise band):
+#   - Test 2b BPB ≤ ~1.0811 (Test 1 + 0.0015): eval coarseness was likely the
+#     dominant factor; gradient-noise hypothesis weakens
+#   - Test 2b BPB ≥ ~1.0845 (Test 2 - 0.0015): replication of Test 2's
+#     direction with finer eval — gradient-noise hypothesis strengthens
+#     to the point of two single-seed confirmations
+#   - Test 2b BPB in [1.0811, 1.0845]: eval coarseness explains some but not
+#     all of Test 2's regression; gradient-noise effect still real but
+#     somewhat smaller than Test 2 alone suggested
 # ============================================================
 run_one "Test 2b: Max EBS + proportional eval_interval — MBS=64, GA=1, bs=256, eval_interval=32" \
     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 32}'
