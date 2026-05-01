@@ -505,10 +505,6 @@ Four sequential tests, each at L=1 / E=5 (the iteration platform default):
 #### Current Findings
 In progress.
 
-### Cross-Layer Parameter Sharing
-
-ALBERT-style weight tying across the two WaveletLM blocks. Test sequence: full-block tying first (~338M potential savings), then component-isolated tying with MLP only (~168M), then PKM/FwPKM only (~76M). Tests whether depth-via-iteration substitutes for depth-via-distinct-parameters in the wavelet architecture, as it does in transformers. See [plans/other_post_release_plans.md §9](plans/other_post_release_plans.md#9-cross-layer-parameter-sharing-albert-style) for the full design.
-
 ### Dropout Sweep
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
@@ -517,7 +513,7 @@ Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regul
 
 ### Weight Decay Sweep
 
-Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. More values must to be attempted.
+Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. More values must to be attempted (likely slightly higher is best).
 
 ### Per-scale Mixer Transform Ablation
 

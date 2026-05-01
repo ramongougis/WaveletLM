@@ -249,54 +249,15 @@ The bundle is also the prerequisite for the long-context experiments needed to v
 
 ---
 
-## 9. Cross-layer parameter sharing (ALBERT-style)
+## 9. Cross-layer parameter sharing (ALBERT-style) — *deprioritized*
 
-With `layers: 2` in the current best run, every component (Mixer, MLP, PKM, FwPKM, plus the unlisted per-layer items) has two independent copies. ALBERT (Lan et al. 2019) demonstrated that for transformers, sharing weights across layers can reduce parameter count substantially while preserving most quality, on the hypothesis that depth-via-iteration substitutes for depth-via-distinct-parameters. This plan tests whether the same holds for WaveletLM's wavelet-based architecture.
+**Status: dropped post-L=1 findings.** Originally proposed as a way to get L=2's depth benefit at L=1's parameter count via ALBERT-style weight tying across blocks. The motivation was "depth-via-iteration substitutes for depth-via-distinct-parameters."
 
-Note that lifting weights are already shared across layers via `shared_lifting_weights: True`. This plan tests sharing the *remaining* per-layer components on top of that.
+The L=1 ablation series (see [`single_layer_waveletlm.md`](single_layer_waveletlm.md) and [`findings.md`](findings.md#single-layer-waveletlm-equal-compute-analysis)) established that L=1 already reaches the same training-loss floor as L=2 at matched compute — there's no capacity gap for cross-layer sharing to close. The remaining L=1 vs L=2 gap is regularization-bound (val loss difference ~0.146 nats with essentially identical train loss minimums).
 
-### Components and potential savings (with `layers: 2`)
+Beyond the empirical finding, there's an architectural reason cross-layer sharing is less interesting in WaveletLM than in transformers: WaveletLM's mixing components are deterministic-structure operations (wavelet decomposition extracts the same multi-scale features each pass; FWHT is a fixed orthogonal rotation). Iterating the same shared block twice is closer to a fixed-point iteration toward the same optimum L=1 reaches in one pass than to ALBERT-style iterative-depth feature extraction. Transformers benefit from CLPS partly because attention is a learned dynamic operation that re-asks "what should I attend to?" each iteration; WaveletLM's architectural decomposition is already complete in one block.
 
-Per the parameter breakdown, per-layer component costs are:
-
-- Mixer: 44.11M → tying saves 44.11M
-- MLP: 167.82M → tying saves 167.82M (largest single lever)
-- PKM: 38.01M → tying saves 38.01M (mostly value table)
-- FwPKM: 38.01M → tying saves 38.01M (mostly value table)
-- Per-layer unlisted (proj_out, decompose_bypass, cross_scale_gating, etc.): ~50M → tying saves ~50M
-
-**Maximum possible savings via full layer-tying: ~338M (~38% of current 882.5M).** Combined with the parameter-reduction bundle (Section 8), this could bring the model to roughly 300M parameters at the same architectural depth.
-
-### Proposed test sequence
-
-The order is designed for ablation-style attribution: full tying first to establish the ceiling, then component-isolated tying to identify which sharing carries the cost (or savings) most cleanly.
-
-**Phase 1 — Full layer-block tying.**
-Share every per-layer component across both layers. The two layers become structurally identical. Compares against the parameter-reduced baseline from Section 8. If quality holds (or approaches), this is the strongest possible parameter-efficiency result.
-
-**Phase 2 — MLP-only tying.**
-Un-tie everything except the MLP. The MLP is 167.82M of per-layer cost — the single largest component — so MLP-only tying is the most likely to carry meaningful savings. If Phase 1 hurts but Phase 2 holds, the MLP is the safe component to share and other components must remain distinct.
-
-**Phase 3 — PKM/FwPKM-only tying.**
-Un-tie everything except the sparse memory modules. PKM and FwPKM together carry per-layer cost ~76M, mostly in the value tables. Tests whether the sparse-memory access patterns are tolerant of sharing (different layers querying the same memory bank) or whether layer-distinct value tables matter.
-
-### Implementation considerations
-
-- **Tying is structural, not just parameter-equality**: requires constructing the model with a single ModuleList for the shared component and referencing it twice in the layer stack. Not a config change — a model-construction change.
-- **Gradient flow**: shared parameters receive gradient contributions from both layers. Effective learning rate on shared parameters is ~2× higher than on un-shared ones; may need adjustment.
-- **Initialization**: shared parameters need a single initialization that works for both layers' use cases, rather than per-layer init.
-- **Inference behavior**: identical. Tied parameters add no inference cost overhead — they just save VRAM on the parameter count side.
-
-### Open questions
-
-1. Does full layer-tying preserve quality, or does WaveletLM (with only 2 layers) lack the depth to make iteration-based capacity work the way ALBERT does (which had 12+ layers)?
-2. Is MLP-tying alone enough to capture most of the parameter savings without the quality hit of full tying?
-3. Does PKM/FwPKM tying interact pathologically with the sparse-key access pattern?
-4. At only 2 layers, is "tying" effectively the same as "use 1 layer with twice the depth-equivalent processing"? If so, that suggests the test is really "is 1 unique layer enough?" — which is itself an interesting result.
-
-### Why this matters
-
-Combined with the parameter-reduction bundle, full layer-tying would bring WaveletLM from 882.5M to potentially under 300M parameters — putting it in direct parameter-count competition with Transformer-XL Standard (151M) at hopefully comparable quality. The combination addresses the parameter-inefficiency critique decisively if it works, and provides architecturally interesting negative results if it doesn't.
+Single-layer + parameter reduction + dropout sweep is the actual lightweight-variant path — see [`single_layer_waveletlm.md`](single_layer_waveletlm.md), Section 8 of this document, and the README's `Combined Parameter Reduction and VRAM Reallocation` subsection. CLPS may be re-evaluated only if a B200-scale L=4-8 architecture is pursued, where parameter-efficient depth growth becomes load-bearing for VRAM rather than for capacity.
 
 ---
 
