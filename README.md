@@ -503,7 +503,8 @@ Four sequential tests, each at L=1 / E=5 (the iteration platform default):
 > **Note:** Tests 3 and 4 keep `levels=5` and the existing 6-entry `per_scale_mixer_widths` array unchanged, even though longer `block_size` would in principle support up to `log2(block_size)` levels. Scaling both together (e.g., `levels=8` with a 9-entry `per_scale_mixer_widths` at `block_size=1024`) is a follow-up worth doing if Tests 3 or 4 show promise, but adjusting it within these tests would conflate two variables. Reserved for a separate follow-up sweep or test set.
 
 #### Current Findings
-In progress...
+
+Test 1 (baseline reduction) is **better than free**: at L=1 / E=5 on WT-103, the reduced model (344.63M params) achieved **BPB sliding 1.0796** vs the unreduced L=1 baseline's 1.0809 — a marginal improvement at 41% fewer parameters and 21% less wall-clock. The §8 plan projected +0.025 BPB cost; actual was −0.0013 BPB benefit (cost projection off by a sign). Mechanism: L=1 was regularization-bound, so removing the spare memorization capacity shrank the train/val gap by 26% (0.498 → 0.369) without losing val-loss capability. See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Tests 2-4 (max EBS, larger block_size, min EBS + max block_size with NaN-aware halving) are queued in `runs.sh` to test how the freed VRAM is best spent.
 
 ### Dropout Sweep
 

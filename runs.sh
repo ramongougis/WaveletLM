@@ -4,7 +4,7 @@
 # fwpkm_num_keys=8281, tie_embedding_to_lm_head=true) at L=1 / E=5, varying
 # how the freed VRAM is used.
 #
-#   Test 2: Max EBS — MBS=24, GA=1, bs=256, levels=5
+#   Test 2: Max EBS — MBS=64, GA=1, bs=256, levels=5 (uses ~25 GiB / 32 GiB)
 #   Test 3: Larger block_size — MBS=8, GA=1, bs=1024, levels=5
 #   Test 4: Min EBS + max block_size — MBS=1, GA=1, bs starts at 8192 and
 #           halves on NaN detection (8192→4096→2048→1024→512→256) until a
@@ -126,13 +126,15 @@ nan_safe_run() {
 }
 
 # ============================================================
-# Test 2: Max EBS variant (MBS=24, GA=1, bs=256, levels=5)
-# Uses freed VRAM for larger micro-batch parallelism.
+# Test 2: Max EBS variant (MBS=64, GA=1, bs=256, levels=5)
+# Uses freed VRAM for larger micro-batch parallelism. MBS=64 targets ~25 GiB /
+# 32 GiB (8x the baseline MBS) so the test actually exercises the available
+# VRAM rather than leaving 60% idle. lr=0.01 unchanged for clean comparison.
 # Counter-hypothesis under test: gradient noise from smaller batches is itself
 # a regularizer for L=1, so larger EBS may HURT val loss.
 # ============================================================
-run_one "Test 2: Max EBS — MBS=24, GA=1, bs=256 (combined reduction recipe)" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 24, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 250}'
+run_one "Test 2: Max EBS — MBS=64, GA=1, bs=256 (combined reduction recipe)" \
+    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 250}'
 
 # ============================================================
 # Test 3: Larger block_size variant (MBS=8, GA=1, bs=1024, levels=5)

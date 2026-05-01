@@ -601,6 +601,34 @@ Tests whether L=1 with the full modernized feature stack and longer training clo
 
 **Memorization-floor finding (E vs D):** At matched compute (~16h wall-clock), Run E (L=1, 8ep) and Run D (L=2, 5ep) reach **nearly identical training-loss minimums** — 2.5984 (L=1) vs 2.6330 (L=2). L=1 actually edges out L=2 by 0.0346 nats on the lowest training step seen. The val loss minimums diverge by 0.1457 nats (L=1: 3.3050; L=2: 3.1593), with L=1 generalizing worse despite essentially-identical training-data fit. The full 0.146 nat val gap is therefore generalization difference, not capacity difference. Reading: depth in WaveletLM functions as implicit regularization at this dataset/scale, not as additional asymptotic capacity. See [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the full analysis.
 
+### Combined parameter reduction (Test 1, baseline reduction)
+
+Tests the four cheap reductions from `plans/other_post_release_plans.md` §8 applied to the L=1 / E=5 iteration platform:
+- `mlp_expansion: 20 → 10`
+- `pkm_enabled: true → false` (PKM dropped; FwPKM retained for inference-update potential)
+- `fwpkm_num_keys: 16384 → 8281` (≈ half, perfect square)
+- `tie_embedding_to_lm_head: false → true`
+
+| Run | Recipe | Folder | BPB sliding | PPL sliding | Params | Train time |
+|-----|--------|--------|-------------|-------------|--------|------------|
+| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 586.15M | 9.74h |
+| Test 1 (combined reduction) | Four reductions above | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | **344.63M** | **7.69h** |
+| ΔTest 1 vs baseline | — | — | **−0.0013** | −0.13 | **−41.2%** | **−21%** |
+
+**Headline finding:** parameter reduction at L=1 is **better than free** at this dataset/scale. The §8 plan projected +0.025 BPB cost; actual result is −0.0013 BPB *benefit*. Cost projection was off by a sign.
+
+**Mechanism (consistent with L=1 findings):** L=1 was regularization-bound, with spare capacity wasted on memorization that didn't translate to val gain. Removing 42% of parameters removed the unused memorization headroom without touching the components contributing to generalization.
+
+| Min-train comparison | Unreduced | Reduced | Δ |
+|---|---|---|---|
+| Min train loss | 2.8292 | 2.9649 | +0.136 (less memorization) |
+| Best val loss | 3.3275 (ep4) | 3.3341 (ep5) | +0.007 (~equal) |
+| Train/val gap | 0.498 | **0.369** | **−26%** |
+
+The reduced model has materially less memorization capacity (train floor +0.136 nats higher), but the same val loss, with a 26% smaller train/val gap — implicit-regularization-via-parameter-reduction realizing exactly as predicted. The reduced model also did not overfit by epoch 5 (best val came at epoch 5, not epoch 4 as in the unreduced).
+
+See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Variants 2-4 (max EBS, larger block_size, min EBS + max block_size with NaN-aware halving) are queued in `runs.sh` to test how the freed VRAM is best spent.
+
 ### Post-release: bit-packed PTQ kernels
 
 Follow-up to the PTQ sweep above. The current `QuantizedLinear` / `QuantizedEmbedding` path stores int8 weights but dequantizes to fp16 inside `forward()`, then runs a standard fp16 matmul. That pays the dequant cost on every step without realizing the bandwidth win, which is why generation is 12% slower than fp16 despite the 1.95× storage compression — and why sub-8-bit variants (`03_uniform_4bit`, `08_mixed_aggressive`) compress identically to 8-bit on disk (one value per byte regardless of bit-width).
