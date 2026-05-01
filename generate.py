@@ -606,8 +606,10 @@ def main():
     parser.add_argument("--quantize_embedding_bits", "--ptq_embedding_bits",
                         type=int, default=None,
                         help="Bit-width for token embedding and lm_head. Overrides config.")
-    parser.add_argument("--quantize8", "--ptq8", action="store_true",
-                        help="Shortcut: uniform 8-bit PTQ across all components.")
+    parser.add_argument("--quantize8", action="store_true", dest="quantize8",
+                        help="Shortcut: activates all quantize strategies at 8 bits across all components (mixer, MLP, lifting, embedding).")
+    parser.add_argument("--ptq8", action="store_true", dest="quantize8",
+                        help="Alias for --quantize8: activates all quantize strategies at 8 bits across all components.")
     args = parser.parse_args()
 
     # --strategies enables inference strategies matching WaveletLM-research defaults
