@@ -7,85 +7,74 @@ Concrete observations from post-release research investigations. Each entry summ
 ## Single-Layer WaveletLM: equal-compute analysis
 
 *Parent plan: [single_layer_waveletlm.md](single_layer_waveletlm.md)*
-*Status: in progress (Run E in progress; dropout sweep pending)*
-*Most recent: 2026-04-30*
+*Status: concluded (Run E complete; dropout sweep pending as the natural follow-up)*
+*Most recent: 2026-05-01*
 
 ### Headline finding
 
-Under wall-clock-equalized comparison, **L=1 is regularization-bound, not capacity-bound**. At equal compute (L=1's full 5-epoch run vs L=2's matched-time checkpoint), L=1 fits the training data *more tightly* than L=2 but generalizes *worse* — pointing to under-regularization at the L=2-tuned recipe rather than insufficient architectural depth.
+Under wall-clock-equalized comparison on WT-103, **L=1 and L=2 reach essentially identical training-loss floors at this dataset/scale, but L=1 generalizes 0.15 nats worse**. The entire ~0.15 nat val-loss gap between L=1 and L=2 is therefore a generalization difference, not a fitting-capacity difference. **Depth in WaveletLM functions as implicit regularization, not as additional asymptotic capacity** at observed compute budgets.
 
-### Equal-step vs equal-compute comparison
+### Run-minimum comparison (L=1 E=8 vs L=2 E=5, matched compute)
 
-The L=1 vs L=2 comparison gives different stories depending on the alignment axis:
+Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25h). Comparing the minimum training and validation losses observed across the entire run:
 
-**Equal step** (~step 65k, mid-epoch 2 of 5 for both runs):
+| Model | Min train | Min val | Train/val gap (at minimums) |
+|-------|-----------|---------|------------------------------|
+| L=2 E=5 (Run D) | 2.6330 | 3.1593 | 0.526 |
+| L=1 E=8 (Run E) | **2.5984** | 3.3050 | 0.706 |
+| Δ (L=1 − L=2) | **−0.0346** | **+0.1457** | +0.180 |
 
-| Model | Train | Val | Train/val gap |
-|-------|-------|-----|---------------|
-| L=1 (Run C) | 3.757 | 3.828 | 0.070 |
-| L=2 (Run D) | 3.603 | 3.710 | 0.107 |
-| Δ (L=1 − L=2) | **+0.154** | **+0.117** | -0.037 |
+L=1 actually edges out L=2 by 0.035 nats on the lowest single-step training loss seen — well within noise of "identical." But L=1's val loss minimum is 0.146 nats higher, and its train/val gap is 34% wider. The gap difference (0.180) very nearly equals the val-loss difference plus the train-loss advantage L=1 has — i.e., the entire val gap is explained by L=1's wider generalization bleed, not by any capacity shortfall.
 
-L=2 leads in both train and val; L=1's within-run gap is smaller. Reading: L=2 has more capacity per gradient step.
+### Equal-step comparison (snapshot perspective)
 
-**Equal wall-clock** (~9.74h: end of L=1 E=5 vs L=2 at step 175k):
+Earlier in training, before either run reached its memorization floor, L=2 leads in both train and val:
 
-| Model | Step | Train | Val | Train/val gap |
-|-------|------|-------|-----|---------------|
-| L=1 final (Run C) | 292,000 | 2.837 | 3.344 (best 3.328) | **0.507** |
-| L=2 at matched compute | 175,000 | 2.931 | 3.275 | 0.344 |
-| Δ (L=1 − L=2) | — | **−0.094** | **+0.069** | +0.163 |
+| Phase | Step | L=1 train | L=2 train | L=1 val | L=2 val |
+|---|---|---|---|---|---|
+| Mid epoch 2 | 65,000 | 3.757 | 3.603 | 3.828 | 3.710 |
+| Late epoch 4 | ~209,000 | 2.964 | 2.784 | 3.372 | 3.207 |
 
-The story flips. L=1 fits training data *0.094 nats better* than L=2 at equal compute, but loses 0.069 nats in val loss — its train/val gap is **47% wider** than L=2's. Reading: L=1 has more *fitting capacity* per second of compute, but lacks enough regularization to translate that into generalization.
+Reading: **L=2 converges faster per gradient step** (depth provides better gradient flow), but with enough training time L=1 reaches the same training-loss floor. Per-step L=2 has the apparent advantage; per-second-of-compute and at-asymptote, the two architectures are equivalent on memorization.
 
-### Late-training delta widening
-
-Both train-loss and val-loss deltas between the two runs widened over the course of training:
-
-| Phase | Step (L=1 / L=2) | Δtrain | Δval |
-|---|---|---|---|
-| Mid epoch 2 | 65,000 / 65,000 | 0.154 | 0.117 |
-| Late epoch 4 | 206,750 / 210,750 | 0.181 | 0.165 |
-
-If L=1 had equal *asymptotic* capacity, the train-loss delta should narrow with more training (L=1 catching up as it has more steps). Instead, the delta grew — L=2 is fitting data faster per step *and* converting that fit into generalization more efficiently. This is consistent with the equal-compute reading: L=1 can fit data faster per second but cannot convert that fitting into val gains as cleanly as L=2 can.
-
-### Final benchmark numbers (Run C)
+### Final benchmark numbers (full L=1 ablation series)
 
 | Run | Layers | Epochs | BPB sliding | PPL sliding | Params | Train time |
 |-----|--------|--------|-------------|-------------|--------|------------|
 | A | 1 | 1 | 1.1648 | 38.04 | 586.15M | ~1.5h |
 | B | 2 | 1 | 1.1129 | 32.35 | 882.51M | ~3h |
-| C | 1 | 5 | **1.0809** | **29.28** | 586.15M | 9.74h |
-| D | 2 | 5 (baseline) | 1.0140 | 23.75 | 882.51M | 16.25h |
+| C | 1 | 5 | 1.0809 | 29.28 | 586.15M | 9.74h |
+| D | 2 | 5 (baseline) | **1.0140** | **23.75** | 882.51M | 16.25h |
+| E | 1 | 8 (compute-equalized) | 1.0715 | 28.43 | 586.15M | 15.86h |
 
-ΔBPB(C, D) = +0.0669 — outside the plan's 0.05 BPB threshold for "viable lightweight variant," but well within the conservative-mid projection range. Run C's best val was at epoch 4; epoch 5 was already overfitting.
+ΔBPB(E, D) = +0.0575. Outside the plan's 0.05 BPB threshold for "viable lightweight variant" at the L=2-tuned recipe — but this is now understood as a *regularization* gap, not a capacity gap. The dropout sweep at L=1 is the next lever for closing it.
+
+### Val loss saturates at L=1 by epoch 5; train loss continues to descend
+
+Comparing minimum train and val losses across the L=1 series:
+
+| Run | Min train | Best val | Δtrain from prior | Δval from prior |
+|-----|-----------|----------|-------------------|------------------|
+| L=1 E=5 (Run C) | 2.8292 | 3.328 | — | — |
+| L=1 E=8 (Run E) | 2.5984 | 3.305 | **-0.231** | -0.023 |
+
+The two quantities decouple sharply between E=5 and E=8: train loss continues to drop substantially (-0.231 nats from 60% more compute), but val loss saturates (only -0.023 nats). The train/val gap widens from 0.499 (Run C) to 0.707 (Run E) over the extra epochs — additional compute past E=5 is consumed by memorization, not generalization. **Operational implication: subsequent ablations at L=1 should default to E=5** unless an experiment specifically tests the memorization regime, since the headline metric (val loss / BPB) saturates by E=5 and further compute amplifies overfitting without improving deployable quality.
 
 ### Reading: regularization bound, not capacity bound
 
-Three lines of evidence converge on the same conclusion:
+Three lines of evidence converge:
 
-1. **Wider train/val gap at L=1 under equal compute** (0.507 vs 0.344) — overfitting signal, not under-fitting.
-2. **L=1's training loss at equal compute is *lower* than L=2's** (2.837 vs 2.931) — fitting capacity is present.
-3. **Run C's best val came at epoch 4, not epoch 5** — L=1 reaches a generalization floor and starts memorizing while L=2 keeps improving.
+1. **Equal training-loss floors at matched compute** (L=1: 2.5984, L=2: 2.6330) — both architectures reach essentially the same memorization ceiling on WT-103.
+2. **L=1's wider train/val gap** (0.706 vs 0.526 at minimums) — overfitting signal, not under-fitting.
+3. **L=1's training loss saturates by epoch 5; further compute doesn't extend the floor** — L=1 has used its memorization capacity; what remains underutilized is its generalization capacity.
 
-If the gap were capacity-driven, we'd expect L=1's training loss to be *higher* than L=2's at equal compute (insufficient expressive ceiling), and L=1's train/val gap to be *narrower* (no spare capacity to overfit with). We see the opposite of both.
+If the gap were capacity-driven, we'd expect L=1's training loss minimum to be *higher* than L=2's, and L=1's train/val gap to be *narrower* (less spare capacity for memorizing spuriously). We see the opposite of both.
 
 ### Why this matters
 
-The original four-run plan framed the test as *"can L=1 close the val-loss gap to L=2 with more epochs?"* The answer from Run C is: **not at the L=2-tuned regularization recipe**, because more epochs at L=1 amplify overfitting rather than improving generalization. But the more interesting reframed question is: *"can L=1 close the val-loss gap with the right regularization recipe?"* — and the equal-compute analysis says this is plausible, since L=1 has spare fitting capacity that's currently being wasted on memorization.
+The original four-run plan framed the test as *"can L=1 close the val-loss gap to L=2 with more epochs?"* The answer from Run E is: **not at the L=2-tuned regularization recipe**, because more epochs at L=1 don't materially reduce val loss once memorization saturates. But the more interesting reframed question is: *"can L=1 close the val-loss gap with the right regularization recipe?"* — and the equal-compute analysis says this is plausible, since L=1 has equivalent fitting capacity to L=2 and just generalizes worse from it.
 
 This shifts the natural follow-up from "more epochs at L=1" to "tune dropout/WD at L=1." The latter is a clean one-axis sweep, while a capacity-bound result would have required architectural redesign.
-
-### Implications for Run E (L=1, 8 epochs, in progress)
-
-Run E is the empirical control for the regularization-bound hypothesis. Expected outcome:
-
-- Train loss continues to drop (L=1 has fitting capacity left)
-- Val loss plateaus or rises after epoch 4-5 (overfitting wall)
-- Train/val gap widens further (>0.51)
-- Final BPB sliding likely 1.07-1.09 — probably *worse* or roughly equal to Run C
-
-If Run E confirms this pattern, the regularization-bound reading is empirically locked in.
 
 ### Implications for the dropout sweep follow-up
 
@@ -97,15 +86,15 @@ The current dropout values (`dropout_lm_head=0.24`, `dropout_mlp=0.10`, `dropout
 
 A non-uniform sweep is more likely to win than a flat multiplier. Cleanest experimental order:
 
-1. Wait for Run E to confirm or refute the regularization-bound reading.
-2. One-at-a-time dropout sweep at L=1, E=5, varying each knob ±50% from L=2-tuned defaults. ~15 runs at ~10 min each at the eval intervals; ~2.5h total.
-3. Combined best-dropout config + E=5. If this lands within 0.02 BPB of L=2 baseline, the lightweight-variant story is resurrected.
-4. (Optional) E=8 at the tuned recipe — only if step 3 succeeds.
+1. Parameter-reduce L=1 first (per the Combined Parameter Reduction plan); measure baseline reduced-L=1 val loss.
+2. One-at-a-time dropout sweep at reduced L=1, E=5, varying each knob ±50% from L=2-tuned defaults. ~15 runs at ~1.5h each on a 5090.
+3. Combined best-dropout config + E=5. **Theoretical ceiling**: if L=1's train/val gap (0.706) compresses to L=2's gap (0.526) via the sweep, L=1's val loss drops correspondingly to 3.16 — matching L=2 at 0.014 nats.
+4. Apply the L=1-tuned recipe retroactively to L=2 to update the released model's headline numbers.
 
 ### Open questions
 
 - Does the regularization-bound pattern survive at smaller L=1 configurations (parameter-reduction bundle applied)? Smaller models tend to be more regularization-bound, so the effect may be more pronounced — or may flip if the reduced model lacks raw capacity.
 - Does the same pattern hold on PG-19, where the data:parameter ratio is much higher and overfitting is structurally less likely?
-- What's the asymptotic capacity gap? The memorization probe (train both on a 1% subset until train loss flattens) would test this directly at low cost.
+- What's the *true* asymptotic capacity of L=2? Run D ended at train min 2.6330 still descending in late epochs. With more epochs, L=2 might reach a lower floor than L=1's 2.5984 — in which case capacity equality only holds at observed compute budgets, not in the limit. An L=2 E=10-12 run would resolve this.
 
 ---

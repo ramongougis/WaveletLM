@@ -589,7 +589,7 @@ Tests whether L=1 with the full modernized feature stack and longer training clo
 | B | 2 | 1 | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) | 1.1129 | 32.35 | 882.51M | L=2 head-to-head at fixed epochs |
 | C | 1 | 5 | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 586.15M | Headline test: L=1 + full training; best val at epoch 4 (overfit by ep 5) |
 | D | 2 | 5 | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) | 1.0140 | 23.75 | 882.51M | Existing baseline (no re-run) |
-| E | 1 | 8 | TBD | TBD | TBD | 586.15M | Compute-equalized to D (L=1 ~1.93h/ep × 8 ≈ 15.4h vs D's 16.25h) |
+| E | 1 | 8 | [link](logs/wikitext-103_2026-04-30_12-20-45/log.txt) | 1.0715 | 28.43 | 586.15M | Compute-equalized to D (15.86h vs D's 16.25h); best val at epoch 8; min train 2.5984 (within 0.035 nats of D's 2.6330) |
 
 **Comparison logic** (per the plan):
 - (A) vs (B) isolates L=1 vs L=2 architectural difference at fixed epochs.
@@ -598,6 +598,8 @@ Tests whether L=1 with the full modernized feature stack and longer training clo
 - (E) vs (D) is the compute-equalized comparison: same wall-clock budget, L=1 trades depth for ~60% more epochs.
 
 **Notes on Run A vs the prior v1 L=1 baseline:** The pre-release L=1 result of BPB 1.1538 (2026-04-11) was on the v1 baseline; that number should not be read as a direct comparator to Run A's 1.1648. The v1 stack lacked refined dropout, cross-scale gating, wavelet crawl, and other features that have been tuned at L=2 since.
+
+**Memorization-floor finding (E vs D):** At matched compute (~16h wall-clock), Run E (L=1, 8ep) and Run D (L=2, 5ep) reach **nearly identical training-loss minimums** — 2.5984 (L=1) vs 2.6330 (L=2). L=1 actually edges out L=2 by 0.0346 nats on the lowest training step seen. The val loss minimums diverge by 0.1457 nats (L=1: 3.3050; L=2: 3.1593), with L=1 generalizing worse despite essentially-identical training-data fit. The full 0.146 nat val gap is therefore generalization difference, not capacity difference. Reading: depth in WaveletLM functions as implicit regularization at this dataset/scale, not as additional asymptotic capacity. See [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the full analysis.
 
 ### Post-release: bit-packed PTQ kernels
 

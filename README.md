@@ -483,21 +483,24 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
-### (In Progress) Single-Layer WaveletLM with Current Best Config
+### (Complete) Single-Layer WaveletLM with Current Best Config
 
-Re-test L=1 with the current best feature stack and the parameter reduction plan below. L=1 nearly halves runtime and parameter count, meaning it can train for nearly twice the epochs as L=2 at fixed compute. 3 tests: L=1 with epochs=1, L=2 with epochs=1, and L=1 with epochs=5, each on WikiText-103. The existing L=2 with epochs=5 baseline completes the comparison matrix. A fourth run, L=1 with epochs=8 (~15.4h vs D's 16.25h), adds a compute-equalized comparison: same wall-clock budget with depth traded for ~60% more epochs.
+**Result:** L=1 and L=2 reach nearly identical training-loss minimums at matched compute, but L=1 generalizes 0.15 nats worse on val. The val gap is regularization-bound, not capacity-bound. See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) and [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the full analysis.
 
-**Interpretability motivation**: single-hop information flow makes targeted interpretability techniques such as per-scale activation patching, embedding-to-coefficient mapping, and per-component ablation tractable. This compounds with the eventual semantic embedding reintroduction, where L=1 enables end-to-end conceptual traceability through human-readable dimensions.
+**Decision:** L=1 becomes the iteration platform for upcoming ablations, capped at E=5 (val loss saturates there). L=2 will be re-benchmarked once the L=1-tuned regularization recipe is applied retroactively.
 
-See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) for the full design.
+### (In Progress) Combined Parameter Reduction and VRAM Reallocation
+
+Combine four cheap reductions (`mlp_expansion: 10`, `pkm_enabled: false`, `fwpkm_num_keys: 8281`, and `tie_embedding_to_lm_head: true`) to bring the model from 586.1M parameters (from the [layers=1 & epochs=5](logs/wikitext-103_2026-04-30_12-20-45/log.txt) tests above) to ~340M (~42% reduction) at a projected +0.025 BPB additive cost. PKM is dropped (rather than FwPKM) since the two perform comparably on quality and FwPKM also retains the optional `fwpkm_inference_updates` capability. Current single-layer VRAM usage: 11,537 MiB training, 3,223 MiB generation; the freed VRAM after reduction can be reallocated to longer block size, larger effective batch size, more epochs, or dropout retuning at the same hardware budget. See [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation) for more.
+
+Three sequential tests, each at L=1 / E=5 (the iteration platform default):
+
+1. **Baseline reduction:** the four reductions applied; measure BPB cost vs. the unreduced L=1 baseline.
+2. **Max EBS variant:** same reductions, with `micro_batch_size` × `grad_accum` increased to use the freed VRAM. Tests whether larger effective batches improve val loss at this scale (counter-hypothesis: gradient noise from smaller batches is itself a regularizer for L=1).
+3. **Larger block size variant:** same reductions, with `block_size` increased to use the freed VRAM. Tests whether longer context offsets the parameter reduction's BPB cost.
 
 #### Current Findings
-
-Equal-compute analysis suggests the L=1 vs L=2 gap is regularization-bound rather than capacity-bound on WT-103. See [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the train/val gap analysis.
-
-### Combined Parameter Reduction and VRAM Reallocation
-
-Combine four cheap reductions (`mlp_expansion: 10`, `pkm_enabled: false`, `fwpkm_num_keys: 8281`, and `tie_embedding_to_lm_head: true`) to bring the model from 882.5M parameters to ~497.8M (~44% reduction) at a projected +0.025 BPB additive cost. PKM is dropped (rather than FwPKM) since the two perform comparably on quality and FwPKM also retains the optional `fwpkm_inference_updates` capability. The freed VRAM can be reallocated to longer block size, larger effective batch size, more epochs, or dropout retuning at the same hardware budget. See [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation) for more.
+In progress.
 
 ### Cross-Layer Parameter Sharing
 

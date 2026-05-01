@@ -1,18 +1,14 @@
 #!/bin/bash
-# Single-Layer WaveletLM (L=1) ablation series.
-# Three runs covering L=1 vs L=2 at 1 vs 5 epochs on WikiText-103.
-# The existing 5-epoch L=2 baseline (logs/wikitext-103_2026-04-22_01-36-47/)
-# is the fourth comparison point and is not re-run here.
+# Combined parameter reduction test (L=1, E=5).
+# Tests the four cheap reductions described in plans/other_post_release_plans.md §8:
+#   - mlp_expansion: 20 → 10
+#   - pkm_enabled: true → false (PKM dropped; FwPKM retained for inference-update potential)
+#   - fwpkm_num_keys: 16384 → 8281 (= 91², closest perfect square to half of 16384)
+#   - tie_embedding_to_lm_head: false → true
+# Projected: ~586M (current L=1) → ~340M params (~42% reduction).
 #
-# Plan source: plans/single_layer_waveletlm.md
-# Total estimated wall-clock on an RTX 5090: ~11 hours.
-#
-# Each run trains, runs the post-training benchmark (sliding window + non-
-# overlapping), writes results to its own logs/wikitext-103_<timestamp>/,
-# and runs two short generation samples (default + --strategies) for register
-# verification. After all three runs complete, config.json is reset to the
-# L=2 / 5-epoch baseline so the repo's default always reflects the released
-# headline recipe.
+# After completion, the config is reset to the L=1 E=5 iteration platform default.
+# Estimated wall-clock on RTX 5090: ~5-7h (smaller model trains faster than baseline L=1).
 
 set_keys() {
     python -c "
@@ -38,8 +34,8 @@ run_one() {
     if [ $TRAIN_EXIT -ne 0 ]; then
         echo ""
         echo "[runs.sh] train.py failed in ${LABEL} with exit code $TRAIN_EXIT."
-        echo "[runs.sh] Restoring baseline config and aborting remaining runs."
-        set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "eval_interval": 250}'
+        echo "[runs.sh] Restoring L=1 E=5 iteration default and aborting remaining runs."
+        set_keys '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "eval_interval": 250}'
         exit $TRAIN_EXIT
     fi
 
@@ -54,27 +50,28 @@ run_one() {
 }
 
 # ============================================================
-# Run E — L=1, 8 epochs (compute-equalized to D: L=1 ~1.93h/ep × 8 ≈ 15.4h vs D's 16.25h)
+# Combined parameter reduction baseline
 # ============================================================
-run_one "Run E: layers=1, epochs=8" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 8, "eval_interval": 250}'
+run_one "Combined param reduction: L=1, E=5, MLP=10, PKM off, FwPKM=8281, tied emb" \
+    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "eval_interval": 250}'
 
 # ============================================================
-# Reset config to baseline and commit
+# Reset config to L=1 E=5 iteration platform default
 # ============================================================
-set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "eval_interval": 250}'
+set_keys '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "eval_interval": 250}'
 
 git add .
-git commit --no-edit -m "L=1 ablation series: A (L=1, 1ep), B (L=2, 1ep), C (L=1, 5ep), E (L=1, 8ep)"
+git commit --no-edit -m "Combined parameter reduction test (L=1, E=5)"
 git pull --no-edit
 git push
 
 echo ""
 echo "============================================================"
-echo "=== L=1 ablation series complete."
-echo "===   Three new logs/wikitext-103_*/log.txt files now exist."
+echo "=== Combined parameter reduction test complete."
 echo "===   Pull BPB sliding-window numbers and update:"
-echo "===     - plans/single_layer_waveletlm.md (results section)"
-echo "===     - runs.md (new L=1 ablation section)"
-echo "===     - README.md (Future Plans -> Single-Layer subsection)"
+echo "===     - plans/other_post_release_plans.md §8 (results section)"
+echo "===     - plans/findings.md (new entry under Combined Parameter Reduction)"
+echo "===     - runs.md (results table)"
+echo "===     - README.md (Combined Parameter Reduction subsection)"
+echo "===   Then plan the two follow-up variants (max EBS, larger block size)."
 echo "============================================================"
