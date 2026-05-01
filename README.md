@@ -503,7 +503,7 @@ Four sequential tests, each at L=1 / E=5 (the iteration platform default):
 > **Note:** Tests 3 and 4 keep `levels=5` and the existing 6-entry `per_scale_mixer_widths` array unchanged, even though longer `block_size` would in principle support up to `log2(block_size)` levels. Scaling both together (e.g., `levels=8` with a 9-entry `per_scale_mixer_widths` at `block_size=1024`) is a follow-up worth doing if Tests 3 or 4 show promise — but adjusting it within these tests would conflate two variables. Reserved for a separate follow-up sweep.
 
 #### Current Findings
-In progress.
+In progress...
 
 ### Dropout Sweep
 
