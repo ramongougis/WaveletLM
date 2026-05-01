@@ -7,7 +7,7 @@
 #   - tie_embedding_to_lm_head: false → true
 # Projected: ~586M (current L=1) → ~340M params (~42% reduction).
 #
-# After completion, the config is reset to the L=1 E=5 iteration platform default.
+# After completion, the config is reset to the L=2 release default (matches README Training section).
 # Estimated wall-clock on RTX 5090: ~5-7h (smaller model trains faster than baseline L=1).
 
 set_keys() {
@@ -34,8 +34,8 @@ run_one() {
     if [ $TRAIN_EXIT -ne 0 ]; then
         echo ""
         echo "[runs.sh] train.py failed in ${LABEL} with exit code $TRAIN_EXIT."
-        echo "[runs.sh] Restoring L=1 E=5 iteration default and aborting remaining runs."
-        set_keys '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "eval_interval": 250}'
+        echo "[runs.sh] Restoring L=2 release default and aborting remaining runs."
+        set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "eval_interval": 250}'
         exit $TRAIN_EXIT
     fi
 
@@ -56,9 +56,9 @@ run_one "Combined param reduction: L=1, E=5, MLP=10, PKM off, FwPKM=8281, tied e
     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "eval_interval": 250}'
 
 # ============================================================
-# Reset config to L=1 E=5 iteration platform default
+# Reset config to L=2 release default (matches README Training section)
 # ============================================================
-set_keys '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "eval_interval": 250}'
+set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "eval_interval": 250}'
 
 git add .
 git commit --no-edit -m "Combined parameter reduction test (L=1, E=5)"
