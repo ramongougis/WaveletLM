@@ -44,6 +44,16 @@ run_generation_if_ckpt() {
     fi
 }
 
+# Commit and push results after each run so a later failure doesn't lose
+# earlier completed results. Takes one argument: the commit message.
+git_commit_push() {
+    local MSG="$1"
+    git add . || true
+    git commit --no-edit -m "${MSG}" || true
+    git pull --no-edit || true
+    git push || true
+}
+
 run_one() {
     local LABEL="$1"
     local PATCH="$2"
@@ -126,15 +136,25 @@ nan_safe_run() {
 }
 
 # ============================================================
-# Test 2: Max EBS variant (MBS=64, GA=1, bs=256, levels=5)
-# Uses freed VRAM for larger micro-batch parallelism. MBS=64 targets ~25 GiB /
-# 32 GiB (8x the baseline MBS) so the test actually exercises the available
-# VRAM rather than leaving 60% idle. lr=0.01 unchanged for clean comparison.
-# Counter-hypothesis under test: gradient noise from smaller batches is itself
-# a regularizer for L=1, so larger EBS may HURT val loss.
+# Test 2b: Max EBS variant (MBS=64, GA=1, bs=256, levels=5) with proportional
+# eval_interval. Same as Test 2 (which already completed at BPB sliding 1.0860,
+# vs Test 1's 1.0796), but with eval_interval=32 instead of 250 to match
+# baseline's eval frequency in evals-per-epoch (~228 vs ~29).
+#
+# Hypothesis under test: was Test 2's regression due to (a) the gradient-noise-
+# as-regularizer effect, or (b) eval coarseness causing a sub-optimal best-
+# checkpoint to be saved? At MBS=64 with eval_interval=250, the run had only
+# ~29 evals/epoch vs baseline's ~234. If the true minimum val occurred between
+# two eval points, the saved checkpoint would be sub-optimal. Test 2b removes
+# that confound.
+#
+# Decision rule: if Test 2b BPB closes most of the 0.0064 gap to Test 1, the
+# eval coarseness was the issue. If Test 2b lands near Test 2's 1.0860, the
+# gradient-noise hypothesis is confirmed.
 # ============================================================
-run_one "Test 2: Max EBS — MBS=64, GA=1, bs=256 (combined reduction recipe)" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 250}'
+run_one "Test 2b: Max EBS + proportional eval_interval — MBS=64, GA=1, bs=256, eval_interval=32" \
+    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 32}'
+git_commit_push "Test 2b (combined reduction + Max EBS, MBS=64, eval_interval=32): completed run"
 
 # ============================================================
 # Test 3: Larger block_size variant (MBS=8, GA=1, bs=1024, levels=5)
@@ -144,6 +164,7 @@ run_one "Test 2: Max EBS — MBS=64, GA=1, bs=256 (combined reduction recipe)" \
 # ============================================================
 run_one "Test 3: Larger block_size — MBS=8, GA=1, bs=1024, levels=5 (combined reduction recipe)" \
     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 8, "grad_accum": 1, "block_size": 1024, "levels": 5, "eval_interval": 250}'
+git_commit_push "Test 3 (combined reduction + larger block_size, bs=1024): completed run"
 
 # ============================================================
 # Test 4: Min EBS + max block_size variant (MBS=1, GA=1)
@@ -159,12 +180,14 @@ for BLOCK_SIZE in 8192 4096 2048 1024 512 256; do
     EXIT_CODE=$?
     if [ $EXIT_CODE -eq 0 ]; then
         echo "[runs.sh] Test 4 completed stably at block_size=$BLOCK_SIZE."
+        git_commit_push "Test 4 (combined reduction + min EBS + max block_size): completed at bs=$BLOCK_SIZE"
         TEST_4_DONE=1
         break
     elif [ $EXIT_CODE -eq 99 ]; then
         echo "[runs.sh] NaN at block_size=$BLOCK_SIZE; halving and retrying."
     else
         echo "[runs.sh] Non-NaN failure (exit $EXIT_CODE) at block_size=$BLOCK_SIZE; treating as instability and halving."
+        sleep 10  # give CUDA a moment to release VRAM after OOM/crash
     fi
 done
 if [ $TEST_4_DONE -eq 0 ]; then
@@ -176,10 +199,7 @@ fi
 # ============================================================
 set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 250}'
 
-git add .
-git commit --no-edit -m "Tests 2-4: Max EBS / larger bs / min EBS+max bs variants of combined reduction"
-git pull --no-edit
-git push
+git_commit_push "Reset config.json to L=2 release default after Tests 2-4 variants completed"
 
 echo ""
 echo "============================================================"
