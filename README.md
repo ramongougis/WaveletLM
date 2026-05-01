@@ -561,8 +561,6 @@ Swapping `QuantizedLinear` / `QuantizedEmbedding` for fused packed-weight kernel
 
 ### Multinodal Mode
 
-WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. Broader multi-expert training techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
-
 The most architecturally native multinodal direction worth exploring is **multi-basis transform parallelization**: the wavelet decomposition and reconstruction stay shared across nodes, but the FWHT slot in each per-scale mixer is replaced by N parallel orthogonal-transform paths (FWHT, DHT, DCT-II/III, learned butterfly orthogonals). Each node decomposes the wavelet coefficients through a different "prism" in terms of its own orthogonal basis, then a per-node mixer learns basis-specific gated interactions. Finally, node-specific inverse transforms bring outputs back to the shared wavelet coefficient space for recombination. The result is multi-spectral mixing that potentially captures structure that no single basis would, with shared scaffolding keeping per-step compute increase modest (~5-15% for N=4 since the mixer slot is small relative to MLP).
 
 <p align="center">
@@ -570,6 +568,8 @@ The most architecturally native multinodal direction worth exploring is **multi-
 </p>
 
 See [plans/multinodal_training_techniques.md §6](plans/multinodal_training_techniques.md#6-waveletlm-native-combination-strategies) for the full design, the four-node reference lineup, and the prerequisite ablation (per-scale mixer transform ablation in [other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation)).
+
+**Other multinodal directions:** WaveletLM also supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
 
 ### Semantic Embedding & Interpretability Work
 
