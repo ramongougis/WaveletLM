@@ -559,6 +559,18 @@ The [current PTQ path](runs.md#ptq-sweep-summary) dequantizes int8 weights to fp
 
 Swapping `QuantizedLinear` / `QuantizedEmbedding` for fused packed-weight kernels (Marlin W8A16 / W4A16, CUTLASS `i8gemm`, bitsandbytes, Triton for the embedding lookup) fixes both: storage scales with bit-width, and each matmul reads half or a quarter as many bytes. Expected generation at batch=1 (fp16 baseline 28.8 tok/s) is **~1.4–1.6× faster** for fused uniform 8-bit and **~1.8–2.2× faster** for fused mixed 8/4/2, with BPB unchanged. See [runs.md](runs.md#post-release-bit-packed-ptq-kernels) for the full plan.
 
+### Multinodal Mode
+
+WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. Broader multi-expert training techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+
+The most architecturally native multinodal direction worth exploring is **multi-basis transform parallelization**: the wavelet decomposition and reconstruction stay shared across nodes, but the FWHT slot in each per-scale mixer is replaced by N parallel orthogonal-transform paths (FWHT, DHT, DCT-II/III, learned butterfly orthogonals). Each node decomposes the wavelet coefficients through a different "prism" in terms of its own orthogonal basis, then a per-node mixer learns basis-specific gated interactions. Finally, node-specific inverse transforms bring outputs back to the shared wavelet coefficient space for recombination. The result is multi-spectral mixing that potentially captures structure that no single basis would, with shared scaffolding keeping per-step compute increase modest (~5-15% for N=4 since the mixer slot is small relative to MLP).
+
+<p align="center">
+  <img src="assets/waveletlm-multinodal.svg" alt="Multi-basis transform parallelization architecture" width="85%"/>
+</p>
+
+See [plans/multinodal_training_techniques.md §6](plans/multinodal_training_techniques.md#6-waveletlm-native-combination-strategies) for the full design, the four-node reference lineup, and the prerequisite ablation (per-scale mixer transform ablation in [other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation)).
+
 ### Semantic Embedding & Interpretability Work
 
 An optional replacement for the learned token embedding is a **semantic embedding**, where each dimension is a plain-language feature (e.g. "is this token a noun?", "is this token associated with anger?", "corpus frequency in deceptive contexts") and each token or n-gram is a vector of values across those dimensions. 
@@ -566,12 +578,6 @@ An optional replacement for the learned token embedding is a **semantic embeddin
 WaveletLM is structurally well-suited for this: the spectral mixer can operate directly on vectorized human-readable features, and multi-scale decomposition lets the same concept be processed at different temporal granularities. The expected tradeoff is improved interpretability at a small performance cost, potentially recovered or even improved via n-gram tokens and careful feature selection for the dimensions. 
 
 See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for the full design, including open questions on coefficient assignment methods: one-hot/binary, LLM-scored, human-rated, or corpus-derived.
-
-### Multinodal Mode
-
-WaveletLM supports a product-of-experts mode where multiple independent nodes process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever. Broader multi-expert training techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
-
-A WaveletLM-native combination strategy worth exploring is **wavelet-domain combination**: instead of averaging final logits across nodes, decompose each node's output and combine matching wavelet coefficients per-scale before reconstruction. This allows nodes to specialize at different scales (coarse-vs-fine), and the combination happens inside the wavelet pipeline rather than after the LM head. See [plans/multinodal_training_techniques.md §6](plans/multinodal_training_techniques.md#6-waveletlm-native-combination-strategies) for the full design and three combination variants (equal-weight per-scale, learned per-scale gating, hard scale-specialization).
 
 ### Adaptive Decompose Bypass
 

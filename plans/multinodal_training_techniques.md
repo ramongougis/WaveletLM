@@ -103,9 +103,67 @@ Auxiliary losses that shape expert behavior regardless of the architecture choic
 
 ### 6. WaveletLM-native combination strategies
 
-Combination methods that exploit WaveletLM's specific structure (multi-scale decomposition, per-scale gated mixing) and don't cleanly map to generic MoE or ensemble literature. Distinct from logit averaging or weight averaging because the combination happens *inside* the wavelet pipeline rather than after the final logits. Distinct from sparse MoE because all nodes still process every input — the specialization is in *which scales* each node contributes to, not *which inputs* each node sees.
+Combination methods that exploit WaveletLM's specific structure (multi-scale decomposition, per-scale gated mixing) and don't cleanly map to generic MoE or ensemble literature. Distinct from logit averaging or weight averaging because the combination happens *inside* the wavelet pipeline rather than after the final logits. Distinct from sparse MoE because all nodes still process every input — the specialization is in *which scales or which spectral bases* each node contributes through, not *which inputs* each node sees.
 
-**Wavelet-domain combination (primary proposal):** Each node produces its full multi-scale output (S=6 scales from the standard `levels=5` setup). Instead of averaging final logits across nodes (current `multinodal_combination: average`), each node's output is decomposed into wavelet coefficients, and matching coefficients are combined across nodes *per-scale* before inverse transform and reconstruction. Three variants:
+**Multi-basis transform parallelization (primary proposal — shared wavelet scaffolding, multi-basis split at the FWHT slot):**
+
+Replace the single FWHT slot in each per-scale mixer with N parallel orthogonal-transform paths. Wavelet decomposition and reconstruction remain shared across nodes; only the transform → mixer → inverse-transform middle of the pipeline is duplicated. Conceptually, each node decomposes the wavelet coefficients through a different "prism" (a different orthogonal basis), the mixer learns gated interactions in that basis, and the inverse transform brings each node's output back to the shared wavelet coefficient space for combination.
+
+Architecture:
+
+```
+Input → Shared Wavelet Decomposition → wavelet coefficients
+                                              │
+            ┌─────────────────────────────────┼────────────────────────┐
+            ↓                                  ↓                        ↓
+        Node 1: FWHT                  Node 2: DHT (Hartley)     Node N: learned-orth
+            ↓                                  ↓                        ↓
+        Node 1: gated mixer           Node 2: gated mixer       Node N: gated mixer
+            ↓                                  ↓                        ↓
+        Node 1: inverse FWHT          Node 2: inverse DHT       Node N: Wᵀ
+            └─────────────────────────────────┼────────────────────────┘
+                                              ↓
+                                    Combine (sum or learned per-node-per-scale gate)
+                                              ↓
+                                Shared Wavelet Reconstruction
+                                              ↓
+                                    MLP → LM Head → Output
+```
+
+Reference node lineup for a 4-node configuration:
+
+| Node | Forward transform | Inverse | Notes |
+|---|---|---|---|
+| 1 | FWHT | FWHT (involutive) | Current default; the existing per-scale mixer slot |
+| 2 | DHT (Hartley) | DHT (involutive) | Real-valued analog of DFT; involutive up to scale |
+| 3 | DCT-II | DCT-III | True forward/inverse pair; well-understood basis |
+| 4 | Learned butterfly orthogonal | Wᵀ (parameter-tied) | Discovers any structure the fixed bases miss |
+
+The architecture is extensible — adding more learned-orthogonal nodes increases per-step compute linearly in N (only the mixer slot is duplicated), but doesn't increase the dominant MLP cost.
+
+**Invertibility requirement:** the per-node inverse transform must produce outputs in the shared wavelet coefficient space, so all transforms must be invertible. FWHT and DHT are involutive (forward = inverse up to scale); DCT-II inverts via DCT-III; learned transforms must be orthogonality-constrained (butterfly parametrization is standard). General unconstrained learned linear layers would *not* be invertible and would break the architecture.
+
+**Why split at this point:** three properties make the post-decomposition / pre-FWHT split point the architecturally clean choice:
+
+1. **The orthogonal transforms are the "prisms."** Each transform decomposes the wavelet coefficients into a different generalized-frequency view. Combining N such views is analogous to integrating multiple spectral readouts of the same input.
+2. **Shared wavelet pipeline preserves invertibility for free.** The space before the split (wavelet coefficients) and after the per-node inverse (also wavelet coefficients) are identical, so combination is just summing/gating in that shared space — no bridging machinery.
+3. **The mixer is the actual learning.** Each per-node mixer reads transform-domain coefficients and learns gated SwiGLU interactions in that basis. Different bases = different learned interactions = real specialization across nodes.
+
+**Combination variants:**
+
+- **Equal-weight sum across nodes** — simplest. May over-mix if some nodes are learning irrelevant structure.
+- **Learned per-node gating** — single learned weight per node per scale (negligible parameter cost). Lets the model down-weight or ignore basis paths that don't contribute.
+- **Learned per-node-per-scale-per-coefficient gating** — most expressive, highest parameter cost, highest mode-collapse risk.
+
+**Mode-collapse mitigation for learned-orthogonal nodes:** if multiple nodes use learned bases without constraint diversity, gradient descent will likely converge them all to the same useful basis (e.g., effectively all-FWHT). To prevent this, anchor at least 2 nodes to known fixed bases (FWHT + DHT minimum) so the learned nodes are forced to specialize in residual structure. Optional: add an orthogonality penalty between pairs of learned transforms (`||W_i · W_jᵀ - I||`) to push them apart in basis space.
+
+**Prerequisite:** the per-scale mixer transform ablation (§10 of `other_post_release_plans.md`) is a prerequisite. It tests single-basis variants individually (FWHT vs DHT vs DCT vs learned vs identity) at L=1 baseline and tells us which transforms are individually competitive. The multi-basis variant should use the strongest individual performers as anchor nodes.
+
+**Compute cost:** the wavelet decomp + reconstruction (the expensive parts) are computed once, not N times. Only the FWHT-equivalents and per-node mixers are duplicated. For N=4, expect ~5-15% per-step compute increase since the mixer slot is a small fraction of total per-step compute (MLP dominates). For L=1 with the parameter-reduction bundle (mlp_expansion 20→10), the mixer share is larger and the percentage compute increase rises to ~10-20%.
+
+**Compute to test:** ~5h for a first 5-epoch validation run with N=2 (FWHT + DHT) at L=1 baseline, after §10 establishes the strongest individual bases. Then ~5h for N=4 (FWHT + DHT + DCT + 1 learned) to measure scaling.
+
+**Wavelet-domain combination of full nodes (secondary proposal — alternative split point at the full-pipeline level):** The original §6 framing. Each node produces its full multi-scale output (S=6 scales from the standard `levels=5` setup). Instead of averaging final logits across nodes (current `multinodal_combination: average`), each node's output is decomposed into wavelet coefficients, and matching coefficients are combined across nodes *per-scale* before inverse transform and reconstruction. Three variants:
 
 - **Equal-weight per-scale averaging** — identical to logit averaging in expectation, but operates on wavelet coefficients before the final reconstruction. Differs primarily in gradient flow (per-scale gradients reach each node directly rather than mediated by the LM head).
 - **Learned per-scale gating across nodes** — each scale has a learned (S × N) gate matrix that weights node contributions per scale. Lets nodes naturally specialize: node A's coarse coefficients dominate at scales 0-2, node B's fine coefficients dominate at scales 3-5. Differentiable; no hard routing needed. Adds N×S learned scalars per layer (negligible parameter cost).
@@ -133,18 +191,19 @@ Combination methods that exploit WaveletLM's specific structure (multi-scale dec
 
 Ranked by expected value per compute-hour spent, given budget constraints:
 
-1. **Wavelet-domain combination on multinodal (§6)** — Combiner-only code change; tests whether per-scale combination outperforms logit averaging at the same compute. Architecturally native to WaveletLM and untested elsewhere.
-2. **Deep Mutual Learning on multinodal (§4)** — Small code change; adds KL loss between cells. Cheap to test, known-positive technique.
-3. **Sparse MoE on MLP (§1)** — Largest architectural lever available. One 17h run validates the direction.
-4. **SWA within a single seed run (§2)** — Free; reuse late-training checkpoints from the 3-seed study.
-5. **Orthogonality loss on multinodal cells (§5)** — Tiny code change; strengthens existing multinodal mode.
-6. **Learned per-scale gating across nodes (§6)** — Follow-up to #1. Adds N×S learned scalars; tests whether nodes naturally specialize across scales.
-7. **Git Re-Basin cross-seed weight merging (§2)** — Research-grade; potential novel finding about wavelet inductive bias and basin structure. Low compute; high intellectual yield.
-8. **Ensemble distillation of multinodal → single-cell (§4)** — Gets ensemble quality at release-time single-model cost. Needs second training pass.
-9. **Hard scale-specialization (§6)** — Follow-up to #6. Tests whether per-node compute can drop by skipping non-assigned scales.
-10. **Capacity-aware routing (§6)** — Most ambitious of the §6 trio. Requires a small router and load signal aggregation; only worth pursuing if §6 #1-#3 show wavelet-domain combination is a real lever.
-11. **Multi-basis lifting (§3)** — Blocked behind stable_parametrization validation.
-12. **BranchyNet LM heads (§3)** — Only worth doing if we push to L=8+ at B200.
+1. **Multi-basis transform parallelization (§6 primary)** — Shared wavelet pipeline with N parallel orthogonal-transform paths at the FWHT slot. Most architecturally native multinodal lever; ~5h validation run after §10 prerequisite. The "prism" architecture: each node decomposes wavelet coefficients through a different orthogonal basis (FWHT, DHT, DCT-II/III, learned butterfly), with the mixer learning basis-specific gated interactions, then per-node inverse transforms bring outputs back to shared wavelet coefficient space for combination.
+2. **Wavelet-domain combination of full nodes (§6 secondary)** — Combiner-only code change applied to the existing multinodal infrastructure; tests whether per-scale logit-equivalent combination outperforms current logit averaging. Cheaper than #1 (no architectural surgery), but coarser-grained.
+3. **Deep Mutual Learning on multinodal (§4)** — Small code change; adds KL loss between cells. Cheap to test, known-positive technique.
+4. **Sparse MoE on MLP (§1)** — Largest architectural lever available. One 17h run validates the direction.
+5. **SWA within a single seed run (§2)** — Free; reuse late-training checkpoints from the 3-seed study.
+6. **Orthogonality loss on multinodal cells (§5)** — Tiny code change; strengthens existing multinodal mode.
+7. **Learned per-scale gating across nodes (§6)** — Follow-up to #2. Adds N×S learned scalars; tests whether nodes naturally specialize across scales.
+8. **Git Re-Basin cross-seed weight merging (§2)** — Research-grade; potential novel finding about wavelet inductive bias and basin structure. Low compute; high intellectual yield.
+9. **Ensemble distillation of multinodal → single-cell (§4)** — Gets ensemble quality at release-time single-model cost. Needs second training pass.
+10. **Hard scale-specialization (§6)** — Follow-up to #7. Tests whether per-node compute can drop by skipping non-assigned scales.
+11. **Capacity-aware routing (§6)** — Most ambitious of the §6 entries. Requires a small router and load signal aggregation; only worth pursuing if §6 #1-#2 show multi-basis or wavelet-domain combination is a real lever.
+12. **Multi-basis lifting (§3)** — Blocked behind stable_parametrization validation.
+13. **BranchyNet LM heads (§3)** — Only worth doing if we push to L=8+ at B200.
 
 ## Open questions
 
