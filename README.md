@@ -500,7 +500,7 @@ Four sequential tests, each at L=1 / E=5 (the iteration platform default):
 3. **Larger block size variant:** same reductions, with `block_size` increased to use the freed VRAM. Tests whether longer context offsets the parameter reduction's BPB cost.
 4. **Min EBS + max block size variant:** `micro_batch_size=1`, `grad_accum=1`, with `block_size` pushed to maximize VRAM usage; if instability or NaN emerges, dial back `block_size` until the run completes stably. Hypothesizes the best-of-both-worlds combination for a regularization-bound model: maximum gradient noise from single-sequence updates plus rich per-example signal from very long context for the wavelet pipeline to exploit at higher scales.
 
-> **Note:** Tests 3 and 4 keep `levels=5` and the existing 6-entry `per_scale_mixer_widths` array unchanged, even though longer `block_size` would in principle support up to `log2(block_size)` levels. Scaling both together (e.g., `levels=8` with a 9-entry `per_scale_mixer_widths` at `block_size=1024`) is a follow-up worth doing if Tests 3 or 4 show promise — but adjusting it within these tests would conflate two variables. Reserved for a separate follow-up sweep.
+> **Note:** Tests 3 and 4 keep `levels=5` and the existing 6-entry `per_scale_mixer_widths` array unchanged, even though longer `block_size` would in principle support up to `log2(block_size)` levels. Scaling both together (e.g., `levels=8` with a 9-entry `per_scale_mixer_widths` at `block_size=1024`) is a follow-up worth doing if Tests 3 or 4 show promise, but adjusting it within these tests would conflate two variables. Reserved for a separate follow-up sweep or test set.
 
 #### Current Findings
 In progress...
