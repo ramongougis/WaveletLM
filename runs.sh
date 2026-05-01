@@ -142,15 +142,24 @@ nan_safe_run() {
 # baseline's eval frequency in evals-per-epoch (~228 vs ~29).
 #
 # Hypothesis under test: was Test 2's regression due to (a) the gradient-noise-
-# as-regularizer effect, or (b) eval coarseness causing a sub-optimal best-
-# checkpoint to be saved? At MBS=64 with eval_interval=250, the run had only
-# ~29 evals/epoch vs baseline's ~234. If the true minimum val occurred between
-# two eval points, the saved checkpoint would be sub-optimal. Test 2b removes
-# that confound.
+# as-regularizer effect, (b) eval coarseness causing a sub-optimal best-
+# checkpoint to be saved, or (c) just within-noise variation? At MBS=64 with
+# eval_interval=250, the run had only ~29 evals/epoch vs baseline's ~234.
+# Test 2b removes the eval-coarseness confound while leaving everything else
+# the same as Test 2.
 #
-# Decision rule: if Test 2b BPB closes most of the 0.0064 gap to Test 1, the
-# eval coarseness was the issue. If Test 2b lands near Test 2's 1.0860, the
-# gradient-noise hypothesis is confirmed.
+# Noise context: 3-seed variance study established noise floor at ~±0.004 BPB.
+# Test 2's 0.0064 regression vs Test 1 is only ~1.6σ — directionally suggestive
+# but not conclusive against noise.
+#
+# Decision rule (with noise band acknowledged):
+#   - Test 2b BPB ≤ ~1.082: eval coarseness was likely the dominant factor;
+#     gradient-noise hypothesis weakens
+#   - Test 2b BPB ≥ ~1.084: gradient-noise hypothesis strengthens (independent
+#     replication of Test 2's direction with finer eval)
+#   - Test 2b BPB in [1.082, 1.084]: ambiguous; both effects probably present
+#     OR all single-run gaps so far are within noise. Would need 3-seed runs at
+#     each MBS to resolve cleanly.
 # ============================================================
 run_one "Test 2b: Max EBS + proportional eval_interval — MBS=64, GA=1, bs=256, eval_interval=32" \
     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 32}'
