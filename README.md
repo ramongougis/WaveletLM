@@ -493,11 +493,14 @@ Longer training time, more regularization, and parameter compression are the sur
 
 Combine four cheap reductions (`mlp_expansion: 10`, `pkm_enabled: false`, `fwpkm_num_keys: 8281`, and `tie_embedding_to_lm_head: true`) to bring the model from 586.1M parameters (in the [layers=1 & epochs=5](logs/wikitext-103_2026-04-30_12-20-45/log.txt) tests above) to 344.6M (a 42% reduction) at a projected +0.025 BPB additive cost. PKM is dropped (rather than FwPKM) since the two perform comparably on quality and FwPKM also retains the optional `fwpkm_inference_updates` capability. Current single-layer VRAM usage: 11,537 MiB training, 3,223 MiB generation; the freed VRAM after reduction can be reallocated to longer block size, larger effective batch size, more epochs, or dropout retuning at the same hardware budget. See [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation) for more.
 
-Three sequential tests, each at L=1 / E=5 (the iteration platform default):
+Four sequential tests, each at L=1 / E=5 (the iteration platform default):
 
 1. **Baseline reduction:** the four reductions applied; measure BPB cost vs. the unreduced L=1 baseline.
 2. **Max EBS variant:** same reductions, with `micro_batch_size` × `grad_accum` increased to use the freed VRAM. Tests whether larger effective batches improve val loss at this scale (counter-hypothesis: gradient noise from smaller batches is itself a regularizer for L=1).
 3. **Larger block size variant:** same reductions, with `block_size` increased to use the freed VRAM. Tests whether longer context offsets the parameter reduction's BPB cost.
+4. **Min EBS + max block size variant:** `micro_batch_size=1`, `grad_accum=1`, with `block_size` pushed to maximize VRAM usage; if instability or NaN emerges, dial back `block_size` until the run completes stably. Hypothesizes the best-of-both-worlds combination for a regularization-bound model: maximum gradient noise from single-sequence updates plus rich per-example signal from very long context for the wavelet pipeline to exploit at higher scales.
+
+> **Note:** Tests 3 and 4 keep `levels=5` and the existing 6-entry `per_scale_mixer_widths` array unchanged, even though longer `block_size` would in principle support up to `log2(block_size)` levels. Scaling both together (e.g., `levels=8` with a 9-entry `per_scale_mixer_widths` at `block_size=1024`) is a follow-up worth doing if Tests 3 or 4 show promise — but adjusting it within these tests would conflate two variables. Reserved for a separate follow-up sweep.
 
 #### Current Findings
 In progress.
