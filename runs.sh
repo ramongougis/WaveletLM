@@ -241,6 +241,14 @@ print('[' + ', '.join(['1.0']*h + ['0.5']*h) + ']')
 
 build_test5_patch() {
     # build_test5_patch <levels> <epochs>
+    # NOTE: wavelet_crawl is set to false for the levels sweep. With K=3, every
+    # level evaluates the lifting MLP cascade three times and softmax-mixes
+    # them, multiplying activation compounding by 3× per level. At levels=7
+    # this hit fp16 instability during warmup (see Test 5 sweep iter 2,
+    # logs/wikitext-103_2026-05-02_19-02-53/log.txt — NaN'd at step 1750,
+    # lr~8e-3). Disabling wavelet_crawl for the sweep keeps higher-levels
+    # configurations stable and is doubly justified by the §11 finding that
+    # at least 2 of 5 levels at L=5 already collapse to wasted K=3 distributions.
     local LEVELS=$1
     local EPOCHS=$2
     local PSMW
@@ -260,6 +268,7 @@ print(json.dumps({
     'block_size': $TEST5_BLOCK_SIZE,
     'levels': $LEVELS,
     'per_scale_mixer_widths': $PSMW,
+    'wavelet_crawl': False,
     'eval_interval': 250,
 }))
 "

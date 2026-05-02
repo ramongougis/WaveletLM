@@ -359,6 +359,30 @@ Run `profile_step.py` at `bs ∈ {256, 1024, 4096, 16384}` first. Address whiche
 
 ---
 
+## 13. Defensive non-finite loss handling at benchmark time
+
+**Status: deferred — too invasive for current sweep.**
+
+Both `evaluate_full_validation` (non-overlapping) and `evaluate_sliding_window` (sliding) currently sum per-token cross-entropy losses with no guard against non-finite values. A single inf or NaN logit anywhere across hundreds of thousands of scored tokens propagates to total_loss → BPB → headline number, replacing what may be a perfectly reasonable underlying model with `BPB: inf`.
+
+Two observed failure modes already produce this:
+
+- **1-epoch model + cold-start positions**: At 1 epoch of training, the model's activations at the first positions of a fresh non-overlapping window can overflow fp16. Sliding-window scoring with `min_context=8192` skips these positions and reports a finite BPB; non-overlap scores them and reports inf. (See logs/wikitext-103_2026-05-02_17-52-31/log.txt — sliding 1.2502 vs non-overlap inf at the same checkpoint.)
+- **Training-time NaN that goes undetected until benchmark**: When training NaN's mid-warmup (e.g., levels=7 at step 1750 with K=3 wavelet_crawl), the entire model becomes NaN and both benchmarks report inf. The headline result loses the partial-training signal that would otherwise be useful for diagnosis.
+
+**Proposed fix:** clip non-finite per-token losses to `log(vocab_size)` (~10.83 for 50,257 vocab) — the cross-entropy of a uniform-prior baseline, which is a defensible "max uncertainty" placeholder. Also log per-batch when clipping fires, so the underlying instability stays visible rather than getting silently masked.
+
+**Why deferred:** Changing benchmark semantics breaks comparability between any pre-fix and post-fix BPB numbers. Test 4, Test 1, Test 5, and the comparison tables in `runs.md` and `findings.md` all need to remain comparable to each other and to the pre-release release-config baseline. A benchmark-semantics change is exactly the kind of intervention that needs its own dedicated decision arc, not an inline patch during an active sweep.
+
+**Right time to take this on:** after the Test 5 sweep completes (clean per-level numbers in hand) and ideally bundled with at least one of:
+- The §11 wavelet_crawl disable ablation (which has its own clean baseline anyway)
+- A 3-seed re-run of the full release config to establish the new baseline under clipping semantics
+- The §12.1 fused SwiGLU evaluation (which also needs a fresh baseline)
+
+**Cost of waiting:** any sweep run that NaNs mid-training reports `inf` BPB, which the runs.sh winner-selection logic correctly excludes from the auto-winner pick (`min` over finite values only). So the deferral doesn't break the sweep automation — it just means we lose the partial-training BPB signal from NaN'd runs. Acceptable.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Single-Layer WaveletLM (`single_layer_waveletlm.md`)**: highest priority. Four-run test matrix (~10-12h on a 5090) measures whether L=1 with the modern feature stack approaches the L=2 baseline. Pairs with parameter reduction (cuts model to ~250-300M params), enables interpretability work, and clarifies what depth is actually doing in WaveletLM. Decisive regardless of outcome.
@@ -372,5 +396,6 @@ Run `profile_step.py` at `bs ∈ {256, 1024, 4096, 16384}` first. Address whiche
 9. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (~10-12h total) and decisive. Cleaner attribution at L=1 — pair with the L=1 plan if (1) above shows L=1 is competitive.
 10. **Wavelet crawl disable ablation (11)**: cheap (~3-4h, single L=1 / E=5 run) and high-information. Removes the only convolutional op in the pipeline if the BPB delta lands within the noise floor; checkpoint-probe evidence already suggests at least 2 of 5 levels are wasted compute. Architectural-purity win regardless of the outcome's BPB direction.
 11. **Step-time speedup quick wins (12)**: profiler-driven. Run `profile_step.py` once to attribute step time across components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever component crosses 25% at `bs=16384`. Fused SwiGLU is now the highest-ROI no-architecture-change candidate (`mode='reduce-overhead'` was tested 2026-05-02 and rejected — see §12.2). Fused Adagrad is the next obvious win for small-batch / eval workloads. Compounds across every subsequent run.
-12. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-13. **Inference strategies ablations**: self-explanatory.
+12. **Defensive non-finite loss handling (13)**: low-priority; bundle with a fresh-baseline run (e.g., §11 wavelet_crawl ablation or a re-run for fused SwiGLU). Defers naturally — current sweep is unaffected because the auto-winner logic already excludes inf BPB rows.
+13. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+14. **Inference strategies ablations**: self-explanatory.
