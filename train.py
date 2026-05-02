@@ -809,8 +809,9 @@ def train():
     if not benchmark_only:
         # Compile
         if config.get('compile', True) and device == 'cuda':
-            logger.log("[Compile] torch.compile enabled")
-            model = torch.compile(model)
+            compile_mode = config.get('compile_mode', 'reduce-overhead')
+            logger.log(f"[Compile] torch.compile enabled (mode={compile_mode})")
+            model = torch.compile(model, mode=compile_mode)
 
         # Optimizer
         optimizer_name = config.get('optimizer', 'Adagrad')
