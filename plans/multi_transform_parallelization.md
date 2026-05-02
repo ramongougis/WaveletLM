@@ -1,12 +1,12 @@
-# Multi-basis transform parallelization
+# Multi-transform parallelization
 
 A WaveletLM-native architecture where the FWHT slot in each per-scale mixer is replaced by N parallel orthogonal-transform paths. Wavelet decomposition and reconstruction stay shared across nodes; only the transform → mixer → inverse-transform middle of the pipeline is duplicated. Conceptually, each node decomposes the wavelet coefficients through a different "prism" (a different orthogonal basis), the mixer learns gated interactions in that basis, and the inverse transform brings each node's output back to the shared wavelet coefficient space for combination.
 
 ## Distinction from existing multinodal mode
 
-This is **not** the same as the existing `multinodal_enabled` mode in the codebase. That mode runs N independent full-cell copies of WaveletLM in parallel and combines them at the LM head via logit averaging (a model-level product-of-experts ensemble). Multi-basis transform parallelization operates *inside* a single WaveletLM model — only the FWHT slot is parallelized, with shared wavelet scaffolding above and below — and combines per-node outputs in the shared wavelet coefficient space, before MLP and LM head.
+This is **not** the same as the existing `multinodal_enabled` mode in the codebase. That mode runs N independent full-cell copies of WaveletLM in parallel and combines them at the LM head via logit averaging (a model-level product-of-experts ensemble). Multi-transform parallelization operates *inside* a single WaveletLM model — only the FWHT slot is parallelized, with shared wavelet scaffolding above and below — and combines per-node outputs in the shared wavelet coefficient space, before MLP and LM head.
 
-| | Existing `multinodal_enabled` (PoE) | Multi-basis transform parallelization |
+| | Existing `multinodal_enabled` (PoE) | Multi-transform parallelization |
 |---|---|---|
 | Granularity | Whole models in parallel | Internal mixer paths in parallel |
 | What's duplicated | Everything (full WaveletLM cells × N) | Just the FWHT slot |
@@ -14,7 +14,7 @@ This is **not** the same as the existing `multinodal_enabled` mode in the codeba
 | Mechanism | Product-of-experts ensembling | Multi-perspective feature decomposition |
 | Compute overhead | ~N× (each cell is full model) | ~5-15% (only mixer slot duplicated) |
 
-The two architectures are complementary, not competing. The existing multinodal mode is surveyed alongside other multi-expert techniques in [`multinodal_training_techniques.md`](multinodal_training_techniques.md). This document is exclusively about the multi-basis architecture.
+The two architectures are complementary, not competing. The existing multinodal mode is surveyed alongside other multi-expert techniques in [`multinodal_training_techniques.md`](multinodal_training_techniques.md). This document is exclusively about the multi-transform architecture.
 
 ## Architecture
 
@@ -37,7 +37,7 @@ Input → Shared Wavelet Decomposition → wavelet coefficients
                                     MLP → LM Head → Output
 ```
 
-See [`../assets/waveletlm-multi-basis.svg`](../assets/waveletlm-multi-basis.svg) for the rendered diagram embedded in the README.
+See [`../assets/waveletlm-multi-transform.svg`](../assets/waveletlm-multi-transform.svg) for the rendered diagram embedded in the README.
 
 ## Reference node lineup (4-node configuration)
 
@@ -74,7 +74,7 @@ If multiple nodes use learned bases without constraint diversity, gradient desce
 
 ## Prerequisite
 
-The per-scale mixer transform ablation (§10 of [`other_post_release_plans.md`](other_post_release_plans.md#10-per-scale-mixer-transform-ablation)) is a prerequisite. It tests single-basis variants individually (FWHT vs DHT vs DCT vs learned vs identity) at L=1 baseline and tells us which transforms are individually competitive. The multi-basis variant should use the strongest individual performers as anchor nodes.
+The per-scale mixer transform ablation (§10 of [`other_post_release_plans.md`](other_post_release_plans.md#10-per-scale-mixer-transform-ablation)) is a prerequisite. It tests single-basis variants individually (FWHT vs DHT vs DCT vs learned vs identity) at L=1 baseline and tells us which transforms are individually competitive. The multi-transform variant should use the strongest individual performers as anchor nodes.
 
 ## Compute cost
 
@@ -86,15 +86,15 @@ The wavelet decomp + reconstruction (the expensive parts) are computed once, not
 
 ## Rationale (conjectural)
 
-If multi-basis transform parallelization improves results, the most plausible mechanism is that each orthogonal basis represents the channel-axis features in a different coordinate system simultaneously. A Walsh basis groups features by binary-symmetry pattern, a cosine basis groups them by smoothness, and a learned-orthogonal basis groups them by whatever residual structure gradient descent discovers. The same input is losslessly rotated through all bases in parallel, and the combiner weights them per-scale based on which "perspective" matters most for the signal.
+If multi-transform parallelization improves results, the most plausible mechanism is that each orthogonal basis represents the channel-axis features in a different coordinate system simultaneously. A Walsh basis groups features by binary-symmetry pattern, a cosine basis groups them by smoothness, and a learned-orthogonal basis groups them by whatever residual structure gradient descent discovers. The same input is losslessly rotated through all bases in parallel, and the combiner weights them per-scale based on which "perspective" matters most for the signal.
 
 Standard transformer attention has no direct analog because (Q, K, V) projections conflate "the lens you use" with "the weights you compute" into a single learned operation. With a semantic embedding in particular (using plain-language, human-readable feature dimensions), this may make interpretability more tractable: a per-node, per-token-pair similarity score in the rotated basis answers "what does node K think these two tokens have in common?", making it possible to trace why two tokens are close or far depending on the conceptual lens/transform applied.
 
-The wavelet decomposition continues to handle sequence-axis multi-scale structure, and the multi-basis nodes add feature-axis multi-perspective structure, factorizing the two cleanly. We don't yet know whether this is the actual mechanism if it increases performance, but if it does, testing this hypothesis directly becomes the natural follow-up.
+The wavelet decomposition continues to handle sequence-axis multi-scale structure, and the multi-transform nodes add feature-axis multi-perspective structure, factorizing the two cleanly. We don't yet know whether this is the actual mechanism if it increases performance, but if it does, testing this hypothesis directly becomes the natural follow-up.
 
 ## Open questions
 
 1. Does N=2 (FWHT + DHT) already capture most of the value, or does N=4 (adding DCT and a learned basis) provide a meaningful additional lift?
 2. Does mode collapse occur with all-learned bases, and does the FWHT+DHT anchor pair fully prevent it?
-3. How does this interact with the parameter-reduction direction? At smaller per-node mixer sizes, the multi-basis duplication is a larger relative compute increase; if the smaller mixer has less spare capacity per basis, the per-basis specialization may be sharper.
-4. Does the combined "multi-basis + semantic embedding" configuration unlock interpretability tooling that no single-basis configuration provides? This is the headline downstream research direction (see `reincorporate_large_semantic_embedding.md` and the README's "Combined Multi-Basis + Semantic Embedding (Interpretability Compound)" section).
+3. How does this interact with the parameter-reduction direction? At smaller per-node mixer sizes, the multi-transform duplication is a larger relative compute increase; if the smaller mixer has less spare capacity per basis, the per-basis specialization may be sharper.
+4. Does the combined "multi-transform + semantic embedding" configuration unlock interpretability tooling that no single-transform configuration provides? This is the headline downstream research direction (see `reincorporate_large_semantic_embedding.md` and the README's "Combined Multi-Transform + Semantic Embedding (Interpretability Compound)" section).

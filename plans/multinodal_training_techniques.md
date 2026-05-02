@@ -105,7 +105,7 @@ Auxiliary losses that shape expert behavior regardless of the architecture choic
 
 Combination methods that exploit WaveletLM's specific structure (multi-scale decomposition, per-scale gated mixing) and don't cleanly map to generic MoE or ensemble literature. Distinct from logit averaging or weight averaging because the combination happens *inside* the wavelet pipeline rather than after the final logits.
 
-> **Note:** The WaveletLM-native architecture-internal direction — **multi-basis transform parallelization**, where N parallel orthogonal-transform paths replace the single FWHT slot inside each per-scale mixer with shared wavelet scaffolding — was previously described in this section. It has been promoted to its own dedicated plan: see [`multi_basis_transform_parallelization.md`](multi_basis_transform_parallelization.md). That direction is architectural (operates inside a single model, ~5-15% compute overhead). The §6 entries below are full-node directions (operate at the model-ensemble level, building on the existing `multinodal_enabled` mode).
+> **Note:** The WaveletLM-native architecture-internal direction — **multi-transform parallelization**, where N parallel orthogonal-transform paths replace the single FWHT slot inside each per-scale mixer with shared wavelet scaffolding — was previously described in this section. It has been promoted to its own dedicated plan: see [`multi_transform_parallelization.md`](multi_transform_parallelization.md). That direction is architectural (operates inside a single model, ~5-15% compute overhead). The §6 entries below are full-node directions (operate at the model-ensemble level, building on the existing `multinodal_enabled` mode).
 
 **Wavelet-domain combination of full nodes (primary §6 proposal):** Each node produces its full multi-scale output (S=6 scales from the standard `levels=5` setup). Instead of averaging final logits across nodes (current `multinodal_combination: average`), each node's output is decomposed into wavelet coefficients, and matching coefficients are combined across nodes *per-scale* before inverse transform and reconstruction. Three variants:
 
@@ -135,7 +135,7 @@ Combination methods that exploit WaveletLM's specific structure (multi-scale dec
 
 Ranked by expected value per compute-hour spent, given budget constraints:
 
-> **Note:** Multi-basis transform parallelization (the architectural-internal "prism" direction, previously listed at #1 of this priority list) has been moved to its own plan: [`multi_basis_transform_parallelization.md`](multi_basis_transform_parallelization.md). It remains the highest-priority WaveletLM-native multi-perspective direction, but is architecturally distinct from the full-node multinodal techniques tracked here.
+> **Note:** Multi-transform parallelization (the architectural-internal "prism" direction, previously listed at #1 of this priority list) has been moved to its own plan: [`multi_transform_parallelization.md`](multi_transform_parallelization.md). It remains the highest-priority WaveletLM-native multi-perspective direction, but is architecturally distinct from the full-node multinodal techniques tracked here.
 
 1. **Wavelet-domain combination of full nodes (§6)** — Combiner-only code change applied to the existing multinodal infrastructure; tests whether per-scale combination outperforms current logit averaging. Cheap to test.
 2. **Deep Mutual Learning on multinodal (§4)** — Small code change; adds KL loss between cells. Cheap to test, known-positive technique.
