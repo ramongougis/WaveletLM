@@ -85,16 +85,46 @@ def install_record_function_hooks(model: torch.nn.Module):
     return handles
 
 
-def summarize_self_time_by_label(prof: profile) -> dict[str, float]:
-    """Aggregate self CUDA time (us) by our WLM:: labels, summed across
-    all profiled steps."""
+def _self_device_time(evt) -> float:
+    """Get self GPU time across PyTorch versions.
+    Newer PyTorch (>=2.4) renamed `self_cuda_time_total` →
+    `self_device_time_total`. Fall back to either."""
+    for attr in ("self_device_time_total", "self_cuda_time_total"):
+        if hasattr(evt, attr):
+            return getattr(evt, attr)
+    return 0.0
+
+
+def summarize_self_time_by_label(prof: profile, prefix: str) -> dict[str, float]:
+    """Aggregate self GPU time (us) by labels matching `prefix`, summed
+    across all profiled steps."""
     totals: dict[str, float] = defaultdict(float)
     for evt in prof.key_averages():
         name = evt.key
-        if not name.startswith("WLM::"):
+        if not name.startswith(prefix):
             continue
-        label = name[len("WLM::"):]
-        totals[label] += evt.self_cuda_time_total
+        label = name[len(prefix):]
+        totals[label] += _self_device_time(evt)
+    return dict(totals)
+
+
+def summarize_module_time(prof: profile, target_classes: tuple[str, ...]) -> dict[str, float]:
+    """Aggregate self GPU time (us) by module class name. Falls back when
+    record_function hooks get traced away by torch.compile — uses the
+    profiler's built-in `with_modules=True` attribution which fires on
+    nn.Module __call__ at the Python layer, surviving compilation as long
+    as the module boundary itself isn't inlined.
+
+    Looks for events named like 'nn.Module: <ClassName>_N' or just
+    '<ClassName>'."""
+    import re
+    totals: dict[str, float] = defaultdict(float)
+    pattern = re.compile(r"(?:nn\.Module:\s*)?(" + "|".join(re.escape(c) for c in target_classes) + r")(?:_\d+)?$")
+    for evt in prof.key_averages():
+        name = evt.key
+        m = pattern.search(name)
+        if m:
+            totals[m.group(1)] += _self_device_time(evt)
     return dict(totals)
 
 
@@ -182,16 +212,35 @@ def run_profile(block_size: int, args, base_config: dict, train_data, val_data):
         max_name_column_width=70,
     ))
 
-    # Component-attributed summary (sums over all profiled steps)
-    comp_totals = summarize_self_time_by_label(prof)
+    # Component-attributed summary. Two passes:
+    #   1) Try explicit WLM:: record_function labels (works for un-compiled
+    #      paths; torch.compile traces away the hooks and these come up empty).
+    #   2) Fall back to nn.Module class-name attribution from
+    #      with_modules=True, which fires at Python __call__ time and survives
+    #      compilation as long as the module boundary isn't inlined away.
+    comp_totals = summarize_self_time_by_label(prof, "WLM::")
+    if not comp_totals:
+        comp_totals = summarize_module_time(prof, COMPONENTS_TO_LABEL)
+        attribution_note = ("(via nn.Module class-name attribution; "
+                            "explicit record_function hooks were dropped by torch.compile)"
+                            if not args.no_compile else
+                            "(via nn.Module class-name attribution)")
+    else:
+        attribution_note = "(via WLM:: record_function regions)"
+
     if comp_totals:
-        print(f"\n  --- WaveletLM component totals (self CUDA time, "
+        print(f"\n  --- WaveletLM component totals (self GPU time, "
               f"summed over {args.steps} steps) ---")
+        print(f"  {attribution_note}")
         total_us = sum(comp_totals.values()) or 1.0
-        print(f"  {'Component':<28} {'us / step':>12} {'% of comp total':>18}")
+        wall_us = wall * 1e6
+        print(f"  {'Component':<28} {'us / step':>12} {'% of comp total':>18} {'% of wall':>12}")
         for label, us in sorted(comp_totals.items(), key=lambda x: -x[1]):
-            print(f"  {label:<28} {us / args.steps:>12.0f} {100 * us / total_us:>17.1f}%")
-        print(f"  {'(sum)':<28} {total_us / args.steps:>12.0f} {'100.0':>17}%")
+            pct_comp = 100 * us / total_us
+            pct_wall = 100 * us / wall_us
+            print(f"  {label:<28} {us / args.steps:>12.0f} {pct_comp:>17.1f}% {pct_wall:>11.1f}%")
+        print(f"  {'(sum of attributed)':<28} {total_us / args.steps:>12.0f} {'100.0':>17}% "
+              f"{100 * total_us / wall_us:>11.1f}%")
 
     # VRAM headline
     peak_alloc = torch.cuda.max_memory_allocated() / (1024**2)
