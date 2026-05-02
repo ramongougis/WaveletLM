@@ -514,6 +514,26 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
+1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
+2. [(In Progress) Combined Parameter Reduction and VRAM Reallocation](#in-progress-combined-parameter-reduction-and-vram-reallocation)
+3. [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size)
+4. [Dropout Sweep](#dropout-sweep)
+5. [Weight Decay Sweep](#weight-decay-sweep)
+6. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+7. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+8. [Longer PG-19 Training](#longer-pg-19-training)
+9. [Dataset Comparisons](#dataset-comparisons)
+10. [Model Comparisons](#model-comparisons)
+11. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+12. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+13. [Multi-Transform Parallelization](#multi-transform-parallelization)
+14. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+15. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+16. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+17. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+18. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+19. [Other Post-Release Plans](#other-post-release-plans)
+
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
 **Result:** L=1 and L=2 reach nearly identical training-loss minimums at matched compute, but L=1 has 0.15 worse val loss. See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) and [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the full analysis.
