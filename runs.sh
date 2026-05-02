@@ -166,19 +166,19 @@ nan_safe_run() {
 #     all of Test 2's regression; gradient-noise effect still real but
 #     somewhat smaller than Test 2 alone suggested
 # ============================================================
-run_one "Test 2b: Max EBS + proportional eval_interval — MBS=64, GA=1, bs=256, eval_interval=32" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 32}'
-git_commit_push "Test 2b (combined reduction + Max EBS, MBS=64, eval_interval=32): completed run"
+# run_one "Test 2b: Max EBS + proportional eval_interval — MBS=64, GA=1, bs=256, eval_interval=32" \
+#     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 64, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 32}'
+# git_commit_push "Test 2b (combined reduction + Max EBS, MBS=64, eval_interval=32): completed run"
 
-# ============================================================
-# Test 3: Larger block_size variant (MBS=8, GA=1, bs=1024, levels=5)
-# Uses freed VRAM for longer context. levels and per_scale_mixer_widths
-# remain at baseline values (5 / 6-entry array) — adjusting them to match
-# the longer context is left for a follow-up sweep.
-# ============================================================
-run_one "Test 3: Larger block_size — MBS=8, GA=1, bs=1024, levels=5 (combined reduction recipe)" \
-    '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 8, "grad_accum": 1, "block_size": 1024, "levels": 5, "eval_interval": 250}'
-git_commit_push "Test 3 (combined reduction + larger block_size, bs=1024): completed run"
+# # ============================================================
+# # Test 3: Larger block_size variant (MBS=8, GA=1, bs=1024, levels=5)
+# # Uses freed VRAM for longer context. levels and per_scale_mixer_widths
+# # remain at baseline values (5 / 6-entry array) — adjusting them to match
+# # the longer context is left for a follow-up sweep.
+# # ============================================================
+# run_one "Test 3: Larger block_size — MBS=8, GA=1, bs=1024, levels=5 (combined reduction recipe)" \
+#     '{"dataset": "wikitext-103", "layers": 1, "epochs": 5, "mlp_expansion": 10, "pkm_enabled": false, "fwpkm_num_keys": 8281, "tie_embedding_to_lm_head": true, "micro_batch_size": 8, "grad_accum": 1, "block_size": 1024, "levels": 5, "eval_interval": 250}'
+# git_commit_push "Test 3 (combined reduction + larger block_size, bs=1024): completed run"
 
 # ============================================================
 # Test 4: Min EBS + max block_size variant (MBS=1, GA=1)
