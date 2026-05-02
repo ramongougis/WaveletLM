@@ -535,7 +535,9 @@ Four sequential tests, each at L=1 / E=5 (the iteration platform default):
 
 #### Current Findings
 
-Test 1 (baseline reduction) is **better than free**: at L=1 / E=5 on WT-103, the reduced model (344.63M params) achieved **BPB sliding 1.0796** vs the unreduced L=1 baseline's 1.0809 — a marginal improvement at 41% fewer parameters and 21% less wall-clock. The §8 plan projected +0.025 BPB cost; actual was −0.0013 BPB benefit (cost projection off by a sign). Mechanism: L=1 was regularization-bound, so removing the spare memorization capacity shrank the train/val gap by 26% (0.498 → 0.369) without losing val-loss capability. See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Tests 2-4 (max EBS, larger block_size, min EBS + max block_size with NaN-aware halving) are queued in `runs.sh` to test how the freed VRAM is best spent.
+Test 1 (baseline reduction) is **essentially free**: at L=1 / E=5 on WT-103, the reduced model (344.63M params) achieved BPB sliding 1.0796 vs the unreduced L=1 baseline's 1.0809 (Δ = −0.0013, statistically equivalent within ±0.0015 single-seed noise) at 41% fewer parameters and 21% less wall-clock. The §8 plan projected +0.025 BPB cost; actual is essentially zero. Mechanism: L=1 was regularization-bound, so removing the spare memorization capacity shrank the train/val gap by 26% (0.498 → 0.369) without losing val-loss capability.
+
+Tests 2 and 2b (both MBS=64, varying eval frequency) **confirmed that increasing EBS hurts L=1**: both regressed +0.0064 and +0.0092 BPB respectively (4.3σ and 6.1σ above noise) — replicated evidence for the gradient-noise-as-regularizer effect. Freed VRAM should NOT go to larger batch parallelism. Tests 3 and 4 (larger block_size, min EBS + max block_size with NaN-aware halving) remain queued. See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts) for the full analysis.
 
 ### Dropout Sweep
 

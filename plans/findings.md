@@ -99,15 +99,15 @@ A non-uniform sweep is more likely to win than a flat multiplier. Cleanest exper
 
 ---
 
-## Combined parameter reduction: better than free at L=1
+## Combined parameter reduction: at-least-equivalent BPB at L=1, EBS scaling hurts
 
 *Parent plan: [other_post_release_plans.md §8](other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation)*
-*Status: Test 1 (baseline reduction) concluded. Tests 2-4 (max EBS, larger block_size, min EBS + max block_size) queued.*
-*Most recent: 2026-05-01*
+*Status: Tests 1, 2, 2b concluded. Tests 3-4 (larger block_size, min EBS + max block_size) queued.*
+*Most recent: 2026-05-02*
 
-### Headline finding
+### Headline finding 1 — parameter reduction is at-least-equivalent in BPB
 
-The combined parameter reduction recipe (mlp_expansion 20→10, PKM dropped, FwPKM keys halved, embedding tied to LM head) at L=1 / E=5 on WikiText-103 produced a **marginally better BPB than the unreduced L=1 baseline** despite removing 41.2% of parameters and 21% of training time. The §8 plan projected +0.025 BPB cost; actual result was −0.0013 BPB *benefit*. The cost projection was off by a sign.
+The combined parameter reduction recipe (mlp_expansion 20→10, PKM dropped, FwPKM keys halved, embedding tied to LM head) at L=1 / E=5 on WikiText-103 produced **statistically equivalent BPB to the unreduced L=1 baseline** despite removing 41.2% of parameters and 21% of training time. Δ = −0.0013 BPB, within ±0.0015 single-seed noise (3-seed variance study at L=2 baseline established noise floor: 1.0140, 1.0155, 1.0152 → σ ≈ 0.0008, 2σ ≈ 0.0015). The §8 plan projected +0.025 BPB cost; actual result is essentially zero cost — much better than projected, even without claiming strict improvement.
 
 | | Unreduced (Run C, 586M) | Reduced (Test 1, 344.63M) | Δ |
 |---|---|---|---|
@@ -129,20 +129,38 @@ The L=1 vs L=2 findings established that L=1 was regularization-bound, not capac
 3. **Train/val gap shrinks 26%** — overfitting headroom removed structurally.
 4. **Best val moved from epoch 4 to epoch 5** — the reduced model didn't overfit by epoch 5 the way the unreduced did, indicating the regularization pressure from parameter reduction is comparable to (or stronger than) one extra epoch's worth of dropout-driven regularization.
 
-### Why this is "better than free"
+### Why this is "essentially free"
 
 A naive parameter-reduction sweep typically trades quality for size: smaller model, slightly worse BPB. WaveletLM L=1's regularization-bound state inverts this trade. The "wasted" parameters in the unreduced model were actively harmful — they spent compute on memorization that worsened the train/val gap without lifting val. Removing them recovered some of the regularization that L=2's depth was providing for free in the L=2 baseline.
 
-This is a stronger and more publishable framing than the §8 plan anticipated. Suggested public framing:
+Suggested public framing:
 
-> *Combined parameter reduction (`mlp_expansion: 10`, PKM dropped, FwPKM keys halved, tied embedding) is better than free at L=1 / E=5 on WT-103: −0.0013 BPB sliding for −41% parameters and −21% wall-clock. The mechanism is implicit regularization: L=1 was regularization-bound, the reduced model has 26% smaller train/val gap, and the spare memorization capacity that's been removed wasn't contributing to generalization anyway.*
+> *Combined parameter reduction (`mlp_expansion: 10`, PKM dropped, FwPKM keys halved, tied embedding) is essentially free at L=1 / E=5 on WT-103: BPB sliding 1.0796 vs unreduced L=1's 1.0809 (Δ = −0.0013, statistically equivalent within ±0.0015 noise) at −41% parameters and −21% wall-clock. The mechanism is implicit regularization: L=1 was regularization-bound, the reduced model has 26% smaller train/val gap, and the spare memorization capacity that's been removed wasn't contributing to generalization anyway.*
+
+### Headline finding 2 — increasing EBS hurts L=1 (gradient-noise hypothesis confirmed by replication)
+
+Tests 2 and 2b both ran the same reduced recipe with `micro_batch_size=64` (8× the baseline MBS), differing only in eval frequency. Both regressed comfortably outside the noise band, in the same direction, with consistent magnitude:
+
+| Run | MBS | eval_interval | BPB sliding | Δ vs Test 1 | σ above noise |
+|-----|-----|---------------|-------------|-------------|---------------|
+| Test 1 | 8 | 250 | 1.0796 | — | — |
+| Test 2 | 64 | 250 | 1.0860 | +0.0064 | **4.3σ** |
+| Test 2b | 64 | 32 | 1.0888 | +0.0092 | **6.1σ** |
+
+The gradient-noise-as-regularizer effect is confirmed: smaller batches at L=1 provide implicit regularization that larger batches lose. Two independent runs at MBS=64 land 4.3σ and 6.1σ above Test 1 — extremely unlikely to be chance. The eval-coarseness alternative explanation is ruled out: Test 2b's finer eval (8× more frequent) didn't close the gap, it slightly widened it. **For regularization-bound models on this dataset, freed VRAM should NOT be spent on larger EBS.**
+
+### Methodology note: finer eval can hurt test-set checkpoint selection
+
+Test 2b's slightly worse BPB despite finer eval (1.0888 vs Test 2's 1.0860, ~1.9σ) is consistent with **selection bias on noisy val minima**. With 8× more eval samples (1140 vs 145 across 5 epochs), the "best val" checkpoint is more likely to be selected at a lucky noisy dip in val that doesn't generalize as well to test. This is Goodhart's Law applied to model selection: over-optimizing on lowest-val-ever-observed selects for val noise, which doesn't replicate to the held-out test set.
+
+Practical implication: holding `eval_interval` constant across configurations (rather than scaling proportionally to step count) is methodologically cleaner than the "more eval = better" intuition would suggest. The val curve in plateau regions has noise band ~±0.01 nats; eval should be frequent enough to catch the late-training plateau, but not so frequent that selection samples within-noise dips. The current `eval_interval=250` default is close to right for L=1 / E=5 configurations.
 
 ### Implications
 
-1. **The reduced configuration is the new L=1 default** for any subsequent ablation work that doesn't specifically test parameter count. It's strictly better in compute, parameters, and BPB.
-2. **The gap to L=2 baseline is now ~0.066 BPB** (1.0796 vs 1.0140) at 39% of L=2's parameters and 47% of its training time — a much stronger lightweight-variant story than L=1 unreduced (which was 0.067 BPB behind at 66% of L=2's params).
-3. **Variants 2-4 (in `runs.sh`) become more interesting**, not less: with the reduced model already matching or beating unreduced, freed VRAM spent on max EBS / larger block_size / min EBS + max block_size could push the reduced model past the L=2 baseline on BPB at half the parameter count.
-4. **Dropout sweep is still load-bearing.** The reduction provides ~26% gap shrinkage; tuning the L=2-default dropout for L=1 specifically is the next regularization lever and could close more of the residual gap to L=2.
+1. **The reduced configuration is the new L=1 default** for any subsequent ablation work that doesn't specifically test parameter count. It's at-least-equivalent in BPB at substantially less compute and parameter cost.
+2. **The gap to L=2 baseline is ~0.066 BPB** (1.0796 vs 1.0140) at 39% of L=2's parameters and 47% of its training time — a strong lightweight-variant story.
+3. **EBS scaling has been ruled out as a useful lever for L=1.** Tests 3 (larger block_size) and 4 (min EBS + max block_size) remain the most interesting ways to spend the freed VRAM, with Test 4 specifically targeting the opposite direction (less EBS + more context) of what Test 2 confirmed doesn't help.
+4. **Dropout sweep is still load-bearing.** The reduction provides ~26% gap shrinkage; tuning the L=2-default dropout for L=1 specifically is the next regularization lever and could close more of the residual gap to L=2. Test 2/2b's confirmation that L=1 is regularization-bound makes the dropout sweep even higher priority — it's targeting the *actual* bottleneck.
 
 ### Open questions
 

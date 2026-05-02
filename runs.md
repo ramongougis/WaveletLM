@@ -612,22 +612,36 @@ Tests the four cheap reductions from `plans/other_post_release_plans.md` §8 app
 | Run | Recipe | Folder | BPB sliding | PPL sliding | Params | Train time |
 |-----|--------|--------|-------------|-------------|--------|------------|
 | Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 586.15M | 9.74h |
-| Test 1 (combined reduction) | Four reductions above | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | **344.63M** | **7.69h** |
+| Test 1 (combined reduction) | MBS=8, eval=250 (4 reductions) | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 344.63M | 7.69h |
+| Test 2 (Max EBS) | MBS=64, eval=250 | [link](logs/wikitext-103_2026-05-01_14-54-13/log.txt) | 1.0860 | 29.75 | 344.63M | 5.60h |
+| Test 2b (Max EBS + finer eval) | MBS=64, eval=32 | [link](logs/wikitext-103_2026-05-01_20-46-54/log.txt) | 1.0888 | 30.00 | 344.63M | 5.60h |
 | ΔTest 1 vs baseline | — | — | **−0.0013** | −0.13 | **−41.2%** | **−21%** |
+| ΔTest 2 vs Test 1 | — | — | +0.0064 (4.3σ) | +0.60 | — | — |
+| ΔTest 2b vs Test 1 | — | — | +0.0092 (6.1σ) | +0.85 | — | — |
 
-**Headline finding:** parameter reduction at L=1 is **better than free** at this dataset/scale. The §8 plan projected +0.025 BPB cost; actual result is −0.0013 BPB *benefit*. Cost projection was off by a sign.
+(Noise floor ±0.0015 BPB from 3-seed variance study at the L=2 baseline.)
 
-**Mechanism (consistent with L=1 findings):** L=1 was regularization-bound, with spare capacity wasted on memorization that didn't translate to val gain. Removing 42% of parameters removed the unused memorization headroom without touching the components contributing to generalization.
+**Headline finding 1 — parameter reduction at L=1 is at-least-equivalent in BPB.** Test 1 vs unreduced: Δ = −0.0013 BPB, which is within ±0.0015 single-seed noise — statistically indistinguishable on BPB at 41% fewer parameters and 21% less wall-clock. The §8 plan projected +0.025 BPB cost; actual is essentially zero cost, much better than projected. The mechanism is implicit regularization: L=1 was regularization-bound, removing 42% of parameters removed spare memorization capacity without losing generalization-relevant capacity.
 
-| Min-train comparison | Unreduced | Reduced | Δ |
+| Min-train comparison | Unreduced | Reduced (Test 1) | Δ |
 |---|---|---|---|
 | Min train loss | 2.8292 | 2.9649 | +0.136 (less memorization) |
 | Best val loss | 3.3275 (ep4) | 3.3341 (ep5) | +0.007 (~equal) |
 | Train/val gap | 0.498 | **0.369** | **−26%** |
 
-The reduced model has materially less memorization capacity (train floor +0.136 nats higher), but the same val loss, with a 26% smaller train/val gap — implicit-regularization-via-parameter-reduction realizing exactly as predicted. The reduced model also did not overfit by epoch 5 (best val came at epoch 5, not epoch 4 as in the unreduced).
+The reduced model has materially less memorization capacity (train floor +0.136 nats higher), but essentially the same val loss, with a 26% smaller train/val gap — implicit-regularization-via-parameter-reduction realizing exactly as predicted.
 
-See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Variants 2-4 (max EBS, larger block_size, min EBS + max block_size with NaN-aware halving) are queued in `runs.sh` to test how the freed VRAM is best spent.
+**Headline finding 2 — increasing EBS hurts L=1 at matched compute (gradient-noise hypothesis confirmed by replication).** Tests 2 and 2b (both MBS=64, varying only eval_interval) both regressed comfortably outside the noise band:
+
+- Test 2 (eval=250): +0.0064 BPB vs Test 1 = **4.3σ**
+- Test 2b (eval=32): +0.0092 BPB vs Test 1 = **6.1σ**
+- Test 2 vs Test 2b (different eval, same EBS): +0.0028 BPB ≈ 1.9σ — within noise of each other
+
+Two independent runs at MBS=64 both significantly worse than MBS=8, in the same direction, with consistent magnitude. The eval-coarseness alternative explanation is ruled out: Test 2b with finer eval (8× more frequent) didn't close the gap to Test 1 — it slightly widened it. The freed VRAM from parameter reduction should NOT be spent on larger EBS for L=1.
+
+**Methodology note (subtle):** Test 2b's BPB is *slightly worse* than Test 2's despite finer eval (1.0888 vs 1.0860, ~1.9σ gap). This is consistent with selection-bias-on-noisy-val-minima: with 8× more eval points (1140 vs 145 across 5 epochs), the "best val" checkpoint is more likely to be selected at a noisy lucky dip in val that doesn't generalize as well to test. Confirms your earlier instinct that constant `eval_interval` across configs is methodologically cleaner than scaling — finer eval can degrade test-set selection by amplifying val-noise sampling.
+
+See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Tests 3 and 4 (larger block_size, min EBS + max block_size with NaN-aware halving) are queued in `runs.sh` to test alternative uses of the freed VRAM.
 
 ### Post-release: bit-packed PTQ kernels
 
