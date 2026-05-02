@@ -481,16 +481,16 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 
 ### WikiText-103 Test Set Perplexity Comparison
 
-| Model | Type | Trained on | Params | PPL |
-|-------|------|-----------|--------|-----|
-| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 17.5[^3] |
-| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 18.3[^2]* |
-| GPT-2 Large | Transformer | WebText (40GB) | 774M | 19.3[^3] |
-| S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 20.9[^4]* |
-| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 22.1[^3] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **883M** | **23.8†** |
-| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 24.0[^2]* |
-| GPT-2 | Transformer | WebText (40GB) | 124M | 29.4[^3] |
+| Model | Type | Trained on | Params | Context | PPL |
+|-------|------|-----------|--------|---------|-----|
+| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 17.5[^3] |
+| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | 18.3[^2]* |
+| GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 19.3[^3] |
+| S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 1024* | 20.9[^4]* |
+| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 22.1[^3] |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **883M** | **256†** | **23.8†** |
+| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | 24.0[^2]* |
+| GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 29.4[^3] |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
@@ -531,8 +531,6 @@ Four sequential tests, each at layers=1 & epochs=5 (the iteration platform defau
 3. **Larger block size variant:** baseline reduction with `block_size` increased to use the freed VRAM. Tests whether longer context offsets the parameter reduction's BPB cost.
 4. **Min EBS + max block size variant:** `micro_batch_size=1`, `grad_accum=1`, with `block_size` pushed to maximize VRAM usage; if instability or NaN emerges, dial back `block_size` until the run completes stably. Hypothesizes the best-of-both-worlds combination for a regularization-bound model: maximum gradient noise from single-sequence updates plus rich per-example signal from very long context for the wavelet pipeline to exploit at higher scales.
 
-> **Note:** Tests 3 and 4 keep `levels=5` and the existing 6-entry `per_scale_mixer_widths` array unchanged, even though longer `block_size` would in principle support up to `log2(block_size)` levels. Scaling both together (e.g., `levels=8` with a 9-entry `per_scale_mixer_widths` at `block_size=1024`) is a follow-up worth doing if Tests 3 or 4 show promise, but adjusting it within these tests would conflate two variables. Reserved for a separate follow-up sweep or test set.
-
 #### Current Findings
 
 1. **Baseline reduction:** BPB sliding **1.0796** vs unreduced L=1's 1.0809. Statistically equivalent (Δ = −0.0013, within ±0.0015 WT-103 3-seed noise margin) at −41% parameters and −21% run time. Mechanism: L=1 was regularization-bound, so removing spare memorization capacity shrank the train/val gap 26% (0.498 → 0.369) without losing val-loss capability.
@@ -542,7 +540,18 @@ Four sequential tests, each at layers=1 & epochs=5 (the iteration platform defau
 
 See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts) for the full analysis.
 
-### Dropout Sweep
+### Per-Scale Configuration at Longer Block Size
+
+A follow-up to the parameter reduction's larger-block-size variant (Tests 3 and 4 above): once a longer `block_size` is established, sweep `levels` and `per_scale_mixer_widths` to take advantage of the additional coarse scales the longer sequence enables.
+
+Currently `levels=5` with `per_scale_mixer_widths=[1.0, 1.0, 1.0, 0.5, 0.5, 0.5]` (S = 6 = (levels + 1) scales, split half-coarse-at-full-width / half-fine-at-half-width). This was tuned at `block_size=256` (where `log2(256)=8` is the maximum levels), so coarse-scale capacity is currently constrained.
+
+Two-axis sweep:
+
+- **`levels`**: log2(block_size) gives the upper bound. Default `levels=5` was empirically optimal at bs=256; at bs=1024 (max levels=10), values like `levels=7` (S=8) or `levels=9` (S=10) may better capture longer-range structure. Prefer odd `levels` values to keep S even.
+- **`per_scale_mixer_widths`**: maintain the symmetric half-coarse-at-1.0 / half-fine-at-0.5 split for clean architectural symmetry. `levels=7` → `[1.0]×4 + [0.5]×4`; `levels=9` → `[1.0]×5 + [0.5]×5`. Optional follow-up: shift the split point (e.g., 5/3 instead of 4/4 at S=8) if symmetric underperforms — possible if longer sequences make some fine scales more informative than they were at bs=256.
+
+This sweep is reserved as a separate test set rather than rolled into Tests 3/4 to avoid conflating two architectural variables. Run after Tests 3/4 confirm longer `block_size` is itself a real quality lever for the parameter-reduced L=1 model.
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
 
@@ -573,20 +582,6 @@ The best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, an
 ### Model Comparisons
 
 Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
-
-### Scaled-Up Model (B200)
-
-The 883M RTX 5090 headline run scales up naturally to a B200:
-
-- `C`: 2048 → 4096 
-- `layers`: 2 → 4–8
-- `mlp_expansion`: 20 → 50–200
-- `pkm_num_keys` & `fwpkm_num_keys`: 16384 → 65536 each
-- fp16 → FP8 via Blackwell tensor cores (NYI)
-
-The goal is a 10–15B parameter configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. 
-
-Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with [uniform 8-bit PTQ](runs.md#ptq-sweep-summary). See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
 
 ### Optimizer Sweep (Adagrad / AdamW / Muon)
 
@@ -633,6 +628,20 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 ### Multinodal Mode (Product-of-Experts)
 
 WaveletLM supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever — a capstone for pure scale-up once the rest of the architectural roadmap settles. Distinct from [Multi-Transform Parallelization](#multi-transform-parallelization) above (which parallelizes inside a single model at the FWHT slot); the PoE mode parallelizes whole models. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+
+### Scaled-Up Model (B200)
+
+Conditional on the architectural research roadmap above (multi-transform parallelization, dropout sweep, semantic embedding, combined interpretability compound) producing meaningful gains, scale up the validated architecture to B200-class hardware. The 883M RTX 5090 headline run scales up naturally to:
+
+- `C`: 2048 → 4096 
+- `layers`: 2 → 4–8
+- `mlp_expansion`: 20 → 50–200
+- `pkm_num_keys` & `fwpkm_num_keys`: 16384 → 65536 each
+- fp16 → FP8 via Blackwell tensor cores (NYI)
+
+The goal is a 10–15B parameter configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. 
+
+Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with [uniform 8-bit PTQ](runs.md#ptq-sweep-summary). See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
 
 ### Other Post-Release Plans
 

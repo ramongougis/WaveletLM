@@ -6,9 +6,12 @@
 #
 #   Test 2: Max EBS — MBS=64, GA=1, bs=256, levels=5 (uses ~25 GiB / 32 GiB)
 #   Test 3: Larger block_size — MBS=8, GA=1, bs=1024, levels=5
-#   Test 4: Min EBS + max block_size — MBS=1, GA=1, bs starts at 8192 and
-#           halves on NaN detection (8192→4096→2048→1024→512→256) until a
-#           stable run completes; levels=5 throughout
+#   Test 4: Min EBS + max block_size — MBS=1, GA=1, bs starts at 16384 and
+#           halves on NaN detection (16384→8192→4096→2048→1024→512→256) until
+#           a stable run completes; levels=5 throughout. bs=16384 puts
+#           WaveletLM in directly comparable territory with Hyena's 16k context
+#           and uses ~27 GiB / 32 GiB VRAM (vs MBS=1, bs=8192 which would
+#           leave 18 GiB idle).
 #
 # levels and per_scale_mixer_widths remain at baseline values across all tests.
 # Tuning them to match the longer block_size in Tests 3 and 4 (so the wavelet
@@ -185,7 +188,7 @@ git_commit_push "Test 3 (combined reduction + larger block_size, bs=1024): compl
 # per-example signal from very long context for the wavelet pipeline.
 # ============================================================
 TEST_4_DONE=0
-for BLOCK_SIZE in 8192 4096 2048 1024 512 256; do
+for BLOCK_SIZE in 16384 8192 4096 2048 1024 512 256; do
     PATCH="{\"dataset\": \"wikitext-103\", \"layers\": 1, \"epochs\": 5, \"mlp_expansion\": 10, \"pkm_enabled\": false, \"fwpkm_num_keys\": 8281, \"tie_embedding_to_lm_head\": true, \"micro_batch_size\": 1, \"grad_accum\": 1, \"block_size\": $BLOCK_SIZE, \"levels\": 8, \"eval_interval\": 250}"
     nan_safe_run "Test 4: MBS=1, GA=1, bs=$BLOCK_SIZE, levels=5 (combined reduction recipe)" "$PATCH"
     EXIT_CODE=$?
