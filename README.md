@@ -588,7 +588,7 @@ Test the contribution of the FWHT slot in the per-scale mixer versus having no t
 
 ### Disable Wavelet Crawl
 
-`wavelet_crawl=true` is the only convolutional component left in the pipeline. Checkpoint probes on both WT-103 and PG-19 show at least 2 of 5 levels collapse to distributions the model has effectively zeroed out. Single-seed L=1 / E=5 ablation with `wavelet_crawl=false`; if within the ±0.0015 noise floor, disable by default to remove the only convolutional operation in the model at zero quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the entropy table and decision rule.
+Single-seed layers = 1 & epochs = 5 ablation with `wavelet_crawl=false`. Wavelet crawl is the only convolutional component in the model. Checkpoint probes on both WT-103 and PG-19 show at least 2 of 5 levels collapse to distributions the model has effectively zeroed out, making this largely ineffective. Anticipated effect of ablation: 1% VRAM gain and negligible/within-noise quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the entropy table and decision rule.
 
 ### 2D Wavelet over (Batch, Token) with Sequential Training
 
