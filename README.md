@@ -159,6 +159,7 @@ PTQ effects:
 
 Selections from the [PG-19 best run's generations log](https://github.com/ramongougis/WaveletLM/blob/main/logs/pg19_2026-04-25_13-34-46/generations.txt):
 
+
 **Sample A** with prompt "The history of":
 
 > The history of the world is a long and painful one. It has been so 
@@ -225,7 +226,22 @@ Since PG-19 contains data from 1919 and earlier, this prompt is out of distribut
 
 A second out-of-distribution prompt. The model has no training data on spaceships or interstellar travel, so it routes these to the closest pre-1919 register: a Victorian mechanical-engineering treatise with a figure caption.
 
-**Sample E** with prompt "The history of" — naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample E** with prompt "The soldiers marched" - naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+
+> The soldiers marched in uniform. Ten minutes later, Mr. Farrell 
+> approached Mr. Talbot and the captain of police. He had been told that 
+> he must start immediately for New York, and sent for his son, Mr. 
+> Waters, to meet him there. With this he departed on his return, leaving 
+> his wife in such distress at the selfish desertion of her husband and 
+> son as to despair of recovering the stolen property. But both Frank and 
+> Harry were deeply anxious about her. They knew that their father would 
+> not thank them for killing the lady with whom they had arrived; and 
+> when he told them how it was done she resolutely turned away her head. 
+> And
+
+One-shot naive sample (without `--strategies`). Naive samples retain more of the model's raw distribution and tend to mix domains more loosely.
+
+**Sample F** with prompt "The history of" - naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
 
 > The history of her interest in the modern world during this quarter, 
 > has been given to the journal in which she appeared during her stay; 
@@ -243,7 +259,7 @@ A second out-of-distribution prompt. The model has no training data on spaceship
 > us. She had previously known her husband, who held an appointment 
 > within a few miles of Camden Town.
 
-Randomly selected naive (without `--strategies`) sample out of 20. Naive samples retain more of the model's raw distribution and tend to mix domains more loosely.
+Randomly selected naive sample (without `--strategies`) out of 20.
 
 </details>
 
@@ -312,7 +328,22 @@ Selections from the [WikiText-103 best run's generations log](https://github.com
 > prayer" in Islamic law and Arabic texts dating back to prehistory as 
 > early as the 6th century BCE.
 
-**Sample E** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample E** with prompt "The soldiers marched" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+
+> The soldiers marched through a number of hiding places and ambushes . 
+> These were the first major engagements that took place during this 
+> time — only one is known from sources , although most historians agree 
+> the number differs in details . )
+>
+> The rebel army commenced its march from Livno on 29 October , followed 
+> by their advance towards Palermo on 21 November . So – when there was 
+> some initial resistance to that tactic – General Guy de Croix — 
+> Enghien 's men started gathering at dawn on September 20 , but most 
+> would not arrive until midday . Their combined forces divided into 
+> two columns , with reinforcements arriving from all sides within 
+> hours . The main
+
+**Sample F** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
 
 > The history of the tropical cyclone is unknown, but official records 
 > suggest it formed on May 31. It developed into a tropical storm later 
