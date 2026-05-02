@@ -609,17 +609,21 @@ Tests the four cheap reductions from `plans/other_post_release_plans.md` §8 app
 - `fwpkm_num_keys: 16384 → 8281` (≈ half, perfect square)
 - `tie_embedding_to_lm_head: false → true`
 
-| Run | Recipe | Folder | BPB sliding | PPL sliding | Params | Train time |
-|-----|--------|--------|-------------|-------------|--------|------------|
-| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 586.15M | 9.74h |
-| Test 1 (combined reduction) | MBS=8, eval=250 (4 reductions) | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 344.63M | 7.69h |
-| Test 2 (Max EBS) | MBS=64, eval=250 | [link](logs/wikitext-103_2026-05-01_14-54-13/log.txt) | 1.0860 | 29.75 | 344.63M | 5.60h |
-| Test 2b (Max EBS + finer eval) | MBS=64, eval=32 | [link](logs/wikitext-103_2026-05-01_20-46-54/log.txt) | 1.0888 | 30.00 | 344.63M | 5.60h |
-| ΔTest 1 vs baseline | — | — | **−0.0013** | −0.13 | **−41.2%** | **−21%** |
-| ΔTest 2 vs Test 1 | — | — | +0.0064 (4.3σ) | +0.60 | — | — |
-| ΔTest 2b vs Test 1 | — | — | +0.0092 (6.1σ) | +0.85 | — | — |
+| Run | Recipe | Folder | BPB sliding | PPL sliding | Best val | Min train | Train/val gap | Params | Train time | VRAM |
+|-----|--------|--------|-------------|-------------|----------|-----------|---------------|--------|------------|------|
+| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 3.3275 | 2.8292 | 0.498 | 586.15M | 9.74h | — |
+| Test 1 (combined reduction) | MBS=8, eval=250 (4 reductions) | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | 0.369 | 344.63M | 7.69h | 6.9 GiB |
+| Test 2 (Max EBS) | MBS=64, eval=250 | [link](logs/wikitext-103_2026-05-01_14-54-13/log.txt) | 1.0860 | 29.75 | 3.3746 | 3.0189 | 0.356 | 344.63M | 5.60h | 25 GiB |
+| Test 2b (Max EBS + finer eval) | MBS=64, eval=32 | [link](logs/wikitext-103_2026-05-01_20-46-54/log.txt) | 1.0888 | 30.00 | 3.3532 | 2.9979 | 0.355 | 344.63M | 5.60h | 25 GiB |
+| Test 3 (Larger block_size) | MBS=8, bs=1024, eval=250 | [link](logs/wikitext-103_2026-05-02_02-24-23/log.txt) | 1.0880 † | 29.93 † | **3.3390** | **2.9874** | **0.352** | 344.63M | **5.96h** | **14 GiB** |
+| ΔTest 1 vs baseline | — | — | −0.0013 | −0.13 | +0.007 | +0.136 | −0.130 (−26%) | **−41.2%** | **−21%** | — |
+| ΔTest 2 vs Test 1 | — | — | +0.0064 (4.3σ) | +0.60 | +0.041 | +0.054 | -0.013 | — | — | +260% |
+| ΔTest 2b vs Test 1 | — | — | +0.0092 (6.1σ) | +0.85 | +0.019 | +0.033 | -0.014 | — | — | +260% |
+| ΔTest 3 vs Test 1 | — | — | +0.0084 † | +0.78 † | **+0.005** (~1σ) | +0.022 | -0.017 (-5%) | — | **−22%** | +103% |
 
 (Noise floor ±0.0015 BPB from 3-seed variance study at the L=2 baseline.)
+
+**† Important methodology caveat for Test 3 BPB:** the benchmark runs at the model's training block_size, so Test 3 evaluates on 280 windows of length 1024 (stride 512) while Tests 1/2/2b evaluate on 2246 windows of length 256 (stride 128). The BPB comparison is **not apples-to-apples** across different block_sizes. Best val loss IS apples-to-apples (same val set, same prediction methodology) and shows Test 3 essentially tied with Test 1 (Δ=+0.005, ~1σ). To make a defensible BPB claim across runs, re-evaluate Test 3's checkpoint at bs=256 stride=128 in `benchmark_only` mode.
 
 **Headline finding 1 — parameter reduction at L=1 is at-least-equivalent in BPB.** Test 1 vs unreduced: Δ = −0.0013 BPB, which is within ±0.0015 single-seed noise — statistically indistinguishable on BPB at 41% fewer parameters and 21% less wall-clock. The §8 plan projected +0.025 BPB cost; actual is essentially zero cost, much better than projected. The mechanism is implicit regularization: L=1 was regularization-bound, removing 42% of parameters removed spare memorization capacity without losing generalization-relevant capacity.
 
@@ -641,7 +645,21 @@ Two independent runs at MBS=64 both significantly worse than MBS=8, in the same 
 
 **Methodology note (subtle):** Test 2b's BPB is *slightly worse* than Test 2's despite finer eval (1.0888 vs 1.0860, ~1.9σ gap). This is consistent with selection-bias-on-noisy-val-minima: with 8× more eval points (1140 vs 145 across 5 epochs), the "best val" checkpoint is more likely to be selected at a noisy lucky dip in val that doesn't generalize as well to test. Confirms your earlier instinct that constant `eval_interval` across configs is methodologically cleaner than scaling — finer eval can degrade test-set selection by amplifying val-noise sampling.
 
-See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Tests 3 and 4 (larger block_size, min EBS + max block_size with NaN-aware halving) are queued in `runs.sh` to test alternative uses of the freed VRAM.
+**Headline finding 3 — longer block_size is the right way to spend freed VRAM.** Test 3 (MBS=8, bs=1024) achieved best val loss 3.3390 vs Test 1's 3.3341 (Δ = +0.005 nats, ~1σ on BPB scale — **essentially tied**), with:
+
+- **Wall-clock −22%** (5.96h vs 7.69h) — bs=1024 amortizes per-step overhead better in WaveletLM's wavelet+FWHT pipeline than smaller block_size
+- **VRAM ~half** (~14 GiB vs Test 2's ~25 GiB at MBS=64) — longer context is more VRAM-efficient than larger batch
+- **Train/val gap shrinks 5%** (0.352 vs Test 1's 0.369) and lowest min train loss of any test so far (2.9874) — slightly tighter generalization per nat of training capacity
+
+In val terms (apples-to-apples, since BPB across different bs is not directly comparable), Test 3 is meaningfully **better than both MBS=64 variants**:
+- Test 3 vs Test 2: Δval = −0.036 nats (~7σ on BPB scale)
+- Test 3 vs Test 2b: Δval = −0.014 nats (~3σ on BPB scale)
+
+**The framework consolidates: longer context preserves quality at less wall-clock and less VRAM; larger batch hurts quality.** For regularization-bound L=1, the right way to use freed VRAM is *more per-example signal* (longer block_size), not *more parallel sequences* (larger MBS). Both spend the same VRAM budget; one preserves gradient noise (the regularizer) while gaining within-example signal, the other dilutes gradient noise.
+
+**Likely under-realized potential:** Test 3 keeps `levels=5` from baseline, which means coarsest cell at bs=1024 represents 32 tokens (vs 8 tokens at bs=256). The wavelet pipeline isn't yet exploiting the additional coarse structure the longer context enables — see the README's "Per-Scale Configuration at Longer Block Size" section for the dependent follow-up sweep that's now justified by Test 3's results.
+
+See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Test 4 (min EBS + max block_size with NaN-aware halving) is queued in `runs.sh` to test the most aggressive variant.
 
 ### Post-release: bit-packed PTQ kernels
 

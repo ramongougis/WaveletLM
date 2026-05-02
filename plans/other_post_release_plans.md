@@ -287,6 +287,36 @@ WaveletLM names FWHT as one of its central features. Validating whether FWHT is 
 
 ---
 
+## 11. Wavelet crawl disable ablation
+
+`wavelet_crawl=true` (with `wavelet_crawl_k=3`) is currently the only convolutional component remaining in the WaveletLM pipeline — it learns ±1 dilation offsets per level via a softmax over `K=3` parallel evaluations of each lifting block. Cost is small but real: ~1.6% wall-clock and ~2% VRAM at the current config, paid every forward pass.
+
+**Motivation:** A direct probe of the trained `dilation_logits` from both the WT-103 882M release checkpoint and the PG-19 best checkpoint shows the same per-level pattern across two unrelated corpora:
+
+| Level | WT-103 norm-entropy | PG-19 norm-entropy | Status |
+|---|---|---|---|
+| L0 (finest)   | 0.06 | 0.08 | Collapsed (~99% mass on a single offset) |
+| L1            | 0.47 | 0.80 | Sharp on WT-103, broader on PG-19 |
+| L2            | 0.89 | 0.97 | Used on WT-103, near-uniform on PG-19 |
+| L3            | 0.97 | 0.99 | Near-uniform on both |
+| L4 (coarsest) | 1.00 | 0.99 | Uniform on both (model can't distinguish offsets) |
+
+At least two of the five levels are paying compute for distributions the model has effectively zeroed out (L0) or treats as interchangeable averaging (L4, plus L3 on PG-19). The −0.0037 BPB win measured for `wavelet_crawl=true` at single-seed sits ~2.5σ above the corrected ±0.0015 noise floor — within plausible shrink-toward-noise range under multi-seed validation.
+
+**Test:** Single-seed L=1 / E=5 run on WT-103 with `wavelet_crawl=false`, all other config matching the L=1 baseline. Compare BPB sliding against the matching L=1 baseline directly.
+
+**Decision rule:**
+
+- **BPB regression > +0.0015 (noise floor):** keep `wavelet_crawl=true` as default; the per-level entropy data becomes interpretability material rather than a removal mandate.
+- **BPB within ±0.0015:** disable `wavelet_crawl` permanently. Two wins: removes the only convolutional op (interpretability/architectural-purity framing — "no convolutions, no attention"), and reclaims the ~1.6% / ~2% compute and VRAM at zero quality cost.
+- **BPB improvement > +0.0015:** unexpected — investigate before disabling more broadly. Plausible if the K=3 path was injecting a regularization effect orthogonal to its intended dilation role.
+
+**Optional follow-up if removal is borderline:** per-level adaptive K schedule informed by the observed entropy table — `K=[1, 3, 3, 1, 1]` covers both corpora's used range while dropping K from 3 to 1 at the always-collapsed levels. Roughly halves the wavelet_crawl compute while preserving the levels that genuinely use it. This is only worth pursuing if outright removal causes a measurable regression.
+
+**Cost:** One ~3-4h L=1 / E=5 run. The interpretability data already exists from the checkpoint probe; this just measures the BPB delta from removing the op.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Single-Layer WaveletLM (`single_layer_waveletlm.md`)**: highest priority. Four-run test matrix (~10-12h on a 5090) measures whether L=1 with the modern feature stack approaches the L=2 baseline. Pairs with parameter reduction (cuts model to ~250-300M params), enables interpretability work, and clarifies what depth is actually doing in WaveletLM. Decisive regardless of outcome.
@@ -298,5 +328,6 @@ WaveletLM names FWHT as one of its central features. Validating whether FWHT is 
 7. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
 8. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
 9. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (~10-12h total) and decisive. Cleaner attribution at L=1 — pair with the L=1 plan if (1) above shows L=1 is competitive.
-10. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-11. **Inference strategies ablations**: self-explanatory.
+10. **Wavelet crawl disable ablation (11)**: cheap (~3-4h, single L=1 / E=5 run) and high-information. Removes the only convolutional op in the pipeline if the BPB delta lands within the noise floor; checkpoint-probe evidence already suggests at least 2 of 5 levels are wasted compute. Architectural-purity win regardless of the outcome's BPB direction.
+11. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+12. **Inference strategies ablations**: self-explanatory.

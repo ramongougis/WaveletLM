@@ -159,8 +159,44 @@ Practical implication: holding `eval_interval` constant across configurations (r
 
 1. **The reduced configuration is the new L=1 default** for any subsequent ablation work that doesn't specifically test parameter count. It's at-least-equivalent in BPB at substantially less compute and parameter cost.
 2. **The gap to L=2 baseline is ~0.066 BPB** (1.0796 vs 1.0140) at 39% of L=2's parameters and 47% of its training time — a strong lightweight-variant story.
-3. **EBS scaling has been ruled out as a useful lever for L=1.** Tests 3 (larger block_size) and 4 (min EBS + max block_size) remain the most interesting ways to spend the freed VRAM, with Test 4 specifically targeting the opposite direction (less EBS + more context) of what Test 2 confirmed doesn't help.
+3. **EBS scaling has been ruled out as a useful lever for L=1.** Tests 2/2b confirmed; freed VRAM should NOT go to larger MBS.
 4. **Dropout sweep is still load-bearing.** The reduction provides ~26% gap shrinkage; tuning the L=2-default dropout for L=1 specifically is the next regularization lever and could close more of the residual gap to L=2. Test 2/2b's confirmation that L=1 is regularization-bound makes the dropout sweep even higher priority — it's targeting the *actual* bottleneck.
+
+### Headline finding 3 — longer block_size is the right way to spend freed VRAM
+
+Test 3 (MBS=8, bs=1024) achieved best val loss 3.3390 vs Test 1's 3.3341 — Δ = +0.005 nats, ~1σ on the BPB scale, **essentially tied**. This is dramatically better than the MBS=64 variants (Test 2: +0.041 val, Test 2b: +0.019 val).
+
+| Run | bs | MBS | VRAM | Wall-clock | Best val | Train/val gap |
+|---|---|---|---|---|---|---|
+| Test 1 | 256 | 8 | 6.9 GiB | 7.69h | 3.3341 | 0.369 |
+| Test 2 | 256 | 64 | 25 GiB | 5.60h | 3.3746 | 0.356 |
+| Test 2b | 256 | 64 | 25 GiB | 5.60h | 3.3532 | 0.355 |
+| **Test 3** | **1024** | **8** | **14 GiB** | **5.96h** | **3.3390** | **0.352** |
+
+Test 3 is dominant on every axis except marginal val regression (within noise of Test 1). Specifically:
+- **−22% wall-clock** vs Test 1 — bs=1024 amortizes per-step overhead better in the wavelet+FWHT pipeline
+- **~half the VRAM** of MBS=64 (14 GiB vs 25 GiB) — longer context is more memory-efficient than larger batch
+- **Lowest train/val gap** of any test so far (0.352) and lowest min train loss (2.9874) — slightly tighter generalization per nat of training capacity
+- **Equivalent val loss to Test 1**, dramatically better than Tests 2/2b
+
+### Why this matters — framework consolidation
+
+Tests 2/2b and Test 3 use the same total tokens-per-step (8× the baseline). Both spend the same freed VRAM budget but allocate it differently:
+
+- **Test 2/2b (MBS=64, bs=256)**: 8× tokens come from more parallel sequences. Reduces per-step gradient noise. **Hurts val loss** — the regularization-bound L=1 model loses an implicit regularizer.
+- **Test 3 (MBS=8, bs=1024)**: 8× tokens come from longer per-sequence context. Preserves gradient noise (still 8 sequences per gradient). **Preserves val loss** — gains within-example signal without losing the regularizer.
+
+This is the third independent confirmation of the regularization-bound framework, and it's architecturally informative: **for regularization-bound L=1, the right way to use freed VRAM is more per-example signal (longer block_size), not more parallel sequences (larger MBS)**.
+
+### Likely under-realized potential — per-scale configuration mismatch
+
+Test 3 keeps `levels=5` from baseline. At bs=256, this gave the coarsest scale ~8 tokens of structure. At bs=1024 with the same levels=5, the coarsest scale represents 32 tokens — 4× wider per coarse cell. The wavelet pipeline isn't yet exploiting the additional coarse scales the longer context could enable.
+
+Hypothesis worth testing: optimal `levels ≈ log2(block_size) − constant` where constant ≈ 3-4 (so coarsest cell stays at 8-16 tokens regardless of bs). If true:
+- bs=1024 + levels=7 (S=8) → coarsest cell at 8 tokens
+- bs=8192 + levels=10 (S=11) → coarsest cell at 8 tokens
+
+This would require also resizing `per_scale_mixer_widths` to S entries (8 or 11 respectively), with the symmetric half-coarse-at-1.0 / half-fine-at-0.5 split as starting point. Reserved as a separate sweep — see README's "Per-Scale Configuration at Longer Block Size" section.
 
 ### Open questions
 

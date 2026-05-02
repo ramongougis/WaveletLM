@@ -520,19 +520,20 @@ Longer training time, more regularization, and parameter compression are the sur
 4. [Dropout Sweep](#dropout-sweep)
 5. [Weight Decay Sweep](#weight-decay-sweep)
 6. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-7. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-8. [Longer PG-19 Training](#longer-pg-19-training)
-9. [Dataset Comparisons](#dataset-comparisons)
-10. [Model Comparisons](#model-comparisons)
-11. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-12. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-13. [Multi-Transform Parallelization](#multi-transform-parallelization)
-14. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-15. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-16. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-17. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-18. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-19. [Other Post-Release Plans](#other-post-release-plans)
+7. [Disable Wavelet Crawl](#disable-wavelet-crawl)
+8. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+9. [Longer PG-19 Training](#longer-pg-19-training)
+10. [Dataset Comparisons](#dataset-comparisons)
+11. [Model Comparisons](#model-comparisons)
+12. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+13. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+14. [Multi-Transform Parallelization](#multi-transform-parallelization)
+15. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+16. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+17. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+18. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+19. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+20. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -555,8 +556,8 @@ Four sequential tests, each at layers=1 & epochs=5 (the iteration platform defau
 
 1. **Baseline reduction:** BPB sliding **1.0796** vs unreduced L=1's 1.0809. Statistically equivalent (Δ = −0.0013, within ±0.0015 WT-103 3-seed noise margin) at −41% parameters and −21% run time. Mechanism: L=1 was regularization-bound, so removing spare memorization capacity shrank the train/val gap 26% (0.498 → 0.369) without losing val-loss capability.
 2. **Max EBS variant:** BPB sliding **1.0860** at MBS=64 (+0.0064, **4.3σ above noise**). Replicated by a finer-eval variant (BPB 1.0888, **6.1σ above noise**). Confirms the gradient-noise-as-regularizer effect: smaller batches at L=1 provide implicit regularization that larger batches lose. **Freed VRAM should NOT go to larger batch parallelism.**
-3. **Larger block size variant:** Pending.
-4. **Min EBS + max block size variant:** Pending.
+3. **Larger block size variant:** Best val loss **3.3390** at MBS=8, bs=1024 — essentially tied with Test 1 (Δval = +0.005 nats, ~1σ on BPB scale), at **−22% wall-clock** and **~half the VRAM** (14 GiB vs MBS=64's 25 GiB). Dominant on every axis vs Tests 2/2b (Δval = +0.041 and +0.019 vs Test 3). **Confirms freed VRAM is best spent on longer context, not larger batch** — preserves gradient noise (the regularizer) while gaining within-example signal. Under-realized potential: keeps `levels=5` from baseline, leaving the additional coarse scales the longer context enables un-exploited (see [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size) for the dependent follow-up sweep).
+4. **Min EBS + max block size variant:** In progress.
 
 See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts) for the full analysis.
 
@@ -584,6 +585,10 @@ Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. Mor
 ### Per-scale Mixer Transform Ablation
 
 Test the contribution of the FWHT slot in the per-scale mixer versus having no transform, having a Hartley transform, using a DCT-II/III pair, or employing a butterfly-parametrized learned orthogonal mixer. Measures whether FWHT specifically is necessary, or whether any orthogonal mixer of similar structure (or none at all, with the learned embedding in place) achieves equivalent performance. See [plans/other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation) for the full design and proposed test.
+
+### Disable Wavelet Crawl
+
+`wavelet_crawl=true` is the only convolutional component left in the pipeline. Checkpoint probes on both WT-103 and PG-19 show at least 2 of 5 levels collapse to distributions the model has effectively zeroed out. Single-seed L=1 / E=5 ablation with `wavelet_crawl=false`; if within the ±0.0015 noise floor, disable by default to remove the only convolutional operation in the model at zero quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the entropy table and decision rule.
 
 ### 2D Wavelet over (Batch, Token) with Sequential Training
 
