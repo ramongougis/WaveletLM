@@ -616,14 +616,16 @@ Tests the four cheap reductions from `plans/other_post_release_plans.md` §8 app
 | Test 2 (Max EBS) | MBS=64, eval=250 | [link](logs/wikitext-103_2026-05-01_14-54-13/log.txt) | 1.0860 | 29.75 | 3.3746 | 3.0189 | 0.356 | 344.63M | 5.60h | 25 GiB |
 | Test 2b (Max EBS + finer eval) | MBS=64, eval=32 | [link](logs/wikitext-103_2026-05-01_20-46-54/log.txt) | 1.0888 | 30.00 | 3.3532 | 2.9979 | 0.355 | 344.63M | 5.60h | 25 GiB |
 | Test 3 (Larger block_size) | MBS=8, bs=1024, eval=250 | [link](logs/wikitext-103_2026-05-02_02-24-23/log.txt) | 1.0880 † | 29.93 † | **3.3390** | **2.9874** | **0.352** | 344.63M | **5.96h** | **14 GiB** |
+| Test 4 (Min EBS + max bs) | MBS=1, bs=16384, eval=250 | [link](logs/wikitext-103_2026-05-02_09-04-39/log.txt) | 1.1149 † | 32.55 † | 3.4170 | 3.1071 | 0.310 | 344.63M | 5.76h | 21.6 GiB |
 | ΔTest 1 vs baseline | — | — | −0.0013 | −0.13 | +0.007 | +0.136 | −0.130 (−26%) | **−41.2%** | **−21%** | — |
 | ΔTest 2 vs Test 1 | — | — | +0.0064 (4.3σ) | +0.60 | +0.041 | +0.054 | -0.013 | — | — | +260% |
 | ΔTest 2b vs Test 1 | — | — | +0.0092 (6.1σ) | +0.85 | +0.019 | +0.033 | -0.014 | — | — | +260% |
 | ΔTest 3 vs Test 1 | — | — | +0.0084 † | +0.78 † | **+0.005** (~1σ) | +0.022 | -0.017 (-5%) | — | **−22%** | +103% |
+| ΔTest 4 vs Test 1 | — | — | +0.0353 † | +3.40 † | +0.083 | +0.142 | **−0.059 (−16%)** | — | **−25%** | +213% |
 
 (Noise floor ±0.0015 BPB from 3-seed variance study at the L=2 baseline.)
 
-**† Important methodology caveat for Test 3 BPB:** the benchmark runs at the model's training block_size, so Test 3 evaluates on 280 windows of length 1024 (stride 512) while Tests 1/2/2b evaluate on 2246 windows of length 256 (stride 128). The BPB comparison is **not apples-to-apples** across different block_sizes. Best val loss IS apples-to-apples (same val set, same prediction methodology) and shows Test 3 essentially tied with Test 1 (Δ=+0.005, ~1σ). To make a defensible BPB claim across runs, re-evaluate Test 3's checkpoint at bs=256 stride=128 in `benchmark_only` mode.
+**† Important methodology caveat for Test 3 / Test 4 BPB:** the benchmark runs at the model's training block_size, so Test 3 evaluates on 280 windows of length 1024 (stride 512) and Test 4 evaluates on **34 windows of length 16384 (stride 8192)**, while Tests 1/2/2b evaluate on 2246 windows of length 256 (stride 128). The BPB comparison is **not apples-to-apples** across different block_sizes. Best val loss IS apples-to-apples (same val set, same prediction methodology). To make a defensible BPB claim across runs, re-evaluate Test 3's and Test 4's checkpoints at bs=256 stride=128 in `benchmark_only` mode.
 
 **Headline finding 1 — parameter reduction at L=1 is at-least-equivalent in BPB.** Test 1 vs unreduced: Δ = −0.0013 BPB, which is within ±0.0015 single-seed noise — statistically indistinguishable on BPB at 41% fewer parameters and 21% less wall-clock. The §8 plan projected +0.025 BPB cost; actual is essentially zero cost, much better than projected. The mechanism is implicit regularization: L=1 was regularization-bound, removing 42% of parameters removed spare memorization capacity without losing generalization-relevant capacity.
 
@@ -659,7 +661,13 @@ In val terms (apples-to-apples, since BPB across different bs is not directly co
 
 **Likely under-realized potential:** Test 3 keeps `levels=5` from baseline, which means coarsest cell at bs=1024 represents 32 tokens (vs 8 tokens at bs=256). The wavelet pipeline isn't yet exploiting the additional coarse structure the longer context enables — see the README's "Per-Scale Configuration at Longer Block Size" section for the dependent follow-up sweep that's now justified by Test 3's results.
 
-See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis. Test 4 (min EBS + max block_size with NaN-aware halving) is queued in `runs.sh` to test the most aggressive variant.
+**Headline finding 4 — minimum-EBS + maximum-block-size at bs=16384 trains stably and *halves* generation VRAM per token of context.** Test 4 (MBS=1, bs=16384, 64× the baseline context) completed all 5 epochs without NaN at peak training VRAM 21.6 GiB and inference VRAM 7.78 GiB. Per-token VRAM efficiency at inference is the headline: relative to the bs=256 baseline's 3.22 GiB inference footprint, Test 4 supports **64× more context for ~2.4× the VRAM**, i.e. ~27× better VRAM-per-token-of-context. This is a real architectural win for long-context applications even before any quality discussion.
+
+Quality-wise, val loss landed at **3.4170** (Δ = +0.083 vs Test 1, +0.078 vs Test 3). Modest absolute regression on val, but the train/val gap *shrunk* to **0.310** (vs Test 1's 0.369 and Test 3's 0.352) — the regularization-bound framework continues to predict the structural pattern. The most likely explanation for the val gap not improving despite more per-example signal: **Test 4 keeps `levels=5` from baseline.** At bs=16384, log2(bs)=14 puts the levels ceiling at 14, but levels=5 means the coarsest decomposition cell spans 16384/2^5 = 512 tokens — Test 4 is using its 64× context as fine-scale extension rather than capturing genuinely longer-range structure. The wavelet pipeline is materially under-resourced for this block_size; the "Per-Scale Configuration at Longer Block Size" sweep is even more load-bearing here than at bs=1024.
+
+Test 4 BPB sliding (1.1149) is **not directly comparable** to bs=256 runs' BPB — only 34 windows of length 16384 vs 2246 windows of length 256 (see methodology caveat above). Re-evaluation at bs=256 stride=128 in `benchmark_only` mode would give the apples-to-apples number.
+
+See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis.
 
 ### Post-release: bit-packed PTQ kernels
 

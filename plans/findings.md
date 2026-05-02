@@ -102,7 +102,7 @@ A non-uniform sweep is more likely to win than a flat multiplier. Cleanest exper
 ## Combined parameter reduction: at-least-equivalent BPB at L=1, EBS scaling hurts
 
 *Parent plan: [other_post_release_plans.md §8](other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation)*
-*Status: Tests 1, 2, 2b concluded. Tests 3-4 (larger block_size, min EBS + max block_size) queued.*
+*Status: All four tests concluded.*
 *Most recent: 2026-05-02*
 
 ### Headline finding 1 — parameter reduction is at-least-equivalent in BPB
@@ -197,6 +197,24 @@ Hypothesis worth testing: optimal `levels ≈ log2(block_size) − constant` whe
 - bs=8192 + levels=10 (S=11) → coarsest cell at 8 tokens
 
 This would require also resizing `per_scale_mixer_widths` to S entries (8 or 11 respectively), with the symmetric half-coarse-at-1.0 / half-fine-at-0.5 split as starting point. Reserved as a separate sweep — see README's "Per-Scale Configuration at Longer Block Size" section.
+
+### Headline finding 4 — minimum-EBS + maximum-block-size yields a per-token VRAM-efficiency win at modest val cost
+
+Test 4 (MBS=1, bs=16384, 64× the baseline context) trained stably for all 5 epochs without NaN, at training peak VRAM 21.6 GiB and **inference VRAM 7.78 GiB**.
+
+| Run | bs | MBS | Train VRAM | Inference VRAM | Wall-clock | Best val | Train/val gap |
+|---|---|---|---|---|---|---|---|
+| Test 1   | 256   | 8  | 6.9 GiB  | 3.22 GiB | 7.69h | 3.3341 | 0.369 |
+| Test 3   | 1024  | 8  | 14 GiB   | — | 5.96h | **3.3390** | 0.352 |
+| **Test 4** | **16384** | **1** | **21.6 GiB** | **7.78 GiB** | **5.76h** | 3.4170 | **0.310** |
+
+**Per-token VRAM efficiency at inference is the headline.** Relative to bs=256's 3.22 GiB inference footprint, Test 4 supports 64× more context for ~2.4× the VRAM — roughly **27× better VRAM-per-token-of-context**. Real architectural win for long-context inference applications, independent of the quality discussion.
+
+**Quality picture is mixed but interpretable.** Val loss landed +0.083 above Test 1 and +0.078 above Test 3 — modest absolute regression. But the train/val gap *shrunk* further to **0.310** (lowest of all four tests), confirming the regularization-bound framework continues to predict the structural pattern under maximum gradient noise. The most likely explanation for the val gap not improving despite far more per-example signal:
+
+**Test 4 keeps `levels=5` from baseline**, so at bs=16384 the coarsest decomposition cell spans 16384/2^5 = 512 tokens. Test 4 is using its 64× context as fine-scale extension, not as longer-range structure capture. With log2(16384)=14 setting the levels ceiling, the wavelet pipeline is materially under-resourced — only 5 of 14 possible decomposition levels are active. The "Per-Scale Configuration at Longer Block Size" sweep (already justified by Test 3 at bs=1024) becomes substantially more load-bearing at bs=16384: applying the `log2(bs) − constant` heuristic suggests `levels ≈ 10-11` (S=11-12), which would also require a per_scale_mixer_widths array of matching length and the symmetric half-coarse / half-fine split.
+
+**BPB methodology caveat:** Test 4's BPB sliding (1.1149) is **not directly comparable** to bs=256 runs — only 34 windows of length 16384 vs 2246 windows of length 256, and stride 8192 vs 128 changes the effective context-per-prediction distribution. Re-evaluating Test 4's checkpoint at bs=256 stride=128 in `benchmark_only` mode would give the apples-to-apples number.
 
 ### Open questions
 

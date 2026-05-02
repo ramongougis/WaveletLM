@@ -181,46 +181,182 @@ nan_safe_run() {
 # git_commit_push "Test 3 (combined reduction + larger block_size, bs=1024): completed run"
 
 # ============================================================
-# Test 4: Min EBS + max block_size variant (MBS=1, GA=1)
-# Iterates block_size from 8192 down by halving on NaN detection until stable.
-# Hypothesizes the best-of-both-worlds combination for a regularization-bound
-# model: maximum gradient noise from single-sequence updates plus rich
-# per-example signal from very long context for the wavelet pipeline.
+# Test 4 (COMPLETED): Min EBS + max block_size variant (MBS=1, GA=1).
+# Trained stably at bs=16384, levels=5, val 3.4170, BPB sliding 1.1149,
+# inference VRAM 7.78 GiB. See logs/wikitext-103_2026-05-02_09-04-39/.
+# Block kept commented for reference; Test 5 (below) replaces it as the
+# active test, sweeping `levels` to fix Test 4's per-scale undersizing.
 # ============================================================
-TEST_4_DONE=0
-for BLOCK_SIZE in 16384 8192 4096 2048 1024 512 256; do
-    PATCH="{\"dataset\": \"wikitext-103\", \"layers\": 1, \"epochs\": 5, \"mlp_expansion\": 10, \"pkm_enabled\": false, \"fwpkm_num_keys\": 8281, \"tie_embedding_to_lm_head\": true, \"micro_batch_size\": 1, \"grad_accum\": 1, \"block_size\": $BLOCK_SIZE, \"levels\": 5, \"eval_interval\": 250}"
-    nan_safe_run "Test 4: MBS=1, GA=1, bs=$BLOCK_SIZE, levels=5 (combined reduction recipe)" "$PATCH"
-    EXIT_CODE=$?
-    if [ $EXIT_CODE -eq 0 ]; then
-        echo "[runs.sh] Test 4 completed stably at block_size=$BLOCK_SIZE."
-        git_commit_push "Test 4 (combined reduction + min EBS + max block_size): completed at bs=$BLOCK_SIZE"
-        TEST_4_DONE=1
-        break
-    elif [ $EXIT_CODE -eq 99 ]; then
-        echo "[runs.sh] NaN at block_size=$BLOCK_SIZE; halving and retrying."
-    else
-        echo "[runs.sh] Non-NaN failure (exit $EXIT_CODE) at block_size=$BLOCK_SIZE; treating as instability and halving."
+# TEST_4_DONE=0
+# for BLOCK_SIZE in 16384 8192 4096 2048 1024 512 256; do
+#     PATCH="{\"dataset\": \"wikitext-103\", \"layers\": 1, \"epochs\": 5, \"mlp_expansion\": 10, \"pkm_enabled\": false, \"fwpkm_num_keys\": 8281, \"tie_embedding_to_lm_head\": true, \"micro_batch_size\": 1, \"grad_accum\": 1, \"block_size\": $BLOCK_SIZE, \"levels\": 5, \"eval_interval\": 250}"
+#     nan_safe_run "Test 4: MBS=1, GA=1, bs=$BLOCK_SIZE, levels=5 (combined reduction recipe)" "$PATCH"
+#     EXIT_CODE=$?
+#     if [ $EXIT_CODE -eq 0 ]; then
+#         echo "[runs.sh] Test 4 completed stably at block_size=$BLOCK_SIZE."
+#         git_commit_push "Test 4 (combined reduction + min EBS + max block_size): completed at bs=$BLOCK_SIZE"
+#         TEST_4_DONE=1
+#         break
+#     elif [ $EXIT_CODE -eq 99 ]; then
+#         echo "[runs.sh] NaN at block_size=$BLOCK_SIZE; halving and retrying."
+#     else
+#         echo "[runs.sh] Non-NaN failure (exit $EXIT_CODE) at block_size=$BLOCK_SIZE; treating as instability and halving."
+#         sleep 10  # give CUDA a moment to release VRAM after OOM/crash
+#     fi
+# done
+# if [ $TEST_4_DONE -eq 0 ]; then
+#     echo "[runs.sh] Test 4 failed at all block_sizes including 256. Investigate manually."
+# fi
+
+# ============================================================
+# Test 5: Per-scale configuration sweep at bs=16384.
+# Hypothesis: optimal levels ≈ log2(block_size) − 3. At bs=256 with
+# levels=5, log2(256) − 5 = 3 was optimal. At bs=16384 (log2=14),
+# levels=11 (14 − 3) is the prediction. Sweep levels = 5, 7, 9, 11, 13;
+# matching per_scale_mixer_widths = (levels+1)/2 entries of 1.0 then
+# (levels+1)/2 entries of 0.5 (symmetric half-coarse / half-fine split).
+#
+# Each sweep run is 1 epoch (~1.15h on a 5090) → ~6h total for the sweep.
+# Auto-picks the lowest-BPB-sliding level and runs 5 epochs at that level
+# (~5.76h). Total wall-clock ~12h.
+#
+# All five 1-epoch sweep runs share block_size=16384, so their BPB sliding
+# numbers ARE directly comparable (same window count, same stride, same
+# eval set). The 5-epoch winner run also uses bs=16384, so its BPB sliding
+# is comparable to Test 4's 1.1149 baseline at bs=16384 with levels=5.
+# ============================================================
+TEST5_BLOCK_SIZE=16384
+TEST5_RESULTS_FILE="logs/test5_levels_sweep_results.txt"
+> "$TEST5_RESULTS_FILE"
+
+build_psmw() {
+    # Builds a per_scale_mixer_widths JSON array for a given levels value.
+    # levels=L → S=L+1 scales → first S/2 entries 1.0, second S/2 entries 0.5.
+    python -c "
+S = $1 + 1
+h = S // 2
+print('[' + ', '.join(['1.0']*h + ['0.5']*h) + ']')
+"
+}
+
+build_test5_patch() {
+    # build_test5_patch <levels> <epochs>
+    local LEVELS=$1
+    local EPOCHS=$2
+    local PSMW
+    PSMW=$(build_psmw $LEVELS)
+    python -c "
+import json
+print(json.dumps({
+    'dataset': 'wikitext-103',
+    'layers': 1,
+    'epochs': $EPOCHS,
+    'mlp_expansion': 10,
+    'pkm_enabled': False,
+    'fwpkm_num_keys': 8281,
+    'tie_embedding_to_lm_head': True,
+    'micro_batch_size': 1,
+    'grad_accum': 1,
+    'block_size': $TEST5_BLOCK_SIZE,
+    'levels': $LEVELS,
+    'per_scale_mixer_widths': $PSMW,
+    'eval_interval': 250,
+}))
+"
+}
+
+run_test5_sweep_one() {
+    # Runs train.py with the patched config at the given levels for 1 epoch.
+    # Captures sliding-window BPB from the resulting log and appends to
+    # TEST5_RESULTS_FILE. Does NOT abort the script on failure (so OOM at
+    # high levels just records N/A and the sweep continues).
+    local LEVELS=$1
+    local SCALES=$((LEVELS + 1))
+    local LABEL="Test 5 sweep (1-ep): levels=$LEVELS (S=$SCALES), bs=$TEST5_BLOCK_SIZE"
+
+    echo ""
+    echo "============================================================"
+    echo "=== ${LABEL}"
+    echo "============================================================"
+
+    local PATCH
+    PATCH=$(build_test5_patch $LEVELS 1)
+    set_keys "$PATCH"
+    python train.py
+    local TRAIN_EXIT=$?
+
+    local LATEST_LOG=""
+    LATEST_LOG=$(ls -dt logs/wikitext-103_*/log.txt 2>/dev/null | head -1)
+
+    if [ $TRAIN_EXIT -ne 0 ]; then
+        echo "[runs.sh] levels=$LEVELS sweep run failed (exit $TRAIN_EXIT). Recording N/A."
+        printf "%s\t%s\t%s\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG" "$TRAIN_EXIT" >> "$TEST5_RESULTS_FILE"
         sleep 10  # give CUDA a moment to release VRAM after OOM/crash
+        git_commit_push "Test 5 sweep: levels=$LEVELS @ bs=$TEST5_BLOCK_SIZE → FAILED (exit $TRAIN_EXIT)"
+        return
     fi
+
+    # Parse sliding-window BPB from the log
+    local BPB
+    BPB=$(python -c "
+import re
+log = open('$LATEST_LOG', encoding='utf-8', errors='replace').read()
+m = re.search(r'\[BENCHMARK - Sliding Window\].*?BPB:\s*([\d.]+)', log, re.DOTALL)
+print(m.group(1) if m else 'N/A')
+")
+    echo "[runs.sh] levels=$LEVELS sliding BPB = $BPB ($LATEST_LOG)"
+    printf "%s\t%s\t%s\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG" >> "$TEST5_RESULTS_FILE"
+    git_commit_push "Test 5 sweep: levels=$LEVELS @ bs=$TEST5_BLOCK_SIZE → BPB sliding $BPB"
+}
+
+for L in 5 7 9 11 13; do
+    run_test5_sweep_one $L
 done
-if [ $TEST_4_DONE -eq 0 ]; then
-    echo "[runs.sh] Test 4 failed at all block_sizes including 256. Investigate manually."
+
+echo ""
+echo "============================================================"
+echo "=== Test 5 sweep results ($TEST5_RESULTS_FILE):"
+echo "============================================================"
+cat "$TEST5_RESULTS_FILE"
+
+# Auto-pick winner (lowest BPB among successful runs) and run 5-epoch follow-up
+WINNER_LEVELS=$(python -c "
+results = []
+for line in open('$TEST5_RESULTS_FILE'):
+    parts = line.rstrip('\n').split('\t')
+    if len(parts) >= 4 and parts[1] != 'N/A' and parts[3] == 'ok':
+        try:
+            results.append((int(parts[0]), float(parts[1])))
+        except ValueError:
+            pass
+print(min(results, key=lambda x: x[1])[0] if results else 'NONE')
+")
+
+if [ "$WINNER_LEVELS" = "NONE" ]; then
+    echo "[runs.sh] Test 5 sweep: no successful runs. Skipping 5-epoch follow-up."
+else
+    echo ""
+    echo "============================================================"
+    echo "=== Test 5 winner: levels=$WINNER_LEVELS — launching 5-epoch follow-up"
+    echo "============================================================"
+    WINNER_PATCH=$(build_test5_patch $WINNER_LEVELS 5)
+    run_one "Test 5 final (5-ep): levels=$WINNER_LEVELS @ bs=$TEST5_BLOCK_SIZE (sweep winner)" "$WINNER_PATCH"
+    git_commit_push "Test 5 final: levels=$WINNER_LEVELS @ bs=$TEST5_BLOCK_SIZE — 5-epoch run at sweep winner"
 fi
 
 # ============================================================
 # Reset config to L=2 release default (matches README Training section)
 # ============================================================
-set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "eval_interval": 250}'
+set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250}'
 
-git_commit_push "Reset config.json to L=2 release default after Tests 2-4 variants completed"
+git_commit_push "Reset config.json to L=2 release default after Tests 2-5 variants completed"
 
 echo ""
 echo "============================================================"
-echo "=== Tests 2-4 (combined reduction variants) complete."
+echo "=== Tests 2-5 (combined reduction + per-scale configuration) complete."
 echo "===   Pull BPB sliding-window numbers and update:"
 echo "===     - plans/other_post_release_plans.md §8 (results section)"
 echo "===     - plans/findings.md (Combined Parameter Reduction entry)"
 echo "===     - runs.md (results table)"
-echo "===     - README.md (Combined Parameter Reduction subsection)"
+echo "===     - README.md (Combined Parameter Reduction + Per-Scale Config subsections)"
 echo "============================================================"

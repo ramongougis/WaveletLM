@@ -515,7 +515,7 @@ Longer training time, more regularization, and parameter compression are the sur
 ## Future Plans
 
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
-2. [(In Progress) Combined Parameter Reduction and VRAM Reallocation](#in-progress-combined-parameter-reduction-and-vram-reallocation)
+2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
 3. [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size)
 4. [Dropout Sweep](#dropout-sweep)
 5. [Weight Decay Sweep](#weight-decay-sweep)
@@ -541,25 +541,13 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** L=1 becomes the iteration platform for upcoming ablations, capped at E=5 (val loss saturates there) due to iteration time. L=2 will be re-benchmarked once the L=1-tuned regularization recipe is applied retroactively.
 
-### (In Progress) Combined Parameter Reduction and VRAM Reallocation
+### (Complete) Combined Parameter Reduction and VRAM Reallocation
 
-Combine four BPB-cheap reductions (`mlp_expansion: 10`, `pkm_enabled: false`, `fwpkm_num_keys: 8281`, and `tie_embedding_to_lm_head: true`) to bring the model down from 586.1M parameters (in the [layers=1 & epochs=5](logs/wikitext-103_2026-04-30_12-20-45/log.txt) tests above) to 344.6M (a 42% reduction) at a projected +0.025 BPB additive cost based on previous tests. PKM is dropped (rather than FwPKM) since the two perform comparably on quality and FwPKM also retains the optional `fwpkm_inference_updates` capability. Current single-layer VRAM usage: 11,537 MiB training, 3,223 MiB generation. The freed VRAM after reduction can be reallocated to longer block size, larger effective batch size, more epochs, or dropout retuning at the same hardware budget. See [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation) for more.
+**Result:** Parameters reduced by ~42% at negligible/within-noise BPB cost. Reallocating the freed VRAM allowed larger batches (MBS=64: +0.0064 BPB, 4.3σ) and confirmed longer context as the right lever (bs=1024: val tied with baseline at −22% wall-clock; bs=16384: stable training, -34% VRAM usage vs. before parameter reduction, modest val regression attributable to `levels=5` leaving 9 of 14 possible decomposition levels unused). 
 
-Four sequential tests, each at layers=1 & epochs=5 (the iteration platform default):
+The [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size) sweep is the natural follow-up. See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts), [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation), and [`runs.md`](runs.md) for the full analysis and per-test numbers.
 
-1. **Baseline reduction:** four reductions applied; measure BPB cost vs. the full parameter L=1 baseline.
-2. **Max MBS variant:** baseline reduction with `micro_batch_size` maximized to use the freed VRAM. Tests whether larger effective batches improve or do not seriously detriment val loss at this scale.
-3. **Larger block size variant:** baseline reduction with `block_size` increased to use the freed VRAM. Tests whether longer context offsets the parameter reduction's BPB cost.
-4. **Min EBS + max block size variant:** `micro_batch_size=1`, `grad_accum=1`, with `block_size` pushed to maximize VRAM usage; if instability or NaN emerges, dial back `block_size` until the run completes stably. Hypothesizes the best-of-both-worlds combination for a regularization-bound model: maximum gradient noise from single-sequence updates plus rich per-example signal from very long context for the wavelet pipeline to exploit at higher scales.
-
-#### Current Findings
-
-1. **Baseline reduction:** BPB sliding **1.0796** vs unreduced L=1's 1.0809. Statistically equivalent (Δ = −0.0013, within ±0.0015 WT-103 3-seed noise margin) at −41% parameters and −21% run time. Mechanism: L=1 was regularization-bound, so removing spare memorization capacity shrank the train/val gap 26% (0.498 → 0.369) without losing val-loss capability.
-2. **Max EBS variant:** BPB sliding **1.0860** at MBS=64 (+0.0064, **4.3σ above noise**). Replicated by a finer-eval variant (BPB 1.0888, **6.1σ above noise**). Confirms the gradient-noise-as-regularizer effect: smaller batches at L=1 provide implicit regularization that larger batches lose. **Freed VRAM should NOT go to larger batch parallelism.**
-3. **Larger block size variant:** Best val loss **3.3390** at MBS=8, bs=1024 — essentially tied with Test 1 (Δval = +0.005 nats, ~1σ on BPB scale), at **−22% wall-clock** and **~half the VRAM** (14 GiB vs MBS=64's 25 GiB). Dominant on every axis vs Tests 2/2b (Δval = +0.041 and +0.019 vs Test 3). **Confirms freed VRAM is best spent on longer context, not larger batch** — preserves gradient noise (the regularizer) while gaining within-example signal. Under-realized potential: keeps `levels=5` from baseline, leaving the additional coarse scales the longer context enables un-exploited (see [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size) for the dependent follow-up sweep).
-4. **Min EBS + max block size variant:** In progress.
-
-See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts) for the full analysis.
+**Decision:** Reduce parameters, use `block_size=16384`, and test increasing levels next.
 
 ### Per-Scale Configuration at Longer Block Size
 
