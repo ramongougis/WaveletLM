@@ -150,7 +150,7 @@ def run_profile(block_size: int, args, base_config: dict, train_data, val_data):
     model.train()
 
     if not args.no_compile and config.get("compile", True):
-        compile_mode = config.get("compile_mode", "reduce-overhead")
+        compile_mode = config.get("compile_mode", "default")
         model = torch.compile(model, mode=compile_mode)
 
     install_record_function_hooks(model)

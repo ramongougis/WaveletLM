@@ -516,7 +516,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
-3. [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size)
+3. [(In Progress) Per-Scale Configuration at Longer Block Size](#in-progress-per-scale-configuration-at-longer-block-size)
 4. [Dropout Sweep](#dropout-sweep)
 5. [Weight Decay Sweep](#weight-decay-sweep)
 6. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
@@ -548,18 +548,9 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** Reduce parameters, use `block_size=16384`, and test increasing levels next.
 
-### Per-Scale Configuration at Longer Block Size
+### (In Progress) Per-Scale Configuration at Longer Block Size
 
-A follow-up to the parameter reduction's larger-block-size variant (Tests 3 and 4 above): once a longer `block_size` is established, sweep `levels` and `per_scale_mixer_widths` to take advantage of the additional coarse scales the longer sequence enables.
-
-Currently `levels=5` with `per_scale_mixer_widths=[1.0, 1.0, 1.0, 0.5, 0.5, 0.5]` (S = 6 = (levels + 1) scales, split half-coarse-at-full-width / half-fine-at-half-width). This was tuned at `block_size=256` (where `log2(256)=8` is the maximum levels), so coarse-scale capacity is currently constrained.
-
-Two-axis sweep:
-
-- **`levels`**: log2(block_size) gives the upper bound. Default `levels=5` was empirically optimal at bs=256; at bs=1024 (max levels=10), values like `levels=7` (S=8) or `levels=9` (S=10) may better capture longer-range structure. Prefer odd `levels` values to keep S even.
-- **`per_scale_mixer_widths`**: maintain the symmetric half-coarse-at-1.0 / half-fine-at-0.5 split for clean architectural symmetry. `levels=7` → `[1.0]×4 + [0.5]×4`; `levels=9` → `[1.0]×5 + [0.5]×5`. Optional follow-up: shift the split point (e.g., 5/3 instead of 4/4 at S=8) if symmetric underperforms — possible if longer sequences make some fine scales more informative than they were at bs=256.
-
-This sweep is reserved as a separate test set rather than rolled into Tests 3/4 to avoid conflating two architectural variables. Run after Tests 3/4 confirm longer `block_size` is itself a real quality lever for the parameter-reduced L=1 model.
+Sweep `levels` and `per_scale_mixer_widths` at the established longer `block_size` to exploit coarse scales the longer sequence enables. Hypothesis: optimal `levels ≈ log2(block_size) − 3` keeps the coarsest cell at ~8 tokens regardless of bs; widths keep the symmetric half-1.0 / half-0.5 split. **Currently running** as Test 5 in [`runs.sh`](runs.sh): `levels ∈ {5, 7, 9, 11, 13}` at bs=16384, 1-epoch sweep with an auto-selected 5-epoch follow-up at the winner.
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
 

@@ -809,7 +809,7 @@ def train():
     if not benchmark_only:
         # Compile
         if config.get('compile', True) and device == 'cuda':
-            compile_mode = config.get('compile_mode', 'reduce-overhead')
+            compile_mode = config.get('compile_mode', 'default')
             logger.log(f"[Compile] torch.compile enabled (mode={compile_mode})")
             model = torch.compile(model, mode=compile_mode)
 
