@@ -544,9 +544,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### (Complete) Combined Parameter Reduction and VRAM Reallocation
 
-**Result:** Parameters reduced by ~42% at negligible/within-noise BPB cost. Reallocating the freed VRAM allowed larger batches (MBS=64: +0.0064 BPB, 4.3σ) and confirmed longer context as the right lever (bs=1024: val tied with baseline at −22% wall-clock; bs=16384: stable training, -34% VRAM usage vs. before parameter reduction, modest val regression attributable to `levels=5` leaving 9 of 14 possible decomposition levels unused). 
-
-The [Per-Scale Configuration at Longer Block Size](#per-scale-configuration-at-longer-block-size) sweep is the natural follow-up. See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts), [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation), and [`runs.md`](runs.md) for the full analysis and per-test numbers.
+**Result:** Parameters reduced by ~42% at minimal BPB cost. Reallocating the freed VRAM allowed larger batches and confirmed longer context as the right lever (bs=16384: stable training, -34% VRAM usage, modest val regression attributable to `levels=5` leaving 9 of 14 possible decomposition levels unused). See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts), [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation), and [`runs.md`](runs.md) for the full analysis and per-test numbers.
 
 **Decision:** Reduce parameters, use `block_size=16384`, and test increasing levels next.
 
