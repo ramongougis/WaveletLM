@@ -317,6 +317,42 @@ At least two of the five levels are paying compute for distributions the model h
 
 ---
 
+## 12. Step-time speedup quick wins (informed by profiler)
+
+WaveletLM scales linearly in N for every architectural component (lifting O(N) per level, FWHT O(N log C), per-scale mixer O(N · C · width), MLP O(N · C² · expansion)) but hits a practical wall in throughput per token of context past `bs≈1024`. The cause is almost certainly memory-bandwidth saturation rather than algorithmic — once activations spill out of L2 cache, compute-bound ops become bandwidth-bound. The bottleneck per component must be measured before any of these wins are applied: see `profile_step.py` for the per-component runtime breakdown across `bs ∈ {256, 1024, 4096, 16384}`.
+
+The candidate optimizations below are ordered by risk-adjusted ROI: each can be tested independently as a 1-epoch L=1 run on WT-103 and compared against the matched baseline by step time and final BPB sliding (the latter to confirm no quality regression from numerical or fusion differences).
+
+### 12.1 Fused SwiGLU kernel (Triton)
+
+The current MLP block is `Linear(C, mlp_expansion·C) → SwiGLU → Linear(mlp_expansion·C, C)`, with SwiGLU implemented as separate gate / up projections + element-wise SiLU + multiply. At C=2048 / mlp_expansion=10–20 and large N, this is the single largest contributor to step time (~41·C² FLOPs per token in the unfused version, with multiple HBM round-trips for the intermediate activations).
+
+Drop-in fused kernels: [Liger-Kernel](https://github.com/linkedin/Liger-Kernel)'s `LigerSwiGLUMLP`, [Unsloth](https://github.com/unslothai/unsloth)'s SwiGLU, or [xformers](https://github.com/facebookresearch/xformers)'s `SwiGLU` op. Typical reported wins: 10–25% MLP wall-clock at `mlp_expansion=4`, more at higher expansion. Risk: numerical differences in fp16 between unfused and fused paths can shift BPB by tens of micronats; verify with a noise-floor-bounded comparison (±0.0015 BPB).
+
+### 12.2 `torch.compile(mode='reduce-overhead')`
+
+Default is `mode='default'`. `reduce-overhead` enables CUDA Graphs capture for repeated step shapes, eliminating per-step Python and kernel launch overhead. Most beneficial when launch overhead is a meaningful fraction of step time — true at small `block_size` and large `mlp_expansion`. Risk: graph re-capture on shape changes, incompatibility with dynamic control flow (e.g. NaN-conditional branches).
+
+### 12.3 Fused Adagrad
+
+PyTorch ships [`torch.optim.Adagrad(fused=True)`](https://docs.pytorch.org/docs/stable/generated/torch.optim.Adagrad.html) for CUDA tensors as of PyTorch 2.4+. NVIDIA's [`apex.optimizers.FusedAdagrad`](https://nvidia.github.io/apex/optimizers.html) is the alternative if the in-tree fused path doesn't ship a kernel for our dtype mix. Currently the optimizer step appears as many small launches in the trace; fusing collapses them into one.
+
+### 12.4 Low-rank lifting predict/update networks (architectural)
+
+The lifting `predict_net` and `update_net` MLPs are currently `Linear(C, C) → GELU → Dropout → Linear(C, C)`, shared across 5 levels via `shared_lifting_weights=true`. At `wavelet_crawl_k=3` they're applied 3× per level, so 30 dense C×C matmuls per layer per forward (15 predict + 15 update). At C=2048 each is 4M params — modest in isolation but applied many times.
+
+Replace with `Linear(C, r) → GELU → Linear(r, C)` for r ∈ {64, 128, 256}. Cuts per-application FLOPs by ~16× at r=128. The lifting networks model local token-pair dependencies, so a small bottleneck dim should be sufficient. Architectural change; needs its own ablation arc, not a simple wall-clock test. Probably only worth it if the profiler shows lifting MLPs are >15% of step time.
+
+### 12.5 PKM/FwPKM Triton kernels
+
+PKM and FwPKM use sparse top-k gather + scatter, currently via PyTorch ops without a fused kernel. If the profiler attributes substantial time here at `bs=16384` (likely, since the gather pattern is bandwidth-heavy), a Triton kernel could collapse the gather + dot-product + softmax. Lower-priority since both PKM/FwPKM are commonly off in the L=1 reduced configs anyway.
+
+### Decision rule
+
+Run `profile_step.py` at `bs ∈ {256, 1024, 4096, 16384}` first. Address whichever component crosses 25% of step time at `bs=16384` from the list above. Skip wins targeting components below 5% — fusion overhead and code-debt cost outweigh the marginal speedup.
+
+---
+
 ## Prioritization order for post-release
 
 1. **Single-Layer WaveletLM (`single_layer_waveletlm.md`)**: highest priority. Four-run test matrix (~10-12h on a 5090) measures whether L=1 with the modern feature stack approaches the L=2 baseline. Pairs with parameter reduction (cuts model to ~250-300M params), enables interpretability work, and clarifies what depth is actually doing in WaveletLM. Decisive regardless of outcome.
@@ -329,5 +365,6 @@ At least two of the five levels are paying compute for distributions the model h
 8. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
 9. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (~10-12h total) and decisive. Cleaner attribution at L=1 — pair with the L=1 plan if (1) above shows L=1 is competitive.
 10. **Wavelet crawl disable ablation (11)**: cheap (~3-4h, single L=1 / E=5 run) and high-information. Removes the only convolutional op in the pipeline if the BPB delta lands within the noise floor; checkpoint-probe evidence already suggests at least 2 of 5 levels are wasted compute. Architectural-purity win regardless of the outcome's BPB direction.
-11. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
-12. **Inference strategies ablations**: self-explanatory.
+11. **Step-time speedup quick wins (12)**: profiler-driven. Run `profile_step.py` once to attribute step time across components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever component crosses 25% at `bs=16384`. Fused SwiGLU and `mode='reduce-overhead'` are the no-architecture-change first attempts. Compounds across every subsequent run.
+12. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
+13. **Inference strategies ablations**: self-explanatory.

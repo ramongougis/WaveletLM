@@ -521,19 +521,20 @@ Longer training time, more regularization, and parameter compression are the sur
 5. [Weight Decay Sweep](#weight-decay-sweep)
 6. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
 7. [Disable Wavelet Crawl](#disable-wavelet-crawl)
-8. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-9. [Longer PG-19 Training](#longer-pg-19-training)
-10. [Dataset Comparisons](#dataset-comparisons)
-11. [Model Comparisons](#model-comparisons)
-12. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-13. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-14. [Multi-Transform Parallelization](#multi-transform-parallelization)
-15. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-16. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-17. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-18. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-19. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-20. [Other Post-Release Plans](#other-post-release-plans)
+8. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+9. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+10. [Longer PG-19 Training](#longer-pg-19-training)
+11. [Dataset Comparisons](#dataset-comparisons)
+12. [Model Comparisons](#model-comparisons)
+13. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+14. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+15. [Multi-Transform Parallelization](#multi-transform-parallelization)
+16. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+17. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+18. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+19. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+20. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+21. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -577,6 +578,10 @@ Test the contribution of the FWHT slot in the per-scale mixer versus having no t
 ### Disable Wavelet Crawl
 
 Single-seed layers = 1 & epochs = 5 ablation with `wavelet_crawl=false`. Wavelet crawl is the only convolutional component in the model. Checkpoint probes on both WT-103 and PG-19 show at least 2 of 5 levels collapse to distributions the model has effectively zeroed out, making this largely ineffective. Anticipated effect of ablation: 1% VRAM gain and negligible/within-noise quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the entropy table and decision rule.
+
+### Step-Time Speedup Quick Wins
+
+Throughput per token of context flattens past `bs≈1024` despite linear-in-N theoretical scaling — a memory-bandwidth wall, not algorithmic. Use [`profile_step.py`](profile_step.py) to attribute step time across architectural components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever crosses 25% at `bs=16384`. Candidate quick wins: fused SwiGLU kernel (Liger / Unsloth / xformers — drop-in for the MLP block), `torch.compile(mode='reduce-overhead')` for CUDA Graphs capture, fused Adagrad, and (architectural) low-rank lifting predict/update networks. See [plans/other_post_release_plans.md §12](plans/other_post_release_plans.md#12-step-time-speedup-quick-wins-informed-by-profiler) for the full menu and decision rule.
 
 ### 2D Wavelet over (Batch, Token) with Sequential Training
 
