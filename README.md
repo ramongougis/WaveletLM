@@ -367,7 +367,7 @@ Note the typical failure mode with the naive generation: register-coherent meteo
 
 ### Key Components
 
-- **Learnable lifting wavelet decomposition**: Haar-initialized predict/update networks decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Decompose/reconstruct weights are shared. Untying them had negligible performance impact while saving parameters.
+- **Learnable lifting wavelet decomposition**: Haar-initialized predict/update MLPs (`Linear → GELU → Dropout → Linear`, hidden_dim = C) decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Constrained to act as predict/update steps within the lifting scheme rather than arbitrary functions, with mechanical inversion (same MLPs applied in reverse order with sign-flip) — perfect reconstruction is structurally guaranteed regardless of learned weights, leaving them free to learn deviations from classical Haar during training without compromising signal recovery. ~16.8M params per (predict, update) pair at C=2048, shared across layers via `shared_lifting_weights`. Decompose/reconstruct weights are also shared per layer; untying them had negligible performance impact while saving parameters.
 
 - **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
 
