@@ -932,7 +932,6 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
-        fht_mean_centering: bool = False,
     ):
         super().__init__()
         self.C = C
@@ -941,19 +940,6 @@ class WaveletLMBlock(nn.Module):
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
-
-        # FWHT-block hardening: parameter-free DC-offset removal.
-        # Subtracts the channel-axis mean of the FWHT input before the FWHT,
-        # adds it back after the inverse FWHT. Removes the DC component that
-        # the FWHT would otherwise concentrate into a single basis vector
-        # (the all-ones Walsh function), preventing the most common cause of
-        # FWHT amplification overflow. Uses ~400 KiB activation memory (just
-        # the [B, T, S, 1] mean tensor) vs LayerNorm's ~800 MiB — fits in
-        # any reasonable VRAM budget. No learned parameters. Mathematically:
-        # the mixer now operates on AC-only spectrum; the DC component is
-        # routed around the spectral mixing entirely (similar in spirit to
-        # decompose_bypass).
-        self.fht_mean_centering = fht_mean_centering
 
         # Wavelet decomposition
         if wavelet_mode == "lifting":
@@ -1237,20 +1223,6 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional FWHT mean-centering — subtract the channel-axis mean of
-        # the FWHT input before the transform, add it back after the inverse
-        # transform. (Gated by config `fht_mean_centering`.)
-        # Implementation note: we use the in-place .sub_() to avoid the
-        # ~500 MiB transient peak that the out-of-place version
-        # `stacked_coeffs = stacked_coeffs - mean` incurs while both old and
-        # new tensors are momentarily live. The in-place op is safe here
-        # because no upstream backward function (AddBackward0 from the
-        # bypass) needs the unmodified tensor values.
-        fht_dc_offset = None
-        if self.fht_mean_centering:
-            fht_dc_offset = stacked_coeffs.mean(dim=-1, keepdim=True)
-            stacked_coeffs = stacked_coeffs.sub_(fht_dc_offset)
-
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
@@ -1292,12 +1264,6 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
-
-        # Restore the channel-axis DC offset that was subtracted before the
-        # forward FWHT. The mixer never saw the DC component; this re-injects
-        # it into the residual stream so downstream ops see the full signal.
-        if self.fht_mean_centering and fht_dc_offset is not None:
-            mixed_all = mixed_all + fht_dc_offset
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1527,7 +1493,6 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
-                fht_mean_centering=config.get("fht_mean_centering", False),
             )
             for _ in range(layer_build_count)
         ])

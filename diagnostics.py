@@ -219,11 +219,6 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'stab_mixer_eps_scaling': False,
         'stab_lifting_level_scaling': False,
         'multinodal_enabled': False,
-        # FWHT-block hardening: parameter-free DC-offset removal. Subtracts
-        # the channel-axis mean of the FWHT input before the transform and
-        # adds it back after the inverse transform. Set False to reproduce
-        # the un-hardened failing config.
-        'fht_mean_centering': True,
     }
 
 
