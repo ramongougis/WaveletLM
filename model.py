@@ -798,30 +798,16 @@ class FastWeightPKM(nn.Module):
 def _compute_running_mean(x: torch.Tensor, prev_mean: torch.Tensor = None,
                           prev_count: int = 0) -> torch.Tensor:
     """Causal running mean along the time dimension.
-
-    Cumsum is done in fp32 even when the input is fp16, mirroring how the
-    sister `_compute_data_dependent_ema` function casts its scan to fp32.
-    Without this cast, fp16's max representable value (~65504) is exceeded
-    once T grows past a few thousand positions for any non-trivially-scaled
-    activations (residual stream values of O(4) overflow at T=16384).
-    Symptom: benchmark BPB returns `inf` despite training itself running
-    cleanly — first observed in 1-epoch + bs=16384 + levels=11 runs where
-    LR-handicapped under-convergence left activations large enough to
-    trigger the overflow during eval-mode forward.
-
     Decorated with @torch.compiler.disable to avoid cumsum compilation issues."""
     T = x.size(1)
-    orig_dtype = x.dtype
-    x_f32 = x.float()
     if prev_mean is not None and prev_count > 0:
-        prev_sum = prev_mean.float().unsqueeze(1) * prev_count
-        history_sum = torch.cumsum(x_f32, dim=1) + prev_sum
-        divisors = torch.arange(prev_count + 1, prev_count + T + 1,
-                                device=x.device, dtype=torch.float32).view(1, -1, 1)
+        prev_sum = prev_mean.unsqueeze(1) * prev_count
+        history_sum = torch.cumsum(x, dim=1) + prev_sum
+        divisors = torch.arange(prev_count + 1, prev_count + T + 1, device=x.device).view(1, -1, 1)
     else:
-        history_sum = torch.cumsum(x_f32, dim=1)
-        divisors = torch.arange(1, T + 1, device=x.device, dtype=torch.float32).view(1, -1, 1)
-    return (history_sum / divisors).to(orig_dtype)
+        history_sum = torch.cumsum(x, dim=1)
+        divisors = torch.arange(1, T + 1, device=x.device).view(1, -1, 1)
+    return history_sum / divisors
 
 @torch.compiler.disable
 def _compute_data_dependent_ema(x: torch.Tensor,
