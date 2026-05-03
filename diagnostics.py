@@ -426,53 +426,71 @@ def main():
                 nan_found_step = step
                 break
 
-            # Check parameter gradients for NaN
-            nan_param_names = []
-            for name, p in model.named_parameters():
-                if p.grad is not None and not torch.isfinite(p.grad).all().item():
-                    nan_param_names.append(name)
-
-            if nan_param_names:
-                print(f"\n  [step {step}] NaN/Inf in gradients of {len(nan_param_names)} param(s). First 10:")
-                params_dict = dict(model.named_parameters())
-                for name in nan_param_names[:10]:
-                    s = tensor_summary(params_dict[name].grad)
-                    print(f"    {name}: shape={s['shape']} "
-                          f"non-finite={s['nonfinite_count']:,}/{s['total']:,} "
-                          f"max|finite|={s['max_abs_finite']:.4g}")
-
-                if catcher is not None and catcher.first_failure:
-                    f = catcher.first_failure
-                    out = f['output']
-                    print(f"\n  Forward-hook captured during this same step:")
-                    print(f"    First module to emit non-finite forward output: "
-                          f"{f['module_name']} ({f['module_class']})")
-                    print(f"    Output shape={out['shape']} max|finite|={out['max_abs_finite']:.4g} "
-                          f"non-finite={out['nonfinite_count']:,}/{out['total']:,}")
-                else:
-                    print(f"\n  Forward was clean — NaN appeared in backward only.")
-
-                # Save state
-                fail_ckpt = os.path.join(args.debug_dir, f'nan_state_step{step}.pt')
-                batch_path = os.path.join(args.debug_dir, f'failing_batch_step{step}.pt')
-                torch.save({
-                    'step': step,
-                    'model_state': model.state_dict(),
-                    'optimizer_state': optimizer.state_dict(),
-                }, fail_ckpt)
-                torch.save({'X': X.cpu(), 'Y': Y.cpu(), 'step': step}, batch_path)
-                debug_files_created.extend([fail_ckpt, batch_path])
-                nan_found_step = step
-                break
-
-            # Normal optimizer step
+            # Unscale gradients BEFORE the NaN check. Without this, we'd be
+            # checking scaler-amplified fp16 grads — which can legitimately
+            # be inf during early warmup steps even when the true unscaled
+            # gradient is perfectly finite. The scaler is designed to detect
+            # such overflows inside scaler.step() and skip the update, which
+            # is the normal AMP startup dynamic. Calling unscale_ manually
+            # here makes scaler.step() skip its own internal unscale.
             if scaler.is_enabled():
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config['grad_clip'])
+
+            # Check post-unscale gradients for NaN. Suppressed before
+            # start_anomaly_step because (a) AMP scaler may still be
+            # converging on a stable scale during early warmup and produce
+            # transient inf gradients that get correctly auto-skipped by
+            # scaler.step(), and (b) the actual production NaN we're chasing
+            # appears later anyway (~step 500 for levels=11). Forward-loss
+            # NaN and anomaly-mode RuntimeErrors are still checked at every
+            # step (those are always real signals).
+            if step >= args.start_anomaly_step:
+                nan_param_names = []
+                for name, p in model.named_parameters():
+                    if p.grad is not None and not torch.isfinite(p.grad).all().item():
+                        nan_param_names.append(name)
+
+                if nan_param_names:
+                    print(f"\n  [step {step}] NaN/Inf in UNSCALED gradients of "
+                          f"{len(nan_param_names)} param(s). First 10:")
+                    params_dict = dict(model.named_parameters())
+                    for name in nan_param_names[:10]:
+                        s = tensor_summary(params_dict[name].grad)
+                        print(f"    {name}: shape={s['shape']} "
+                              f"non-finite={s['nonfinite_count']:,}/{s['total']:,} "
+                              f"max|finite|={s['max_abs_finite']:.4g}")
+
+                    if catcher is not None and catcher.first_failure:
+                        f = catcher.first_failure
+                        out = f['output']
+                        print(f"\n  Forward-hook captured during this same step:")
+                        print(f"    First module to emit non-finite forward output: "
+                              f"{f['module_name']} ({f['module_class']})")
+                        print(f"    Output shape={out['shape']} max|finite|={out['max_abs_finite']:.4g} "
+                              f"non-finite={out['nonfinite_count']:,}/{out['total']:,}")
+                    else:
+                        print(f"\n  Forward was clean — NaN appeared in backward only.")
+
+                    # Save state
+                    fail_ckpt = os.path.join(args.debug_dir, f'nan_state_step{step}.pt')
+                    batch_path = os.path.join(args.debug_dir, f'failing_batch_step{step}.pt')
+                    torch.save({
+                        'step': step,
+                        'model_state': model.state_dict(),
+                        'optimizer_state': optimizer.state_dict(),
+                    }, fail_ckpt)
+                    torch.save({'X': X.cpu(), 'Y': Y.cpu(), 'step': step}, batch_path)
+                    debug_files_created.extend([fail_ckpt, batch_path])
+                    nan_found_step = step
+                    break
+
+            # Normal optimizer step (unscale already done above when scaler
+            # is enabled; scaler.step detects this and skips its own unscale)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config['grad_clip'])
+            if scaler.is_enabled():
                 scaler.step(optimizer)
                 scaler.update()
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config['grad_clip'])
                 optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
