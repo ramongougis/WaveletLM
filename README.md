@@ -520,21 +520,20 @@ Longer training time, more regularization, and parameter compression are the sur
 4. [Dropout Sweep](#dropout-sweep)
 5. [Weight Decay Sweep](#weight-decay-sweep)
 6. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-7. [Disable Wavelet Crawl](#disable-wavelet-crawl)
-8. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-9. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-10. [Longer PG-19 Training](#longer-pg-19-training)
-11. [Dataset Comparisons](#dataset-comparisons)
-12. [Model Comparisons](#model-comparisons)
-13. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-14. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-15. [Multi-Transform Parallelization](#multi-transform-parallelization)
-16. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-17. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-18. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-19. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-20. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-21. [Other Post-Release Plans](#other-post-release-plans)
+7. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+8. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+9. [Longer PG-19 Training](#longer-pg-19-training)
+10. [Dataset Comparisons](#dataset-comparisons)
+11. [Model Comparisons](#model-comparisons)
+12. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+13. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+14. [Multi-Transform Parallelization](#multi-transform-parallelization)
+15. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+16. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+17. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+18. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+19. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+20. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -552,7 +551,12 @@ Longer training time, more regularization, and parameter compression are the sur
 
 Sweep `levels` and `per_scale_mixer_widths` at the established longer `block_size` to exploit coarse scales the longer sequence enables. Hypothesis: optimal `levels ≈ log2(block_size) − 3` keeps the coarsest cell at ~8 tokens regardless of bs; widths keep the symmetric half-1.0 / half-0.5 split. **Currently running** as Test 5 in [`runs.sh`](runs.sh): `levels ∈ {5, 7, 9, 11, 13}` at bs=16384, 1-epoch sweep with an auto-selected 5-epoch follow-up at the winner.
 
-Test 5 also runs with `wavelet_crawl=false` for stability — at levels ≥ 7 with K=3 enabled, every level evaluates the lifting MLP cascade three times and softmax-mixes them, multiplying activation compounding by 3× per level and pushing fp16 over its representable range during warmup. Two failed attempts confirm the trend: levels=7 with K=3 NaN'd at step 1750 (lr~8e-3); levels=9 with K=3 NaN'd at step 500 (lr~2.3e-3) — roughly 3.5× earlier and at 3.5× lower lr. This is *not* a confounded variable: the new levels=5 sweep run shares its config with the prior levels=5 result except for `wavelet_crawl`, providing a direct A/B comparison that validates the disable choice. Performance impact is expected to be minimal — the [Disable Wavelet Crawl](#disable-wavelet-crawl) ablation already showed at least 2 of 5 levels at L=5 had wavelet_crawl distributions that were either fully collapsed or maximally uniform (i.e., wasted compute), so the marginal contribution at additional coarse levels is suspect to begin with.
+Test 5 also runs with `wavelet_crawl=false`, absorbing what was previously a separate ablation. Two motivations stack:
+
+1. **Stability.** At levels ≥ 7 with K=3 enabled, every level evaluates the lifting MLP cascade three times and softmax-mixes them, multiplying activation compounding by 3× per level and pushing fp16 over its representable range during warmup. Two failed attempts confirm the trend: levels=7 with K=3 NaN'd at step 1750 (lr~8e-3); levels=9 with K=3 NaN'd at step 500 (lr~2.3e-3) — roughly 3.5× earlier and at 3.5× lower LR. Disabling `wavelet_crawl` is necessary to reach the higher-levels region of the sweep at all.
+2. **Architectural purity.** Wavelet crawl is the only convolutional component in WaveletLM. Disabling it makes the architecture fully **convolution-free in addition to attention-free**, eliminating the "but it has a convolution" critique. Checkpoint probes on both WT-103 and PG-19 already showed at least 2 of 5 levels at L=5 had wavelet_crawl distributions that were either fully collapsed (~99% mass on one offset) or maximally uniform — so the marginal contribution to quality is suspect even at the levels where it was numerically stable.
+
+This is *not* a confounded variable: the new levels=5 sweep run shares its config with the prior levels=5 result (Test 4) except for `wavelet_crawl`, providing a direct A/B comparison that validates the disable choice. Anticipated effect: ~1% VRAM gain and negligible/within-noise quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the per-level entropy table and full decision rule.
 
 Each sweep iteration uses its **maximum stable peak LR** (heterogeneous-LR design): levels=5 and 7 train cleanly at the original `lr=0.01`; levels=9 and 11 require `lr=3.42e-3` and `lr=1.14e-3` respectively (half of the last finite step's LR observed in earlier crawl=False NaN runs, with `min_lr` scaled to preserve the cosine schedule's 50× peak/min ratio). Each architecture is therefore tested at its sweet spot rather than hobbled to share a single conservative LR — which would penalize lower-levels models for being more LR-tolerant. To decompose any per-level BPB difference into a "depth effect" vs an "LR-tuning effect," one **methodology control** is added: a 1-epoch run at **levels=5 with `lr=1.14e-3`** (matching the levels=11 LR). Comparing this control against the levels=11 sweep result at the same LR isolates whether observed wins are structural or LR-driven. Levels=13 is skipped from this sweep — it OOMs at the current bs=16384 / MBS=1 / no-gradient-checkpointing config and is a candidate for a separate gradient-checkpointing-enabled follow-up only if levels=11 wins by a margin that suggests deeper would help.
 
@@ -567,10 +571,6 @@ Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. Mor
 ### Per-scale Mixer Transform Ablation
 
 Test the contribution of the FWHT slot in the per-scale mixer versus having no transform, having a Hartley transform, using a DCT-II/III pair, or employing a butterfly-parametrized learned orthogonal mixer. Measures whether FWHT specifically is necessary, or whether any orthogonal mixer of similar structure (or none at all, with the learned embedding in place) achieves equivalent performance. See [plans/other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation) for the full design and proposed test.
-
-### Disable Wavelet Crawl
-
-Single-seed layers = 1 & epochs = 5 ablation with `wavelet_crawl=false`. Wavelet crawl is the only convolutional component in the model. Checkpoint probes on both WT-103 and PG-19 show at least 2 of 5 levels collapse to distributions the model has effectively zeroed out, making this largely ineffective. Anticipated effect of ablation: 1% VRAM gain and negligible/within-noise quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the entropy table and decision rule.
 
 ### Step-Time Speedup Quick Wins
 

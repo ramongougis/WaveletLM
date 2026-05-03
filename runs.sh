@@ -216,12 +216,16 @@ nan_safe_run() {
 # matching per_scale_mixer_widths = (levels+1)/2 entries of 1.0 then
 # (levels+1)/2 entries of 0.5 (symmetric half-coarse / half-fine split).
 #
-# Each sweep run is 1 epoch (~1.15h on a 5090). Sweep iterations: levels ∈
-# {5, 7, 9, 11} (~4.6h total). Levels=13 skipped (OOMs at this config without
-# gradient_checkpointing). One additional control run (levels=5 @ lr=1.14e-3)
-# adds ~1.15h. Auto-picks the lowest-BPB sweep level (control excluded) and
-# runs 5 epochs at that level (~5.7-6.6h depending on level depth). Total
-# wall-clock ~12h.
+# Each sweep run is 1 epoch (~1.15h on a 5090). Sweep iterations to RUN:
+# {9, 11} (~2.3h total). Levels=5 and 7 are pre-populated from prior 1-epoch
+# runs at the same config (lr=0.01, crawl=False) — see preamble below.
+# Levels=13 skipped (OOMs at this config without gradient_checkpointing).
+# One additional control run (levels=5 @ lr=1.14e-3) adds ~1.15h.
+# Auto-picks the lowest-BPB sweep level (control excluded) and runs 5 epochs
+# at that level (~5.7-6.6h depending on depth) — but if levels=7 wins, the
+# in-flight 5-epoch run is reused rather than re-launched (find_l_e_log).
+# Total wall-clock: ~3.5h sweep + 0-6.6h follow-up = 3.5-10h depending on
+# which level wins.
 #
 # Heterogeneous LR per level (Position C): each iteration uses its max-stable
 # LR (half of the last-finite-step LR observed in prior crawl=False NaN runs).
@@ -240,6 +244,13 @@ nan_safe_run() {
 TEST5_BLOCK_SIZE=16384
 TEST5_RESULTS_FILE="logs/test5_levels_sweep_results.txt"
 > "$TEST5_RESULTS_FILE"
+
+# Pre-populate sweep results with prior runs that already used the new sweep
+# config (lr=0.01, wavelet_crawl=False) at 1 epoch — no need to re-run them.
+# The format below matches what run_test5_sweep_one() writes:
+#   levels  BPB  log_path  kind  status
+printf "5\t1.2540\tlogs/wikitext-103_2026-05-02_20-32-04/log.txt\tsweep\tok\n" >> "$TEST5_RESULTS_FILE"
+printf "7\t1.2361\tlogs/wikitext-103_2026-05-02_21-43-22/log.txt\tsweep\tok\n" >> "$TEST5_RESULTS_FILE"
 
 build_psmw() {
     # Builds a per_scale_mixer_widths JSON array for a given levels value.
@@ -376,7 +387,9 @@ print(m.group(1) if m else 'N/A')
 # Main sweep — each level uses its max-stable LR (Position C: heterogeneous LR).
 # Skipping levels=13 by default (OOMs at this config; would need
 # gradient_checkpointing=true to fit in 32 GiB at bs=16384).
-for L in 5 7 9 11; do
+# Levels=5 and 7 are pre-populated above from prior crawl=False runs at
+# lr=0.01, so we skip them here too.
+for L in 9 11; do
     run_test5_sweep_one $L sweep
 done
 

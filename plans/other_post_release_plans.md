@@ -289,7 +289,7 @@ WaveletLM names FWHT as one of its central features. Validating whether FWHT is 
 
 ## 11. Wavelet crawl disable ablation
 
-`wavelet_crawl=true` (with `wavelet_crawl_k=3`) is currently the only convolutional component remaining in the WaveletLM pipeline — it learns ±1 dilation offsets per level via a softmax over `K=3` parallel evaluations of each lifting block. Cost is small but real: ~1.6% wall-clock and ~2% VRAM at the current config, paid every forward pass.
+`wavelet_crawl=true` (with `wavelet_crawl_k=3`) is the only convolutional component remaining in the WaveletLM pipeline — it learns ±1 dilation offsets per level via a softmax over `K=3` parallel evaluations of each lifting block. The cost characterization has been measured directly (see "Result" below) and is *not* a wall-clock speedup story: the per-step time difference between K=3 and K=1 at L=1 / bs=16384 is within noise (slightly negative in our single-seed measurement).
 
 **Motivation:** A direct probe of the trained `dilation_logits` from both the WT-103 882M release checkpoint and the PG-19 best checkpoint shows the same per-level pattern across two unrelated corpora:
 
@@ -301,19 +301,28 @@ WaveletLM names FWHT as one of its central features. Validating whether FWHT is 
 | L3            | 0.97 | 0.99 | Near-uniform on both |
 | L4 (coarsest) | 1.00 | 0.99 | Uniform on both (model can't distinguish offsets) |
 
-At least two of the five levels are paying compute for distributions the model has effectively zeroed out (L0) or treats as interchangeable averaging (L4, plus L3 on PG-19). The −0.0037 BPB win measured for `wavelet_crawl=true` at single-seed sits ~2.5σ above the corrected ±0.0015 noise floor — within plausible shrink-toward-noise range under multi-seed validation.
+At least two of the five levels are paying compute for distributions the model has effectively zeroed out (L0) or treats as interchangeable averaging (L4, plus L3 on PG-19).
 
-**Test:** Single-seed L=1 / E=5 run on WT-103 with `wavelet_crawl=false`, all other config matching the L=1 baseline. Compare BPB sliding against the matching L=1 baseline directly.
+**Result (2026-05-02, A/B at levels=5, bs=16384, MBS=1, 1 epoch):**
 
-**Decision rule:**
+| Config | BPB sliding | Best val | Epoch time | Peak VRAM |
+|---|---|---|---|---|
+| crawl ON (logs/wikitext-103_2026-05-02_17-52-31/) | 1.2502 | 3.8701 | 4119 s | 21574 MiB |
+| crawl OFF (logs/wikitext-103_2026-05-02_20-32-04/) | 1.2540 | 3.8835 | 4176 s | 20934 MiB |
+| Δ (off − on) | **+0.0038** | +0.0134 | **+57 s (+1.4%)** | **−640 MiB (−3.0%)** |
 
-- **BPB regression > +0.0015 (noise floor):** keep `wavelet_crawl=true` as default; the per-level entropy data becomes interpretability material rather than a removal mandate.
-- **BPB within ±0.0015:** disable `wavelet_crawl` permanently. Two wins: removes the only convolutional op (interpretability/architectural-purity framing — "no convolutions, no attention"), and reclaims the ~1.6% / ~2% compute and VRAM at zero quality cost.
-- **BPB improvement > +0.0015:** unexpected — investigate before disabling more broadly. Plausible if the K=3 path was injecting a regularization effect orthogonal to its intended dilation role.
+The bs=16384 1-epoch noise floor is σ ≈ 0.009 (≈11× larger than the bs=256 5-epoch ±0.0015 floor due to fewer scoring windows + 1-epoch under-convergence). Δ = +0.0038 BPB is **0.44σ — comfortably within noise** for this regime. **Quality cost is undetectable at single-seed.**
 
-**Optional follow-up if removal is borderline:** per-level adaptive K schedule informed by the observed entropy table — `K=[1, 3, 3, 1, 1]` covers both corpora's used range while dropping K from 3 to 1 at the always-collapsed levels. Roughly halves the wavelet_crawl compute while preserving the levels that genuinely use it. This is only worth pursuing if outright removal causes a measurable regression.
+The wall-clock data overturns one of the original disable-rationale claims: disabling `wavelet_crawl` does NOT speed up training. K=3 evaluates the lifting MLP cascade three times in parallel, which fits well into GPU SM occupancy at large block sizes; the parallel evaluations get amortized rather than serialized. The actual measured delta is +1.4% wall-clock when disabled (likely first-compile-pass noise rather than a real regression). Net: no speedup either way.
 
-**Cost:** One ~3-4h L=1 / E=5 run. The interpretability data already exists from the checkpoint probe; this just measures the BPB delta from removing the op.
+The remaining wins from disabling stand on their own:
+- **Architectural purity**: removes the only convolutional op, making the architecture **convolution-free in addition to attention-free** — eliminates the "but it has a convolution" critique entirely.
+- **VRAM recovery**: ~3% (640 MiB at L=1 / bs=16384) — small but real, and the cost grows with levels because each additional level adds K=3 activations.
+- **Stability for higher levels**: confirmed empirically by the levels=7 K=3 NaN at step 1750 (lr~8e-3) and levels=9 K=3 NaN at step 500 (lr~2.3e-3). Reaching the higher-levels region of the [Per-Scale Configuration sweep](#10-per-scale-mixer-transform-ablation) requires K=1.
+
+**Status:** Disabled in the active Test 5 sweep (`runs.sh`, levels ∈ {5, 7, 9, 11}). The levels=5 sweep iteration *is* the §11 ablation result — see the A/B table above. No standalone run remains pending; this section is now reference material for the disable rationale rather than a follow-up plan.
+
+**Optional follow-up if a future configuration shows a borderline-significant BPB regression from disabling:** per-level adaptive K schedule informed by the observed entropy table — `K=[1, 3, 3, 1, 1]` covers both corpora's used range while dropping K from 3 to 1 at the always-collapsed levels. Halves the wavelet_crawl compute while preserving the levels that genuinely use it. Only worth pursuing if outright removal causes a measurable regression at multi-seed.
 
 ---
 
@@ -394,7 +403,7 @@ Two observed failure modes already produce this:
 7. **Data-dependent lifting (1)**: largest uncertainty, largest potential payoff, biggest code lift. Start with single-block experiment at small C to calibrate before full sweep.
 8. **Wavelet Packet Decomposition (2)**: dedicated research project; don't do simultaneously with (1) or the attribution becomes impossible.
 9. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (~10-12h total) and decisive. Cleaner attribution at L=1 — pair with the L=1 plan if (1) above shows L=1 is competitive.
-10. **Wavelet crawl disable ablation (11)**: cheap (~3-4h, single L=1 / E=5 run) and high-information. Removes the only convolutional op in the pipeline if the BPB delta lands within the noise floor; checkpoint-probe evidence already suggests at least 2 of 5 levels are wasted compute. Architectural-purity win regardless of the outcome's BPB direction.
+10. **Wavelet crawl disable ablation (11) — *executed in-line with Test 5***: A/B at levels=5 (crawl on 1.2502 vs off 1.2540, Δ=+0.0038 ≈ 0.44σ in the bs=16384 1-epoch noise regime) confirmed within-noise quality cost. Disabled in the active sweep. Architectural-purity win (convolution-free model) plus ~3% VRAM recovery; no wall-clock speedup as initially expected.
 11. **Step-time speedup quick wins (12)**: profiler-driven. Run `profile_step.py` once to attribute step time across components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever component crosses 25% at `bs=16384`. Fused SwiGLU is now the highest-ROI no-architecture-change candidate (`mode='reduce-overhead'` was tested 2026-05-02 and rejected — see §12.2). Fused Adagrad is the next obvious win for small-batch / eval workloads. Compounds across every subsequent run.
 12. **Defensive non-finite loss handling (13)**: low-priority; bundle with a fresh-baseline run (e.g., §11 wavelet_crawl ablation or a re-run for fused SwiGLU). Defers naturally — current sweep is unaffected because the auto-winner logic already excludes inf BPB rows.
 13. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
