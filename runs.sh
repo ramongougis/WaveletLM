@@ -209,44 +209,21 @@ nan_safe_run() {
 # fi
 
 # ============================================================
-# Test 5: Per-scale configuration sweep at bs=16384.
-# Hypothesis: optimal levels ≈ log2(block_size) − 3. At bs=256 with
-# levels=5, log2(256) − 5 = 3 was optimal. At bs=16384 (log2=14),
-# levels=11 (14 − 3) is the prediction. Sweep levels = 5, 7, 9, 11, 13;
-# matching per_scale_mixer_widths = (levels+1)/2 entries of 1.0 then
-# (levels+1)/2 entries of 0.5 (symmetric half-coarse / half-fine split).
+# Test 5 Phase 2: retry levels=9 and 11 at lr=0.01 (original LR) now that
+# the fp16-cumsum overflow in _compute_running_mean has been fixed
+# (model.py 2026-05-03).
 #
-# PHASE 2: retry levels=9 and 11 at lr=0.01 (the original LR) now that the
-# fp16-cumsum overflow in _compute_running_mean is fixed (model.py 2026-05-03).
-# The earlier K=3-attributed NaNs at deeper cascades were partly the cumsum
-# overflow we just fixed; this phase tests whether levels=9/11 are now
-# trainable at the original LR, eliminating the LR-confound from Phase 1's
-# heterogeneous-LR design.
+# This is the simplified post-debugging-session form: each iteration just
+# launches train.py and lets it run to completion (NaN or otherwise). No
+# in-script NaN detection, no auto-winner pick, no result-file ledger. If
+# something NaNs, use diagnostics.py to root-cause it. If you need the
+# winning level for the 5-epoch follow-up, inspect the per-run benchmark.txt
+# / log.txt in logs/wikitext-103_*/ manually and pick the launch yourself.
 #
-# Sweep iterations to RUN this phase: {9, 11} at lr=0.01 with NaN detection
-# (~2.3h total if both succeed; less if either NaNs early).
-# Pre-populated (no re-run): levels=5 / 7 at lr=0.01 from Phase 1's results
-# (their BPB is read fresh from benchmark.txt — corrected post-rebench —
-# falling back to log.txt if benchmark.txt isn't present).
-# Levels=13 skipped (OOMs at this config without gradient_checkpointing).
-#
-# After the sweep, auto-picks the lowest-BPB level across the 4 candidates
-# (5/7/9/11) and runs 5 epochs at lr=0.01 with that level + matching
-# per_scale_mixer_widths. If levels=7 wins, reuses the existing 5-epoch run
-# at logs/wikitext-103_2026-05-03_02-13-07 instead of re-training.
-#
-# Total wall-clock: ~2.3h sweep + 0-8.7h follow-up = 2.3-11h depending on
-# whether 9/11 NaN at lr=0.01 and which level wins.
-#
-# All sweep runs share block_size=16384 + lr=0.01 + crawl=False, so their
-# BPB sliding numbers ARE directly comparable (same window count, same
-# stride, same eval set, same LR — fixed-LR apples-to-apples).
+# Levels=13 skipped (OOMs at bs=16384 / MBS=1 without gradient_checkpointing).
+# Levels=5 / 7 at lr=0.01 already completed in earlier sweeps — no re-run here.
 # ============================================================
 TEST5_BLOCK_SIZE=16384
-TEST5_RESULTS_FILE="logs/test5_levels_sweep_results.txt"
-# Note: this file is truncated and re-populated inside the Phase 2 block
-# below (after parse_sliding_bpb_from_dir is defined) so that BPBs come
-# from the latest benchmark.txt / log.txt rather than stale hardcoded values.
 
 build_psmw() {
     # Builds a per_scale_mixer_widths JSON array for a given levels value.
@@ -328,197 +305,40 @@ print(json.dumps({
 # to log.txt (original training-end benchmark output, may contain inf for
 # pre-fix runs). Returns the LAST match in either file so rebenched results
 # take precedence over original inf entries that remain above them.
-parse_sliding_bpb_from_dir() {
-    local LOG_DIR="$1"
-    # Strip any trailing slash
-    LOG_DIR="${LOG_DIR%/}"
-    local FILE="$LOG_DIR/log.txt"
-    if [ -f "$LOG_DIR/benchmark.txt" ]; then
-        FILE="$LOG_DIR/benchmark.txt"
-    fi
-    python -c "
-import re
-log = open('$FILE', encoding='utf-8', errors='replace').read()
-m = list(re.finditer(r'\[BENCHMARK - Sliding Window\].*?BPB:\s*([\d.]+|inf)', log, re.DOTALL))
-print(m[-1].group(1) if m else 'N/A')
-"
-}
-
-# Run a single Phase-2 levels iteration at lr=0.01 with NaN detection. On
-# NaN, the run is killed mid-flight and recorded as N/A. On any non-zero
-# exit, recorded as failure. On success, parses sliding BPB from the
-# resulting log dir and appends an "ok" row. Commits + pushes the result
-# (success OR failure) after each run.
+# Run a single Phase-2 levels iteration at lr=0.01 — plain `python train.py`
+# (no NaN detection, no result-file ledger). On any failure, commits the
+# log artifact for traceability and continues to the next iteration.
 run_test5_phase2_iter() {
     local LEVELS=$1
     local SCALES=$((LEVELS + 1))
-    local LABEL="Test 5 Phase 2: levels=$LEVELS (S=$SCALES) @ lr=0.01, bs=$TEST5_BLOCK_SIZE, crawl=False (cumsum fp32-fix in place)"
-    # Force lr=0.01 / min_lr=0.0002 for the Phase 2 retry (overrides
-    # get_stable_lr's heterogeneous-LR values from Phase 1).
+    local LABEL="Test 5 Phase 2: levels=$LEVELS (S=$SCALES) @ lr=0.01, bs=$TEST5_BLOCK_SIZE, crawl=False"
+
+    echo ""
+    echo "============================================================"
+    echo "=== ${LABEL}"
+    echo "============================================================"
+
     local PATCH
     PATCH=$(build_test5_patch $LEVELS 1 0.01 0.0002)
-
-    nan_safe_run "$LABEL" "$PATCH"
+    set_keys "$PATCH"
+    python train.py
     local EXIT=$?
 
-    local LATEST_LOG_DIR
-    LATEST_LOG_DIR=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1 | sed 's:/$::')
-
-    if [ $EXIT -eq 99 ]; then
-        echo "[runs.sh] levels=$LEVELS NaN'd at lr=0.01 ($LATEST_LOG_DIR). Recording N/A."
-        printf "%s\t%s\t%s/log.txt\tphase2\tnan\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" >> "$TEST5_RESULTS_FILE"
-        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 NaN'd"
-    elif [ $EXIT -ne 0 ]; then
-        echo "[runs.sh] levels=$LEVELS failed exit $EXIT ($LATEST_LOG_DIR). Recording N/A."
-        printf "%s\t%s\t%s/log.txt\tphase2\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" "$EXIT" >> "$TEST5_RESULTS_FILE"
-        sleep 10
+    if [ $EXIT -ne 0 ]; then
+        echo "[runs.sh] levels=$LEVELS failed exit $EXIT."
         git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 FAILED exit $EXIT"
+        sleep 10  # let CUDA release VRAM after a crash
     else
-        local BPB
-        BPB=$(parse_sliding_bpb_from_dir "$LATEST_LOG_DIR")
-        echo "[runs.sh] levels=$LEVELS @ lr=0.01 sliding BPB = $BPB ($LATEST_LOG_DIR)"
-        printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG_DIR" >> "$TEST5_RESULTS_FILE"
-        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 → BPB sliding $BPB"
+        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 completed"
     fi
 }
 
-# ============================================================
-# Test 5 Phase 2: retry levels=9 and 11 at lr=0.01 with the cumsum fp32 fix
-# in place. The earlier K=3-attributed NaNs at deeper levels may have been
-# (partly) the fp16-overflow class we just fixed in _compute_running_mean.
-# This phase tests whether the original lr=0.01 is now trainable at deeper
-# cascades, which would give us a clean apples-to-apples per-level
-# comparison without LR-confound.
-# ============================================================
-
-# Refresh pre-populated rows by reading current BPB from benchmark.txt (post
-# rebench.sh) or log.txt for the existing levels=5/7 lr=0.01 runs. Reading
-# at script start ensures we use the latest corrected numbers, not stale
-# hardcoded values.
-PREPOP_TARGETS=(
-    "5 logs/wikitext-103_2026-05-02_20-32-04"
-    "7 logs/wikitext-103_2026-05-02_21-43-22"
-)
-# Truncate file (overrides the hardcoded pre-populate above) and refresh
-> "$TEST5_RESULTS_FILE"
-for entry in "${PREPOP_TARGETS[@]}"; do
-    L=$(echo $entry | awk '{print $1}')
-    DIR=$(echo $entry | awk '{print $2}')
-    BPB=$(parse_sliding_bpb_from_dir "$DIR")
-    printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$L" "$BPB" "$DIR" >> "$TEST5_RESULTS_FILE"
-    echo "[runs.sh] Pre-pop levels=$L → sliding BPB $BPB (from $DIR)"
-done
-
-# Run the new Phase 2 retries at lr=0.01
+# Run the Phase 2 retries. Inspect each run's benchmark.txt / log.txt
+# manually afterward to read the corrected sliding-window BPB and decide
+# whether to launch a 5-epoch follow-up at the winning level.
 for L in 9 11; do
     run_test5_phase2_iter $L
 done
-
-echo ""
-echo "============================================================"
-echo "=== Test 5 sweep results ($TEST5_RESULTS_FILE):"
-echo "============================================================"
-cat "$TEST5_RESULTS_FILE"
-
-# Auto-pick winner (lowest BPB among ok rows). All Phase 2 rows use
-# lr=0.01 so the comparison is apples-to-apples.
-WINNER_LEVELS=$(python -c "
-results = []
-for line in open('$TEST5_RESULTS_FILE'):
-    parts = line.rstrip('\n').split('\t')
-    # Format per row: levels, bpb, log, kind, status
-    if len(parts) >= 5 and parts[1] not in ('N/A', 'inf') and parts[4] == 'ok':
-        try:
-            results.append((int(parts[0]), float(parts[1])))
-        except ValueError:
-            pass
-print(min(results, key=lambda x: x[1])[0] if results else 'NONE')
-")
-
-# Helper: find the most recent log matching levels=$1, epochs=$2.
-# If $3 == "complete" require benchmark completion; if "inprogress" require absence.
-find_l_e_log() {
-    local target_L=$1 target_E=$2 status=$3
-    local f L E
-    for f in $(ls -dt logs/wikitext-103_*/log.txt 2>/dev/null | head -30); do
-        L=$(grep -m1 -E '^\[2026.*\][[:space:]]+levels[[:space:]]*:' "$f" 2>/dev/null | awk '{print $NF}')
-        E=$(grep -m1 -E '^\[2026.*\][[:space:]]+epochs[[:space:]]*:' "$f" 2>/dev/null | awk '{print $NF}')
-        [ "$L" = "$target_L" ] || continue
-        [ "$E" = "$target_E" ] || continue
-        if [ "$status" = "complete" ]; then
-            grep -q '=== TRAINING COMPLETE ===' "$f" 2>/dev/null && { echo "$f"; return; }
-        elif [ "$status" = "inprogress" ]; then
-            grep -q '=== TRAINING COMPLETE ===' "$f" 2>/dev/null || { echo "$f"; return; }
-        fi
-    done
-}
-
-if [ "$WINNER_LEVELS" = "NONE" ]; then
-    echo "[runs.sh] Test 5 sweep: no successful runs. Skipping 5-epoch follow-up."
-elif [ "$WINNER_LEVELS" = "7" ]; then
-    # levels=7 in this sweep uses lr=0.01, matching the 5-epoch levels=7 run
-    # that was already auto-launched by the prior sweep iteration. Reuse it
-    # if available rather than burning ~5.7h on a redundant run.
-    EXISTING_LOG=$(find_l_e_log 7 5 complete)
-    INPROGRESS_LOG=$(find_l_e_log 7 5 inprogress)
-    if [ -n "$EXISTING_LOG" ]; then
-        echo ""
-        echo "============================================================"
-        echo "=== Test 5 winner: levels=7 — REUSING existing complete 5-epoch run"
-        echo "===   $EXISTING_LOG"
-        echo "============================================================"
-        echo "[runs.sh] Same lr=0.01 / wavelet_crawl=False config; no need to re-train."
-    elif [ -n "$INPROGRESS_LOG" ]; then
-        echo ""
-        echo "============================================================"
-        echo "=== Test 5 winner: levels=7 — 5-epoch run is IN PROGRESS at:"
-        echo "===   $INPROGRESS_LOG"
-        echo "============================================================"
-        echo "[runs.sh] Skipping fresh launch to avoid GPU contention. The existing"
-        echo "         in-progress run will be the Test 5 final result once it finishes."
-    else
-        echo ""
-        echo "============================================================"
-        echo "=== Test 5 winner: levels=7 — no prior 5-epoch run found, launching fresh"
-        echo "============================================================"
-        WINNER_PATCH=$(build_test5_patch $WINNER_LEVELS 5 0.01 0.0002)
-        nan_safe_run "Test 5 Phase 2 final (5-ep): levels=$WINNER_LEVELS @ lr=0.01" "$WINNER_PATCH"
-        FINAL_EXIT=$?
-        FINAL_LOG_DIR=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1 | sed 's:/$::')
-        if [ $FINAL_EXIT -eq 99 ]; then
-            git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep NaN'd"
-        elif [ $FINAL_EXIT -ne 0 ]; then
-            git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS FAILED exit $FINAL_EXIT"
-        else
-            FINAL_BPB=$(parse_sliding_bpb_from_dir "$FINAL_LOG_DIR")
-            git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep → BPB sliding $FINAL_BPB"
-        fi
-    fi
-else
-    # Winner is levels ∈ {5, 9, 11}: launch fresh 5-epoch at lr=0.01 with
-    # NaN detection. Phase 2 forces lr=0.01 across all levels (heterogeneous
-    # LR was Phase 1's design; Phase 2 tests fixed-LR feasibility now that
-    # the cumsum overflow is fixed).
-    echo ""
-    echo "============================================================"
-    echo "=== Test 5 Phase 2 winner: levels=$WINNER_LEVELS — launching 5-epoch follow-up"
-    echo "============================================================"
-    WINNER_PATCH=$(build_test5_patch $WINNER_LEVELS 5 0.01 0.0002)
-    nan_safe_run "Test 5 Phase 2 final (5-ep): levels=$WINNER_LEVELS @ lr=0.01, bs=$TEST5_BLOCK_SIZE" "$WINNER_PATCH"
-    FINAL_EXIT=$?
-    FINAL_LOG_DIR=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1 | sed 's:/$::')
-    if [ $FINAL_EXIT -eq 99 ]; then
-        echo "[runs.sh] 5-epoch run NaN'd at levels=$WINNER_LEVELS / lr=0.01."
-        git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep NaN'd"
-    elif [ $FINAL_EXIT -ne 0 ]; then
-        echo "[runs.sh] 5-epoch run failed exit $FINAL_EXIT."
-        git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS FAILED exit $FINAL_EXIT"
-    else
-        FINAL_BPB=$(parse_sliding_bpb_from_dir "$FINAL_LOG_DIR")
-        echo "[runs.sh] 5-epoch BPB sliding: $FINAL_BPB"
-        git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep → BPB sliding $FINAL_BPB"
-    fi
-fi
 
 # ============================================================
 # Reset config to L=2 release default (matches README Training section)
