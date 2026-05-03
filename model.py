@@ -1223,13 +1223,9 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Mean-center on Cp before FWHT to bound the fp16 output cast.
-        # FWHT output ≈ √N × max|input|; with N=2048 (Cp) and inputs near
-        # fp16's ceiling this overflows on the post-fp32 cast back to fp16.
-        # Subtracting the mean caps the bound at √N × max|input − mean|.
-        # In-place sub is safe: mean.backward needs only shape, stack.backward
-        # is unbind. fht_dc is [B,T,S,1] — held across the mixer and added
-        # back after inverse FWHT to preserve the DC component.
+        # Mean-center on Cp before FWHT to bound non-DC output bins for the
+        # fp16 cast. (DC bin = √N · mean still risks overflow; non-DC bins
+        # become √N · max|x − mean|, much smaller when inputs cluster.)
         fht_dc = stacked_coeffs.mean(dim=-1, keepdim=True)
         stacked_coeffs = stacked_coeffs.sub_(fht_dc)
 
@@ -1276,7 +1272,7 @@ class WaveletLMBlock(nn.Module):
         mixed_all = self.fht(mixed_spec)
 
         # Restore DC offset removed before the forward FWHT.
-        mixed_all = mixed_all + fht_dc
+        mixed_all = mixed_all.add_(fht_dc)
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
