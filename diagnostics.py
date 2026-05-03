@@ -123,7 +123,8 @@ class NanForwardCatcher:
 # ============================================================================
 
 def build_failing_config(levels: int, lr: float, min_lr: float,
-                         no_compile: bool = True) -> dict:
+                         no_compile: bool = True,
+                         use_gradient_checkpointing: bool = True) -> dict:
     """Build a config matching the levels=N retry from runs.sh Phase 2."""
     S = levels + 1
     half = S // 2
@@ -198,7 +199,12 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'warmup_fraction': 0.3,
         'grad_clip': 1.0,
         'tie_embedding_to_lm_head': True,
-        'gradient_checkpointing': False,
+        # Enabled by default in diagnostics: lets us run eager mode (clean
+        # stack traces) at levels=11 / bs=16384 without OOM. ~25-30% slower
+        # per step but doesn't change numerical behavior — recomputation
+        # produces bit-equivalent activations and gradients to the original
+        # forward path.
+        'gradient_checkpointing': use_gradient_checkpointing,
         'use_amp': True,
         'amp_dtype': 'fp16',
         'allow_tf32': True,
@@ -237,14 +243,18 @@ def main():
                     help='Preserve debug files after diagnosis (default: delete to save disk)')
     ap.add_argument('--enable_compile', action='store_true',
                     help='Run with torch.compile (default: off — clearer stack traces)')
+    ap.add_argument('--no_gradient_checkpointing', action='store_true',
+                    help='Disable gradient_checkpointing (default: on — saves ~50%% activation memory '
+                         'so eager-mode levels=11 fits in 32 GiB)')
     args = ap.parse_args()
 
     config = build_failing_config(args.levels, args.lr, args.min_lr,
-                                  no_compile=not args.enable_compile)
+                                  no_compile=not args.enable_compile,
+                                  use_gradient_checkpointing=not args.no_gradient_checkpointing)
 
     print(f"=== diagnostics.py — NaN root-cause sweep ===")
-    print(f"  Config: levels={args.levels}, lr={args.lr}, min_lr={args.min_lr}, "
-          f"compile={config['compile']}")
+    print(f"  Config: levels={args.levels}, lr={args.lr}, min_lr={args.min_lr}")
+    print(f"  compile={config['compile']}, gradient_checkpointing={config['gradient_checkpointing']}")
     print(f"  Save pre-NaN checkpoint at step: {args.start_save_step}")
     print(f"  Enable anomaly mode at step:     {args.start_anomaly_step}")
     print(f"  Hard cap on steps:               {args.max_steps}")
