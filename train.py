@@ -437,8 +437,15 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
             logits, _ = model(X, targets=None)
 
         B, seq_len, V = logits.shape
+        # NOTE: cast logits to fp32 before cross_entropy so per-token losses
+        # AND their sum stay in fp32. Without this, .sum() over a fp16 loss
+        # tensor of length T overflows fp16 (max 65504) when T is large and
+        # per-token loss is non-trivial — e.g. T=16384 × 4.5 nats ≈ 73,500
+        # → inf BPB despite finite per-token losses and finite logits. See
+        # commit notes for the diagnosis (find_inf_source.py confirmed model
+        # outputs are finite; overflow is purely in this accumulator).
         loss_per_token = F.cross_entropy(
-            logits.view(-1, V), Y.view(-1).long(), reduction='none')
+            logits.view(-1, V).float(), Y.view(-1).long(), reduction='none')
         total_loss += loss_per_token.sum().item()
         total_tokens += B * seq_len
 
@@ -542,8 +549,11 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
             trg_len = trg_lens[b]
             logits_scored = logits[b, -trg_len:, :]
             targets_scored = Y[b, -trg_len:]
+            # See companion comment in evaluate_full_validation: cast to fp32
+            # to prevent fp16 overflow when summing per-token losses across
+            # long target spans (trg_len up to T = 16384).
             loss_per_token = F.cross_entropy(
-                logits_scored, targets_scored.long(), reduction='none')
+                logits_scored.float(), targets_scored.long(), reduction='none')
             total_loss += loss_per_token.sum().item()
             total_scored_tokens += loss_per_token.numel()
 
