@@ -932,6 +932,7 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
+        ln_around_fht: bool = False,
     ):
         super().__init__()
         self.C = C
@@ -940,6 +941,18 @@ class WaveletLMBlock(nn.Module):
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
+
+        # Optional FWHT-block hardening: LayerNorms wrapping the
+        # FWHT → mixer → invFWHT chain. Disabled by default so existing
+        # checkpoints load without architectural mismatch. Enable via config
+        # `ln_around_fht: true` to test FWHT input/output bounding for deep
+        # cascades (levels >= 9) where activations can grow large enough to
+        # overflow fp16 inside the FWHT butterfly. Each LN has ~Cp params
+        # (2 × Cp = ~4K total per layer).
+        self.ln_around_fht = ln_around_fht
+        if self.ln_around_fht:
+            self.ln_pre_fht = nn.LayerNorm(self.Cp, device=device, dtype=dtype)
+            self.ln_post_fht = nn.LayerNorm(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
         if wavelet_mode == "lifting":
@@ -1223,6 +1236,11 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
+        # Optional pre-FWHT LayerNorm — bounds FWHT input magnitudes for
+        # deep-cascade stability (gated by config `ln_around_fht`).
+        if self.ln_around_fht:
+            stacked_coeffs = self.ln_pre_fht(stacked_coeffs)
+
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
@@ -1264,6 +1282,12 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
+
+        # Optional post-invFWHT LayerNorm — symmetric counterpart to the
+        # pre-FWHT LN; restores bounded magnitudes after the mixer pipeline
+        # (gated by config `ln_around_fht`).
+        if self.ln_around_fht:
+            mixed_all = self.ln_post_fht(mixed_all)
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1493,6 +1517,7 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
+                ln_around_fht=config.get("ln_around_fht", False),
             )
             for _ in range(layer_build_count)
         ])

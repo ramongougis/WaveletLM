@@ -219,6 +219,10 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'stab_mixer_eps_scaling': False,
         'stab_lifting_level_scaling': False,
         'multinodal_enabled': False,
+        # Test FWHT-block hardening: LayerNorms before/after the FWHT chain.
+        # Bounds FWHT input magnitudes for deep-cascade stability. Set False
+        # to reproduce the un-hardened failing config.
+        'ln_around_fht': True,
     }
 
 
