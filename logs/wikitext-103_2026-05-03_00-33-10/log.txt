@@ -1,0 +1,211 @@
+[2026-05-03 00:33:10] Starting WaveletLM Training on WIKITEXT-103
+[2026-05-03 00:33:10] Device: cuda, AMP: True (fp16)
+[2026-05-03 00:33:10] 
+[2026-05-03 00:33:10] 	dataset                             : wikitext-103
+[2026-05-03 00:33:10] 	tokenizer                           : auto
+[2026-05-03 00:33:10] 	out_dir                             : logs
+[2026-05-03 00:33:10] 	compile                             : True
+[2026-05-03 00:33:10] 	compile_mode                        : default
+[2026-05-03 00:33:10] 	seed                                : 1337
+[2026-05-03 00:33:10] 	epochs                              : 1
+[2026-05-03 00:33:10] 	micro_batch_size                    : 1
+[2026-05-03 00:33:10] 	grad_accum                          : 1
+[2026-05-03 00:33:10] 	block_size                          : 16384
+[2026-05-03 00:33:10] 	eval_interval                       : 250
+[2026-05-03 00:33:10] 	skip_warmup_saves                   : True
+[2026-05-03 00:33:10] 	C                                   : 2048
+[2026-05-03 00:33:10] 	layers                              : 1
+[2026-05-03 00:33:10] 	levels                              : 11
+[2026-05-03 00:33:10] 	low_rank                            : 4
+[2026-05-03 00:33:10] 	mlp_expansion                       : 10
+[2026-05-03 00:33:10] 	mlp_layers                          : 2
+[2026-05-03 00:33:10] 	pkm_enabled                         : False
+[2026-05-03 00:33:10] 	pkm_num_keys                        : 16384
+[2026-05-03 00:33:10] 	pkm_top_k                           : 32
+[2026-05-03 00:33:10] 	pkm_heads                           : 1
+[2026-05-03 00:33:10] 	fwpkm_enabled                       : True
+[2026-05-03 00:33:10] 	fwpkm_num_keys                      : 8281
+[2026-05-03 00:33:10] 	fwpkm_top_k                         : 32
+[2026-05-03 00:33:10] 	fwpkm_heads                         : 1
+[2026-05-03 00:33:10] 	fwpkm_inference_updates             : False
+[2026-05-03 00:33:10] 	fwpkm_update_lr                     : 0.01
+[2026-05-03 00:33:10] 	fwpkm_chunk_size                    : 64
+[2026-05-03 00:33:10] 	wavelet_mode                        : lifting
+[2026-05-03 00:33:10] 	shared_lifting_weights              : True
+[2026-05-03 00:33:10] 	untied_reconstruction               : False
+[2026-05-03 00:33:10] 	multi_basis_lifting                 : False
+[2026-05-03 00:33:10] 	multi_basis_inits                   : ['haar', 'random']
+[2026-05-03 00:33:10] 	cross_scale_gating                  : True
+[2026-05-03 00:33:10] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+[2026-05-03 00:33:10] 	stable_parametrization              : False
+[2026-05-03 00:33:10] 	stab_spectral_norm                  : False
+[2026-05-03 00:33:10] 	stab_ff_scaling                     : False
+[2026-05-03 00:33:10] 	stab_embed_scaling                  : False
+[2026-05-03 00:33:10] 	stab_proj_out_scaling               : False
+[2026-05-03 00:33:10] 	stab_mixer_eps_scaling              : False
+[2026-05-03 00:33:10] 	stab_lifting_level_scaling          : False
+[2026-05-03 00:33:10] 	looped_blocks                       : False
+[2026-05-03 00:33:10] 	looped_blocks_count                 : 8
+[2026-05-03 00:33:10] 	wavelet_crawl                       : False
+[2026-05-03 00:33:10] 	wavelet_crawl_k                     : 3
+[2026-05-03 00:33:10] 	lifting_linear_only                 : False
+[2026-05-03 00:33:10] 	lifting_hidden_mult                 : 1
+[2026-05-03 00:33:10] 	lifting_init                        : haar
+[2026-05-03 00:33:10] 	lifting_dropout                     : 0.0
+[2026-05-03 00:33:10] 	use_mixer_gate                      : True
+[2026-05-03 00:33:10] 	mixer_gate_activation               : silu
+[2026-05-03 00:33:10] 	mixer_depth                         : 1
+[2026-05-03 00:33:10] 	mixer_depth_stabilizers             : False
+[2026-05-03 00:33:10] 	mixer_depth_residuals               : False
+[2026-05-03 00:33:10] 	decompose_bypass                    : True
+[2026-05-03 00:33:10] 	decompose_bypass_cross_window       : True
+[2026-05-03 00:33:10] 	decompose_bypass_ema                : False
+[2026-05-03 00:33:10] 	learned_residual                    : True
+[2026-05-03 00:33:10] 	skip_proj_out                       : False
+[2026-05-03 00:33:10] 	stochastic_depth_rate               : 0.0
+[2026-05-03 00:33:10] 	dropout_embedding                   : 0.2
+[2026-05-03 00:33:10] 	dropout_projection                  : 0.1
+[2026-05-03 00:33:10] 	dropout_mixer                       : 0.1
+[2026-05-03 00:33:10] 	dropout_mlp                         : 0.1
+[2026-05-03 00:33:10] 	dropout_lm_head                     : 0.24
+[2026-05-03 00:33:10] 	optimizer                           : Adagrad
+[2026-05-03 00:33:10] 	optimizer_eps                       : 2e-13
+[2026-05-03 00:33:10] 	lr                                  : 0.01
+[2026-05-03 00:33:10] 	min_lr                              : 0.0002
+[2026-05-03 00:33:10] 	warmup_fraction                     : 0.3
+[2026-05-03 00:33:10] 	grad_clip                           : 1.0
+[2026-05-03 00:33:10] 	tie_embedding_to_lm_head            : True
+[2026-05-03 00:33:10] 	gradient_checkpointing              : False
+[2026-05-03 00:33:10] 	use_amp                             : True
+[2026-05-03 00:33:10] 	amp_dtype                           : fp16
+[2026-05-03 00:33:10] 	allow_tf32                          : True
+[2026-05-03 00:33:10] 	generation_prompt                   : The history of
+[2026-05-03 00:33:10] 	temperature                         : 1.0
+[2026-05-03 00:33:10] 	num_new_tokens                      : 512
+[2026-05-03 00:33:10] 	top_p                               : 0.95
+[2026-05-03 00:33:10] 	repetition_penalty                  : 1.1
+[2026-05-03 00:33:10] 	benchmark_only                      : False
+[2026-05-03 00:33:10] 	benchmark_run_dir                   : 
+[2026-05-03 00:33:10] 	multinodal_enabled                  : False
+[2026-05-03 00:33:10] 	multinodal_num_cells                : 2
+[2026-05-03 00:33:10] 	multinodal_cell_dim                 : 512
+[2026-05-03 00:33:10] 	multinodal_seeds                    : [42, 137]
+[2026-05-03 00:33:10] 	multinodal_combination              : average
+[2026-05-03 00:33:10] 	multinodal_cross_cell_gating        : False
+[2026-05-03 00:33:10] 	multinodal_cross_cell_gate_interval : 1
+[2026-05-03 00:33:10] 	multinodal_features_per_cell        : -1
+[2026-05-03 00:33:10] 	multinodal_bagged_eps               : 1e-06
+[2026-05-03 00:33:10] 	quantize_enabled                    : False
+[2026-05-03 00:33:10] 	quantize_mixer_coarse_bits          : 8
+[2026-05-03 00:33:10] 	quantize_mixer_mid_bits             : 4
+[2026-05-03 00:33:10] 	quantize_mixer_fine_bits            : 2
+[2026-05-03 00:33:10] 	quantize_mlp_bits                   : 4
+[2026-05-03 00:33:10] 	quantize_lifting_bits               : 16
+[2026-05-03 00:33:10] 	quantize_embedding_bits             : 8
+[2026-05-03 00:33:10] 	per_layer_embedding                 : True
+[2026-05-03 00:33:10] 	loop_iterations                     : 1
+[2026-05-03 00:33:10] 	weight_decay                        : 1e-06
+[2026-05-03 00:33:10] 
+[2026-05-03 00:33:10] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-03 00:33:10] [Dataset] Loading wikitext-103 from cache...
+[2026-05-03 00:33:12] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-03 00:33:12] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-03 00:33:12] [Dataset] Vocab size: 50257
+[2026-05-03 00:33:12] [Schedule] 7307 steps/epoch, 7307 total steps
+[2026-05-03 00:33:12] [Schedule] Warmup: 2192 steps (30%)
+[2026-05-03 00:33:14] [Run Folder] logs/wikitext-103_2026-05-03_00-33-10
+[2026-05-03 00:33:14] 
+============================================================
+[2026-05-03 00:33:14] PARAMETER BREAKDOWN
+[2026-05-03 00:33:14] ============================================================
+[2026-05-03 00:33:14] Total parameters:               489,472,160 (489.47M)
+[2026-05-03 00:33:14]   Shared lifting:             184,639,488 (184.64M)
+[2026-05-03 00:33:14]   Token embedding:            102,926,336 (102.93M)
+[2026-05-03 00:33:14]   Layers (total):             386,541,728 (386.54M)
+[2026-05-03 00:33:14]     Mixer/layer:               88,227,840 (88.23M)
+[2026-05-03 00:33:14]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-03 00:33:14]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-03 00:33:14]   LM head:                    102,926,336 (102.93M)
+[2026-05-03 00:33:14]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-03 00:33:14] ============================================================
+
+[2026-05-03 00:33:14] [Model] 489.47M parameters (489.47M trainable)
+[2026-05-03 00:33:14] [Compile] torch.compile enabled (mode=default)
+[2026-05-03 00:33:16] [Optimizer] Adagrad, lr=0.01, eps=2e-13, weight_decay=1e-06
+[2026-05-03 00:33:16] 
+=== EPOCH 1/1 ===
+[2026-05-03 00:38:52] Step 250: train loss 6.3769, val loss 6.3388		lr=1.14e-03
+[2026-05-03 00:38:52] New Best Val: 6.3388 (skipping save during warmup)
+[2026-05-03 00:42:13] Step 500: train loss 6.0088, val loss 5.9314		lr=2.28e-03
+[2026-05-03 00:42:13] New Best Val: 5.9314 (skipping save during warmup)
+[2026-05-03 00:45:25] Step 750: train loss nan, val loss nan		lr=3.42e-03
+[2026-05-03 00:48:35] Step 1000: train loss nan, val loss nan		lr=4.56e-03
+[2026-05-03 00:51:46] Step 1250: train loss nan, val loss nan		lr=5.70e-03
+[2026-05-03 00:54:56] Step 1500: train loss nan, val loss nan		lr=6.84e-03
+[2026-05-03 00:58:07] Step 1750: train loss nan, val loss nan		lr=7.98e-03
+[2026-05-03 01:01:17] Step 2000: train loss nan, val loss nan		lr=9.12e-03
+[2026-05-03 01:04:28] Step 2250: train loss nan, val loss nan		lr=1.00e-02
+[2026-05-03 01:07:39] Step 2500: train loss nan, val loss nan		lr=9.91e-03
+[2026-05-03 01:10:50] Step 2750: train loss nan, val loss nan		lr=9.72e-03
+[2026-05-03 01:14:00] Step 3000: train loss nan, val loss nan		lr=9.41e-03
+[2026-05-03 01:17:11] Step 3250: train loss nan, val loss nan		lr=9.00e-03
+[2026-05-03 01:20:21] Step 3500: train loss nan, val loss nan		lr=8.50e-03
+[2026-05-03 01:23:32] Step 3750: train loss nan, val loss nan		lr=7.93e-03
+[2026-05-03 01:26:42] Step 4000: train loss nan, val loss nan		lr=7.28e-03
+[2026-05-03 01:29:53] Step 4250: train loss nan, val loss nan		lr=6.58e-03
+[2026-05-03 01:33:03] Step 4500: train loss nan, val loss nan		lr=5.85e-03
+[2026-05-03 01:36:14] Step 4750: train loss nan, val loss nan		lr=5.10e-03
+[2026-05-03 01:39:25] Step 5000: train loss nan, val loss nan		lr=4.35e-03
+[2026-05-03 01:42:35] Step 5250: train loss nan, val loss nan		lr=3.62e-03
+[2026-05-03 01:45:46] Step 5500: train loss nan, val loss nan		lr=2.92e-03
+[2026-05-03 01:48:57] Step 5750: train loss nan, val loss nan		lr=2.28e-03
+[2026-05-03 01:52:07] Step 6000: train loss nan, val loss nan		lr=1.70e-03
+[2026-05-03 01:55:18] Step 6250: train loss nan, val loss nan		lr=1.20e-03
+[2026-05-03 01:58:28] Step 6500: train loss nan, val loss nan		lr=7.91e-04
+[2026-05-03 02:01:39] Step 6750: train loss nan, val loss nan		lr=4.85e-04
+[2026-05-03 02:04:49] Step 7000: train loss nan, val loss nan		lr=2.87e-04
+[2026-05-03 02:08:00] Step 7250: train loss nan, val loss nan		lr=2.03e-04
+[2026-05-03 02:09:45] Epoch 1 done. Time: 5708.8s (1.59h)
+[2026-05-03 02:09:45]   Train loss: nan, Val loss: nan
+[2026-05-03 02:09:45]   Cumulative time: 1.61h
+[2026-05-03 02:09:45] 
+=== TRAINING COMPLETE ===
+[2026-05-03 02:09:45] Best Val Loss: 5.9314 (epoch 1)
+[2026-05-03 02:09:45] Avg Epoch Time: 5708.8s
+[2026-05-03 02:09:45] Total Time: 5789.2s
+[2026-05-03 02:09:45] 
+Training Peak VRAM: 28364 MiB
+[2026-05-03 02:09:45] 
+Loading best model for benchmarks...
+[2026-05-03 02:09:48] Could not load best model: [Errno 2] No such file or directory: 'logs/wikitext-103_2026-05-03_00-33-10/best_model.pt'
+[2026-05-03 02:09:48] 
+[BENCHMARK] Non-overlapping: 17 windows of length 16384
+[2026-05-03 02:09:53] 
+[BENCHMARK - Non-overlapping]
+[2026-05-03 02:09:53]   Perplexity: inf
+[2026-05-03 02:09:53]   BPT: inf
+[2026-05-03 02:09:53]   BPB: inf
+[2026-05-03 02:09:53]   Avg Loss: inf
+[2026-05-03 02:09:53] 
+[SLIDING WINDOW] block_size=16384, stride=8192, min_context=8192, 34 windows
+[2026-05-03 02:10:02] 
+[BENCHMARK - Sliding Window]
+[2026-05-03 02:10:02]   Perplexity: inf
+[2026-05-03 02:10:02]   BPT: inf
+[2026-05-03 02:10:02]   BPB: inf
+[2026-05-03 02:10:02]   Avg Loss: inf
+[2026-05-03 02:10:02]   Stride: 8192, Min Context: 8192
+[2026-05-03 02:10:03] 
+=== GENERATION — Standard ===
+[2026-05-03 02:10:03] Prompt: The history of
+[2026-05-03 02:10:11] Generated:
+The history of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of
+
+[2026-05-03 02:10:11] === GENERATION — Strategies ===
+[2026-05-03 02:10:11] Prompt: The history of
+[2026-05-03 02:10:20] Generated:
+The history of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of of
+
+[2026-05-03 02:10:20] Metrics: MeanLogP=0.0000 | MeanH=0.00 | D1=0.002 | D2=0.002 | D3=0.002 | Rep4=1.000
+[2026-05-03 02:10:20] Inference VRAM (approx): 8377 MiB (model=7253 + activations=1124) — use generate.py for accurate measurement
+[2026-05-03 02:10:20] Training Peak VRAM: 28364 MiB
