@@ -933,6 +933,7 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
         ln_around_fht: bool = False,
+        fht_mean_centering: bool = False,
     ):
         super().__init__()
         self.C = C
@@ -953,9 +954,25 @@ class WaveletLMBlock(nn.Module):
         # 32 GiB GPU cap. Pre-FWHT LN alone is what addresses the FWHT
         # overflow class; symmetric post-LN was an architectural nicety we
         # can't afford here.
+        # NOTE: even single-LN fits VRAM tightly at levels=11 / bs=16384 /
+        # MBS=1 (~30.4 GiB peak then OOM at step 1 backward). Use the lighter
+        # `fht_mean_centering` option below for the same memory budget tier.
         self.ln_around_fht = ln_around_fht
         if self.ln_around_fht:
             self.ln_pre_fht = nn.LayerNorm(self.Cp, device=device, dtype=dtype)
+
+        # Alternative FWHT-block hardening: parameter-free DC-offset removal.
+        # Subtracts the channel-axis mean of the FWHT input before the FWHT,
+        # adds it back after the inverse FWHT. Removes the DC component that
+        # the FWHT would otherwise concentrate into a single basis vector
+        # (the all-ones Walsh function), preventing the most common cause of
+        # FWHT amplification overflow. Uses ~400 KiB activation memory (just
+        # the [B, T, S, 1] mean tensor) vs LayerNorm's ~800 MiB — fits in
+        # any reasonable VRAM budget. No learned parameters. Mathematically:
+        # the mixer now operates on AC-only spectrum; the DC component is
+        # routed around the spectral mixing entirely (similar in spirit to
+        # decompose_bypass).
+        self.fht_mean_centering = fht_mean_centering
 
         # Wavelet decomposition
         if wavelet_mode == "lifting":
@@ -1244,6 +1261,15 @@ class WaveletLMBlock(nn.Module):
         if self.ln_around_fht:
             stacked_coeffs = self.ln_pre_fht(stacked_coeffs)
 
+        # Optional FWHT mean-centering — subtract the channel-axis mean of
+        # the FWHT input before the transform, add it back after the inverse
+        # transform. The mean is captured here for use after the inverse
+        # FWHT below. (Gated by config `fht_mean_centering`.)
+        fht_dc_offset = None
+        if self.fht_mean_centering:
+            fht_dc_offset = stacked_coeffs.mean(dim=-1, keepdim=True)
+            stacked_coeffs = stacked_coeffs - fht_dc_offset
+
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
@@ -1285,6 +1311,12 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
+
+        # Restore the channel-axis DC offset that was subtracted before the
+        # forward FWHT. The mixer never saw the DC component; this re-injects
+        # it into the residual stream so downstream ops see the full signal.
+        if self.fht_mean_centering and fht_dc_offset is not None:
+            mixed_all = mixed_all + fht_dc_offset
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1515,6 +1547,7 @@ class WaveletLM(nn.Module):
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
                 ln_around_fht=config.get("ln_around_fht", False),
+                fht_mean_centering=config.get("fht_mean_centering", False),
             )
             for _ in range(layer_build_count)
         ])

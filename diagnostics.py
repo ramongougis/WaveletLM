@@ -219,10 +219,14 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'stab_mixer_eps_scaling': False,
         'stab_lifting_level_scaling': False,
         'multinodal_enabled': False,
-        # Test FWHT-block hardening: LayerNorms before/after the FWHT chain.
-        # Bounds FWHT input magnitudes for deep-cascade stability. Set False
-        # to reproduce the un-hardened failing config.
-        'ln_around_fht': True,
+        # FWHT-block hardening test flags. Both gated; set whichever is
+        # being tested to True. Currently testing fht_mean_centering
+        # (parameter-free DC-offset removal — fits in any reasonable VRAM
+        # budget). ln_around_fht was tried first but OOM'd at step 1
+        # backward at levels=11 / bs=16384 / MBS=1 due to ~800 MiB extra
+        # activation storage from the saved normalized output.
+        'ln_around_fht': False,
+        'fht_mean_centering': True,
     }
 
 
