@@ -60,8 +60,23 @@ def pad_features_to_pow2(x: torch.Tensor, C_pad: int):
 
 def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
     """Iterative 'Butterfly' FWHT. Memory efficient (N log N), but kernel-heavy.
-    Best for very large dimensions (C >= 2048)."""
-    y = x
+    Best for very large dimensions (C >= 2048).
+
+    Cast to fp32 internally — fp16 cannot represent the transient magnitudes
+    in the butterfly cascade for inputs with |x| approaching fp16's range.
+    Each butterfly stage computes `(a+b, a-b)` which can transiently double
+    individual element magnitudes; with C=2048 that's 11 stages of potential
+    doubling. For an input element of magnitude ~47K (a value seen in
+    practice during levels=11 / lr=0.01 training just before NaN at step 431),
+    a single butterfly stage produces ~94K which overflows fp16 (max 65504),
+    propagating inf through the rest of the cascade.
+
+    fp32 has range ~3.4e38, so even with several stages of doubling a 47K
+    input would produce values well within range. The cast is local to this
+    op (a small fraction of total compute, O(C log C) per token vs the
+    O(C^2 * expansion) MLP block), so the wall-clock cost is negligible."""
+    orig_dtype = x.dtype
+    y = x.float()
     n = y.shape[-1]
     h = 1
     while h < n:
@@ -72,8 +87,8 @@ def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
         y = torch.stack([c1, c2], dim=-2)
         y = y.reshape(y.shape[:-3] + (-1,))
         h *= 2
-    scale = torch.rsqrt(torch.tensor(n, device=x.device, dtype=x.dtype))
-    return y * scale
+    scale = torch.rsqrt(torch.tensor(n, device=x.device, dtype=torch.float32))
+    return (y * scale).to(orig_dtype)
 
 class FastHadamardTransform(nn.Module):
     """Hybrid FWHT: matrix multiply for dim < 2048, iterative butterfly otherwise."""
@@ -99,7 +114,14 @@ class FastHadamardTransform(nn.Module):
 
     def forward(self, x):
         if self.use_matrix:
-            return torch.matmul(x, self.H)
+            # Cast to fp32 for the matmul. The Hadamard matrix H has entries
+            # ±1/sqrt(N), so each output element is bounded by sqrt(N) × max|input|.
+            # In the worst case (input near fp16 range), this can overflow fp16
+            # for the same reason the iterative path can — handled with the
+            # same fp32 cast pattern. See fwht_ortho_iterative's docstring for
+            # the full diagnosis.
+            orig_dtype = x.dtype
+            return torch.matmul(x.float(), self.H.float()).to(orig_dtype)
         else:
             return fwht_ortho_iterative(x)
 
