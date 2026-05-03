@@ -1,0 +1,226 @@
+[2026-05-03 14:49:22] === BENCHMARK ONLY MODE ===
+[2026-05-03 14:49:22] Run directory: logs/wikitext-103_2026-05-03_12-19-18
+[2026-05-03 14:49:22] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-05-03 14:49:22] Device: cuda, AMP: True (fp16)
+[2026-05-03 14:49:22] 
+[2026-05-03 14:49:22] 	dataset                             : wikitext-103
+[2026-05-03 14:49:22] 	tokenizer                           : auto
+[2026-05-03 14:49:22] 	out_dir                             : logs
+[2026-05-03 14:49:22] 	compile                             : True
+[2026-05-03 14:49:22] 	compile_mode                        : default
+[2026-05-03 14:49:22] 	seed                                : 1337
+[2026-05-03 14:49:22] 	epochs                              : 1
+[2026-05-03 14:49:22] 	micro_batch_size                    : 1
+[2026-05-03 14:49:22] 	grad_accum                          : 1
+[2026-05-03 14:49:22] 	block_size                          : 16384
+[2026-05-03 14:49:22] 	eval_interval                       : 250
+[2026-05-03 14:49:22] 	skip_warmup_saves                   : True
+[2026-05-03 14:49:22] 	C                                   : 2048
+[2026-05-03 14:49:22] 	layers                              : 1
+[2026-05-03 14:49:22] 	levels                              : 5
+[2026-05-03 14:49:22] 	low_rank                            : 4
+[2026-05-03 14:49:22] 	mlp_expansion                       : 10
+[2026-05-03 14:49:22] 	mlp_layers                          : 2
+[2026-05-03 14:49:22] 	pkm_enabled                         : False
+[2026-05-03 14:49:22] 	pkm_num_keys                        : 16384
+[2026-05-03 14:49:22] 	pkm_top_k                           : 32
+[2026-05-03 14:49:22] 	pkm_heads                           : 1
+[2026-05-03 14:49:22] 	fwpkm_enabled                       : True
+[2026-05-03 14:49:22] 	fwpkm_num_keys                      : 8281
+[2026-05-03 14:49:22] 	fwpkm_top_k                         : 32
+[2026-05-03 14:49:22] 	fwpkm_heads                         : 1
+[2026-05-03 14:49:22] 	fwpkm_inference_updates             : False
+[2026-05-03 14:49:22] 	fwpkm_update_lr                     : 0.01
+[2026-05-03 14:49:22] 	fwpkm_chunk_size                    : 64
+[2026-05-03 14:49:22] 	wavelet_mode                        : lifting
+[2026-05-03 14:49:22] 	shared_lifting_weights              : True
+[2026-05-03 14:49:22] 	untied_reconstruction               : False
+[2026-05-03 14:49:22] 	multi_basis_lifting                 : False
+[2026-05-03 14:49:22] 	multi_basis_inits                   : ['haar', 'random']
+[2026-05-03 14:49:22] 	cross_scale_gating                  : True
+[2026-05-03 14:49:22] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+[2026-05-03 14:49:22] 	stable_parametrization              : False
+[2026-05-03 14:49:22] 	stab_spectral_norm                  : False
+[2026-05-03 14:49:22] 	stab_ff_scaling                     : False
+[2026-05-03 14:49:22] 	stab_embed_scaling                  : False
+[2026-05-03 14:49:22] 	stab_proj_out_scaling               : False
+[2026-05-03 14:49:22] 	stab_mixer_eps_scaling              : False
+[2026-05-03 14:49:22] 	stab_lifting_level_scaling          : False
+[2026-05-03 14:49:22] 	looped_blocks                       : False
+[2026-05-03 14:49:22] 	looped_blocks_count                 : 8
+[2026-05-03 14:49:22] 	wavelet_crawl                       : False
+[2026-05-03 14:49:22] 	wavelet_crawl_k                     : 3
+[2026-05-03 14:49:22] 	lifting_linear_only                 : False
+[2026-05-03 14:49:22] 	lifting_hidden_mult                 : 1
+[2026-05-03 14:49:22] 	lifting_init                        : haar
+[2026-05-03 14:49:22] 	lifting_dropout                     : 0.0
+[2026-05-03 14:49:22] 	use_mixer_gate                      : True
+[2026-05-03 14:49:22] 	mixer_gate_activation               : silu
+[2026-05-03 14:49:22] 	mixer_depth                         : 1
+[2026-05-03 14:49:22] 	mixer_depth_stabilizers             : False
+[2026-05-03 14:49:22] 	mixer_depth_residuals               : False
+[2026-05-03 14:49:22] 	decompose_bypass                    : True
+[2026-05-03 14:49:22] 	decompose_bypass_cross_window       : True
+[2026-05-03 14:49:22] 	decompose_bypass_ema                : False
+[2026-05-03 14:49:22] 	learned_residual                    : True
+[2026-05-03 14:49:22] 	skip_proj_out                       : False
+[2026-05-03 14:49:22] 	stochastic_depth_rate               : 0.0
+[2026-05-03 14:49:22] 	dropout_embedding                   : 0.2
+[2026-05-03 14:49:22] 	dropout_projection                  : 0.1
+[2026-05-03 14:49:22] 	dropout_mixer                       : 0.1
+[2026-05-03 14:49:22] 	dropout_mlp                         : 0.1
+[2026-05-03 14:49:22] 	dropout_lm_head                     : 0.24
+[2026-05-03 14:49:22] 	optimizer                           : Adagrad
+[2026-05-03 14:49:22] 	optimizer_eps                       : 2e-13
+[2026-05-03 14:49:22] 	lr                                  : 0.00114
+[2026-05-03 14:49:22] 	min_lr                              : 2.28e-05
+[2026-05-03 14:49:22] 	warmup_fraction                     : 0.3
+[2026-05-03 14:49:22] 	grad_clip                           : 1.0
+[2026-05-03 14:49:22] 	tie_embedding_to_lm_head            : True
+[2026-05-03 14:49:22] 	gradient_checkpointing              : False
+[2026-05-03 14:49:22] 	use_amp                             : True
+[2026-05-03 14:49:22] 	amp_dtype                           : fp16
+[2026-05-03 14:49:22] 	allow_tf32                          : True
+[2026-05-03 14:49:22] 	generation_prompt                   : The history of
+[2026-05-03 14:49:22] 	temperature                         : 1.0
+[2026-05-03 14:49:22] 	num_new_tokens                      : 512
+[2026-05-03 14:49:22] 	top_p                               : 0.95
+[2026-05-03 14:49:22] 	repetition_penalty                  : 1.1
+[2026-05-03 14:49:22] 	benchmark_only                      : True
+[2026-05-03 14:49:22] 	benchmark_run_dir                   : logs/wikitext-103_2026-05-03_12-19-18
+[2026-05-03 14:49:22] 	multinodal_enabled                  : False
+[2026-05-03 14:49:22] 	multinodal_num_cells                : 2
+[2026-05-03 14:49:22] 	multinodal_cell_dim                 : 512
+[2026-05-03 14:49:22] 	multinodal_seeds                    : [42, 137]
+[2026-05-03 14:49:22] 	multinodal_combination              : average
+[2026-05-03 14:49:22] 	multinodal_cross_cell_gating        : False
+[2026-05-03 14:49:22] 	multinodal_cross_cell_gate_interval : 1
+[2026-05-03 14:49:22] 	multinodal_features_per_cell        : -1
+[2026-05-03 14:49:22] 	multinodal_bagged_eps               : 1e-06
+[2026-05-03 14:49:22] 	quantize_enabled                    : False
+[2026-05-03 14:49:22] 	quantize_mixer_coarse_bits          : 8
+[2026-05-03 14:49:22] 	quantize_mixer_mid_bits             : 4
+[2026-05-03 14:49:22] 	quantize_mixer_fine_bits            : 2
+[2026-05-03 14:49:22] 	quantize_mlp_bits                   : 4
+[2026-05-03 14:49:22] 	quantize_lifting_bits               : 16
+[2026-05-03 14:49:22] 	quantize_embedding_bits             : 8
+[2026-05-03 14:49:22] 	per_layer_embedding                 : True
+[2026-05-03 14:49:22] 	loop_iterations                     : 1
+[2026-05-03 14:49:22] 	weight_decay                        : 1e-06
+[2026-05-03 14:49:22] 
+[2026-05-03 14:49:22] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-03 14:49:22] [Dataset] Loading wikitext-103 from cache...
+[2026-05-03 14:49:23] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-03 14:49:23] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-03 14:49:23] [Dataset] Vocab size: 50257
+[2026-05-03 14:49:26] [Run Folder] logs/wikitext-103_2026-05-03_12-19-18
+[2026-05-03 14:49:26] 
+============================================================
+[2026-05-03 14:49:26] PARAMETER BREAKDOWN
+[2026-05-03 14:49:26] ============================================================
+[2026-05-03 14:49:26] Total parameters:               344,633,390 (344.63M)
+[2026-05-03 14:49:26]   Shared lifting:              83,927,040 (83.93M)
+[2026-05-03 14:49:26]   Token embedding:            102,926,336 (102.93M)
+[2026-05-03 14:49:26]   Layers (total):             241,702,958 (241.70M)
+[2026-05-03 14:49:26]     Mixer/layer:               44,113,920 (44.11M)
+[2026-05-03 14:49:26]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-03 14:49:26]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-03 14:49:26]   LM head:                    102,926,336 (102.93M)
+[2026-05-03 14:49:26]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-03 14:49:26] ============================================================
+
+[2026-05-03 14:49:26] [Model] 344.63M parameters (344.63M trainable)
+[2026-05-03 14:49:26] 
+Loading best model for benchmarks...
+[2026-05-03 14:49:32] Best model loaded.
+[2026-05-03 14:49:32] 
+[BENCHMARK] Non-overlapping: 17 windows of length 16384
+[2026-05-03 14:49:35] 
+[BENCHMARK - Non-overlapping]
+[2026-05-03 14:49:35]   Perplexity: 95.6737
+[2026-05-03 14:49:35]   BPT: 6.5800
+[2026-05-03 14:49:35]   BPB: 1.4600
+[2026-05-03 14:49:35]   Avg Loss: 4.5609
+[2026-05-03 14:49:35] 
+[SLIDING WINDOW] block_size=16384, stride=8192, min_context=8192, 34 windows
+[2026-05-03 14:49:40] 
+[BENCHMARK - Sliding Window]
+[2026-05-03 14:49:40]   Perplexity: 96.4136
+[2026-05-03 14:49:40]   BPT: 6.5912
+[2026-05-03 14:49:40]   BPB: 1.4625
+[2026-05-03 14:49:40]   Avg Loss: 4.5686
+[2026-05-03 14:49:40]   Stride: 8192, Min Context: 8192
+[2026-05-03 14:49:41] 
+=== GENERATION — Standard ===
+[2026-05-03 14:49:41] Prompt: The history of
+[2026-05-03 14:49:45] Generated:
+The history of their department store a second tour of the tour , completing the Blu @-@ ray release , for the first time the Entertainment Expo horror film The Guardian . They also performed the two singles on the direct Songs of the Paralympics in February 2011 . 
+
+
+
+
+ = = Plot = = 
+
+
+
+
+ The televised music video for " Boyd " was directed by Alan Atari andEng Pheda in the archetypal religion " Greyhound " ( which he described as " small " in the 13th episode " ) , his sinister style grossing film and album White : The Next Generation ] released from Box Office Shickshingau and Sudalom called it " a strange ancestor @-@ perfect wrestler " . heavily criticized the song in August 2009 , directed by Thomas Paceson . 
+
+
+
+
+ = = Plot = = 
+
+
+
+
+ " On the Nobel " is a Dollars episode of The Simpsons ' third studio album " Kiss Me Like " . On the week of October 22 , 2012 , the fourth single from the album , became her one @-@ fifth episode episode of all time , but the band 's success appeared not to direct Beck . The scripted Looked three songs considers tarnished to the different sound effects of the game . In this document , the visuals were carried out by a leather shower that had previously worked in 1988 . 
+
+
+
+
+ = = Personnel = = 
+
+
+
+
+ The film was directed by David Watts , Tony urges , made their film debut of the Week : Wrong , Besides Addicted and Kirchlander . Entertainment Weekly ranked the song at number thirty @-@ seven studio selected the album since 11 9 , 2014 . In Westwood , the song reached number two on the charts and eventually released the following week . The single entered the Billboard Hot 100 and number 20 on Billboard 's Hot 100 Queen ever ' , weeks prior to his 1995 development . In Canada , " My Way You " was performed on several occasions , in India , Canada , 1994 , Feb , 1929 , 1968 ; 1 , 2000 , BB , Dagga , and John . Beginning in 2013 , 
+
+
+ Richard H. Rights , Damia P. A. Schooker , Dana L. V. Officers of Young S Dramatician , and others have beenlauston John . OCLC 13061414 , James S. Dufard , Jr. and his fellow NHL employed him to join England side Brazil ( the company proposed their last case ) while taking off a field six @-
+
+[2026-05-03 14:49:45] === GENERATION — Strategies ===
+[2026-05-03 14:49:45] Prompt: The history of
+[2026-05-03 14:49:57] Generated:
+The history of the state 's most prominent localities . 
+
+
+ The city was a major part of the National Register of Historic Places ( ARIA ) in 2012 , it is the largest city in North America and Europe . It has also been certified platinum by the U.S. Route 7 , located on the eastern side of the town . The highway travels through the northern edge of the city centre is a low @-@ level circulation , with a population of 14 @,@ 600 metres ( 5 @,@ 000 m ) at full load and a speed of 8 knots ( 19 km / h ; 12 mph ) . The storm moved ashore and dissipated early on August 24 . She carried an extratropical cyclone that caused heavy rainfall to tropical depression status on October 16 . On December 31 , the system intensified into Tropical Storm One on July 28 , the storm reached its peak intensity as it tracked northwestward due northward . The next day , Hurricane Hunters developed over the Gulf of Mexico , passing through residential areas , while NY 31 continues east along the coast of Africa , Louisiana , and Highway 9 . As it passes through the southern terminus of Route 23 between DE 1 and US 40 . 
+
+
+
+
+ = = History = = 
+
+
+
+
+ The road begins at an intersection with Interstate 35 ( I @-@ 50 ) in length , is a four @-@ lane divided highway in the south @-@ west corner of the River Thames . Its range spans from the northern end of the freeway , which contains a maximum sustained wind gust of 9 inches ( 980 mm ) . 
+
+
+
+
+ = = Description = = 
+
+
+
+
+ The uppermost portion of the route are about 4 feet ( 3 @.@ 2 ft ) high , but the surface temperature is 0 ° C ( − 13 ° F ) or more . The thick sides have a diameter of 6 – 10 cm ( 11 @.@ 25 kg ) per second ( 1 @.@ 62 m2 ) long , and is less than 15 percent of all 18- to 49 @-@ hour hours . This allows for the first time since the 1990s , when the player can be seen from the top of the table to the bottom of the track . " In his book , he wrote , " There will be no doubt because we had to get off the way it 's really good , and you know what we want to do . We don 't think there ’ s just doing my life . " 
+
+
+
+
+ = = Plot = =
+
+[2026-05-03 14:49:57] Metrics: MeanLogP=-1.1204 | MeanH=4.08 | D1=0.590 | D2=0.881 | D3=0.951 | Rep4=0.066
+[2026-05-03 14:49:57] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
