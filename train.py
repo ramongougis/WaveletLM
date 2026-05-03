@@ -397,7 +397,15 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
             layer.fwpkm.inference_updates = False
 
     T = config['block_size']
-    batch_size = config['micro_batch_size']
+    # Force MBS=1 for benchmarks. The benchmark path runs in eager mode (no
+    # torch.compile() — see the `if not benchmark_only:` guard around the
+    # compile call), so per-batch activation memory is much higher than at
+    # training time even at the same nominal MBS. With T=16384 and L=2,
+    # a benchmark at MBS=8 OOMs on a 32 GiB GPU even though training at the
+    # same MBS fit comfortably (because compile fused away most of the
+    # intermediate-tensor materialization). MBS=1 is safe at any T/depth and
+    # only adds ~30 seconds across the 17 + 34 = 51 total benchmark windows.
+    batch_size = 1
     eval_len = len(eval_data)
     num_windows = (eval_len - 1) // T
 
@@ -499,7 +507,9 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
             layer.fwpkm.inference_updates = v
 
     T = config['block_size']
-    batch_size = config['micro_batch_size']
+    # Force MBS=1 for benchmarks — see companion comment in
+    # evaluate_full_validation. Same eager-mode + activation-memory rationale.
+    batch_size = 1
     if stride is None:
         stride = T // 2
 
@@ -640,13 +650,7 @@ def train():
     with open(args.config, 'r') as f:
         config = json.load(f)
 
-    set_seed(config['seed'])
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    # Precision
-    use_amp = config.get('use_amp', True)
-    amp_dtype_str = config.get('amp_dtype', 'fp16')
-    amp_dtype = torch.float16 if amp_dtype_str == 'fp16' else torch.bfloat16
 
     if config.get('allow_tf32', True) and device == 'cuda':
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -662,45 +666,31 @@ def train():
     if benchmark_only:
         if not benchmark_run_dir:
             raise ValueError("benchmark_only=true requires benchmark_run_dir to be set")
-        # Load config from the run directory
+        # Rule: in benchmark_only mode, the run's saved config.json is the
+        # source of truth for EVERY config key except the two pointer-keys
+        # `benchmark_only` and `benchmark_run_dir` (which by necessity come
+        # from the root config — they're how the user tells train.py to
+        # enter benchmark mode and which directory to point at). Anything
+        # else getting pulled from root would risk silently mismatching the
+        # forward-pass conditions of the training run we're benchmarking
+        # (different AMP dtype, different seed for generation, etc.).
         run_config_path = os.path.join(benchmark_run_dir, "config.json")
         if os.path.exists(run_config_path):
             with open(run_config_path, 'r') as f:
                 run_config = json.load(f)
-            for k in ['dataset', 'tokenizer',
-                       'C', 'layers', 'levels', 'low_rank', 'mlp_expansion', 'mlp_layers',
-                       'block_size',
-                       'pkm_enabled', 'pkm_num_keys', 'pkm_top_k', 'pkm_heads',
-                       'fwpkm_enabled', 'fwpkm_num_keys', 'fwpkm_top_k', 'fwpkm_heads',
-                       'fwpkm_inference_updates', 'fwpkm_update_lr', 'fwpkm_chunk_size',
-                       'wavelet_mode', 'shared_lifting_weights', 'lifting_linear_only',
-                       'lifting_hidden_mult', 'lifting_init', 'lifting_dropout',
-                       'untied_reconstruction', 'multi_basis_lifting', 'multi_basis_inits',
-                       'cross_scale_gating', 'per_scale_mixer_widths',
-                       'wavelet_crawl', 'wavelet_crawl_k',
-                       'use_mixer_gate', 'mixer_gate_activation',
-                       'mixer_depth', 'mixer_depth_stabilizers', 'mixer_depth_residuals',
-                       'decompose_bypass', 'decompose_bypass_cross_window', 'decompose_bypass_ema',
-                       'learned_residual', 'skip_proj_out', 'looped_blocks', 'looped_blocks_count',
-                       'stochastic_depth_rate', 'tie_embedding_to_lm_head',
-                       'per_layer_embedding', 'loop_iterations',
-                       'stable_parametrization', 'stab_spectral_norm', 'stab_ff_scaling',
-                       'stab_embed_scaling', 'stab_proj_out_scaling',
-                       'stab_mixer_eps_scaling', 'stab_lifting_level_scaling',
-                       'multinodal_enabled', 'multinodal_num_cells', 'multinodal_cell_dim',
-                       'multinodal_seeds', 'multinodal_combination',
-                       'multinodal_cross_cell_gating',
-                       'multinodal_cross_cell_gate_interval', 'multinodal_features_per_cell',
-                       'multinodal_bagged_eps']:
-                if k in run_config:
-                    config[k] = run_config[k]
+            # Wholesale replace: the run's config becomes the new config,
+            # except we re-pin the pointer-keys so the rest of train.py
+            # still knows it's in benchmark mode.
+            config = dict(run_config)
+            config['benchmark_only'] = True
+            config['benchmark_run_dir'] = benchmark_run_dir
 
             # For arch keys missing from the run's config (i.e., the key
             # didn't exist when the run was trained), force them to their
-            # feature-off defaults rather than leaking the current root
-            # config's value into a model that was trained without them.
-            # per_scale_mixer_widths is handled below as a special case
-            # because its required length depends on this run's `levels`.
+            # feature-off defaults rather than leaving them undefined for
+            # the model constructor. per_scale_mixer_widths is handled
+            # below as a special case because its required length depends
+            # on this run's `levels`.
             ARCH_DEFAULTS = {
                 'cross_scale_gating': False,
                 'wavelet_crawl': False,
@@ -737,7 +727,7 @@ def train():
                 'loop_iterations': 1,
             }
             for k, default in ARCH_DEFAULTS.items():
-                if k not in run_config:
+                if k not in config:
                     config[k] = default
 
             # Special case: per_scale_mixer_widths absent means the run was
@@ -772,6 +762,15 @@ def train():
             pass
 
         logger = Logger(log_dir)
+
+    # Seed and AMP must be read AFTER any benchmark_only config replacement,
+    # so they use the run's saved values (not whatever the root config has).
+    set_seed(config['seed'])
+    use_amp = config.get('use_amp', True)
+    amp_dtype_str = config.get('amp_dtype', 'fp16')
+    amp_dtype = torch.float16 if amp_dtype_str == 'fp16' else torch.bfloat16
+    # Refresh dataset_name in case the run config overrode it
+    dataset_name = config.get("dataset", "wikitext-103")
 
     # Log config
     logger.log(f"Starting WaveletLM {'Benchmark' if benchmark_only else 'Training'} on {dataset_name.upper()}")
