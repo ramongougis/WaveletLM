@@ -210,18 +210,16 @@ nan_safe_run() {
 
 # ============================================================
 # Test 5 Phase 2: retry levels=9 and 11 at lr=0.01 (original LR) now that
-# the fp16-cumsum overflow in _compute_running_mean has been fixed
-# (model.py 2026-05-03).
+# the FWHT fp16-overflow has been mitigated by mean-centering before the
+# forward FWHT (model.py 2026-05-04).
 #
-# This is the simplified post-debugging-session form: each iteration just
-# launches train.py and lets it run to completion (NaN or otherwise). No
-# in-script NaN detection, no auto-winner pick, no result-file ledger. If
-# something NaNs, use diagnostics.py to root-cause it. If you need the
-# winning level for the 5-epoch follow-up, inspect the per-run benchmark.txt
-# / log.txt in logs/wikitext-103_*/ manually and pick the launch yourself.
+# Each iteration runs 1 epoch at lr=0.01. After both finish, the iteration
+# with the lowest sliding-window BPB is auto-launched for a 5-epoch follow-up.
+# A NaN or non-zero exit on any iteration disqualifies it from the winner pick.
 #
 # Levels=13 skipped (OOMs at bs=16384 / MBS=1 without gradient_checkpointing).
-# Levels=5 / 7 at lr=0.01 already completed in earlier sweeps — no re-run here.
+# Levels=5 / 7 at lr=0.01 already completed in earlier sweeps — no re-run here;
+# their winning configuration is compared against this sweep's winner manually.
 # ============================================================
 TEST5_BLOCK_SIZE=16384
 
@@ -302,12 +300,26 @@ print(json.dumps({
 
 # Read sliding-window BPB from a run directory. Prefers benchmark.txt
 # (post-fix corrected output, written by benchmark_only mode) and falls back
-# to log.txt (original training-end benchmark output, may contain inf for
-# pre-fix runs). Returns the LAST match in either file so rebenched results
-# take precedence over original inf entries that remain above them.
-# Run a single Phase-2 levels iteration at lr=0.01 — plain `python train.py`
-# (no NaN detection, no result-file ledger). On any failure, commits the
-# log artifact for traceability and continues to the next iteration.
+# to log.txt. Returns empty if neither file or the BPB line is missing.
+extract_bpb_sliding() {
+    local DIR="$1"
+    local F=""
+    if [ -f "${DIR}/benchmark.txt" ]; then
+        F="${DIR}/benchmark.txt"
+    elif [ -f "${DIR}/log.txt" ]; then
+        F="${DIR}/log.txt"
+    fi
+    [ -n "$F" ] || return 1
+    # First "BPB:" line that follows the "[BENCHMARK - Sliding Window]" header.
+    awk '/\[BENCHMARK - Sliding Window\]/{flag=1; next} flag && /BPB:/{print $2; exit}' "$F"
+}
+
+# Run one Phase-2 iteration at lr=0.01 for one epoch. Captures the new run
+# directory created by train.py into PHASE2_LOGDIR (caller-readable) so the
+# post-loop winner pick can find it. On NaN or any non-zero exit, leaves
+# PHASE2_LOGDIR set so we can still inspect logs, but the BPB extractor
+# will fail-soft and disqualify the run from the winner pick.
+PHASE2_LOGDIR=""
 run_test5_phase2_iter() {
     local LEVELS=$1
     local SCALES=$((LEVELS + 1))
@@ -318,11 +330,22 @@ run_test5_phase2_iter() {
     echo "=== ${LABEL}"
     echo "============================================================"
 
+    local PRE_LATEST
+    PRE_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
+
     local PATCH
     PATCH=$(build_test5_patch $LEVELS 1 0.01 0.0002)
     set_keys "$PATCH"
     python train.py
     local EXIT=$?
+
+    local POST_LATEST
+    POST_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
+    if [ -n "$POST_LATEST" ] && [ "$POST_LATEST" != "$PRE_LATEST" ]; then
+        PHASE2_LOGDIR="$POST_LATEST"
+    else
+        PHASE2_LOGDIR=""
+    fi
 
     if [ $EXIT -ne 0 ]; then
         echo "[runs.sh] levels=$LEVELS failed exit $EXIT."
@@ -331,14 +354,58 @@ run_test5_phase2_iter() {
     else
         git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 completed"
     fi
+    return $EXIT
 }
 
-# Run the Phase 2 retries. Inspect each run's benchmark.txt / log.txt
-# manually afterward to read the corrected sliding-window BPB and decide
-# whether to launch a 5-epoch follow-up at the winning level.
+# Run all Phase 2 iterations, recording per-level log dirs.
+declare -A PHASE2_DIRS
 for L in 9 11; do
     run_test5_phase2_iter $L
+    if [ -n "$PHASE2_LOGDIR" ]; then
+        PHASE2_DIRS[$L]="$PHASE2_LOGDIR"
+    fi
 done
+
+# Pick the winner by lowest sliding-window BPB and launch a 5-epoch follow-up.
+echo ""
+echo "============================================================"
+echo "=== Test 5 Phase 2 winner pick"
+echo "============================================================"
+BEST_LEVEL=""
+BEST_BPB=""
+for L in "${!PHASE2_DIRS[@]}"; do
+    DIR="${PHASE2_DIRS[$L]}"
+    BPB=$(extract_bpb_sliding "$DIR")
+    if [ -z "$BPB" ]; then
+        echo "  levels=$L: no sliding-window BPB found in ${DIR} — disqualified."
+        continue
+    fi
+    echo "  levels=$L: BPB sliding=${BPB} (${DIR})"
+    if [ -z "$BEST_BPB" ] || awk -v a="$BPB" -v b="$BEST_BPB" 'BEGIN{exit !(a < b)}'; then
+        BEST_BPB="$BPB"
+        BEST_LEVEL="$L"
+    fi
+done
+
+if [ -n "$BEST_LEVEL" ]; then
+    echo ""
+    echo "============================================================"
+    echo "=== Test 5 Phase 2 follow-up: 5-epoch run at levels=$BEST_LEVEL (BPB sliding=$BEST_BPB)"
+    echo "============================================================"
+    PATCH=$(build_test5_patch $BEST_LEVEL 5 0.01 0.0002)
+    set_keys "$PATCH"
+    python train.py
+    FOLLOWUP_EXIT=$?
+    if [ $FOLLOWUP_EXIT -eq 0 ]; then
+        run_generation_if_ckpt
+        git_commit_push "Test 5 Phase 2 follow-up: 5-epoch levels=$BEST_LEVEL @ lr=0.01 completed (1-epoch BPB sliding=$BEST_BPB)"
+    else
+        echo "[runs.sh] 5-epoch follow-up at levels=$BEST_LEVEL failed exit $FOLLOWUP_EXIT."
+        git_commit_push "Test 5 Phase 2 follow-up: 5-epoch levels=$BEST_LEVEL FAILED exit $FOLLOWUP_EXIT"
+    fi
+else
+    echo "[runs.sh] No Phase-2 iteration produced a parseable sliding-window BPB; skipping 5-epoch follow-up."
+fi
 
 # ============================================================
 # Reset config to L=2 release default (matches README Training section)
