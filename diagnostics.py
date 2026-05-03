@@ -403,7 +403,19 @@ def main():
             # blew up — capture state and stop
             if not torch.isfinite(loss).item():
                 print(f"\n  [step {step}] Loss is non-finite (loss.item()={loss.item()}).")
-                if catcher is not None and catcher.first_failure:
+                if catcher is None:
+                    print(f"    Forward hooks were NOT YET INSTALLED at this step "
+                          f"(--start_save_step={args.start_save_step} > {step}).")
+                    print(f"    Cannot determine which module first emitted non-finite output.")
+                    print(f"    Re-run with --start_save_step <= {max(0, step - 30)} "
+                          f"to arm hooks before this NaN.")
+                elif catcher.first_failure is None:
+                    print(f"    Forward hooks WERE installed but no module emitted a non-finite output.")
+                    print(f"    The NaN originated outside any captured module — possibly in:")
+                    print(f"      - cross_entropy loss computation")
+                    print(f"      - AMP gradient scaler")
+                    print(f"      - an in-place op that bypasses module-level hooks")
+                else:
                     f = catcher.first_failure
                     out = f['output']
                     print(f"    First module to emit non-finite forward output:")
@@ -416,9 +428,6 @@ def main():
                         print(f"      input arg[{s['arg_idx']}]: shape={s['shape']} "
                               f"max|finite|={s['max_abs_finite']:.4g} "
                               f"non-finite={s['nonfinite_count']:,}/{s['total']:,}")
-                else:
-                    print(f"    No forward hook fired — non-finite originated outside any captured module "
-                          f"(possibly in loss computation or AMP scaler).")
 
                 # Save the offending batch + state
                 fail_ckpt = os.path.join(args.debug_dir, f'nan_state_step{step}.pt')
