@@ -437,16 +437,17 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
             logits, _ = model(X, targets=None)
 
         B, seq_len, V = logits.shape
-        # NOTE: cast logits to fp32 before cross_entropy so per-token losses
-        # AND their sum stay in fp32. Without this, .sum() over a fp16 loss
-        # tensor of length T overflows fp16 (max 65504) when T is large and
-        # per-token loss is non-trivial — e.g. T=16384 × 4.5 nats ≈ 73,500
-        # → inf BPB despite finite per-token losses and finite logits. See
-        # commit notes for the diagnosis (find_inf_source.py confirmed model
-        # outputs are finite; overflow is purely in this accumulator).
+        # NOTE: per-token losses are kept in fp16 (cheap, well within range)
+        # but cast to fp32 BEFORE .sum(). Without the fp32 cast, summing a
+        # fp16 loss tensor of length T overflows fp16 (max 65504) when T is
+        # large and per-token loss is non-trivial — e.g. T=16384 × 4.5 nats
+        # ≈ 73,500 → inf BPB despite finite per-token losses and finite
+        # logits. We cast the small loss tensor instead of the giant logits
+        # tensor to avoid OOM at large MBS × T (logits in fp32 would be 24+
+        # GiB at MBS=8, T=16384, V=50257).
         loss_per_token = F.cross_entropy(
-            logits.view(-1, V).float(), Y.view(-1).long(), reduction='none')
-        total_loss += loss_per_token.sum().item()
+            logits.view(-1, V), Y.view(-1).long(), reduction='none')
+        total_loss += loss_per_token.float().sum().item()
         total_tokens += B * seq_len
 
     # Restore the flags so subsequent generation uses their configured values
@@ -549,12 +550,12 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
             trg_len = trg_lens[b]
             logits_scored = logits[b, -trg_len:, :]
             targets_scored = Y[b, -trg_len:]
-            # See companion comment in evaluate_full_validation: cast to fp32
-            # to prevent fp16 overflow when summing per-token losses across
-            # long target spans (trg_len up to T = 16384).
+            # See companion comment in evaluate_full_validation: cast the
+            # SMALL per-token loss tensor (not the large logits tensor) to
+            # fp32 before .sum() so the accumulator can't overflow fp16.
             loss_per_token = F.cross_entropy(
-                logits_scored.float(), targets_scored.long(), reduction='none')
-            total_loss += loss_per_token.sum().item()
+                logits_scored, targets_scored.long(), reduction='none')
+            total_loss += loss_per_token.float().sum().item()
             total_scored_tokens += loss_per_token.numel()
 
     # Restore the flags so subsequent generation uses their configured values
