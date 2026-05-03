@@ -517,23 +517,24 @@ Longer training time, more regularization, and parameter compression are the sur
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
 3. [(In Progress) Per-Scale Configuration at Longer Block Size](#in-progress-per-scale-configuration-at-longer-block-size)
-4. [Dropout Sweep](#dropout-sweep)
-5. [Weight Decay Sweep](#weight-decay-sweep)
-6. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-7. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-8. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-9. [Longer PG-19 Training](#longer-pg-19-training)
-10. [Dataset Comparisons](#dataset-comparisons)
-11. [Model Comparisons](#model-comparisons)
-12. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-13. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-14. [Multi-Transform Parallelization](#multi-transform-parallelization)
-15. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-16. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-17. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-18. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-19. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-20. [Other Post-Release Plans](#other-post-release-plans)
+4. [Wavelet Compression](#wavelet-compression)
+5. [Dropout Sweep](#dropout-sweep)
+6. [Weight Decay Sweep](#weight-decay-sweep)
+7. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+8. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+9. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+10. [Longer PG-19 Training](#longer-pg-19-training)
+11. [Dataset Comparisons](#dataset-comparisons)
+12. [Model Comparisons](#model-comparisons)
+13. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+14. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+15. [Multi-Transform Parallelization](#multi-transform-parallelization)
+16. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+17. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+18. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+19. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+20. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+21. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -543,22 +544,19 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### (Complete) Combined Parameter Reduction and VRAM Reallocation
 
-**Result:** Parameters reduced by ~42% at minimal BPB cost. Reallocating the freed VRAM allowed larger batches and confirmed longer context as the right lever (bs=16384: stable training, -34% VRAM usage, modest val regression attributable to `levels=5` leaving 9 of 14 possible decomposition levels unused). See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts), [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation), and [`runs.md`](runs.md) for the full analysis and per-test numbers.
+**Result:** Parameters reduced by ~42% at minimal BPB cost. Made context longer with freed VRAM (bs=16384: stable training, -34% VRAM usage, modest val regression attributable to `levels=5` leaving 9 of 14 possible decomposition levels unused). See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts), [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation), and [`runs.md`](runs.md) for the full analysis and per-test numbers.
 
 **Decision:** Reduce parameters, use `block_size=16384`, and test increasing levels next.
 
 ### (In Progress) Per-Scale Configuration at Longer Block Size
 
-Sweep `levels` and `per_scale_mixer_widths` at the established longer `block_size` to exploit coarse scales the longer sequence enables. Hypothesis: optimal `levels ≈ log2(block_size) − 3` keeps the coarsest cell at ~8 tokens regardless of bs; widths keep the symmetric half-1.0 / half-0.5 split. **Currently running** as Test 5 in [`runs.sh`](runs.sh): `levels ∈ {5, 7, 9, 11, 13}` at bs=16384, 1-epoch sweep with an auto-selected 5-epoch follow-up at the winner.
+Sweep `levels` and `per_scale_mixer_widths` at the longer `block_size` to exploit coarse scales. Hypothesis: optimal `levels ≈ log2(block_size) − 3 = 11`. Currently running as Test 5 in [`runs.sh`](runs.sh) at bs=16384 with `wavelet_crawl=false` for stability at higher levels. Each iteration uses its max-stable peak LR (heterogeneous LR design): levels=5/7 at `lr=0.01`, levels=9 at `3.42e-3`, and levels=11 at `1.14e-3`, with `min_lr`s scaled proportionally. Levels=13 OOMs at this config and is deferred to a gradient checkpointing follow-up if warranted.
 
-Test 5 also runs with `wavelet_crawl=false`, absorbing what was previously a separate ablation. Two motivations stack:
+### Wavelet Compression
 
-1. **Stability.** At levels ≥ 7 with K=3 enabled, every level evaluates the lifting MLP cascade three times and softmax-mixes them, multiplying activation compounding by 3× per level and pushing fp16 over its representable range during warmup. Two failed attempts confirm the trend: levels=7 with K=3 NaN'd at step 1750 (lr~8e-3); levels=9 with K=3 NaN'd at step 500 (lr~2.3e-3) — roughly 3.5× earlier and at 3.5× lower LR. Disabling `wavelet_crawl` is necessary to reach the higher-levels region of the sweep at all.
-2. **Architectural purity.** Wavelet crawl is the only convolutional component in WaveletLM. Disabling it makes the architecture fully **convolution-free in addition to attention-free**, eliminating the "but it has a convolution" critique. Checkpoint probes on both WT-103 and PG-19 already showed at least 2 of 5 levels at L=5 had wavelet_crawl distributions that were either fully collapsed (~99% mass on one offset) or maximally uniform — so the marginal contribution to quality is suspect even at the levels where it was numerically stable.
+After Test 5 picks the winning `levels` value, re-run [`analyze_lifting.py`](analyze_lifting.py) on the winner's checkpoint and use the structure it reveals to compress the lifting predict/update weights. The L=1 / levels=7 probe already showed strong **diagonal dominance** (~70-76% of Frobenius energy on the diagonal vs 0.05% random baseline = ~1500× above random) with weak generic low-rank, suggesting `W ≈ D + U·V^T` (diagonal + small learned correction) at r=16-32 captures the structure at ~31× compression per matrix. Moderate cross-level similarity (cosine 0.74-0.77 in 3-block pattern) suggests group-wise sharing as an alternative or complement. One outlier, `update_nets[L].3`, needs gentler compression (r=64). Method: rerun analyze_lifting.py on the winning `levels` value, derive strategies for it analogous to the above, test each strategy individually for 1 epoch, combine winners (those within ±0.018 BPB of the Test 5 winner) for a 5-epoch confirmation, and keep the changes if final BPB stays within ±0.0015 of the uncompressed winner. Successful application would shrink lifting from ~117M → ~5M params (96%), bringing the total model from 393M → ~280M.
 
-This is *not* a confounded variable: the new levels=5 sweep run shares its config with the prior levels=5 result (Test 4) except for `wavelet_crawl`, providing a direct A/B comparison that validates the disable choice. Anticipated effect: ~1% VRAM gain and negligible/within-noise quality cost. See [plans/other_post_release_plans.md §11](plans/other_post_release_plans.md#11-wavelet-crawl-disable-ablation) for the per-level entropy table and full decision rule.
-
-Each sweep iteration uses its **maximum stable peak LR** (heterogeneous-LR design): levels=5 and 7 train cleanly at the original `lr=0.01`; levels=9 and 11 require `lr=3.42e-3` and `lr=1.14e-3` respectively (half of the last finite step's LR observed in earlier crawl=False NaN runs, with `min_lr` scaled to preserve the cosine schedule's 50× peak/min ratio). Each architecture is therefore tested at its sweet spot rather than hobbled to share a single conservative LR — which would penalize lower-levels models for being more LR-tolerant. To decompose any per-level BPB difference into a "depth effect" vs an "LR-tuning effect," one **methodology control** is added: a 1-epoch run at **levels=5 with `lr=1.14e-3`** (matching the levels=11 LR). Comparing this control against the levels=11 sweep result at the same LR isolates whether observed wins are structural or LR-driven. Levels=13 is skipped from this sweep — it OOMs at the current bs=16384 / MBS=1 / no-gradient-checkpointing config and is a candidate for a separate gradient-checkpointing-enabled follow-up only if levels=11 wins by a margin that suggests deeper would help.
+### Dropout Sweep
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
 
