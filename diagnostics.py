@@ -248,6 +248,15 @@ def main():
                          'so eager-mode levels=11 fits in 32 GiB)')
     args = ap.parse_args()
 
+    # Validate args
+    if args.start_save_step >= args.max_steps:
+        sys.exit(f"--start_save_step ({args.start_save_step}) must be < --max_steps "
+                 f"({args.max_steps}); otherwise the save/arming would never fire.")
+    if args.start_anomaly_step < args.start_save_step:
+        sys.exit(f"--start_anomaly_step ({args.start_anomaly_step}) must be >= "
+                 f"--start_save_step ({args.start_save_step}) — anomaly mode would otherwise "
+                 f"be enabled before the pre-NaN checkpoint is saved.")
+
     config = build_failing_config(args.levels, args.lr, args.min_lr,
                                   no_compile=not args.enable_compile,
                                   use_gradient_checkpointing=not args.no_gradient_checkpointing)
@@ -274,15 +283,24 @@ def main():
         config, _SilentLogger())
     vocab_size = enc.vocab_size
 
-    # Build model
+    # Build model. WaveletLM already places parameters on `device`; no need
+    # for an additional `.to(device)` (would just add a no-op copy).
     print(f"  Building model (vocab_size={vocab_size})...")
-    model = WaveletLM(vocab_size=vocab_size, config=config, device=device).to(device)
+    model = WaveletLM(vocab_size=vocab_size, config=config, device=device)
     if config['compile']:
         model = torch.compile(model)
     model.train()
 
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  Model: {n_params/1e6:.2f}M params\n")
+    print(f"  Model: {n_params/1e6:.2f}M params")
+
+    # Defragment after model construction to give training a clean allocator
+    # state. Cheap call, can avert OOM-on-step-1 caused by post-init
+    # fragmentation.
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    print(f"  Post-init VRAM: allocated {torch.cuda.memory_allocated()/(1024**3):.2f} GiB, "
+          f"reserved {torch.cuda.memory_reserved()/(1024**3):.2f} GiB\n")
 
     # Optimizer — match train.py's Adagrad config
     optimizer = torch.optim.Adagrad(
@@ -370,6 +388,12 @@ def main():
             # Forward
             with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
                 _logits, loss = model(X, Y)
+            # The logits tensor is large (B*T*V floats) and we don't use it
+            # after extracting loss. Drop the reference so GPU memory can be
+            # reclaimed before backward. The autograd graph still retains
+            # logits internally for backward computation, so this just frees
+            # OUR Python reference, not the graph's hold.
+            del _logits
 
             # If forward already produced a non-finite loss, the model itself
             # blew up — capture state and stop
@@ -454,11 +478,27 @@ def main():
             # appears later anyway (~step 500 for levels=11). Forward-loss
             # NaN and anomaly-mode RuntimeErrors are still checked at every
             # step (those are always real signals).
+            #
+            # Fast-path optimization: stack all per-parameter "all-finite"
+            # results into one tensor and do a single .item() sync. The
+            # common case (no NaN) costs ONE CPU-GPU sync per step instead
+            # of ~1000 (one per parameter). Only on actual NaN do we do the
+            # expensive per-param search.
             if step >= args.start_anomaly_step:
-                nan_param_names = []
-                for name, p in model.named_parameters():
-                    if p.grad is not None and not torch.isfinite(p.grad).all().item():
-                        nan_param_names.append(name)
+                all_finite_per_param = [
+                    torch.isfinite(p.grad).all()
+                    for p in model.parameters() if p.grad is not None
+                ]
+                # Single sync — `True` means no NaN anywhere
+                all_finite = bool(torch.stack(all_finite_per_param).all().item())
+
+                if not all_finite:
+                    nan_param_names = []
+                    for name, p in model.named_parameters():
+                        if p.grad is not None and not torch.isfinite(p.grad).all().item():
+                            nan_param_names.append(name)
+                else:
+                    nan_param_names = []
 
                 if nan_param_names:
                     print(f"\n  [step {step}] NaN/Inf in UNSCALED gradients of "
@@ -518,6 +558,11 @@ def main():
 
     if nan_found_step is not None:
         print(f"\n=== NaN diagnosed at step {nan_found_step} ===")
+
+    if torch.cuda.is_available():
+        print(f"\n  Peak VRAM during run: "
+              f"{torch.cuda.max_memory_allocated()/(1024**3):.2f} GiB allocated, "
+              f"{torch.cuda.max_memory_reserved()/(1024**3):.2f} GiB reserved")
 
 
 if __name__ == '__main__':
