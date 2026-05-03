@@ -320,6 +320,65 @@ extract_bpb_sliding() {
 # parseable sliding-window BPB. Captures the new log dir into PHASE2_LOGDIR
 # and the resulting BPB into PHASE2_BPB. Returns 0 on success (BPB present),
 # non-zero otherwise.
+# Launch `python train.py` in the background, identify the new log dir it
+# creates, and poll log.txt every 30s for a NaN train- or val-loss entry
+# (matches lines like "Step 750: train loss nan, val loss nan ..."). On NaN,
+# terminates the train PID and returns 99. Otherwise returns train.py's exit
+# code. Sets RUN_LOGDIR to the captured log dir (empty if none was created).
+RUN_LOGDIR=""
+run_train_with_nan_watch() {
+    RUN_LOGDIR=""
+    local PRE_LATEST
+    PRE_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
+
+    python train.py &
+    local TRAIN_PID=$!
+
+    # Wait up to 2 min for train.py to create its run folder
+    local LOG_FILE=""
+    for i in $(seq 1 60); do
+        sleep 2
+        local POST_LATEST
+        POST_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
+        if [ -n "$POST_LATEST" ] && [ "$POST_LATEST" != "$PRE_LATEST" ]; then
+            RUN_LOGDIR="$POST_LATEST"
+            LOG_FILE="${POST_LATEST}log.txt"
+            echo "[runs.sh] Monitoring $LOG_FILE for NaN."
+            break
+        fi
+    done
+
+    if [ -z "$LOG_FILE" ]; then
+        echo "[runs.sh] No new log folder after 2 min; falling through to wait."
+        wait $TRAIN_PID
+        return $?
+    fi
+
+    # Poll log for "loss nan" (catches both train and val loss) every 30s.
+    # `loss nan` is specific enough to avoid false positives on unrelated tokens.
+    while kill -0 $TRAIN_PID 2>/dev/null; do
+        if grep -qi "loss nan" "$LOG_FILE" 2>/dev/null; then
+            echo "[runs.sh] NaN loss detected in $LOG_FILE; terminating PID $TRAIN_PID."
+            kill -TERM $TRAIN_PID 2>/dev/null
+            sleep 5
+            kill -KILL $TRAIN_PID 2>/dev/null
+            wait $TRAIN_PID 2>/dev/null
+            sleep 10  # give CUDA a moment to release VRAM
+            return 99
+        fi
+        sleep 30
+    done
+
+    wait $TRAIN_PID
+    return $?
+}
+
+# Run one Phase-2 tier: builds the levels-N base patch, optionally overlays
+# a tier-specific override (e.g. {"mlp_expansion": 9} or {"compile": false}),
+# launches train.py under NaN-watch early stopping, and judges success by
+# whether the run produced a parseable sliding-window BPB. Captures the new
+# log dir into PHASE2_LOGDIR and the resulting BPB into PHASE2_BPB. Returns
+# 0 on success (BPB present), non-zero otherwise (NaN-killed or other crash).
 PHASE2_LOGDIR=""
 PHASE2_BPB=""
 run_test5_phase2_tier() {
@@ -334,23 +393,13 @@ run_test5_phase2_tier() {
     echo "=== ${LABEL}"
     echo "============================================================"
 
-    local PRE_LATEST
-    PRE_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
-
     set_keys "$(build_test5_patch $LEVELS 1 0.01 0.0002)"
     if [ -n "$OVERRIDE_JSON" ]; then
         set_keys "$OVERRIDE_JSON"
     fi
-    python train.py
+    run_train_with_nan_watch
     local EXIT=$?
-
-    local POST_LATEST
-    POST_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
-    if [ -n "$POST_LATEST" ] && [ "$POST_LATEST" != "$PRE_LATEST" ]; then
-        PHASE2_LOGDIR="$POST_LATEST"
-    else
-        PHASE2_LOGDIR=""
-    fi
+    PHASE2_LOGDIR="$RUN_LOGDIR"
 
     PHASE2_BPB=""
     if [ -n "$PHASE2_LOGDIR" ]; then
@@ -361,9 +410,13 @@ run_test5_phase2_tier() {
         git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] completed (BPB sliding=$PHASE2_BPB)"
         return 0
     else
-        echo "[runs.sh] L=$LEVELS [$TIER_LABEL] failed (exit $EXIT, no BPB — likely NaN)."
-        git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] FAILED exit $EXIT (no BPB)"
-        sleep 10  # let CUDA release VRAM after a crash
+        if [ "$EXIT" -eq 99 ]; then
+            echo "[runs.sh] L=$LEVELS [$TIER_LABEL] killed by NaN-watch."
+            git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] FAILED (NaN early-stop)"
+        else
+            echo "[runs.sh] L=$LEVELS [$TIER_LABEL] failed (exit $EXIT, no BPB)."
+            git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] FAILED exit $EXIT (no BPB)"
+        fi
         return 1
     fi
 }
@@ -417,11 +470,14 @@ echo "=== Test 5 Phase 2 follow-up: 5-epoch run at L=$FOLLOWUP_LEVEL"
 echo "============================================================"
 set_keys "$(build_test5_patch $FOLLOWUP_LEVEL 5 0.01 0.0002)"
 [ -n "$FOLLOWUP_OVERRIDE" ] && set_keys "$FOLLOWUP_OVERRIDE"
-python train.py
+run_train_with_nan_watch
 FOLLOWUP_EXIT=$?
 if [ $FOLLOWUP_EXIT -eq 0 ]; then
     run_generation_if_ckpt
     git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL @ lr=0.01 completed ($FOLLOWUP_NOTE)"
+elif [ $FOLLOWUP_EXIT -eq 99 ]; then
+    echo "[runs.sh] 5-epoch follow-up at L=$FOLLOWUP_LEVEL killed by NaN-watch."
+    git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL FAILED (NaN early-stop)"
 else
     echo "[runs.sh] 5-epoch follow-up at L=$FOLLOWUP_LEVEL failed exit $FOLLOWUP_EXIT."
     git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL FAILED exit $FOLLOWUP_EXIT"
