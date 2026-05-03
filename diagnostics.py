@@ -179,13 +179,8 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'mixer_depth': 1,
         'mixer_depth_stabilizers': False,
         'mixer_depth_residuals': False,
-        # decompose_bypass=False here: combined with fht_mean_centering, this
-        # avoids the ~800 MiB transient peak that the bypass-add creates
-        # immediately before centering, letting both fit in our 32 GiB budget.
-        # Side effect: also tests whether bypass running-mean was
-        # contributing to FWHT input amplification.
-        'decompose_bypass': False,
-        'decompose_bypass_cross_window': False,
+        'decompose_bypass': True,
+        'decompose_bypass_cross_window': True,
         'decompose_bypass_ema': False,
         'learned_residual': True,
         'skip_proj_out': False,
@@ -224,13 +219,10 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'stab_mixer_eps_scaling': False,
         'stab_lifting_level_scaling': False,
         'multinodal_enabled': False,
-        # FWHT-block hardening test flags. Both gated; set whichever is
-        # being tested to True. Currently testing fht_mean_centering
-        # (parameter-free DC-offset removal — fits in any reasonable VRAM
-        # budget). ln_around_fht was tried first but OOM'd at step 1
-        # backward at levels=11 / bs=16384 / MBS=1 due to ~800 MiB extra
-        # activation storage from the saved normalized output.
-        'ln_around_fht': False,
+        # FWHT-block hardening: parameter-free DC-offset removal. Subtracts
+        # the channel-axis mean of the FWHT input before the transform and
+        # adds it back after the inverse transform. Set False to reproduce
+        # the un-hardened failing config.
         'fht_mean_centering': True,
     }
 

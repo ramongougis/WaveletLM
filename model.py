@@ -932,7 +932,6 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
-        ln_around_fht: bool = False,
         fht_mean_centering: bool = False,
     ):
         super().__init__()
@@ -943,25 +942,7 @@ class WaveletLMBlock(nn.Module):
         self.wavelet_mode = wavelet_mode
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
-        # Optional FWHT-block hardening: a single LayerNorm before the FWHT.
-        # Disabled by default so existing checkpoints load without
-        # architectural mismatch. Enable via config `ln_around_fht: true` to
-        # bound FWHT input magnitudes for deep cascades (levels >= 9) where
-        # activations can grow large enough to overflow fp16 inside the FWHT
-        # butterfly. Originally tried two LNs (pre + post invFWHT) but the
-        # post-invFWHT LN's stored normalized output added ~800 MiB of
-        # activation memory at bs=16384/levels=11/MBS=1, pushing us past the
-        # 32 GiB GPU cap. Pre-FWHT LN alone is what addresses the FWHT
-        # overflow class; symmetric post-LN was an architectural nicety we
-        # can't afford here.
-        # NOTE: even single-LN fits VRAM tightly at levels=11 / bs=16384 /
-        # MBS=1 (~30.4 GiB peak then OOM at step 1 backward). Use the lighter
-        # `fht_mean_centering` option below for the same memory budget tier.
-        self.ln_around_fht = ln_around_fht
-        if self.ln_around_fht:
-            self.ln_pre_fht = nn.LayerNorm(self.Cp, device=device, dtype=dtype)
-
-        # Alternative FWHT-block hardening: parameter-free DC-offset removal.
+        # FWHT-block hardening: parameter-free DC-offset removal.
         # Subtracts the channel-axis mean of the FWHT input before the FWHT,
         # adds it back after the inverse FWHT. Removes the DC component that
         # the FWHT would otherwise concentrate into a single basis vector
@@ -1256,19 +1237,19 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional pre-FWHT LayerNorm — bounds FWHT input magnitudes for
-        # deep-cascade stability (gated by config `ln_around_fht`).
-        if self.ln_around_fht:
-            stacked_coeffs = self.ln_pre_fht(stacked_coeffs)
-
         # Optional FWHT mean-centering — subtract the channel-axis mean of
         # the FWHT input before the transform, add it back after the inverse
-        # transform. The mean is captured here for use after the inverse
-        # FWHT below. (Gated by config `fht_mean_centering`.)
+        # transform. (Gated by config `fht_mean_centering`.)
+        # Implementation note: we use the in-place .sub_() to avoid the
+        # ~500 MiB transient peak that the out-of-place version
+        # `stacked_coeffs = stacked_coeffs - mean` incurs while both old and
+        # new tensors are momentarily live. The in-place op is safe here
+        # because no upstream backward function (AddBackward0 from the
+        # bypass) needs the unmodified tensor values.
         fht_dc_offset = None
         if self.fht_mean_centering:
             fht_dc_offset = stacked_coeffs.mean(dim=-1, keepdim=True)
-            stacked_coeffs = stacked_coeffs - fht_dc_offset
+            stacked_coeffs = stacked_coeffs.sub_(fht_dc_offset)
 
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
@@ -1546,7 +1527,6 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
-                ln_around_fht=config.get("ln_around_fht", False),
                 fht_mean_centering=config.get("fht_mean_centering", False),
             )
             for _ in range(layer_build_count)
