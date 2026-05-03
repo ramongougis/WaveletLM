@@ -283,10 +283,14 @@ def main():
         config, _SilentLogger())
     vocab_size = enc.vocab_size
 
-    # Build model. WaveletLM already places parameters on `device`; no need
-    # for an additional `.to(device)` (would just add a no-op copy).
+    # Build model. WaveletLM's `device=` constructor arg only places certain
+    # initializations on device (e.g. explicit torch.eye / torch.zeros calls
+    # inside submodules); it does NOT move all parameters/buffers. We still
+    # need .to(device) to actually relocate the parameter tensors. Without
+    # it, embedding weight stays on CPU while inputs are on GPU and forward
+    # raises "Expected all tensors to be on the same device".
     print(f"  Building model (vocab_size={vocab_size})...")
-    model = WaveletLM(vocab_size=vocab_size, config=config, device=device)
+    model = WaveletLM(vocab_size=vocab_size, config=config, device=device).to(device)
     if config['compile']:
         model = torch.compile(model)
     model.train()
