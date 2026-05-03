@@ -179,8 +179,13 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'mixer_depth': 1,
         'mixer_depth_stabilizers': False,
         'mixer_depth_residuals': False,
-        'decompose_bypass': True,
-        'decompose_bypass_cross_window': True,
+        # decompose_bypass=False here: combined with fht_mean_centering, this
+        # avoids the ~800 MiB transient peak that the bypass-add creates
+        # immediately before centering, letting both fit in our 32 GiB budget.
+        # Side effect: also tests whether bypass running-mean was
+        # contributing to FWHT input amplification.
+        'decompose_bypass': False,
+        'decompose_bypass_cross_window': False,
         'decompose_bypass_ema': False,
         'learned_residual': True,
         'skip_proj_out': False,
