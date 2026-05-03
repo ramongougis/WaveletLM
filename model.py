@@ -942,17 +942,20 @@ class WaveletLMBlock(nn.Module):
         self.wavelet_mode = wavelet_mode
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
-        # Optional FWHT-block hardening: LayerNorms wrapping the
-        # FWHT → mixer → invFWHT chain. Disabled by default so existing
-        # checkpoints load without architectural mismatch. Enable via config
-        # `ln_around_fht: true` to test FWHT input/output bounding for deep
-        # cascades (levels >= 9) where activations can grow large enough to
-        # overflow fp16 inside the FWHT butterfly. Each LN has ~Cp params
-        # (2 × Cp = ~4K total per layer).
+        # Optional FWHT-block hardening: a single LayerNorm before the FWHT.
+        # Disabled by default so existing checkpoints load without
+        # architectural mismatch. Enable via config `ln_around_fht: true` to
+        # bound FWHT input magnitudes for deep cascades (levels >= 9) where
+        # activations can grow large enough to overflow fp16 inside the FWHT
+        # butterfly. Originally tried two LNs (pre + post invFWHT) but the
+        # post-invFWHT LN's stored normalized output added ~800 MiB of
+        # activation memory at bs=16384/levels=11/MBS=1, pushing us past the
+        # 32 GiB GPU cap. Pre-FWHT LN alone is what addresses the FWHT
+        # overflow class; symmetric post-LN was an architectural nicety we
+        # can't afford here.
         self.ln_around_fht = ln_around_fht
         if self.ln_around_fht:
             self.ln_pre_fht = nn.LayerNorm(self.Cp, device=device, dtype=dtype)
-            self.ln_post_fht = nn.LayerNorm(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
         if wavelet_mode == "lifting":
@@ -1282,12 +1285,6 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
-
-        # Optional post-invFWHT LayerNorm — symmetric counterpart to the
-        # pre-FWHT LN; restores bounded magnitudes after the mixer pipeline
-        # (gated by config `ln_around_fht`).
-        if self.ln_around_fht:
-            mixed_all = self.ln_post_fht(mixed_all)
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
