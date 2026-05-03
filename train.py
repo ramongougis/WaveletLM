@@ -1047,7 +1047,6 @@ def train():
     if device == 'cuda':
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        inference_baseline_mem = torch.cuda.memory_allocated() / (1024 ** 2)
 
     # Critical: restore eval mode before generation. The evaluate_* functions
     # above exit with model.train() (to match training-loop conventions), but
@@ -1098,9 +1097,17 @@ def train():
     logger.log(f"Metrics: {format_metrics(metrics)}")
 
     if device == 'cuda':
-        inference_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
-        inference_act_mem = inference_peak_mem - inference_baseline_mem
-        logger.log(f"Inference VRAM (approx): {inference_peak_mem:.0f} MiB (model={inference_baseline_mem:.0f} + activations={inference_act_mem:.0f}) — use generate.py for accurate measurement")
+        # Note: train.py used to log an "Inference VRAM (approx)" estimate
+        # here, but it consistently over-reported by 3-4× because the post-
+        # benchmark process still holds optimizer accumulators, gradient
+        # buffers, AMP master weights, and torch.compile graph state that a
+        # fresh `generate.py` invocation does not. Removed in favor of the
+        # accurate generate.py measurement (see generations.txt "Peak GPU
+        # memory" line for any saved checkpoint).
+        logger.log(
+            "Inference VRAM: not measured here. Run `python generate.py "
+            "--checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' "
+            "line from generations.txt for an accurate fresh-process number.")
         if train_peak_mem is not None:
             logger.log(f"Training Peak VRAM: {train_peak_mem:.0f} MiB")
 
