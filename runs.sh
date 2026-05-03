@@ -314,16 +314,20 @@ extract_bpb_sliding() {
     awk '/\[BENCHMARK - Sliding Window\]/{flag=1; next} flag && /BPB:/{print $2; exit}' "$F"
 }
 
-# Run one Phase-2 iteration at lr=0.01 for one epoch. Captures the new run
-# directory created by train.py into PHASE2_LOGDIR (caller-readable) so the
-# post-loop winner pick can find it. On NaN or any non-zero exit, leaves
-# PHASE2_LOGDIR set so we can still inspect logs, but the BPB extractor
-# will fail-soft and disqualify the run from the winner pick.
+# Run one Phase-2 tier: builds the levels-N base patch, optionally overlays
+# a tier-specific override (e.g. {"mlp_expansion": 9} or {"compile": false}),
+# launches train.py, and judges success by whether the run produced a
+# parseable sliding-window BPB. Captures the new log dir into PHASE2_LOGDIR
+# and the resulting BPB into PHASE2_BPB. Returns 0 on success (BPB present),
+# non-zero otherwise.
 PHASE2_LOGDIR=""
-run_test5_phase2_iter() {
+PHASE2_BPB=""
+run_test5_phase2_tier() {
     local LEVELS=$1
+    local TIER_LABEL="$2"
+    local OVERRIDE_JSON="$3"
     local SCALES=$((LEVELS + 1))
-    local LABEL="Test 5 Phase 2: levels=$LEVELS (S=$SCALES) @ lr=0.01, bs=$TEST5_BLOCK_SIZE, crawl=False"
+    local LABEL="Test 5 Phase 2: levels=$LEVELS (S=$SCALES) @ lr=0.01, bs=$TEST5_BLOCK_SIZE, tier=[$TIER_LABEL]"
 
     echo ""
     echo "============================================================"
@@ -333,9 +337,10 @@ run_test5_phase2_iter() {
     local PRE_LATEST
     PRE_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
 
-    local PATCH
-    PATCH=$(build_test5_patch $LEVELS 1 0.01 0.0002)
-    set_keys "$PATCH"
+    set_keys "$(build_test5_patch $LEVELS 1 0.01 0.0002)"
+    if [ -n "$OVERRIDE_JSON" ]; then
+        set_keys "$OVERRIDE_JSON"
+    fi
     python train.py
     local EXIT=$?
 
@@ -347,64 +352,79 @@ run_test5_phase2_iter() {
         PHASE2_LOGDIR=""
     fi
 
-    if [ $EXIT -ne 0 ]; then
-        echo "[runs.sh] levels=$LEVELS failed exit $EXIT."
-        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 FAILED exit $EXIT"
-        sleep 10  # let CUDA release VRAM after a crash
-    else
-        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 completed"
+    PHASE2_BPB=""
+    if [ -n "$PHASE2_LOGDIR" ]; then
+        PHASE2_BPB=$(extract_bpb_sliding "$PHASE2_LOGDIR")
     fi
-    return $EXIT
+
+    if [ -n "$PHASE2_BPB" ]; then
+        git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] completed (BPB sliding=$PHASE2_BPB)"
+        return 0
+    else
+        echo "[runs.sh] L=$LEVELS [$TIER_LABEL] failed (exit $EXIT, no BPB — likely NaN)."
+        git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] FAILED exit $EXIT (no BPB)"
+        sleep 10  # let CUDA release VRAM after a crash
+        return 1
+    fi
 }
 
-# Run all Phase 2 iterations, recording per-level log dirs.
-declare -A PHASE2_DIRS
-for L in 9 11; do
-    run_test5_phase2_iter $L
-    if [ -n "$PHASE2_LOGDIR" ]; then
-        PHASE2_DIRS[$L]="$PHASE2_LOGDIR"
+# L=11 progression. Stop at the first tier that produces a parseable BPB.
+# Each tier loosens the failure mode the previous tier could not cure:
+#   stock     → mlp_expansion=10, compile=True (matches production default)
+#   mlp9      → mlp_expansion=9 (test whether the lowered MLP expansion in the
+#               diagnostic was the real fix vs. mean centering)
+#   no-compile → mlp_expansion=9 + compile=False (rule out a torch.compile
+#               numerical interaction)
+# If all three fail (NaN at step ~431 even with no-compile), the inconsistency
+# between diagnostic and training is deeper than the tested axes — investigate
+# manually before further sweeps.
+PHASE2_WIN_LEVEL=""
+PHASE2_WIN_BPB=""
+PHASE2_WIN_OVERRIDE=""
+PHASE2_WIN_TIER=""
+for TIER in "stock|" "mlp9|{\"mlp_expansion\": 9}" "no-compile|{\"mlp_expansion\": 9, \"compile\": false}"; do
+    TIER_LABEL="${TIER%%|*}"
+    OVERRIDE="${TIER#*|}"
+    if run_test5_phase2_tier 11 "$TIER_LABEL" "$OVERRIDE"; then
+        PHASE2_WIN_LEVEL=11
+        PHASE2_WIN_BPB="$PHASE2_BPB"
+        PHASE2_WIN_OVERRIDE="$OVERRIDE"
+        PHASE2_WIN_TIER="$TIER_LABEL"
+        break
     fi
 done
 
-# Pick the winner by lowest sliding-window BPB and launch a 5-epoch follow-up.
+# 5-epoch follow-up: at the L=11 winning tier if any survived, otherwise at
+# the prior best stable level (L=7, BPB sliding 1.0974 from the earlier sweep).
 echo ""
 echo "============================================================"
-echo "=== Test 5 Phase 2 winner pick"
+echo "=== Test 5 Phase 2 follow-up pick"
 echo "============================================================"
-BEST_LEVEL=""
-BEST_BPB=""
-for L in "${!PHASE2_DIRS[@]}"; do
-    DIR="${PHASE2_DIRS[$L]}"
-    BPB=$(extract_bpb_sliding "$DIR")
-    if [ -z "$BPB" ]; then
-        echo "  levels=$L: no sliding-window BPB found in ${DIR} — disqualified."
-        continue
-    fi
-    echo "  levels=$L: BPB sliding=${BPB} (${DIR})"
-    if [ -z "$BEST_BPB" ] || awk -v a="$BPB" -v b="$BEST_BPB" 'BEGIN{exit !(a < b)}'; then
-        BEST_BPB="$BPB"
-        BEST_LEVEL="$L"
-    fi
-done
-
-if [ -n "$BEST_LEVEL" ]; then
-    echo ""
-    echo "============================================================"
-    echo "=== Test 5 Phase 2 follow-up: 5-epoch run at levels=$BEST_LEVEL (BPB sliding=$BEST_BPB)"
-    echo "============================================================"
-    PATCH=$(build_test5_patch $BEST_LEVEL 5 0.01 0.0002)
-    set_keys "$PATCH"
-    python train.py
-    FOLLOWUP_EXIT=$?
-    if [ $FOLLOWUP_EXIT -eq 0 ]; then
-        run_generation_if_ckpt
-        git_commit_push "Test 5 Phase 2 follow-up: 5-epoch levels=$BEST_LEVEL @ lr=0.01 completed (1-epoch BPB sliding=$BEST_BPB)"
-    else
-        echo "[runs.sh] 5-epoch follow-up at levels=$BEST_LEVEL failed exit $FOLLOWUP_EXIT."
-        git_commit_push "Test 5 Phase 2 follow-up: 5-epoch levels=$BEST_LEVEL FAILED exit $FOLLOWUP_EXIT"
-    fi
+if [ -n "$PHASE2_WIN_LEVEL" ]; then
+    FOLLOWUP_LEVEL=$PHASE2_WIN_LEVEL
+    FOLLOWUP_OVERRIDE="$PHASE2_WIN_OVERRIDE"
+    FOLLOWUP_NOTE="L=$PHASE2_WIN_LEVEL [$PHASE2_WIN_TIER] (1-epoch BPB sliding=$PHASE2_WIN_BPB)"
 else
-    echo "[runs.sh] No Phase-2 iteration produced a parseable sliding-window BPB; skipping 5-epoch follow-up."
+    FOLLOWUP_LEVEL=7
+    FOLLOWUP_OVERRIDE=""
+    FOLLOWUP_NOTE="fallback to L=7 (all L=11 tiers failed)"
+fi
+echo "  → $FOLLOWUP_NOTE"
+
+echo ""
+echo "============================================================"
+echo "=== Test 5 Phase 2 follow-up: 5-epoch run at L=$FOLLOWUP_LEVEL"
+echo "============================================================"
+set_keys "$(build_test5_patch $FOLLOWUP_LEVEL 5 0.01 0.0002)"
+[ -n "$FOLLOWUP_OVERRIDE" ] && set_keys "$FOLLOWUP_OVERRIDE"
+python train.py
+FOLLOWUP_EXIT=$?
+if [ $FOLLOWUP_EXIT -eq 0 ]; then
+    run_generation_if_ckpt
+    git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL @ lr=0.01 completed ($FOLLOWUP_NOTE)"
+else
+    echo "[runs.sh] 5-epoch follow-up at L=$FOLLOWUP_LEVEL failed exit $FOLLOWUP_EXIT."
+    git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL FAILED exit $FOLLOWUP_EXIT"
 fi
 
 # ============================================================
