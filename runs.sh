@@ -216,14 +216,26 @@ nan_safe_run() {
 # matching per_scale_mixer_widths = (levels+1)/2 entries of 1.0 then
 # (levels+1)/2 entries of 0.5 (symmetric half-coarse / half-fine split).
 #
-# Each sweep run is 1 epoch (~1.15h on a 5090) → ~6h total for the sweep.
-# Auto-picks the lowest-BPB-sliding level and runs 5 epochs at that level
-# (~5.76h). Total wall-clock ~12h.
+# Each sweep run is 1 epoch (~1.15h on a 5090). Sweep iterations: levels ∈
+# {5, 7, 9, 11} (~4.6h total). Levels=13 skipped (OOMs at this config without
+# gradient_checkpointing). One additional control run (levels=5 @ lr=1.14e-3)
+# adds ~1.15h. Auto-picks the lowest-BPB sweep level (control excluded) and
+# runs 5 epochs at that level (~5.7-6.6h depending on level depth). Total
+# wall-clock ~12h.
 #
-# All five 1-epoch sweep runs share block_size=16384, so their BPB sliding
-# numbers ARE directly comparable (same window count, same stride, same
-# eval set). The 5-epoch winner run also uses bs=16384, so its BPB sliding
-# is comparable to Test 4's 1.1149 baseline at bs=16384 with levels=5.
+# Heterogeneous LR per level (Position C): each iteration uses its max-stable
+# LR (half of the last-finite-step LR observed in prior crawl=False NaN runs).
+# This is the production-relevant comparison ("best achievable BPB per level")
+# rather than a homogeneous-LR comparison that would penalize lower-levels
+# models for being more LR-tolerant. The control run at levels=5 / lr=1.14e-3
+# (matching levels=11's LR) decomposes any per-level BPB difference into a
+# "depth effect" vs "LR-tuning effect" by comparing levels=5@1.14e-3 against
+# the levels=11 sweep result at the same LR.
+#
+# All sweep runs share block_size=16384, so their BPB sliding numbers ARE
+# directly comparable (same window count, same stride, same eval set). The
+# 5-epoch winner run also uses bs=16384, so its BPB sliding is comparable to
+# Test 4's 1.1149 baseline at bs=16384 with levels=5.
 # ============================================================
 TEST5_BLOCK_SIZE=16384
 TEST5_RESULTS_FILE="logs/test5_levels_sweep_results.txt"
@@ -239,18 +251,46 @@ print('[' + ', '.join(['1.0']*h + ['0.5']*h) + ']')
 "
 }
 
+get_stable_lr() {
+    # get_stable_lr <levels> → echoes "<peak_lr> <min_lr>"
+    # Per-level peak LR is set to half the last finite step's LR observed in
+    # the prior K=False sweep — fp16 cliff failures need real margin, and the
+    # observed NaN-onset between training-step granularity hides the actual
+    # cliff position. min_lr scaled to keep the cosine schedule's 50× peak/min
+    # ratio so the late-training optimization shape stays consistent.
+    #   levels=5/7  : trained stably at lr=0.01 with K=False → keep
+    #   levels=9    : last finite step at lr=6.84e-3 → peak=3.42e-3
+    #   levels=11   : last finite step at lr=2.28e-3 → peak=1.14e-3
+    case "$1" in
+        5|7)   echo "0.01 0.0002" ;;
+        9)     echo "0.00342 0.0000684" ;;
+        11)    echo "0.00114 0.0000228" ;;
+        13)    echo "0.001 0.00002" ;;  # OOMs at this config; LR is placeholder
+        *)     echo "0.01 0.0002" ;;
+    esac
+}
+
 build_test5_patch() {
-    # build_test5_patch <levels> <epochs>
+    # build_test5_patch <levels> <epochs> [lr] [min_lr]
+    # When lr/min_lr are omitted, looked up from get_stable_lr() per the
+    # heterogeneous-LR sweep design (Position C — see README Per-Scale section
+    # for rationale).
+    #
     # NOTE: wavelet_crawl is set to false for the levels sweep. With K=3, every
     # level evaluates the lifting MLP cascade three times and softmax-mixes
     # them, multiplying activation compounding by 3× per level. At levels=7
-    # this hit fp16 instability during warmup (see Test 5 sweep iter 2,
+    # this hit fp16 instability during warmup (see iter 2,
     # logs/wikitext-103_2026-05-02_19-02-53/log.txt — NaN'd at step 1750,
     # lr~8e-3). Disabling wavelet_crawl for the sweep keeps higher-levels
     # configurations stable and is doubly justified by the §11 finding that
     # at least 2 of 5 levels at L=5 already collapse to wasted K=3 distributions.
     local LEVELS=$1
     local EPOCHS=$2
+    local LR=${3:-}
+    local MIN_LR=${4:-}
+    if [ -z "$LR" ]; then
+        read LR MIN_LR <<< "$(get_stable_lr $LEVELS)"
+    fi
     local PSMW
     PSMW=$(build_psmw $LEVELS)
     python -c "
@@ -269,27 +309,43 @@ print(json.dumps({
     'levels': $LEVELS,
     'per_scale_mixer_widths': $PSMW,
     'wavelet_crawl': False,
+    'lr': $LR,
+    'min_lr': $MIN_LR,
     'eval_interval': 250,
 }))
 "
 }
 
 run_test5_sweep_one() {
-    # Runs train.py with the patched config at the given levels for 1 epoch.
-    # Captures sliding-window BPB from the resulting log and appends to
-    # TEST5_RESULTS_FILE. Does NOT abort the script on failure (so OOM at
-    # high levels just records N/A and the sweep continues).
+    # Runs train.py with the patched config for 1 epoch.
+    # Captures sliding-window BPB and appends to TEST5_RESULTS_FILE.
+    # Does NOT abort the script on failure.
+    #
+    # Args:
+    #   $1 LEVELS              — wavelet decomposition depth
+    #   $2 KIND                — "sweep" (counts toward winner pick) or
+    #                             "control" (recorded but excluded from winner)
+    #   $3 LR_OVERRIDE         — optional; passed through to build_test5_patch
+    #   $4 MIN_LR_OVERRIDE     — optional; passed through to build_test5_patch
     local LEVELS=$1
+    local KIND=$2
+    local LR_OVERRIDE=${3:-}
+    local MIN_LR_OVERRIDE=${4:-}
     local SCALES=$((LEVELS + 1))
-    local LABEL="Test 5 sweep (1-ep): levels=$LEVELS (S=$SCALES), bs=$TEST5_BLOCK_SIZE"
+
+    local PATCH
+    PATCH=$(build_test5_patch $LEVELS 1 $LR_OVERRIDE $MIN_LR_OVERRIDE)
+    # Pull the actual LR/min_lr that ended up in the patch for logging
+    local USED_LR
+    USED_LR=$(python -c "import json; p = json.loads('''$PATCH'''); print(p['lr'])")
+
+    local LABEL="Test 5 ${KIND} (1-ep): levels=$LEVELS (S=$SCALES), bs=$TEST5_BLOCK_SIZE, lr=$USED_LR"
 
     echo ""
     echo "============================================================"
     echo "=== ${LABEL}"
     echo "============================================================"
 
-    local PATCH
-    PATCH=$(build_test5_patch $LEVELS 1)
     set_keys "$PATCH"
     python train.py
     local TRAIN_EXIT=$?
@@ -298,14 +354,13 @@ run_test5_sweep_one() {
     LATEST_LOG=$(ls -dt logs/wikitext-103_*/log.txt 2>/dev/null | head -1)
 
     if [ $TRAIN_EXIT -ne 0 ]; then
-        echo "[runs.sh] levels=$LEVELS sweep run failed (exit $TRAIN_EXIT). Recording N/A."
-        printf "%s\t%s\t%s\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG" "$TRAIN_EXIT" >> "$TEST5_RESULTS_FILE"
+        echo "[runs.sh] ${KIND} levels=$LEVELS lr=$USED_LR run failed (exit $TRAIN_EXIT). Recording N/A."
+        printf "%s\t%s\t%s\t%s\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG" "$KIND" "$TRAIN_EXIT" >> "$TEST5_RESULTS_FILE"
         sleep 10  # give CUDA a moment to release VRAM after OOM/crash
-        git_commit_push "Test 5 sweep: levels=$LEVELS @ bs=$TEST5_BLOCK_SIZE → FAILED (exit $TRAIN_EXIT)"
+        git_commit_push "Test 5 ${KIND}: levels=$LEVELS lr=$USED_LR @ bs=$TEST5_BLOCK_SIZE → FAILED (exit $TRAIN_EXIT)"
         return
     fi
 
-    # Parse sliding-window BPB from the log
     local BPB
     BPB=$(python -c "
 import re
@@ -313,14 +368,23 @@ log = open('$LATEST_LOG', encoding='utf-8', errors='replace').read()
 m = re.search(r'\[BENCHMARK - Sliding Window\].*?BPB:\s*([\d.]+)', log, re.DOTALL)
 print(m.group(1) if m else 'N/A')
 ")
-    echo "[runs.sh] levels=$LEVELS sliding BPB = $BPB ($LATEST_LOG)"
-    printf "%s\t%s\t%s\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG" >> "$TEST5_RESULTS_FILE"
-    git_commit_push "Test 5 sweep: levels=$LEVELS @ bs=$TEST5_BLOCK_SIZE → BPB sliding $BPB"
+    echo "[runs.sh] ${KIND} levels=$LEVELS lr=$USED_LR sliding BPB = $BPB ($LATEST_LOG)"
+    printf "%s\t%s\t%s\t%s\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG" "$KIND" >> "$TEST5_RESULTS_FILE"
+    git_commit_push "Test 5 ${KIND}: levels=$LEVELS lr=$USED_LR @ bs=$TEST5_BLOCK_SIZE → BPB sliding $BPB"
 }
 
-for L in 5 7 9 11 13; do
-    run_test5_sweep_one $L
+# Main sweep — each level uses its max-stable LR (Position C: heterogeneous LR).
+# Skipping levels=13 by default (OOMs at this config; would need
+# gradient_checkpointing=true to fit in 32 GiB at bs=16384).
+for L in 5 7 9 11; do
+    run_test5_sweep_one $L sweep
 done
+
+# Methodology control — Position C — runs levels=5 at the LOWEST LR used in
+# the sweep (lr=1.14e-3, matching levels=11). Lets us decompose any per-level
+# BPB difference into "depth effect" vs "lr-tuning effect" by comparing
+# levels=5@1.14e-3 against the levels=11 sweep result at the same LR.
+run_test5_sweep_one 5 control 0.00114 0.0000228
 
 echo ""
 echo "============================================================"
@@ -328,12 +392,15 @@ echo "=== Test 5 sweep results ($TEST5_RESULTS_FILE):"
 echo "============================================================"
 cat "$TEST5_RESULTS_FILE"
 
-# Auto-pick winner (lowest BPB among successful runs) and run 5-epoch follow-up
+# Auto-pick winner (lowest BPB among successful sweep runs only — control
+# rows are excluded because they're at a non-tuned LR and would never be the
+# right choice for a 5-epoch follow-up).
 WINNER_LEVELS=$(python -c "
 results = []
 for line in open('$TEST5_RESULTS_FILE'):
     parts = line.rstrip('\n').split('\t')
-    if len(parts) >= 4 and parts[1] != 'N/A' and parts[3] == 'ok':
+    # Format per row: levels, bpb, log, kind, status
+    if len(parts) >= 5 and parts[1] != 'N/A' and parts[3] == 'sweep' and parts[4] == 'ok':
         try:
             results.append((int(parts[0]), float(parts[1])))
         except ValueError:
@@ -341,9 +408,59 @@ for line in open('$TEST5_RESULTS_FILE'):
 print(min(results, key=lambda x: x[1])[0] if results else 'NONE')
 ")
 
+# Helper: find the most recent log matching levels=$1, epochs=$2.
+# If $3 == "complete" require benchmark completion; if "inprogress" require absence.
+find_l_e_log() {
+    local target_L=$1 target_E=$2 status=$3
+    local f L E
+    for f in $(ls -dt logs/wikitext-103_*/log.txt 2>/dev/null | head -30); do
+        L=$(grep -m1 -E '^\[2026.*\][[:space:]]+levels[[:space:]]*:' "$f" 2>/dev/null | awk '{print $NF}')
+        E=$(grep -m1 -E '^\[2026.*\][[:space:]]+epochs[[:space:]]*:' "$f" 2>/dev/null | awk '{print $NF}')
+        [ "$L" = "$target_L" ] || continue
+        [ "$E" = "$target_E" ] || continue
+        if [ "$status" = "complete" ]; then
+            grep -q '=== TRAINING COMPLETE ===' "$f" 2>/dev/null && { echo "$f"; return; }
+        elif [ "$status" = "inprogress" ]; then
+            grep -q '=== TRAINING COMPLETE ===' "$f" 2>/dev/null || { echo "$f"; return; }
+        fi
+    done
+}
+
 if [ "$WINNER_LEVELS" = "NONE" ]; then
     echo "[runs.sh] Test 5 sweep: no successful runs. Skipping 5-epoch follow-up."
+elif [ "$WINNER_LEVELS" = "7" ]; then
+    # levels=7 in this sweep uses lr=0.01, matching the 5-epoch levels=7 run
+    # that was already auto-launched by the prior sweep iteration. Reuse it
+    # if available rather than burning ~5.7h on a redundant run.
+    EXISTING_LOG=$(find_l_e_log 7 5 complete)
+    INPROGRESS_LOG=$(find_l_e_log 7 5 inprogress)
+    if [ -n "$EXISTING_LOG" ]; then
+        echo ""
+        echo "============================================================"
+        echo "=== Test 5 winner: levels=7 — REUSING existing complete 5-epoch run"
+        echo "===   $EXISTING_LOG"
+        echo "============================================================"
+        echo "[runs.sh] Same lr=0.01 / wavelet_crawl=False config; no need to re-train."
+    elif [ -n "$INPROGRESS_LOG" ]; then
+        echo ""
+        echo "============================================================"
+        echo "=== Test 5 winner: levels=7 — 5-epoch run is IN PROGRESS at:"
+        echo "===   $INPROGRESS_LOG"
+        echo "============================================================"
+        echo "[runs.sh] Skipping fresh launch to avoid GPU contention. The existing"
+        echo "         in-progress run will be the Test 5 final result once it finishes."
+    else
+        echo ""
+        echo "============================================================"
+        echo "=== Test 5 winner: levels=7 — no prior 5-epoch run found, launching fresh"
+        echo "============================================================"
+        WINNER_PATCH=$(build_test5_patch $WINNER_LEVELS 5)
+        run_one "Test 5 final (5-ep): levels=$WINNER_LEVELS @ bs=$TEST5_BLOCK_SIZE (sweep winner)" "$WINNER_PATCH"
+        git_commit_push "Test 5 final: levels=$WINNER_LEVELS @ bs=$TEST5_BLOCK_SIZE — 5-epoch run at sweep winner"
+    fi
 else
+    # Winner is levels ∈ {5, 9, 11}: no existing 5-epoch run at the matching
+    # config, launch a fresh one.
     echo ""
     echo "============================================================"
     echo "=== Test 5 winner: levels=$WINNER_LEVELS — launching 5-epoch follow-up"
