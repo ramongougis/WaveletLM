@@ -344,7 +344,7 @@ Drop-in fused kernels: [Liger-Kernel](https://github.com/linkedin/Liger-Kernel)'
 
 1. **No speedup; in fact, slightly slower.** Avg epoch time 4196.5 s vs Test 4's 4091.8 s at the same config (+2.4%). The retroactive explanation matches the profiler data: at bs=16384/MBS=1, per-step kernel work (~187 ms of `aten::mm` alone) dwarfs Python/launch overhead. CUDA Graphs buys little when launch cost is already a tiny fraction of step time, and the graph-capture validation overhead per step nets out negative.
 
-2. **Silent benchmark corruption.** The non-overlapping benchmark produced `BPB: inf` (with `Perplexity: inf`, `Avg Loss: inf`), while the sliding-window benchmark in the same run produced a plausible BPB 1.2499. This is consistent with a known PyTorch issue: CUDA Graphs capture pins tensor pointers to specific memory addresses; switching modules between train and eval mode (which alters dropout behavior, resets `decompose_bypass` running mean state, and disables `cross_window` state) leaves the captured graph referencing stale or freed buffers, surfacing as NaN logits → inf loss in whichever benchmark runs first after the mode switch.
+2. **Silent benchmark corruption (corrected attribution).** The non-overlapping benchmark produced `BPB: inf` (with `Perplexity: inf`, `Avg Loss: inf`), while the sliding-window benchmark in the same run produced a plausible BPB 1.2499. This was originally hypothesized to be a CUDA-Graphs / `model.eval()` mode-switch interaction, but later investigation (see §13) revealed the actual cause: an unrelated **fp16 overflow in the cross-entropy accumulator** in `evaluate_full_validation` and `evaluate_sliding_window`, triggered when summing per-token losses across long T at high per-token loss values. The same checkpoint produces inf under any compile mode, not just `reduce-overhead`. Re-benchmarking with the §13 fix returned a finite BPB. So the inf is *not* evidence against `reduce-overhead` specifically — only the no-speedup finding (item 1 above) stands as the reason for rejection.
 
 `compile_mode` is preserved as a config key (defaulting to `'default'`) so `'max-autotune'` or `'reduce-overhead'` can be re-tested at a different config without code changes — but for the current production-shape workload, `'default'` is the right choice. **The class of optimization that would actually help us is per-kernel fusion (e.g., fused SwiGLU, §12.1) rather than graph-level launch-overhead reduction.** Future quick-wins evaluations should weight this lesson: profile-driven candidate selection only works if the candidate's mechanism aligns with the actual bottleneck. The `reduce-overhead` mechanism (collapse launch overhead) didn't address our actual bottleneck (per-kernel bandwidth).
 
@@ -368,27 +368,37 @@ Run `profile_step.py` at `bs ∈ {256, 1024, 4096, 16384}` first. Address whiche
 
 ---
 
-## 13. Defensive non-finite loss handling at benchmark time
+## 13. Benchmark BPB inf bug (RESOLVED — fp32 cross-entropy accumulator)
 
-**Status: deferred — too invasive for current sweep.**
+**Status: fixed in train.py 2026-05-03; this section preserved as historical record.**
 
-Both `evaluate_full_validation` (non-overlapping) and `evaluate_sliding_window` (sliding) currently sum per-token cross-entropy losses with no guard against non-finite values. A single inf or NaN logit anywhere across hundreds of thousands of scored tokens propagates to total_loss → BPB → headline number, replacing what may be a perfectly reasonable underlying model with `BPB: inf`.
+Both `evaluate_full_validation` (non-overlapping) and `evaluate_sliding_window` (sliding) historically summed per-token cross-entropy losses on **fp16 tensors**. fp16's max representable value is ~65504. At T=16384 with non-trivial per-token loss (~4 nats average), the sum 16384 × 4 ≈ 65,536 *just exceeds* fp16's range, and `loss_per_token.sum()` returns `inf`. Once `inf`, every downstream aggregation propagates: total_loss → BPB → headline number. Symptom was `BPB: inf` despite training itself running cleanly, finite logits from the model, and finite per-token losses inside the tensor. Confirmed via `find_inf_source.py` that the model emits finite outputs across all 17 windows — the overflow is purely in the post-model accumulator.
 
-Two observed failure modes already produce this:
+**Diagnostic timeline:**
+- First inf'd run: `logs/wikitext-103_2026-04-11_02-00-34/log.txt` (latent bug since well before May; just hadn't been triggered by the right config combination — needed bs ≥ 1024 + 1-epoch model + decompose_bypass=true).
+- Hypothesized first as cumsum overflow in `_compute_running_mean` — wrong (cumsum was finite).
+- Hypothesized next as CUDA Graphs / mode-switch under `reduce-overhead` — wrong (correlation not causation; same bug under any compile mode).
+- Hypothesized next as cold-start positions in non-overlap scoring — wrong (the failing positions weren't necessarily cold-start; high per-token loss × large T was the actual trigger).
+- `find_inf_source.py` then localized the issue to NOT being in the model at all.
+- Final diagnosis: fp16 overflow in the cross-entropy `.sum()` accumulator. Fix is one `.float()` cast on the per-token loss tensor before summation.
 
-- **1-epoch model + cold-start positions**: At 1 epoch of training, the model's activations at the first positions of a fresh non-overlapping window can overflow fp16. Sliding-window scoring with `min_context=8192` skips these positions and reports a finite BPB; non-overlap scores them and reports inf. (See logs/wikitext-103_2026-05-02_17-52-31/log.txt — sliding 1.2502 vs non-overlap inf at the same checkpoint.)
-- **Training-time NaN that goes undetected until benchmark**: When training NaN's mid-warmup (e.g., levels=7 at step 1750 with K=3 wavelet_crawl), the entire model becomes NaN and both benchmarks report inf. The headline result loses the partial-training signal that would otherwise be useful for diagnosis.
+**The fix (lines ~440 + ~547 in train.py):**
 
-**Proposed fix:** clip non-finite per-token losses to `log(vocab_size)` (~10.83 for 50,257 vocab) — the cross-entropy of a uniform-prior baseline, which is a defensible "max uncertainty" placeholder. Also log per-batch when clipping fires, so the underlying instability stays visible rather than getting silently masked.
+```python
+loss_per_token = F.cross_entropy(
+    logits.view(-1, V), Y.view(-1).long(), reduction='none')
+total_loss += loss_per_token.float().sum().item()  # ← .float() cast added
+```
 
-**Why deferred:** Changing benchmark semantics breaks comparability between any pre-fix and post-fix BPB numbers. Test 4, Test 1, Test 5, and the comparison tables in `runs.md` and `findings.md` all need to remain comparable to each other and to the pre-release release-config baseline. A benchmark-semantics change is exactly the kind of intervention that needs its own dedicated decision arc, not an inline patch during an active sweep.
+Cast the small per-token-loss tensor (256 KiB at MBS=1, T=16384) to fp32 before summing; do NOT cast the giant logits tensor (would balloon to 26 GiB at MBS=8 / T=16384 / V=50K and OOM). Cross-entropy itself stays in fp16 — individual per-token losses (3-10 nats) are well within fp16 range; only their *sum* needed fp32 precision.
 
-**Right time to take this on:** after the Test 5 sweep completes (clean per-level numbers in hand) and ideally bundled with at least one of:
-- The §11 wavelet_crawl disable ablation (which has its own clean baseline anyway)
-- A 3-seed re-run of the full release config to establish the new baseline under clipping semantics
-- The §12.1 fused SwiGLU evaluation (which also needs a fresh baseline)
+**Companion fixes landed at the same time:**
+- `batch_size = 1` hard-coded in both benchmark functions: benchmark mode runs eager (no compile), so per-batch activation memory is much larger than at training time. MBS=1 keeps benchmarks within VRAM at any depth/T. Per-window outputs are bit-identical at MBS=1 vs MBS=N (no batch-dim mixing in the model).
+- Wholesale config replacement in `benchmark_only` mode: replaces the per-key allowlist merge with `config = dict(run_config); config['benchmark_only'] = True; config['benchmark_run_dir'] = path` so that `seed`, `use_amp`, `amp_dtype`, and any future-added architectural keys all flow through automatically. Rule: in benchmark mode, only `benchmark_only` and `benchmark_run_dir` come from root config.
 
-**Cost of waiting:** any sweep run that NaNs mid-training reports `inf` BPB, which the runs.sh winner-selection logic correctly excludes from the auto-winner pick (`min` over finite values only). So the deferral doesn't break the sweep automation — it just means we lose the partial-training BPB signal from NaN'd runs. Acceptable.
+**Re-benchmark workflow** for previously-inf'd checkpoints uses `rebench.sh` — sets benchmark_only mode pointed at each affected directory, runs the corrected benchmark phase, and parses the new BPB into `benchmark.txt`. The original log.txt's inf lines remain for traceability.
+
+**Cross-run comparability preserved:** sliding-window BPBs that were already finite came back bit-identical post-fix. The fix only changes accumulator precision; it doesn't change the computation semantics.
 
 ---
 
@@ -405,6 +415,6 @@ Two observed failure modes already produce this:
 9. **Per-scale mixer transform ablation (10)**: validates whether FWHT specifically is necessary. Cheap (~10-12h total) and decisive. Cleaner attribution at L=1 — pair with the L=1 plan if (1) above shows L=1 is competitive.
 10. **Wavelet crawl disable ablation (11) — *executed in-line with Test 5***: A/B at levels=5 (crawl on 1.2502 vs off 1.2540, Δ=+0.0038 ≈ 0.44σ in the bs=16384 1-epoch noise regime) confirmed within-noise quality cost. Disabled in the active sweep. Architectural-purity win (convolution-free model) plus ~3% VRAM recovery; no wall-clock speedup as initially expected.
 11. **Step-time speedup quick wins (12)**: profiler-driven. Run `profile_step.py` once to attribute step time across components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever component crosses 25% at `bs=16384`. Fused SwiGLU is now the highest-ROI no-architecture-change candidate (`mode='reduce-overhead'` was tested 2026-05-02 and rejected — see §12.2). Fused Adagrad is the next obvious win for small-batch / eval workloads. Compounds across every subsequent run.
-12. **Defensive non-finite loss handling (13)**: low-priority; bundle with a fresh-baseline run (e.g., §11 wavelet_crawl ablation or a re-run for fused SwiGLU). Defers naturally — current sweep is unaffected because the auto-winner logic already excludes inf BPB rows.
+12. **Benchmark BPB inf bug (13) — RESOLVED 2026-05-03**: fixed via fp32 cross-entropy accumulator. Previously inf'd checkpoints rebenched cleanly. No further work pending.
 13. **Top-K Hadamard thresholding (4)**: pair with bit-packing as a deployment-optimization bundle.
 14. **Inference strategies ablations**: self-explanatory.

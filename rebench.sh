@@ -28,6 +28,7 @@ TARGETS=(
     "logs/wikitext-103_2026-05-02_21-43-22"  # levels=7, crawl=false, 1-epoch
     "logs/wikitext-103_2026-05-03_09-04-00"  # levels=9, crawl=false, lr=3.42e-3, 1-epoch
     "logs/wikitext-103_2026-05-03_10-38-19"  # levels=11, crawl=false, lr=1.14e-3, 1-epoch
+    "logs/wikitext-103_2026-05-03_12-19-18"  # CONTROL: levels=5 @ lr=1.14e-3 (Position-C methodology check)
 )
 
 # Backup root config.json before mutating it
