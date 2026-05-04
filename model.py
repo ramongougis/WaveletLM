@@ -932,6 +932,9 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
+        fht_mean_centering: bool = True,
+        fht_log_transform: bool = False,
+        fht_log_transform_eps: float = 0.1,
     ):
         super().__init__()
         self.C = C
@@ -939,6 +942,9 @@ class WaveletLMBlock(nn.Module):
         self.Cp = next_pow2(C)
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
+        self.fht_mean_centering = fht_mean_centering
+        self.fht_log_transform = fht_log_transform
+        self.fht_log_transform_eps = fht_log_transform_eps
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
@@ -1223,11 +1229,27 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Mean-center on Cp before FWHT to bound non-DC output bins for the
-        # fp16 cast. (DC bin = √N · mean still risks overflow; non-DC bins
-        # become √N · max|x − mean|, much smaller when inputs cluster.)
-        fht_dc = stacked_coeffs.mean(dim=-1, keepdim=True)
-        stacked_coeffs = stacked_coeffs.sub_(fht_dc)
+        # Optional sign-preserving log transform on FWHT input. Compresses
+        # magnitudes (sign(x) · log(|x| + ε)) so the post-FWHT fp16 cast can't
+        # overflow even when residual stream values approach fp16's ceiling.
+        # Applied per-block and NOT inverted after invFWHT — the residual
+        # contribution stays in log-related domain; the network learns around
+        # this. Enabled via config['fht_log_transform']. In-place to avoid
+        # transient memory spike.
+        if self.fht_log_transform:
+            stacked_coeffs = (
+                stacked_coeffs.sign()
+                * (stacked_coeffs.abs() + self.fht_log_transform_eps).log_()
+            )
+
+        # Optional mean-centering on Cp before FWHT to bound non-DC output bins
+        # for the fp16 cast. (DC bin = √N · mean still risks overflow; non-DC
+        # bins become √N · max|x − mean|, much smaller when inputs cluster.)
+        # Restored after invFWHT below. Enabled via config['fht_mean_centering'].
+        fht_dc = None
+        if self.fht_mean_centering:
+            fht_dc = stacked_coeffs.mean(dim=-1, keepdim=True)
+            stacked_coeffs = stacked_coeffs.sub_(fht_dc)
 
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
@@ -1271,8 +1293,11 @@ class WaveletLMBlock(nn.Module):
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
 
-        # Restore DC offset removed before the forward FWHT.
-        mixed_all = mixed_all.add_(fht_dc)
+        # Restore DC offset removed before the forward FWHT (when centering on).
+        # NOTE: log transform (if enabled above) is intentionally NOT inverted —
+        # the residual stream sees the log-domain contribution.
+        if fht_dc is not None:
+            mixed_all = mixed_all.add_(fht_dc)
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1502,6 +1527,9 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
+                fht_mean_centering=config.get("fht_mean_centering", True),
+                fht_log_transform=config.get("fht_log_transform", False),
+                fht_log_transform_eps=config.get("fht_log_transform_eps", 0.1),
             )
             for _ in range(layer_build_count)
         ])
@@ -1952,11 +1980,12 @@ def parameter_breakdown(model, config, logger=None):
             out(f"  Shared lifting:  {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
 
         out(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")
-        out(f"  Layers (total):  {layer_params:>{W},} ({layer_params/1e6:.2f}M)")
+        out(f"  Layers:          {layer_params:>{W},} ({layer_params/1e6:.2f}M)")
 
-        # Per-layer component breakdown. Tracks named-component sum so we can
-        # report a residual "Other" bucket and have the per-layer parts total
-        # exactly to (Layers (total) − shared-lifting-when-shared).
+        # Per-component totals across all N layers. Each `*_per` is the
+        # per-block count; multiply by num_layers to get the total. Tracks the
+        # named-component sum so we can report a residual "Other" bucket whose
+        # per-layer parts sum exactly to (block_total − shared-lifting-when-shared).
         block0 = model.layers[0]
         num_layers = len(model.layers)
         block_total = sum(p.numel() for p in block0.parameters())
@@ -1968,30 +1997,36 @@ def parameter_breakdown(model, config, logger=None):
             shared_lift = 0
             if hasattr(block0, 'lifting_wavelet'):
                 lifting_per = sum(p.numel() for p in block0.lifting_wavelet.parameters())
-                out(f"    Lifting/layer: {lifting_per:>{W-2},} ({lifting_per/1e6:.2f}M)")
+                lifting_tot = lifting_per * num_layers
+                out(f"    Lifting:       {lifting_tot:>{W},} ({lifting_tot/1e6:.2f}M)")
                 named_per += lifting_per
 
         if block0.mixer_depth > 1:
             if hasattr(block0, 'scale_mixers_by_depth'):
                 mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())
                 norm_per = sum(p.numel() for p in block0.mixer_depth_norms.parameters())
-                out(f"    Mixer (depth={block0.mixer_depth}):{mixer_per + norm_per:>{W-2},} ({(mixer_per + norm_per)/1e6:.2f}M)")
+                mixer_tot = (mixer_per + norm_per) * num_layers
+                out(f"    Mixer (depth={block0.mixer_depth}):{mixer_tot:>{W-2},} ({mixer_tot/1e6:.2f}M)")
                 named_per += mixer_per + norm_per
         else:
             mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
-            out(f"    Mixer/layer:   {mixer_per:>{W},} ({mixer_per/1e6:.2f}M)")
+            mixer_tot = mixer_per * num_layers
+            out(f"    Mixer:         {mixer_tot:>{W},} ({mixer_tot/1e6:.2f}M)")
             named_per += mixer_per
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
-            out(f"    MLP/layer:     {mlp_per:>{W},} ({mlp_per/1e6:.2f}M)")
+            mlp_tot = mlp_per * num_layers
+            out(f"    MLP:           {mlp_tot:>{W},} ({mlp_tot/1e6:.2f}M)")
             named_per += mlp_per
         if block0.pkm_enabled:
             pkm_per = sum(p.numel() for p in block0.pkm.parameters())
-            out(f"    PKM/layer:     {pkm_per:>{W},} ({pkm_per/1e6:.2f}M)")
+            pkm_tot = pkm_per * num_layers
+            out(f"    PKM:           {pkm_tot:>{W},} ({pkm_tot/1e6:.2f}M)")
             named_per += pkm_per
         if block0.fwpkm_enabled:
             fwpkm_per = sum(p.numel() for p in block0.fwpkm.parameters())
-            out(f"    FwPKM/layer:   {fwpkm_per:>{W},} ({fwpkm_per/1e6:.2f}M)")
+            fwpkm_tot = fwpkm_per * num_layers
+            out(f"    FwPKM:         {fwpkm_tot:>{W},} ({fwpkm_tot/1e6:.2f}M)")
             named_per += fwpkm_per
         # block_total includes shared-lifting params when shared (lifting_wavelet
         # is a child of every block); exclude them so "Other" reflects only the
@@ -1999,9 +2034,8 @@ def parameter_breakdown(model, config, logger=None):
         # learned_residual alphas, ln1/ln2, embedding_residual_gamma, etc.).
         other_per = block_total - named_per - shared_lift
         if other_per > 0:
-            out(f"    Other/layer:   {other_per:>{W},} ({other_per/1e6:.2f}M)  [proj_out, residual_alphas, scale_routing/weights, history_gains, ln1/ln2, etc.]")
-        if num_layers > 1:
-            out(f"    (× {num_layers} layers; shared lifting counted once above)")
+            other_tot = other_per * num_layers
+            out(f"    Other:         {other_tot:>{W},} ({other_tot/1e6:.2f}M)  [proj_out, residual_alphas, scale_routing/weights, history_gains, ln1/ln2, etc.]")
 
         out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
         out(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")

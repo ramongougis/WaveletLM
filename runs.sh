@@ -291,6 +291,8 @@ print(json.dumps({
     'decompose_bypass': False,
     'decompose_bypass_cross_window': False,
     'compile': True,
+    'fht_mean_centering': True,
+    'fht_log_transform': True,
     'lr': $LR,
     'min_lr': $MIN_LR,
     'eval_interval': 250,
@@ -417,19 +419,21 @@ run_test5_phase2_tier() {
 
 # L=11 progression. Stop at the first tier that produces a parseable BPB.
 # Each tier loosens the failure mode the previous tier could not cure:
-#   stock     → mlp_expansion=10, compile=True (matches production default)
-#   mlp9      → mlp_expansion=9 (test whether the lowered MLP expansion in the
-#               diagnostic was the real fix vs. mean centering)
-#   no-compile → mlp_expansion=9 + compile=False (rule out a torch.compile
-#               numerical interaction)
-# If all three fail (NaN at step ~431 even with no-compile), the inconsistency
-# between diagnostic and training is deeper than the tested axes — investigate
-# manually before further sweeps.
+#   mlp10+compile → mlp_expansion=10, compile=True (matches production default)
+#   mlp9+compile  → mlp_expansion=9 (test whether the lowered MLP expansion in
+#                   the diagnostic was the real fix vs. mean centering)
+# All tiers also have fht_mean_centering=True and fht_log_transform=True via
+# build_test5_patch (the FHT stability defaults are not part of the override).
+# The previously-attempted no-compile tier was removed: at L=11/bs=16384/MBS=1
+# eager mode reliably OOMs (model doesn't fit without torch.compile's fusion).
+# If both surviving tiers fail (NaN), the inconsistency between diagnostic and
+# training is deeper than the tested axes — investigate manually before
+# further sweeps.
 PHASE2_WIN_LEVEL=""
 PHASE2_WIN_BPB=""
 PHASE2_WIN_OVERRIDE=""
 PHASE2_WIN_TIER=""
-for TIER in "stock|" "mlp9|{\"mlp_expansion\": 9}" "no-compile|{\"mlp_expansion\": 9, \"compile\": false}"; do
+for TIER in "mlp10+compile|" "mlp9+compile|{\"mlp_expansion\": 9}"; do
     TIER_LABEL="${TIER%%|*}"
     OVERRIDE="${TIER#*|}"
     if run_test5_phase2_tier 11 "$TIER_LABEL" "$OVERRIDE"; then
@@ -441,8 +445,37 @@ for TIER in "stock|" "mlp9|{\"mlp_expansion\": 9}" "no-compile|{\"mlp_expansion\
     fi
 done
 
+# L=5 sanity ablation: confirm the combined (mean_centering=true, log_transform=true)
+# transform doesn't BPB-regress vs the previous L=5 baseline (which had no
+# log_transform). Runs at 1 epoch with the same patch builder, so it inherits
+# both flags = True. INFORMATIONAL ONLY — its BPB does NOT enter the 5-epoch
+# winner pick below; the 5-epoch follow-up is restricted to L=11 (winning tier)
+# or L=7 (fallback) per the existing logic.
+echo ""
+echo "============================================================"
+echo "=== L=5 sanity ablation: fht_mean_centering=True + fht_log_transform=True (1 epoch)"
+echo "============================================================"
+set_keys "$(build_test5_patch 5 1 0.01 0.0002)"
+run_train_with_nan_watch
+L5_ABLATION_EXIT=$?
+L5_ABLATION_BPB=""
+if [ -n "$RUN_LOGDIR" ]; then
+    L5_ABLATION_BPB=$(extract_bpb_sliding "$RUN_LOGDIR")
+fi
+if [ -n "$L5_ABLATION_BPB" ]; then
+    echo "[runs.sh] L=5 ablation completed: BPB sliding=$L5_ABLATION_BPB"
+    git_commit_push "Test 5 Phase 2 L=5 ablation [mean_center+log_transform]: BPB sliding=$L5_ABLATION_BPB"
+elif [ $L5_ABLATION_EXIT -eq 99 ]; then
+    echo "[runs.sh] L=5 ablation killed by NaN-watch."
+    git_commit_push "Test 5 Phase 2 L=5 ablation [mean_center+log_transform] FAILED (NaN early-stop)"
+else
+    echo "[runs.sh] L=5 ablation failed exit $L5_ABLATION_EXIT."
+    git_commit_push "Test 5 Phase 2 L=5 ablation [mean_center+log_transform] FAILED exit $L5_ABLATION_EXIT"
+fi
+
 # 5-epoch follow-up: at the L=11 winning tier if any survived, otherwise at
 # the prior best stable level (L=7, BPB sliding 1.0974 from the earlier sweep).
+# L=5 ablation result is intentionally NOT considered.
 echo ""
 echo "============================================================"
 echo "=== Test 5 Phase 2 follow-up pick"
@@ -480,7 +513,7 @@ fi
 # ============================================================
 # Reset config to L=2 release default (matches README Training section)
 # ============================================================
-set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250, "decompose_bypass": false, "decompose_bypass_cross_window": false, "compile": true, "wavelet_crawl": false, "lr": 0.01, "min_lr": 0.0002}'
+set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250, "decompose_bypass": false, "decompose_bypass_cross_window": false, "compile": true, "wavelet_crawl": false, "lr": 0.01, "min_lr": 0.0002, "fht_mean_centering": true, "fht_log_transform": false}'
 
 git_commit_push "Reset config.json to L=2 release default after Test 5 Phase 2"
 
