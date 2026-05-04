@@ -1958,7 +1958,7 @@ def parameter_breakdown(model, config, logger=None):
     out(f"\n{'='*60}")
     out(f"PARAMETER BREAKDOWN")
     out(f"{'='*60}")
-    out(f"Total parameters:    {total:>{W},} ({total/1e6:.2f}M)")
+    out(f"Total parameters:  {total:>{W},} ({total/1e6:.2f}M)")
     if trainable != total:
         out(f"Trainable parameters:{trainable:>{W},} ({trainable/1e6:.2f}M)")
 
