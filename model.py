@@ -2208,7 +2208,17 @@ def parameter_breakdown(model, config, logger=None):
             fwpkm_per = sum(p.numel() for p in block0.fwpkm.parameters())
             out(f"    FwPKM/layer:   {fwpkm_per:>{W},} ({fwpkm_per/1e6:.2f}M)")
 
-        out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
+        # When the LM head is weight-tied to the token embedding, its tensor
+        # is the same Parameter object as the embedding — counted once in
+        # `total` (PyTorch's parameters() deduplicates shared modules) and
+        # therefore zero ADDITIONAL params at the LM head line.
+        lm_head_tied = (
+            getattr(model.lm_head, 'weight', None) is model.token_embedding.weight
+        )
+        if lm_head_tied:
+            out(f"  LM head:         {0:>{W},} additional (shared with embedding)")
+        else:
+            out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
         out(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")
 
     out(f"{'='*60}\n")
