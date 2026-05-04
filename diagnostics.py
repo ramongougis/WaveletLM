@@ -255,6 +255,12 @@ def main():
     ap.add_argument('--no_gradient_checkpointing', action='store_true',
                     help='Disable gradient_checkpointing (default: on — saves ~50%% activation memory '
                          'so eager-mode levels=11 fits in 32 GiB)')
+    ap.add_argument('--no_forward_hooks', action='store_true',
+                    help='Skip per-module forward NaN-catcher hooks. Use this when --enable_compile is '
+                         'set: hooks call .item() inside the model, which forces dynamo graph breaks '
+                         'at every module and can suppress fusion-sensitive NaNs. With this flag, only '
+                         'autograd anomaly mode is armed, which catches backward NaN/Inf without '
+                         'breaking the compiled forward graph.')
     args = ap.parse_args()
 
     # Validate args
@@ -388,10 +394,14 @@ def main():
                 debug_files_created.append(ckpt_path)
                 print(f"  [step {step}] Saved pre-NaN checkpoint: {ckpt_path}")
 
-                catcher = NanForwardCatcher(model)
-                catcher.install()
+                if not args.no_forward_hooks:
+                    catcher = NanForwardCatcher(model)
+                    catcher.install()
+                    print(f"  [step {step}] Forward hooks installed.")
+                else:
+                    print(f"  [step {step}] Forward hooks SKIPPED (--no_forward_hooks).")
                 torch.autograd.set_detect_anomaly(True)
-                print(f"  [step {step}] Forward hooks installed + autograd anomaly mode enabled")
+                print(f"  [step {step}] autograd anomaly mode enabled.")
 
             # Reset hook state at the start of every armed step so the catcher
             # reports per-step rather than just the very first failure

@@ -58,6 +58,7 @@ def pad_features_to_pow2(x: torch.Tensor, C_pad: int):
 # 2. FREQUENCY SPACE - Fast Hadamard Transform
 # ==============================================================================
 
+@torch.compiler.disable
 def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
     """Iterative 'Butterfly' FWHT. Memory efficient (N log N), but kernel-heavy.
     Best for very large dimensions (C >= 2048).
@@ -112,14 +113,16 @@ class FastHadamardTransform(nn.Module):
             torch.cat([h, -h], dim=1)
         ], dim=0)
 
+    @torch.compiler.disable
     def forward(self, x):
+        # @torch.compiler.disable forces this op out of any fused graph so the
+        # fp32 internal cast is preserved exactly. Without this, dynamo can
+        # fuse the FWHT with surrounding fp16 ops and elide the .float()
+        # promotion — diagnosed as the source of compile-only NaNs at L=11/
+        # bs=16384 (forward hooks suppress the NaN by introducing graph breaks
+        # at module boundaries; this decorator achieves the same effect by
+        # design, without the diagnostic overhead).
         if self.use_matrix:
-            # Cast to fp32 for the matmul. The Hadamard matrix H has entries
-            # ±1/sqrt(N), so each output element is bounded by sqrt(N) × max|input|.
-            # In the worst case (input near fp16 range), this can overflow fp16
-            # for the same reason the iterative path can — handled with the
-            # same fp32 cast pattern. See fwht_ortho_iterative's docstring for
-            # the full diagnosis.
             orig_dtype = x.dtype
             return torch.matmul(x.float(), self.H.float()).to(orig_dtype)
         else:
