@@ -1252,6 +1252,11 @@ class WaveletLMBlock(nn.Module):
                         mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
                 mixed_spec = torch.stack(mixed_by_scale, dim=2)
 
+        # Apply same cap to inverse FWHT input (mixer output) so the inverse
+        # FWHT output is bounded the same way the forward FWHT output is.
+        if self.fht_input_cap_enabled:
+            mixed_spec = mixed_spec.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
+
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
 
