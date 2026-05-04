@@ -910,8 +910,8 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
-        fht_log_transform: bool = False,
-        fht_log_eps: float = 1e-3,
+        fht_input_cap_enabled: bool = False,
+        fht_input_cap_value: float = 1000.0,
     ):
         super().__init__()
         self.C = C
@@ -919,8 +919,8 @@ class WaveletLMBlock(nn.Module):
         self.Cp = next_pow2(C)
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
-        self.fht_log_transform = fht_log_transform
-        self.fht_log_eps = fht_log_eps
+        self.fht_input_cap_enabled = fht_input_cap_enabled
+        self.fht_input_cap_value = fht_input_cap_value
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
@@ -1205,14 +1205,13 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional sign-preserving natural log on FWHT input: sign(x) · ln(|x| + ε).
-        # ε prevents log(0) = -∞; smaller ε → closer to actual log everywhere.
-        # Discontinuous at x=0 (jumps from +ln(1/ε) to -ln(1/ε) across zero);
-        # backward gradient 1/(|x|+ε) peaks at 1/ε near x=0 — at ε=1e-3 that's
-        # 1000, manageable by AMP scaler dynamics. NOT inverted after invFWHT.
-        if self.fht_log_transform:
-            log_abs = (stacked_coeffs.abs() + self.fht_log_eps).log()
-            stacked_coeffs = log_abs.copysign_(stacked_coeffs)
+        # Optional hard cap on FWHT input: clamp(x, -cap, cap). Bounds FWHT
+        # output magnitude to √Cp · cap. At cap=1000, Cp=2048: bound ≈ 45000,
+        # safely under fp16's 65504 ceiling. Trade-off: gradient is zero for
+        # any element with |x| > cap (dead zone), so weights producing
+        # consistently saturated activations get no learning signal.
+        if self.fht_input_cap_enabled:
+            stacked_coeffs = stacked_coeffs.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
 
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
@@ -1484,8 +1483,8 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
-                fht_log_transform=config.get("fht_log_transform", False),
-                fht_log_eps=config.get("fht_log_eps", 1e-3),
+                fht_input_cap_enabled=config.get("fht_input_cap_enabled", False),
+                fht_input_cap_value=config.get("fht_input_cap_value", 1000.0),
             )
             for _ in range(layer_build_count)
         ])
