@@ -129,6 +129,91 @@ def causal_haar_reconstruct(approx: torch.Tensor, details: List[torch.Tensor]) -
         cur = (cur + details[level]) * inv_sqrt2
     return cur
 
+class DiagonalLowRankLinear(nn.Module):
+    """Compressed Linear with W = diag(D) + U @ V parameterization.
+
+    For an effective C×C weight matrix:
+        D ∈ R^C       diagonal vector
+        U ∈ R^(C×r)   low-rank left factor
+        V ∈ R^(r×C)   low-rank right factor
+
+    Total params: C + 2·C·r vs C² for full Linear. At C=2048, r=16:
+    67,584 vs 4,194,304 (98.4% reduction). At C=2048, r=64: 264,192
+    (93.7% reduction). Forward: y = x·D + (x · V^T) · U^T + b.
+    """
+    def __init__(self, dim, rank, bias=True, device=None, dtype=None):
+        super().__init__()
+        self.dim = dim
+        self.rank = rank
+        f = {'device': device, 'dtype': dtype}
+        self.D = nn.Parameter(torch.zeros(dim, **f))
+        self.U = nn.Parameter(torch.empty(dim, rank, **f))
+        self.V = nn.Parameter(torch.empty(rank, dim, **f))
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(dim, **f))
+        else:
+            self.register_parameter('bias', None)
+        nn.init.normal_(self.U, std=0.01)
+        nn.init.normal_(self.V, std=0.01)
+
+    @torch.no_grad()
+    def init_identity(self, scale: float = 1.0):
+        """Set W = scale · I (D=scale, U=0, V=0). Used for haar lifting init."""
+        self.D.fill_(scale)
+        self.U.zero_()
+        self.V.zero_()
+        if self.bias is not None:
+            self.bias.zero_()
+
+    @torch.no_grad()
+    def init_zero(self):
+        """Set W = 0 (D=0, U=0, V=0). Used for zero lifting init."""
+        self.D.zero_()
+        self.U.zero_()
+        self.V.zero_()
+        if self.bias is not None:
+            self.bias.zero_()
+
+    @torch.no_grad()
+    def init_random(self, std: float = 0.01):
+        """Small-std random init across D, U, V."""
+        nn.init.normal_(self.D, std=std)
+        nn.init.normal_(self.U, std=std)
+        nn.init.normal_(self.V, std=std)
+        if self.bias is not None:
+            self.bias.zero_()
+
+    @torch.no_grad()
+    def scale_by(self, factor: float):
+        """Multiply D by factor in-place (for stab_lifting_level_scaling).
+        Affects only the diagonal component; U/V correction left as-is."""
+        self.D.mul_(factor)
+
+    def forward(self, x):
+        y = x * self.D
+        y = y + (x @ self.V.transpose(-2, -1)) @ self.U.transpose(-2, -1)
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+
+def _lifting_compression_group(level: int, num_levels: int) -> int:
+    """3-group level-sharing assignment for the compressed lifting cascade.
+
+    For levels=7, returns groups derived from analyze_lifting.py's cross-level
+    cosine matrix on the L=1 / 5-epoch winner — adjacent levels share more
+    direction (cos 0.74-0.82) and fall into a 3-block pattern. For other
+    levels values, splits evenly into 3 groups by index. Re-running
+    analyze_lifting.py at a different `levels` is recommended before relying
+    on the heuristic split for that configuration."""
+    if num_levels <= 3:
+        return level  # one group per level — no meaningful sharing
+    if num_levels == 7:
+        return 0 if level <= 1 else (1 if level <= 4 else 2)
+    third = num_levels / 3.0
+    return 0 if level < third else (1 if level < 2 * third else 2)
+
+
 class LiftingWaveletDecompose(nn.Module):
     """Learnable wavelet decomposition via parameterized lifting scheme.
 
@@ -149,6 +234,8 @@ class LiftingWaveletDecompose(nn.Module):
         stab_lifting_level_scaling: bool = False,
         wavelet_crawl: bool = False,
         wavelet_crawl_k: int = 3,
+        lifting_diaglowrank: bool = False,
+        lifting_level_sharing: bool = False,
     ):
         super().__init__()
         self.levels = levels
@@ -158,6 +245,28 @@ class LiftingWaveletDecompose(nn.Module):
         self.linear_only = linear_only
         self.wavelet_crawl = wavelet_crawl
         self.wavelet_crawl_k = wavelet_crawl_k
+        self.lifting_diaglowrank = lifting_diaglowrank
+        self.lifting_level_sharing = lifting_level_sharing
+
+        # Compression validity: only supports the standard hidden_mult=1, non-
+        # linear-only path. Other configurations weren't covered by the
+        # analyze_lifting.py study and would need their own analysis.
+        if (lifting_diaglowrank or lifting_level_sharing) and (
+            linear_only or hidden_mult != 1
+        ):
+            raise ValueError(
+                "lifting_diaglowrank / lifting_level_sharing require "
+                "linear_only=False and hidden_mult=1 (the analyzed config)."
+            )
+
+        # Per-matrix-type ranks from analyze_lifting.py: three diagonal-dominant
+        # types (avg diag energy 71-76%, cross-level cos 0.74-0.77) compress at
+        # r=16. The outlier update_nets[L].3 (48.7% diag energy, 0.54 cross-
+        # level cos) needs r=64 and is never level-shared.
+        PREDICT_RANK = 16
+        UPDATE_0_RANK = 16
+        UPDATE_3_RANK = 64
+        self._diaglowrank_ranks = (PREDICT_RANK, PREDICT_RANK, UPDATE_0_RANK, UPDATE_3_RANK)
         if wavelet_crawl:
             if wavelet_crawl_k % 2 != 1:
                 raise ValueError(f"wavelet_crawl_k must be odd, got {wavelet_crawl_k}")
@@ -186,8 +295,43 @@ class LiftingWaveletDecompose(nn.Module):
         self.predict_nets = nn.ModuleList()
         self.update_nets = nn.ModuleList()
 
+        # Compressed-lifting paths share three of four matrix types across level
+        # groups (predict.0, predict.3, update.0). update.3 is per-level always.
+        # Pre-build the shared module pool keyed by group when level_sharing.
+        if lifting_diaglowrank and lifting_level_sharing:
+            unique_groups = sorted({
+                _lifting_compression_group(l, levels) for l in range(levels)
+            })
+            shared_lifting_modules = {
+                g: {
+                    'predict_0': DiagonalLowRankLinear(C, PREDICT_RANK, bias=True, device=device, dtype=dtype),
+                    'predict_3': DiagonalLowRankLinear(C, PREDICT_RANK, bias=True, device=device, dtype=dtype),
+                    'update_0':  DiagonalLowRankLinear(C, UPDATE_0_RANK, bias=True, device=device, dtype=dtype),
+                }
+                for g in unique_groups
+            }
+            # Init shared modules once (subsequent level reuses don't re-init)
+            for g in unique_groups:
+                pm = shared_lifting_modules[g]
+                if init_wavelet == 'haar':
+                    pm['predict_0'].init_identity(1.0)
+                    pm['predict_3'].init_identity(1.0)
+                    pm['update_0'].init_identity(1.0)
+                elif init_wavelet == 'zero':
+                    pm['predict_0'].init_zero()
+                    pm['predict_3'].init_zero()
+                    pm['update_0'].init_zero()
+                elif init_wavelet == 'random':
+                    pm['predict_0'].init_random()
+                    pm['predict_3'].init_random()
+                    pm['update_0'].init_random()
+        else:
+            shared_lifting_modules = None
+
         for level in range(levels):
             if linear_only:
+                # Compression validity check above ensures linear_only is False
+                # when compression is on, so this path is the original behavior.
                 predict = nn.Linear(C, C, device=device, dtype=dtype)
                 update = nn.Linear(C, C, device=device, dtype=dtype)
 
@@ -211,6 +355,45 @@ class LiftingWaveletDecompose(nn.Module):
                     nn.init.zeros_(predict.bias)
                     nn.init.normal_(update.weight, std=0.01)
                     nn.init.zeros_(update.bias)
+            elif lifting_diaglowrank:
+                # Compressed Sequential: replace the two Linear(C, C) layers
+                # at indices 0 and 3 with DiagonalLowRankLinear modules.
+                if lifting_level_sharing:
+                    g = _lifting_compression_group(level, levels)
+                    predict_0 = shared_lifting_modules[g]['predict_0']
+                    predict_3 = shared_lifting_modules[g]['predict_3']
+                    update_0  = shared_lifting_modules[g]['update_0']
+                else:
+                    predict_0 = DiagonalLowRankLinear(C, PREDICT_RANK, bias=True, device=device, dtype=dtype)
+                    predict_3 = DiagonalLowRankLinear(C, PREDICT_RANK, bias=True, device=device, dtype=dtype)
+                    update_0  = DiagonalLowRankLinear(C, UPDATE_0_RANK, bias=True, device=device, dtype=dtype)
+                # update[3] is the analyzer-flagged outlier — never shared, rank=64
+                update_3 = DiagonalLowRankLinear(C, UPDATE_3_RANK, bias=True, device=device, dtype=dtype)
+
+                predict = nn.Sequential(predict_0, nn.GELU(), nn.Dropout(dropout), predict_3)
+                update  = nn.Sequential(update_0,  nn.GELU(), nn.Dropout(dropout), update_3)
+
+                # Init for non-shared modules: shared modules were init'd above.
+                if not lifting_level_sharing:
+                    if init_wavelet == 'haar':
+                        predict_0.init_identity(1.0)
+                        predict_3.init_identity(1.0)
+                        update_0.init_identity(1.0)
+                    elif init_wavelet == 'zero':
+                        predict_0.init_zero()
+                        predict_3.init_zero()
+                        update_0.init_zero()
+                    elif init_wavelet == 'random':
+                        predict_0.init_random()
+                        predict_3.init_random()
+                        update_0.init_random()
+                # update_3 (per-level outlier) — init regardless of sharing
+                if init_wavelet == 'haar':
+                    update_3.init_identity(0.5)  # matches existing 0.5*I haar init for update[3]
+                elif init_wavelet == 'zero':
+                    update_3.init_zero()
+                elif init_wavelet == 'random':
+                    update_3.init_random()
             else:
                 predict = nn.Sequential(
                     nn.Linear(C, hidden_dim, device=device, dtype=dtype),
@@ -271,6 +454,19 @@ class LiftingWaveletDecompose(nn.Module):
                     if linear_only:
                         predict.weight.data.mul_(lvl_scale)
                         update.weight.data.mul_(lvl_scale)
+                    elif lifting_diaglowrank:
+                        # update[3] is per-level — safe to scale every iteration.
+                        # predict[3] is shared across a level group when
+                        # lifting_level_sharing — scaling it per-level would
+                        # compound across levels in the same group, so only
+                        # scale once per group (the first level).
+                        update[3].scale_by(lvl_scale)
+                        if (not lifting_level_sharing) or (
+                            level == 0 or
+                            _lifting_compression_group(level, levels) !=
+                            _lifting_compression_group(level - 1, levels)
+                        ):
+                            predict[3].scale_by(lvl_scale)
                     else:
                         predict[3].weight.data.mul_(lvl_scale)
                         update[3].weight.data.mul_(lvl_scale)
@@ -914,6 +1110,8 @@ class WaveletLMBlock(nn.Module):
         fht_input_cap_value: float = 1000.0,
         fht_thue_morse_signflips: bool = False,
         fht_thue_morse_increment: int = 21,
+        lifting_diaglowrank: bool = False,
+        lifting_level_sharing: bool = False,
     ):
         super().__init__()
         self.C = C
@@ -978,6 +1176,8 @@ class WaveletLMBlock(nn.Module):
                     stab_lifting_level_scaling=stab_lifting_level_scaling,
                     wavelet_crawl=wavelet_crawl,
                     wavelet_crawl_k=wavelet_crawl_k,
+                    lifting_diaglowrank=lifting_diaglowrank,
+                    lifting_level_sharing=lifting_level_sharing,
                 )
 
             if untied_reconstruction:
@@ -1002,6 +1202,8 @@ class WaveletLMBlock(nn.Module):
                         device=device,
                         dtype=dtype,
                         stab_lifting_level_scaling=stab_lifting_level_scaling,
+                        lifting_diaglowrank=lifting_diaglowrank,
+                        lifting_level_sharing=lifting_level_sharing,
                     )
                     self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_reconstruct_wavelet)
             else:
@@ -1396,6 +1598,8 @@ class WaveletLM(nn.Module):
                 ),
                 wavelet_crawl=config.get("wavelet_crawl", False),
                 wavelet_crawl_k=config.get("wavelet_crawl_k", 3),
+                lifting_diaglowrank=config.get("lifting_diaglowrank", False),
+                lifting_level_sharing=config.get("lifting_level_sharing", False),
             )
             lifting_params = sum(p.numel() for p in shared_lifting.parameters())
             print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params")
@@ -1530,6 +1734,8 @@ class WaveletLM(nn.Module):
                 fht_input_cap_value=config.get("fht_input_cap_value", 1000.0),
                 fht_thue_morse_signflips=config.get("fht_thue_morse_signflips", False),
                 fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
+                lifting_diaglowrank=config.get("lifting_diaglowrank", False),
+                lifting_level_sharing=config.get("lifting_level_sharing", False),
             )
             for _ in range(layer_build_count)
         ])
