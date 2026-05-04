@@ -1229,18 +1229,19 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional sign-preserving log transform on FWHT input. Compresses
-        # magnitudes (sign(x) · log(|x| + ε)) so the post-FWHT fp16 cast can't
-        # overflow even when residual stream values approach fp16's ceiling.
-        # Applied per-block and NOT inverted after invFWHT — the residual
-        # contribution stays in log-related domain; the network learns around
-        # this. Enabled via config['fht_log_transform']. In-place to avoid
-        # transient memory spike.
+        # Optional sign-preserving log compression on FWHT input via asinh.
+        # asinh(x) = log(x + √(x² + 1)):
+        #   - asinh(x) ≈ x for small |x| (identity near zero, no resolution loss)
+        #   - asinh(x) ≈ sign(x) · log(2|x|) for large |x| (log compression)
+        # Smooth at x=0 (unlike sign(x)·log(|x|+ε), which is discontinuous and
+        # generates spurious gradient spikes). Gradient 1/√(x²+1) ≤ 1 → fp16-safe
+        # forward and backward at any AMP scale, no ε tuning required. Single
+        # CUDA kernel, single allocation. Applied per-block and NOT inverted
+        # after invFWHT — residual contribution stays in compressed domain.
+        # Enabled via config['fht_log_transform']. (fht_log_transform_eps kept
+        # in config for API compat with the old sign·log formulation; unused.)
         if self.fht_log_transform:
-            stacked_coeffs = (
-                stacked_coeffs.sign()
-                * (stacked_coeffs.abs() + self.fht_log_transform_eps).log_()
-            )
+            stacked_coeffs = torch.asinh(stacked_coeffs)
 
         # Optional mean-centering on Cp before FWHT to bound non-DC output bins
         # for the fp16 cast. (DC bin = √N · mean still risks overflow; non-DC
@@ -1958,7 +1959,7 @@ def parameter_breakdown(model, config, logger=None):
     out(f"\n{'='*60}")
     out(f"PARAMETER BREAKDOWN")
     out(f"{'='*60}")
-    out(f"Total parameters:    {total:>{W},} ({total/1e6:.2f}M)")
+    out(f"Total parameters:  {total:>{W},} ({total/1e6:.2f}M)")
     if trainable != total:
         out(f"Trainable parameters:{trainable:>{W},} ({trainable/1e6:.2f}M)")
 
@@ -2035,7 +2036,7 @@ def parameter_breakdown(model, config, logger=None):
         other_per = block_total - named_per - shared_lift
         if other_per > 0:
             other_tot = other_per * num_layers
-            out(f"    Other:         {other_tot:>{W},} ({other_tot/1e6:.2f}M)  [proj_out, residual_alphas, scale_routing/weights, history_gains, ln1/ln2, etc.]")
+            out(f"    Other:         {other_tot:>{W},} ({other_tot/1e6:.2f}M)")
 
         out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
         out(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")
