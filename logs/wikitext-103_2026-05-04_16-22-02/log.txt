@@ -1,0 +1,276 @@
+[2026-05-04 16:22:02] Starting WaveletLM Training on WIKITEXT-103
+[2026-05-04 16:22:02] Device: cuda, AMP: True (fp16)
+[2026-05-04 16:22:02] 
+[2026-05-04 16:22:02] 	dataset                             : wikitext-103
+[2026-05-04 16:22:02] 	tokenizer                           : auto
+[2026-05-04 16:22:02] 	out_dir                             : logs
+[2026-05-04 16:22:02] 	compile                             : True
+[2026-05-04 16:22:02] 	compile_mode                        : default
+[2026-05-04 16:22:02] 	seed                                : 1337
+[2026-05-04 16:22:02] 	epochs                              : 1
+[2026-05-04 16:22:02] 	micro_batch_size                    : 1
+[2026-05-04 16:22:02] 	grad_accum                          : 1
+[2026-05-04 16:22:02] 	block_size                          : 16384
+[2026-05-04 16:22:02] 	eval_interval                       : 250
+[2026-05-04 16:22:02] 	skip_warmup_saves                   : True
+[2026-05-04 16:22:02] 	C                                   : 2048
+[2026-05-04 16:22:02] 	layers                              : 1
+[2026-05-04 16:22:02] 	levels                              : 7
+[2026-05-04 16:22:02] 	low_rank                            : 4
+[2026-05-04 16:22:02] 	mlp_expansion                       : 10
+[2026-05-04 16:22:02] 	mlp_layers                          : 2
+[2026-05-04 16:22:02] 	pkm_enabled                         : False
+[2026-05-04 16:22:02] 	pkm_num_keys                        : 16384
+[2026-05-04 16:22:02] 	pkm_top_k                           : 32
+[2026-05-04 16:22:02] 	pkm_heads                           : 1
+[2026-05-04 16:22:02] 	fwpkm_enabled                       : True
+[2026-05-04 16:22:02] 	fwpkm_num_keys                      : 8281
+[2026-05-04 16:22:02] 	fwpkm_top_k                         : 32
+[2026-05-04 16:22:02] 	fwpkm_heads                         : 1
+[2026-05-04 16:22:02] 	fwpkm_inference_updates             : False
+[2026-05-04 16:22:02] 	fwpkm_update_lr                     : 0.01
+[2026-05-04 16:22:02] 	fwpkm_chunk_size                    : 64
+[2026-05-04 16:22:02] 	wavelet_mode                        : lifting
+[2026-05-04 16:22:02] 	shared_lifting_weights              : True
+[2026-05-04 16:22:02] 	untied_reconstruction               : False
+[2026-05-04 16:22:02] 	multi_basis_lifting                 : False
+[2026-05-04 16:22:02] 	multi_basis_inits                   : ['haar', 'random']
+[2026-05-04 16:22:02] 	cross_scale_gating                  : True
+[2026-05-04 16:22:02] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-05-04 16:22:02] 	stable_parametrization              : False
+[2026-05-04 16:22:02] 	stab_spectral_norm                  : False
+[2026-05-04 16:22:02] 	stab_ff_scaling                     : False
+[2026-05-04 16:22:02] 	stab_embed_scaling                  : False
+[2026-05-04 16:22:02] 	stab_proj_out_scaling               : False
+[2026-05-04 16:22:02] 	stab_mixer_eps_scaling              : False
+[2026-05-04 16:22:02] 	stab_lifting_level_scaling          : False
+[2026-05-04 16:22:02] 	looped_blocks                       : False
+[2026-05-04 16:22:02] 	looped_blocks_count                 : 8
+[2026-05-04 16:22:02] 	wavelet_crawl                       : False
+[2026-05-04 16:22:02] 	wavelet_crawl_k                     : 3
+[2026-05-04 16:22:02] 	lifting_linear_only                 : False
+[2026-05-04 16:22:02] 	lifting_hidden_mult                 : 1
+[2026-05-04 16:22:02] 	lifting_init                        : haar
+[2026-05-04 16:22:02] 	lifting_dropout                     : 0.0
+[2026-05-04 16:22:02] 	lifting_diaglowrank                 : True
+[2026-05-04 16:22:02] 	lifting_level_sharing               : False
+[2026-05-04 16:22:02] 	use_mixer_gate                      : True
+[2026-05-04 16:22:02] 	mixer_gate_activation               : silu
+[2026-05-04 16:22:02] 	mixer_depth                         : 1
+[2026-05-04 16:22:02] 	mixer_depth_stabilizers             : False
+[2026-05-04 16:22:02] 	mixer_depth_residuals               : False
+[2026-05-04 16:22:02] 	decompose_bypass                    : True
+[2026-05-04 16:22:02] 	decompose_bypass_cross_window       : True
+[2026-05-04 16:22:02] 	decompose_bypass_ema                : False
+[2026-05-04 16:22:02] 	learned_residual                    : True
+[2026-05-04 16:22:02] 	skip_proj_out                       : False
+[2026-05-04 16:22:02] 	stochastic_depth_rate               : 0.0
+[2026-05-04 16:22:02] 	dropout_embedding                   : 0.2
+[2026-05-04 16:22:02] 	dropout_projection                  : 0.1
+[2026-05-04 16:22:02] 	dropout_mixer                       : 0.1
+[2026-05-04 16:22:02] 	dropout_mlp                         : 0.1
+[2026-05-04 16:22:02] 	dropout_lm_head                     : 0.24
+[2026-05-04 16:22:02] 	optimizer                           : Adagrad
+[2026-05-04 16:22:02] 	optimizer_eps                       : 2e-13
+[2026-05-04 16:22:02] 	lr                                  : 0.01
+[2026-05-04 16:22:02] 	min_lr                              : 0.0002
+[2026-05-04 16:22:02] 	warmup_fraction                     : 0.3
+[2026-05-04 16:22:02] 	grad_clip                           : 1.0
+[2026-05-04 16:22:02] 	tie_embedding_to_lm_head            : True
+[2026-05-04 16:22:02] 	gradient_checkpointing              : False
+[2026-05-04 16:22:02] 	use_amp                             : True
+[2026-05-04 16:22:02] 	amp_dtype                           : fp16
+[2026-05-04 16:22:02] 	allow_tf32                          : True
+[2026-05-04 16:22:02] 	generation_prompt                   : The history of
+[2026-05-04 16:22:02] 	temperature                         : 1.0
+[2026-05-04 16:22:02] 	num_new_tokens                      : 512
+[2026-05-04 16:22:02] 	top_p                               : 0.95
+[2026-05-04 16:22:02] 	repetition_penalty                  : 1.1
+[2026-05-04 16:22:02] 	benchmark_only                      : False
+[2026-05-04 16:22:02] 	benchmark_run_dir                   : 
+[2026-05-04 16:22:02] 	multinodal_enabled                  : False
+[2026-05-04 16:22:02] 	multinodal_num_cells                : 2
+[2026-05-04 16:22:02] 	multinodal_cell_dim                 : 512
+[2026-05-04 16:22:02] 	multinodal_seeds                    : [42, 137]
+[2026-05-04 16:22:02] 	multinodal_combination              : average
+[2026-05-04 16:22:02] 	multinodal_cross_cell_gating        : False
+[2026-05-04 16:22:02] 	multinodal_cross_cell_gate_interval : 1
+[2026-05-04 16:22:02] 	multinodal_features_per_cell        : -1
+[2026-05-04 16:22:02] 	multinodal_bagged_eps               : 1e-06
+[2026-05-04 16:22:02] 	quantize_enabled                    : False
+[2026-05-04 16:22:02] 	quantize_mixer_coarse_bits          : 8
+[2026-05-04 16:22:02] 	quantize_mixer_mid_bits             : 4
+[2026-05-04 16:22:02] 	quantize_mixer_fine_bits            : 2
+[2026-05-04 16:22:02] 	quantize_mlp_bits                   : 4
+[2026-05-04 16:22:02] 	quantize_lifting_bits               : 16
+[2026-05-04 16:22:02] 	quantize_embedding_bits             : 8
+[2026-05-04 16:22:02] 	per_layer_embedding                 : True
+[2026-05-04 16:22:02] 	loop_iterations                     : 1
+[2026-05-04 16:22:02] 	weight_decay                        : 1e-06
+[2026-05-04 16:22:02] 
+[2026-05-04 16:22:02] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-04 16:22:02] [Dataset] Loading wikitext-103 from cache...
+[2026-05-04 16:22:03] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-04 16:22:03] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-04 16:22:03] [Dataset] Vocab size: 50257
+[2026-05-04 16:22:03] [Schedule] 7307 steps/epoch, 7307 total steps
+[2026-05-04 16:22:03] [Schedule] Warmup: 2192 steps (30%)
+[2026-05-04 16:22:06] [Run Folder] logs/wikitext-103_2026-05-04_16-22-02
+[2026-05-04 16:22:06] 
+============================================================
+[2026-05-04 16:22:06] PARAMETER BREAKDOWN
+[2026-05-04 16:22:06] ============================================================
+[2026-05-04 16:22:06] Total parameters:             278,741,068 (278.74M)
+[2026-05-04 16:22:06]   Shared lifting:               3,325,952 (3.33M)
+[2026-05-04 16:22:06]   Token embedding:            102,926,336 (102.93M)
+[2026-05-04 16:22:06]   Layers (total):             175,810,636 (175.81M)
+[2026-05-04 16:22:06]     Mixer/layer:               58,818,560 (58.82M)
+[2026-05-04 16:22:06]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-04 16:22:06]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-04 16:22:06]   LM head:                    102,926,336 (102.93M)
+[2026-05-04 16:22:06]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-04 16:22:06] ============================================================
+
+[2026-05-04 16:22:06] [Model] 278.74M parameters (278.74M trainable)
+[2026-05-04 16:22:06] [Compile] torch.compile enabled (mode=default)
+[2026-05-04 16:22:07] [Optimizer] Adagrad, lr=0.01, eps=2e-13, weight_decay=1e-06
+[2026-05-04 16:22:07] 
+=== EPOCH 1/1 ===
+[2026-05-04 16:26:34] Step 250: train loss 6.2391, val loss 6.1977		lr=1.14e-03
+[2026-05-04 16:26:34] New Best Val: 6.1977 (skipping save during warmup)
+[2026-05-04 16:28:55] Step 500: train loss 5.8551, val loss 5.7899		lr=2.28e-03
+[2026-05-04 16:28:55] New Best Val: 5.7899 (skipping save during warmup)
+[2026-05-04 16:31:16] Step 750: train loss 5.6139, val loss 5.5791		lr=3.42e-03
+[2026-05-04 16:31:16] New Best Val: 5.5791 (skipping save during warmup)
+[2026-05-04 16:33:37] Step 1000: train loss 5.3438, val loss 5.3107		lr=4.56e-03
+[2026-05-04 16:33:37] New Best Val: 5.3107 (skipping save during warmup)
+[2026-05-04 16:35:58] Step 1250: train loss 5.1746, val loss 5.1319		lr=5.70e-03
+[2026-05-04 16:35:58] New Best Val: 5.1319 (skipping save during warmup)
+[2026-05-04 16:38:18] Step 1500: train loss 5.1269, val loss 5.0943		lr=6.84e-03
+[2026-05-04 16:38:18] New Best Val: 5.0943 (skipping save during warmup)
+[2026-05-04 16:40:39] Step 1750: train loss 4.9908, val loss 4.9687		lr=7.98e-03
+[2026-05-04 16:40:39] New Best Val: 4.9687 (skipping save during warmup)
+[2026-05-04 16:43:00] Step 2000: train loss 5.0478, val loss 5.0313		lr=9.12e-03
+[2026-05-04 16:45:20] Step 2250: train loss 4.9313, val loss 4.9155		lr=1.00e-02
+[2026-05-04 16:45:20] New Best Val: 4.9155. Saving...
+[2026-05-04 16:47:44] Step 2500: train loss 4.7575, val loss 4.6750		lr=9.91e-03
+[2026-05-04 16:47:44] New Best Val: 4.6750. Saving...
+[2026-05-04 16:50:09] Step 2750: train loss 4.6640, val loss 4.6397		lr=9.72e-03
+[2026-05-04 16:50:09] New Best Val: 4.6397. Saving...
+[2026-05-04 16:52:32] Step 3000: train loss 4.6526, val loss 4.5889		lr=9.41e-03
+[2026-05-04 16:52:32] New Best Val: 4.5889. Saving...
+[2026-05-04 16:54:56] Step 3250: train loss 4.5126, val loss 4.5035		lr=9.00e-03
+[2026-05-04 16:54:56] New Best Val: 4.5035. Saving...
+[2026-05-04 16:57:20] Step 3500: train loss 4.4495, val loss 4.4228		lr=8.50e-03
+[2026-05-04 16:57:20] New Best Val: 4.4228. Saving...
+[2026-05-04 16:59:44] Step 3750: train loss 4.3678, val loss 4.3570		lr=7.93e-03
+[2026-05-04 16:59:44] New Best Val: 4.3570. Saving...
+[2026-05-04 17:02:08] Step 4000: train loss 4.3646, val loss 4.3345		lr=7.28e-03
+[2026-05-04 17:02:08] New Best Val: 4.3345. Saving...
+[2026-05-04 17:04:32] Step 4250: train loss 4.2577, val loss 4.2484		lr=6.58e-03
+[2026-05-04 17:04:32] New Best Val: 4.2484. Saving...
+[2026-05-04 17:06:57] Step 4500: train loss 4.2129, val loss 4.2474		lr=5.85e-03
+[2026-05-04 17:06:57] New Best Val: 4.2474. Saving...
+[2026-05-04 17:09:21] Step 4750: train loss 4.1485, val loss 4.1762		lr=5.10e-03
+[2026-05-04 17:09:21] New Best Val: 4.1762. Saving...
+[2026-05-04 17:11:46] Step 5000: train loss 4.1295, val loss 4.1183		lr=4.35e-03
+[2026-05-04 17:11:46] New Best Val: 4.1183. Saving...
+[2026-05-04 17:14:10] Step 5250: train loss 4.1029, val loss 4.0832		lr=3.62e-03
+[2026-05-04 17:14:10] New Best Val: 4.0832. Saving...
+[2026-05-04 17:16:34] Step 5500: train loss 4.0466, val loss 4.0805		lr=2.92e-03
+[2026-05-04 17:16:34] New Best Val: 4.0805. Saving...
+[2026-05-04 17:18:59] Step 5750: train loss 4.0324, val loss 4.0589		lr=2.28e-03
+[2026-05-04 17:18:59] New Best Val: 4.0589. Saving...
+[2026-05-04 17:21:23] Step 6000: train loss 3.9930, val loss 4.0337		lr=1.70e-03
+[2026-05-04 17:21:23] New Best Val: 4.0337. Saving...
+[2026-05-04 17:23:47] Step 6250: train loss 3.9685, val loss 4.0290		lr=1.20e-03
+[2026-05-04 17:23:47] New Best Val: 4.0290. Saving...
+[2026-05-04 17:26:12] Step 6500: train loss 3.9836, val loss 3.9908		lr=7.91e-04
+[2026-05-04 17:26:12] New Best Val: 3.9908. Saving...
+[2026-05-04 17:28:36] Step 6750: train loss 3.9584, val loss 4.0222		lr=4.85e-04
+[2026-05-04 17:30:56] Step 7000: train loss 3.9764, val loss 3.9822		lr=2.87e-04
+[2026-05-04 17:30:56] New Best Val: 3.9822. Saving...
+[2026-05-04 17:33:20] Step 7250: train loss 3.9525, val loss 3.9915		lr=2.03e-04
+[2026-05-04 17:34:33] Epoch 1 done. Time: 4292.6s (1.19h)
+[2026-05-04 17:34:33]   Train loss: 3.9584, Val loss: 3.9853
+[2026-05-04 17:34:33]   Cumulative time: 1.21h
+[2026-05-04 17:34:33] 
+=== TRAINING COMPLETE ===
+[2026-05-04 17:34:33] Best Val Loss: 3.9822 (epoch 1)
+[2026-05-04 17:34:33] Avg Epoch Time: 4292.6s
+[2026-05-04 17:34:33] Total Time: 4346.1s
+[2026-05-04 17:34:33] 
+Training Peak VRAM: 24668 MiB
+[2026-05-04 17:34:34] 
+Loading best model for benchmarks...
+[2026-05-04 17:34:37] Best model loaded.
+[2026-05-04 17:34:37] 
+[BENCHMARK] Non-overlapping: 17 windows of length 16384
+[2026-05-04 17:34:40] 
+[BENCHMARK - Non-overlapping]
+[2026-05-04 17:34:40]   Perplexity: 55.1907
+[2026-05-04 17:34:40]   BPT: 5.7864
+[2026-05-04 17:34:40]   BPB: 1.2839
+[2026-05-04 17:34:40]   Avg Loss: 4.0108
+[2026-05-04 17:34:40] 
+[SLIDING WINDOW] block_size=16384, stride=8192, min_context=8192, 34 windows
+[2026-05-04 17:34:47] 
+[BENCHMARK - Sliding Window]
+[2026-05-04 17:34:47]   Perplexity: 55.5497
+[2026-05-04 17:34:47]   BPT: 5.7957
+[2026-05-04 17:34:47]   BPB: 1.2860
+[2026-05-04 17:34:47]   Avg Loss: 4.0173
+[2026-05-04 17:34:47]   Stride: 8192, Min Context: 8192
+[2026-05-04 17:34:48] 
+=== GENERATION — Standard ===
+[2026-05-04 17:34:48] Prompt: The history of
+[2026-05-04 17:34:56] Generated:
+The history of Pawtucket recorded in 1957 , by artist Luis Enrique Es Plyanne in 1994 . 
+
+
+ In 1935 he went to Hamburg with Montgomery 's sister children and the children . The two brothers had been promoted and acted in an unofficial house . He wrote approximately 14 @,@ 500 documents that Harrison was writing Wavell 's death . He also wrote reptiles , although they did not establish a permanent presence in the theatre , but rather sturdled with bodies being caught as a child , but became more reserved for the Catholic Church , began to disagree with the residents of the genders , thus generating a strong connection between the two men . In response , Chandler brought his family to a house still at the Washington D.C. degree in West Virginia , and traveled to Santa Barbara in California . By this time this , Gregory agreed to produce , in December battle , who thought it would be his cause of death in 1912 to deal with . 
+
+
+
+
+ = = College = = 
+
+
+
+
+ Despite the positive reception in Oliver Quinn 'soun in his classic biography of Laurits verdict descriptions , repealing the law . In 1933 , Albright spontaneous and was receiving a large sample of Brown 's work . As a result , in 1943 , he was offered a role during the family 's New World , including fields and museums . The museum operates a museum much more and more generous ; this association report : " ... our skulls have looked so far almost day and occasionally years of school life . " She admitted a private reading " Che Cooper of N. loyally owned Jentis , and the film 's design , humorous and accurate . 
+
+
+ Although preparing to revise the painting , he uses his The Natural History Advisory Committee had to arrest Dundee 's head , but also buckles the recipes that she was a " seven honest @-@ wing psychobindrical " , a series which also marks on the fallout from unionuses of Tintin " . Canis and Venisus " focussed on both the Christian and Middle Eastern genres in the Indian Ocean and probably the only Telugu version of the 1873 book by ASAPies . 
+
+
+
+
+ = = Career = = 
+
+
+
+
+
+
+ = = = Founding , and later critics = = = 
+
+
+
+
+ As with all the major science groups , the British identified sound of " Shakespeare " and " Sestar " is a rocky and popular monarch " . It has three soloing distrusted twins , and later one in Frome 's Children of
+
+[2026-05-04 17:34:56] === GENERATION — Strategies ===
+[2026-05-04 17:34:56] Prompt: The history of
+[2026-05-04 17:35:11] Generated:
+The history of the project is that of a new , more detailed and well @-@ known examples were " no longer in use . " 
+
+
+ In his book The History of the People 's Republic of China ( 1866 ) , which had been used for the first time since it was still under construction on the site . The building has an extensive collection of paintings , including the museum 's library , the churchyard , the St Mary 's Church , was built at the end of the 19th century as a result of its restoration . It was demolished in 1960 by architect John P. Clark in 1781 . A second bridge was added to the north of the old building in the late 12th century , when the house was rebuilt . This wall is now in use today ; however , the chapel was not dedicated to the buildings on the main entrance to the former castle . The west window contains three towers with windows and walls are decorated with carved stone blocks and a roofed garden . The tower is divided into two rectangular rooms and two storeys tall . An architectural style , designed by the sculptor Thomas Witherspoon , although the windows in the south aisle are from the east wing . The building 's exterior is adorned with Gothic Revival architecture . The building features a large central courtyard , also with a circular fireplace , with the obelisk , and a gatehouse with a terrace or octagonal towers . The facade is topped with brick , wood and white windows above the base , but the original design is similar to those found on the right side . It has a flat top and one of the few surviving examples of this structure . These are the four @-@ part choral works such as the front of the inner chamber , the crown of the nave . The east window is a Grade II listed building , with the exception of the lower section of the hall , and the other , the floor of the upper floors are covered with a door on each side of the platform . The room is topped with a small window and a two @-@ story stairway that dates back up to the 16th century . There are several other rooms and the grounds that the keep has a wider range of buildings , but this may be a major point for visitors . 
+
+
+ The earliest examples include the sculpture in the north @-@ west corner of the temple complex . The other is the Old Hall , which is used for the first time in the form of a memorial to the House of Lords in England . It includes the church , the Lord Warden
+
+[2026-05-04 17:35:11] Metrics: MeanLogP=-1.5791 | MeanH=4.99 | D1=0.521 | D2=0.859 | D3=0.978 | Rep4=0.020
+[2026-05-04 17:35:11] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
+[2026-05-04 17:35:11] Training Peak VRAM: 24668 MiB
