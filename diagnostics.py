@@ -219,6 +219,15 @@ def build_failing_config(levels: int, lr: float, min_lr: float,
         'stab_mixer_eps_scaling': False,
         'stab_lifting_level_scaling': False,
         'multinodal_enabled': False,
+        # Match the live runs.sh L=11 stability config so the diagnostic
+        # reproduces the production NaN faithfully (the FWHT path is now
+        # mean-centered with asinh log compression on its input — neither
+        # of which prevented the step ~424 NaN in the mlp10+compile run).
+        'fht_mean_centering': True,
+        'fht_log_transform': True,
+        'fht_log_transform_eps': 0.1,
+        'decompose_bypass': False,
+        'decompose_bypass_cross_window': False,
     }
 
 
