@@ -1205,27 +1205,27 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional per-position RMS rescaling around the FWHT-mixer-invFWHT span.
-        # Computes rms = sqrt(mean(x², dim=Cp) + eps), divides input by it,
-        # then re-multiplies after invFWHT. Bounds the FWHT output magnitude
-        # so the fp16 cast can't overflow regardless of residual stream growth.
-        # eps=1.0 acts as a soft floor: low-magnitude positions pass through
-        # near-identity (rms_eff ≈ 1), high-magnitude positions get full
-        # rescaling, transition is smooth. Backward 1/rms_eff is bounded by
-        # 1/√ε = 1, so AMP-scaled gradients stay within fp16 range at any scale.
+        # Optional per-position RMS² rescaling around the FWHT-mixer-invFWHT span.
+        # Computes rms_sq = mean(x², dim=Cp) + eps (no sqrt), divides input by
+        # it, then re-multiplies after invFWHT. Heavier compression than RMS:
+        # for a position with rms = M, x/rms² has magnitudes ≈ x/M², shrinking
+        # quadratically with input scale. eps=1.0 acts as a soft floor:
+        # low-magnitude positions (mean(x²) << 1) pass through near-identity
+        # (rms_sq ≈ 1), high-magnitude positions get aggressive rescaling.
+        # Smooth at all transitions.
         #
-        # Use .detach() on the input to the RMS computation: rms is a per-batch
-        # normalization statistic, not a learnable quantity. Detaching stops
-        # autograd from saving the .square() intermediate (which would persist
-        # at full stacked-tensor size, ~750 MiB at L=11/bs=16384). Gradient
-        # still flows correctly through the rescaling: at the division and
-        # restore-multiplication, rms is treated as a constant scale factor,
-        # exactly the desired backward behavior.
-        rms = None
+        # Use .detach() on the input to the RMS computation: rms_sq is a
+        # per-batch normalization statistic, not a learnable quantity. Detaching
+        # stops autograd from saving the .square() intermediate (which would
+        # persist at full stacked-tensor size, ~750 MiB at L=11/bs=16384).
+        # Gradient still flows correctly through the rescaling: at division
+        # and restore-multiplication, rms_sq is treated as a constant scale
+        # factor, exactly the desired backward behavior.
+        rms_sq = None
         if self.fht_rms_rescale:
-            rms = (stacked_coeffs.detach().square().mean(dim=-1, keepdim=True)
-                   + self.fht_rms_eps).sqrt()
-            stacked_coeffs = stacked_coeffs / rms
+            rms_sq = (stacked_coeffs.detach().square().mean(dim=-1, keepdim=True)
+                      + self.fht_rms_eps)
+            stacked_coeffs = stacked_coeffs / rms_sq
 
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
@@ -1270,8 +1270,8 @@ class WaveletLMBlock(nn.Module):
         mixed_all = self.fht(mixed_spec)
 
         # Restore per-position scale removed before the forward FWHT.
-        if rms is not None:
-            mixed_all = mixed_all * rms
+        if rms_sq is not None:
+            mixed_all = mixed_all * rms_sq
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
