@@ -2216,7 +2216,7 @@ def parameter_breakdown(model, config, logger=None):
             getattr(model.lm_head, 'weight', None) is model.token_embedding.weight
         )
         if lm_head_tied:
-            out(f"  LM head:         {0:>{W},} additional (shared with embedding)")
+            out(f"  LM head (shared):{0:>{W},} additional")
         else:
             out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
         out(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")
