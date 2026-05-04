@@ -1213,9 +1213,18 @@ class WaveletLMBlock(nn.Module):
         # near-identity (rms_eff ≈ 1), high-magnitude positions get full
         # rescaling, transition is smooth. Backward 1/rms_eff is bounded by
         # 1/√ε = 1, so AMP-scaled gradients stay within fp16 range at any scale.
+        #
+        # Use .detach() on the input to the RMS computation: rms is a per-batch
+        # normalization statistic, not a learnable quantity. Detaching stops
+        # autograd from saving the .square() intermediate (which would persist
+        # at full stacked-tensor size, ~750 MiB at L=11/bs=16384). Gradient
+        # still flows correctly through the rescaling: at the division and
+        # restore-multiplication, rms is treated as a constant scale factor,
+        # exactly the desired backward behavior.
         rms = None
         if self.fht_rms_rescale:
-            rms = (stacked_coeffs.square().mean(dim=-1, keepdim=True) + self.fht_rms_eps).sqrt()
+            rms = (stacked_coeffs.detach().square().mean(dim=-1, keepdim=True)
+                   + self.fht_rms_eps).sqrt()
             stacked_coeffs = stacked_coeffs / rms
 
         # FHT forward
