@@ -116,10 +116,11 @@ nan_safe_run() {
         return $?
     fi
 
-    # Poll log for NaN every 30s while training runs
+    # Poll log for "loss nan" (catches both train and val loss) every 30s.
+    # Case-insensitive to be robust to log-format changes.
     while kill -0 $TRAIN_PID 2>/dev/null; do
-        if grep -q "NaN" "$LOG_FILE" 2>/dev/null; then
-            echo "[runs.sh] NaN detected in $LOG_FILE; terminating PID $TRAIN_PID."
+        if grep -qi "loss nan" "$LOG_FILE" 2>/dev/null; then
+            echo "[runs.sh] NaN loss detected in $LOG_FILE; terminating PID $TRAIN_PID."
             kill -TERM $TRAIN_PID 2>/dev/null
             sleep 5
             kill -KILL $TRAIN_PID 2>/dev/null
@@ -235,20 +236,16 @@ print('[' + ', '.join(['1.0']*h + ['0.5']*h) + ']')
 
 get_stable_lr() {
     # get_stable_lr <levels> → echoes "<peak_lr> <min_lr>"
-    # Per-level peak LR is set to half the last finite step's LR observed in
-    # the prior K=False sweep — fp16 cliff failures need real margin, and the
-    # observed NaN-onset between training-step granularity hides the actual
-    # cliff position. min_lr scaled to keep the cosine schedule's 50× peak/min
-    # ratio so the late-training optimization shape stays consistent.
-    #   levels=5/7  : trained stably at lr=0.01 with K=False → keep
-    #   levels=9    : last finite step at lr=6.84e-3 → peak=3.42e-3
-    #   levels=11   : last finite step at lr=2.28e-3 → peak=1.14e-3
+    # NOTE: this table is now stale for L>=9 — pre-mean-centering the FWHT
+    # cliff forced lower per-level LRs. With the in-place mean-centering in
+    # model.py, all levels are believed stable at lr=0.01 (pending the active
+    # L=11 progression). Active sweep code passes `0.01 0.0002` explicitly,
+    # so this table is currently unused; left in place as a fallback for any
+    # caller that omits lr/min_lr.
     case "$1" in
-        5|7)   echo "0.01 0.0002" ;;
-        9)     echo "0.00342 0.0000684" ;;
-        11)    echo "0.00114 0.0000228" ;;
-        13)    echo "0.001 0.00002" ;;  # OOMs at this config; LR is placeholder
-        *)     echo "0.01 0.0002" ;;
+        5|7|9|11) echo "0.01 0.0002" ;;
+        13)       echo "0.001 0.00002" ;;  # OOMs at this config; LR is placeholder
+        *)        echo "0.01 0.0002" ;;
     esac
 }
 
@@ -291,6 +288,9 @@ print(json.dumps({
     'levels': $LEVELS,
     'per_scale_mixer_widths': $PSMW,
     'wavelet_crawl': False,
+    'decompose_bypass': False,
+    'decompose_bypass_cross_window': False,
+    'compile': True,
     'lr': $LR,
     'min_lr': $MIN_LR,
     'eval_interval': 250,
@@ -314,12 +314,6 @@ extract_bpb_sliding() {
     awk '/\[BENCHMARK - Sliding Window\]/{flag=1; next} flag && /BPB:/{print $2; exit}' "$F"
 }
 
-# Run one Phase-2 tier: builds the levels-N base patch, optionally overlays
-# a tier-specific override (e.g. {"mlp_expansion": 9} or {"compile": false}),
-# launches train.py, and judges success by whether the run produced a
-# parseable sliding-window BPB. Captures the new log dir into PHASE2_LOGDIR
-# and the resulting BPB into PHASE2_BPB. Returns 0 on success (BPB present),
-# non-zero otherwise.
 # Launch `python train.py` in the background, identify the new log dir it
 # creates, and poll log.txt every 30s for a NaN train- or val-loss entry
 # (matches lines like "Step 750: train loss nan, val loss nan ..."). On NaN,
@@ -486,7 +480,7 @@ fi
 # ============================================================
 # Reset config to L=2 release default (matches README Training section)
 # ============================================================
-set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250}'
+set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250, "decompose_bypass": false, "decompose_bypass_cross_window": false, "compile": true, "wavelet_crawl": false, "lr": 0.01, "min_lr": 0.0002}'
 
 git_commit_push "Reset config.json to L=2 release default after Test 5 Phase 2"
 

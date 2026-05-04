@@ -1954,25 +1954,54 @@ def parameter_breakdown(model, config, logger=None):
         out(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")
         out(f"  Layers (total):  {layer_params:>{W},} ({layer_params/1e6:.2f}M)")
 
-        # Per-layer component breakdown
+        # Per-layer component breakdown. Tracks named-component sum so we can
+        # report a residual "Other" bucket and have the per-layer parts total
+        # exactly to (Layers (total) − shared-lifting-when-shared).
         block0 = model.layers[0]
+        num_layers = len(model.layers)
+        block_total = sum(p.numel() for p in block0.parameters())
+        named_per = 0
+
+        if model.shared_lifting_weights and hasattr(block0, 'lifting_wavelet'):
+            shared_lift = sum(p.numel() for p in block0.lifting_wavelet.parameters())
+        else:
+            shared_lift = 0
+            if hasattr(block0, 'lifting_wavelet'):
+                lifting_per = sum(p.numel() for p in block0.lifting_wavelet.parameters())
+                out(f"    Lifting/layer: {lifting_per:>{W-2},} ({lifting_per/1e6:.2f}M)")
+                named_per += lifting_per
+
         if block0.mixer_depth > 1:
             if hasattr(block0, 'scale_mixers_by_depth'):
                 mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())
                 norm_per = sum(p.numel() for p in block0.mixer_depth_norms.parameters())
                 out(f"    Mixer (depth={block0.mixer_depth}):{mixer_per + norm_per:>{W-2},} ({(mixer_per + norm_per)/1e6:.2f}M)")
+                named_per += mixer_per + norm_per
         else:
             mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
             out(f"    Mixer/layer:   {mixer_per:>{W},} ({mixer_per/1e6:.2f}M)")
+            named_per += mixer_per
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
             out(f"    MLP/layer:     {mlp_per:>{W},} ({mlp_per/1e6:.2f}M)")
+            named_per += mlp_per
         if block0.pkm_enabled:
             pkm_per = sum(p.numel() for p in block0.pkm.parameters())
             out(f"    PKM/layer:     {pkm_per:>{W},} ({pkm_per/1e6:.2f}M)")
+            named_per += pkm_per
         if block0.fwpkm_enabled:
             fwpkm_per = sum(p.numel() for p in block0.fwpkm.parameters())
             out(f"    FwPKM/layer:   {fwpkm_per:>{W},} ({fwpkm_per/1e6:.2f}M)")
+            named_per += fwpkm_per
+        # block_total includes shared-lifting params when shared (lifting_wavelet
+        # is a child of every block); exclude them so "Other" reflects only the
+        # block-local glue (proj_out, scale_routing/weights, history_gains,
+        # learned_residual alphas, ln1/ln2, embedding_residual_gamma, etc.).
+        other_per = block_total - named_per - shared_lift
+        if other_per > 0:
+            out(f"    Other/layer:   {other_per:>{W},} ({other_per/1e6:.2f}M)  [proj_out, residual_alphas, scale_routing/weights, history_gains, ln1/ln2, etc.]")
+        if num_layers > 1:
+            out(f"    (× {num_layers} layers; shared lifting counted once above)")
 
         out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
         out(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")
