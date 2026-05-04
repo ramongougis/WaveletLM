@@ -318,6 +318,8 @@ print(json.dumps({
     'wavelet_crawl': False,
     'fht_input_cap_enabled': False,
     'fht_input_cap_value': 10000.0,
+    'fht_thue_morse_signflips': True,
+    'fht_thue_morse_increment': 21,
     'lr': $LR,
     'min_lr': $MIN_LR,
     'eval_interval': 250,

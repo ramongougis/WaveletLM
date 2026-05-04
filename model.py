@@ -912,6 +912,8 @@ class WaveletLMBlock(nn.Module):
         per_layer_embedding: bool = False,
         fht_input_cap_enabled: bool = False,
         fht_input_cap_value: float = 1000.0,
+        fht_thue_morse_signflips: bool = False,
+        fht_thue_morse_increment: int = 21,
     ):
         super().__init__()
         self.C = C
@@ -921,7 +923,30 @@ class WaveletLMBlock(nn.Module):
         self.wavelet_mode = wavelet_mode
         self.fht_input_cap_enabled = fht_input_cap_enabled
         self.fht_input_cap_value = fht_input_cap_value
+        self.fht_thue_morse_signflips = fht_thue_morse_signflips
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
+
+        # Permuted Thue-Morse ±1 pattern for breaking spectral bias on FWHT
+        # input (and symmetrically post-invFWHT). counter += odd_increment per
+        # element, sign = +1 if popcount(counter) is even, -1 if odd. Per
+        # O'Connor's "Fast Transforms for Neural Networks" — random/sub-random
+        # sign flips at the boundary between structured signals (wavelet
+        # coefficients) and the FWHT prevent residual stream's natural axes
+        # from aligning with specific Walsh basis modes. Buffer is tiny (Cp
+        # fp32 = 8 KiB at Cp=2048), no learnable parameters.
+        if fht_thue_morse_signflips:
+            counter = 0
+            signs = []
+            mask = 0xFFFFFFFF  # 32-bit wraparound
+            for _ in range(self.Cp):
+                signs.append(1.0 if (bin(counter).count("1") & 1) == 0 else -1.0)
+                counter = (counter + fht_thue_morse_increment) & mask
+            sign_tensor = torch.tensor(
+                signs,
+                dtype=dtype if dtype is not None else torch.float32,
+                device=device,
+            )
+            self.register_buffer("fht_signs", sign_tensor, persistent=False)
 
         # Wavelet decomposition
         if wavelet_mode == "lifting":
@@ -1205,6 +1230,12 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
+        # Optional permuted Thue-Morse ±1 sign flips before forward FWHT.
+        # Breaks alignment between residual stream axes and Walsh basis modes,
+        # preventing energy concentration in specific Walsh components.
+        if self.fht_thue_morse_signflips:
+            stacked_coeffs = stacked_coeffs * self.fht_signs
+
         # Optional hard cap on FWHT input: clamp(x, -cap, cap). Bounds FWHT
         # output magnitude to √Cp · cap. At cap=1000, Cp=2048: bound ≈ 45000,
         # safely under fp16's 65504 ceiling. Trade-off: gradient is zero for
@@ -1259,6 +1290,13 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
+
+        # Apply same Thue-Morse sign flips after invFWHT. Since D² = I, this
+        # restores the residual stream to canonical position-space coordinates
+        # — the FWHT path's spectral basis is rotated, but the contribution
+        # back to the residual stream is in the original axis system.
+        if self.fht_thue_morse_signflips:
+            mixed_all = mixed_all * self.fht_signs
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1490,6 +1528,8 @@ class WaveletLM(nn.Module):
                 per_layer_embedding=config.get("per_layer_embedding", False),
                 fht_input_cap_enabled=config.get("fht_input_cap_enabled", False),
                 fht_input_cap_value=config.get("fht_input_cap_value", 1000.0),
+                fht_thue_morse_signflips=config.get("fht_thue_morse_signflips", False),
+                fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
             )
             for _ in range(layer_build_count)
         ])
