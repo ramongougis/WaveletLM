@@ -910,6 +910,8 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
+        fht_rms_rescale: bool = False,
+        fht_rms_eps: float = 1.0,
     ):
         super().__init__()
         self.C = C
@@ -917,6 +919,8 @@ class WaveletLMBlock(nn.Module):
         self.Cp = next_pow2(C)
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
+        self.fht_rms_rescale = fht_rms_rescale
+        self.fht_rms_eps = fht_rms_eps
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
@@ -1201,6 +1205,19 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
+        # Optional per-position RMS rescaling around the FWHT-mixer-invFWHT span.
+        # Computes rms = sqrt(mean(x², dim=Cp) + eps), divides input by it,
+        # then re-multiplies after invFWHT. Bounds the FWHT output magnitude
+        # so the fp16 cast can't overflow regardless of residual stream growth.
+        # eps=1.0 acts as a soft floor: low-magnitude positions pass through
+        # near-identity (rms_eff ≈ 1), high-magnitude positions get full
+        # rescaling, transition is smooth. Backward 1/rms_eff is bounded by
+        # 1/√ε = 1, so AMP-scaled gradients stay within fp16 range at any scale.
+        rms = None
+        if self.fht_rms_rescale:
+            rms = (stacked_coeffs.square().mean(dim=-1, keepdim=True) + self.fht_rms_eps).sqrt()
+            stacked_coeffs = stacked_coeffs / rms
+
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
@@ -1242,6 +1259,10 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
+
+        # Restore per-position scale removed before the forward FWHT.
+        if rms is not None:
+            mixed_all = mixed_all * rms
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1471,6 +1492,8 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
+                fht_rms_rescale=config.get("fht_rms_rescale", False),
+                fht_rms_eps=config.get("fht_rms_eps", 1.0),
             )
             for _ in range(layer_build_count)
         ])

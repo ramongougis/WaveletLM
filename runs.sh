@@ -243,10 +243,10 @@ nan_safe_run() {
 # stride, same eval set, same LR — fixed-LR apples-to-apples).
 # ============================================================
 TEST5_BLOCK_SIZE=16384
-TEST5_RESULTS_FILE="logs/test5_levels_sweep_results.txt"
-# Note: this file is truncated and re-populated inside the Phase 2 block
-# below (after parse_sliding_bpb_from_dir is defined) so that BPBs come
-# from the latest benchmark.txt / log.txt rather than stale hardcoded values.
+# Per-iteration results accumulate in a multi-line bash variable instead
+# of a logs/ file (in-memory only — no commit pollution, no merge conflicts).
+# Format per line, tab-separated: levels  bpb  log_path  phase  status
+TEST5_RESULTS_LINES=""
 
 build_psmw() {
     # Builds a per_scale_mixer_widths JSON array for a given levels value.
@@ -316,6 +316,8 @@ print(json.dumps({
     'levels': $LEVELS,
     'per_scale_mixer_widths': $PSMW,
     'wavelet_crawl': False,
+    'fht_rms_rescale': True,
+    'fht_rms_eps': 1.0,
     'lr': $LR,
     'min_lr': $MIN_LR,
     'eval_interval': 250,
@@ -366,18 +368,18 @@ run_test5_phase2_iter() {
 
     if [ $EXIT -eq 99 ]; then
         echo "[runs.sh] levels=$LEVELS NaN'd at lr=0.01 ($LATEST_LOG_DIR). Recording N/A."
-        printf "%s\t%s\t%s/log.txt\tphase2\tnan\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" >> "$TEST5_RESULTS_FILE"
+        TEST5_RESULTS_LINES+=$(printf "%s\t%s\t%s/log.txt\tphase2\tnan\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR")$'\n'
         git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 NaN'd"
     elif [ $EXIT -ne 0 ]; then
         echo "[runs.sh] levels=$LEVELS failed exit $EXIT ($LATEST_LOG_DIR). Recording N/A."
-        printf "%s\t%s\t%s/log.txt\tphase2\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" "$EXIT" >> "$TEST5_RESULTS_FILE"
+        TEST5_RESULTS_LINES+=$(printf "%s\t%s\t%s/log.txt\tphase2\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" "$EXIT")$'\n'
         sleep 10
         git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 FAILED exit $EXIT"
     else
         local BPB
         BPB=$(parse_sliding_bpb_from_dir "$LATEST_LOG_DIR")
         echo "[runs.sh] levels=$LEVELS @ lr=0.01 sliding BPB = $BPB ($LATEST_LOG_DIR)"
-        printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG_DIR" >> "$TEST5_RESULTS_FILE"
+        TEST5_RESULTS_LINES+=$(printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG_DIR")$'\n'
         git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 → BPB sliding $BPB"
     fi
 }
@@ -399,32 +401,35 @@ PREPOP_TARGETS=(
     "5 logs/wikitext-103_2026-05-02_20-32-04"
     "7 logs/wikitext-103_2026-05-02_21-43-22"
 )
-# Truncate file (overrides the hardcoded pre-populate above) and refresh
-> "$TEST5_RESULTS_FILE"
 for entry in "${PREPOP_TARGETS[@]}"; do
     L=$(echo $entry | awk '{print $1}')
     DIR=$(echo $entry | awk '{print $2}')
     BPB=$(parse_sliding_bpb_from_dir "$DIR")
-    printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$L" "$BPB" "$DIR" >> "$TEST5_RESULTS_FILE"
+    TEST5_RESULTS_LINES+=$(printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$L" "$BPB" "$DIR")$'\n'
     echo "[runs.sh] Pre-pop levels=$L → sliding BPB $BPB (from $DIR)"
 done
 
-# Run the new Phase 2 retries at lr=0.01
-for L in 9 11; do
+# Run the Phase 2 retries at lr=0.01. Order: 11 first (NaN'd fastest in
+# prior sweeps so it's the quickest signal on whether the RMS-rescale fix
+# holds), then 9 for completeness so both levels have apples-to-apples
+# results at the new fix. build_psmw constructs per_scale_mixer_widths
+# matching each levels value automatically.
+for L in 11 9; do
     run_test5_phase2_iter $L
 done
 
 echo ""
 echo "============================================================"
-echo "=== Test 5 sweep results ($TEST5_RESULTS_FILE):"
+echo "=== Test 5 sweep results (in-memory):"
 echo "============================================================"
-cat "$TEST5_RESULTS_FILE"
+printf '%s' "$TEST5_RESULTS_LINES"
 
 # Auto-pick winner (lowest BPB among ok rows). All Phase 2 rows use
 # lr=0.01 so the comparison is apples-to-apples.
-WINNER_LEVELS=$(python -c "
+WINNER_LEVELS=$(printf '%s' "$TEST5_RESULTS_LINES" | python -c "
+import sys
 results = []
-for line in open('$TEST5_RESULTS_FILE'):
+for line in sys.stdin:
     parts = line.rstrip('\n').split('\t')
     # Format per row: levels, bpb, log, kind, status
     if len(parts) >= 5 and parts[1] not in ('N/A', 'inf') and parts[4] == 'ok':
