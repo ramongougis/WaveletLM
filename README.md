@@ -516,25 +516,26 @@ Longer training time, more regularization, and parameter compression are the sur
 
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
-3. [(In Progress) Per-Scale Configuration at Longer Block Size](#in-progress-per-scale-configuration-at-longer-block-size)
+3. [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size)
 4. [Wavelet Compression](#wavelet-compression)
-5. [Dropout Sweep](#dropout-sweep)
-6. [Weight Decay Sweep](#weight-decay-sweep)
-7. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-8. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-9. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-10. [Longer PG-19 Training](#longer-pg-19-training)
-11. [Dataset Comparisons](#dataset-comparisons)
-12. [Model Comparisons](#model-comparisons)
-13. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-14. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-15. [Multi-Transform Parallelization](#multi-transform-parallelization)
-16. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-17. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-18. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-19. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-20. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-21. [Other Post-Release Plans](#other-post-release-plans)
+5. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
+6. [Dropout Sweep](#dropout-sweep)
+7. [Weight Decay Sweep](#weight-decay-sweep)
+8. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+9. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+10. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+11. [Longer PG-19 Training](#longer-pg-19-training)
+12. [Dataset Comparisons](#dataset-comparisons)
+13. [Model Comparisons](#model-comparisons)
+14. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+15. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+16. [Multi-Transform Parallelization](#multi-transform-parallelization)
+17. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+18. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+19. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+20. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+21. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+22. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -548,13 +549,19 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** Reduce parameters, use `block_size=16384`, and test increasing levels next.
 
-### (In Progress) Per-Scale Configuration at Longer Block Size
+### (Complete) Per-Scale Configuration at Longer Block Size
 
-Sweep `levels` and `per_scale_mixer_widths` at the longer `block_size` to exploit coarse scales. Hypothesis: optimal `levels ≈ log2(block_size) − 3 = 11`. Currently running as Test 5 in [`runs.sh`](runs.sh) at bs=16384 with `wavelet_crawl=false` for stability at higher levels. Each iteration uses its max-stable peak LR (heterogeneous LR design): levels=5/7 at `lr=0.01`, levels=9 at `3.42e-3`, and levels=11 at `1.14e-3`, with `min_lr`s scaled proportionally. Levels=13 OOMs at this config and is deferred to a gradient checkpointing follow-up if warranted. 
+**Result:** [levels=7](logs/wikitext-103_2026-05-03_02-13-07/log.txt) wins the L=1 / bs=16384 / `wavelet_crawl=false` sweep at 5-epoch BPB sliding **1.0974** (val 3.3605, 392.91M params, 23.4 GiB train VRAM). `levels=11` and `levels=9` NaN in fp16 AMP under every stability fix attempted; `levels=13` OOMs without `gradient_checkpointing`. The FWHT is orthogonal (norm-preserving), so the runaway is upstream: likely the lifting cascade, residual stream feedback, or Adagrad's `eps=2e-13` amplifying sparse-gradient updates. Disabling `decompose_bypass`/`_cross_window` had no stability effect at L=11 and no BPB cost in the Boolean ablation; both should default to `false` going forward (validated below). The two unblockers are lower peak LR (rejected due to performance impact) and a different optimizer (deferred to the [Optimizer Sweep](#optimizer-sweep-adagrad--adamw--muon)).
+
+**Decision:** ship `levels=7`; `levels ≥ 9` deferred until the optimizer sweep. 
 
 ### Wavelet Compression
 
 After Test 5 picks the winning `levels` value, re-run [`analyze_lifting.py`](analyze_lifting.py) on the winner's checkpoint and use the structure it reveals to compress the lifting predict/update weights. The L=1 / levels=7 probe already showed strong **diagonal dominance** (~70-76% of Frobenius energy on the diagonal vs 0.05% random baseline = ~1500× above random) with weak generic low-rank, suggesting `W ≈ D + U·V^T` (diagonal + small learned correction) at r=16-32 captures the structure at ~31× compression per matrix. Moderate cross-level similarity (cosine 0.74-0.77 in 3-block pattern) suggests group-wise sharing as an alternative or complement. One outlier, `update_nets[L].3`, needs gentler compression (r=64). Method: rerun analyze_lifting.py on the winning `levels` value, derive strategies for it analogous to the above, test each strategy individually for 1 epoch, combine winners (those within ±0.018 BPB of the Test 5 winner) for a 5-epoch confirmation, and keep the changes if final BPB stays within ±0.0015 of the uncompressed winner. Successful application would shrink lifting from ~117M → ~5M params (96%), bringing the total model from 393M → ~280M.
+
+### Decompose Bypass Disablement Ablation
+
+Re-run the L=1 / levels=7 / 5-epoch winner ([logs/wikitext-103_2026-05-03_02-13-07](logs/wikitext-103_2026-05-03_02-13-07/log.txt), BPB sliding 1.0974) with `decompose_bypass=false` and `decompose_bypass_cross_window=false`. The Boolean ablation table at L=1 / E=1 found both within ±0.0015 BPB of baseline (within noise), and the Test 5 sweep showed that toggling them at L=1 / E=1 / bs=16384 also had no measurable effect on either training trajectory or NaN onset. If the 5-epoch L=1 / levels=7 run reproduces within ±0.0015 BPB of 1.0974 with both off, both flags become permanent `false` defaults, and the running-mean × `history_gains` machinery can be removed from the forward path entirely (a small step-time win and one fewer growth-prone accumulator in the residual stream). If a regression > ±0.0015 BPB appears at this scale, leave them at the headline-baseline `true` and revisit only after the optimizer sweep clears up the L=11 instability picture. Single 5-epoch run at the existing winning configuration; ~6.5h on a 5090.
 
 ### Dropout Sweep
 
@@ -594,7 +601,7 @@ Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other moder
 
 ### Optimizer Sweep (Adagrad / AdamW / Muon)
 
-Adagrad (lr=0.01) is the validated optimizer for the released model but has not been directly compared against properly-tuned alternatives. WaveletLM is matrix-parameter-heavy (MLP at expansion=20 produces Linear(2048, 40960) weights, plus per-scale mixers and lifting matrices), so [Muon (Jordan et al., 2025)](https://arxiv.org/abs/2502.16982) - which orthogonalizes matrix gradient updates via Newton-Schulz iteration and reports 1.5–2× wall-clock speedups vs AdamW on small transformers - is a strong candidate. Plan: a 2-phase sweep (1-epoch LR screening + 5-epoch finalist validation) across Adagrad, AdamW, and Muon. Even a 30% wall-clock speedup compounds across every subsequent ablation and the B200 scale-up. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
+Adagrad (lr=0.01) is the validated optimizer for the released model but has not been directly compared against properly-tuned alternatives. WaveletLM is matrix-parameter-heavy (MLP at expansion=20 produces Linear(2048, 40960) weights, plus per-scale mixers and lifting matrices), so [Muon (Jordan et al., 2025)](https://arxiv.org/abs/2502.16982) - which orthogonalizes matrix gradient updates via Newton-Schulz iteration and reports 1.5–2× wall-clock speedups vs AdamW on small transformers - is a strong candidate. Plan: a 2-phase sweep (1-epoch LR screening + 5-epoch finalist validation) across Adagrad, AdamW, and Muon. Even a 30% wall-clock speedup compounds across every subsequent ablation and the B200 scale-up. **Once the per-optimizer best hyperparameters are identified, retest each on `levels=9` and `levels=11`** at bs=16384 to see whether the new optimizer (and its tuned learning rate) clears the fp16 NaN cliff that blocked higher levels under Adagrad — the same sweep that now ships levels=7 may swing to a deeper optimum once a different update rule is in place. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
 
 ### Bit-Packed PTQ Kernels
 
