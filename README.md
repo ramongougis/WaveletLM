@@ -550,7 +550,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### (In Progress) Per-Scale Configuration at Longer Block Size
 
-Sweep `levels` and `per_scale_mixer_widths` at the longer `block_size` to exploit coarse scales. Hypothesis: optimal `levels ≈ log2(block_size) − 3 = 11`. Currently running as Test 5 in [`runs.sh`](runs.sh) at bs=16384 with `wavelet_crawl=false` for stability at higher levels. Each iteration uses its max-stable peak LR (heterogeneous LR design): levels=5/7 at `lr=0.01`, levels=9 at `3.42e-3`, and levels=11 at `1.14e-3`, with `min_lr`s scaled proportionally. Levels=13 OOMs at this config and is deferred to a gradient checkpointing follow-up if warranted.
+Sweep `levels` and `per_scale_mixer_widths` at the longer `block_size` to exploit coarse scales. Hypothesis: optimal `levels ≈ log2(block_size) − 3 = 11`. Currently running as Test 5 in [`runs.sh`](runs.sh) at bs=16384 with `wavelet_crawl=false` for stability at higher levels. Each iteration uses its max-stable peak LR (heterogeneous LR design): levels=5/7 at `lr=0.01`, levels=9 at `3.42e-3`, and levels=11 at `1.14e-3`, with `min_lr`s scaled proportionally. Levels=13 OOMs at this config and is deferred to a gradient checkpointing follow-up if warranted. 
 
 ### Wavelet Compression
 
