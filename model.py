@@ -910,8 +910,8 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
-        fht_rms_rescale: bool = False,
-        fht_rms_eps: float = 1.0,
+        fht_log_transform: bool = False,
+        fht_log_eps: float = 1e-3,
     ):
         super().__init__()
         self.C = C
@@ -919,8 +919,8 @@ class WaveletLMBlock(nn.Module):
         self.Cp = next_pow2(C)
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
-        self.fht_rms_rescale = fht_rms_rescale
-        self.fht_rms_eps = fht_rms_eps
+        self.fht_log_transform = fht_log_transform
+        self.fht_log_eps = fht_log_eps
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
@@ -1205,27 +1205,14 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional per-position RMS² rescaling around the FWHT-mixer-invFWHT span.
-        # Computes rms_sq = mean(x², dim=Cp) + eps (no sqrt), divides input by
-        # it, then re-multiplies after invFWHT. Heavier compression than RMS:
-        # for a position with rms = M, x/rms² has magnitudes ≈ x/M², shrinking
-        # quadratically with input scale. eps=1.0 acts as a soft floor:
-        # low-magnitude positions (mean(x²) << 1) pass through near-identity
-        # (rms_sq ≈ 1), high-magnitude positions get aggressive rescaling.
-        # Smooth at all transitions.
-        #
-        # Use .detach() on the input to the RMS computation: rms_sq is a
-        # per-batch normalization statistic, not a learnable quantity. Detaching
-        # stops autograd from saving the .square() intermediate (which would
-        # persist at full stacked-tensor size, ~750 MiB at L=11/bs=16384).
-        # Gradient still flows correctly through the rescaling: at division
-        # and restore-multiplication, rms_sq is treated as a constant scale
-        # factor, exactly the desired backward behavior.
-        rms_sq = None
-        if self.fht_rms_rescale:
-            rms_sq = (stacked_coeffs.detach().square().mean(dim=-1, keepdim=True)
-                      + self.fht_rms_eps)
-            stacked_coeffs = stacked_coeffs / rms_sq
+        # Optional sign-preserving natural log on FWHT input: sign(x) · ln(|x| + ε).
+        # ε prevents log(0) = -∞; smaller ε → closer to actual log everywhere.
+        # Discontinuous at x=0 (jumps from +ln(1/ε) to -ln(1/ε) across zero);
+        # backward gradient 1/(|x|+ε) peaks at 1/ε near x=0 — at ε=1e-3 that's
+        # 1000, manageable by AMP scaler dynamics. NOT inverted after invFWHT.
+        if self.fht_log_transform:
+            log_abs = (stacked_coeffs.abs() + self.fht_log_eps).log()
+            stacked_coeffs = log_abs.copysign_(stacked_coeffs)
 
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
@@ -1268,10 +1255,6 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
-
-        # Restore per-position scale removed before the forward FWHT.
-        if rms_sq is not None:
-            mixed_all = mixed_all * rms_sq
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1501,8 +1484,8 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
-                fht_rms_rescale=config.get("fht_rms_rescale", False),
-                fht_rms_eps=config.get("fht_rms_eps", 1.0),
+                fht_log_transform=config.get("fht_log_transform", False),
+                fht_log_eps=config.get("fht_log_eps", 1e-3),
             )
             for _ in range(layer_build_count)
         ])
