@@ -258,6 +258,17 @@ print('[' + ', '.join(['1.0']*h + ['0.5']*h) + ']')
 "
 }
 
+build_psmw_uniform() {
+    # All-1.0 per_scale_mixer_widths for a given levels value. Wider fine-detail
+    # scales test O'Connor's "1 & 2 require width to be increased by 4, 8, or
+    # 16 to allow proper information flow" guidance — narrow mixers may
+    # bottleneck the FWHT path's spectral signal at high levels.
+    python -c "
+S = $1 + 1
+print('[' + ', '.join(['1.0']*S) + ']')
+"
+}
+
 get_stable_lr() {
     # get_stable_lr <levels> → echoes "<peak_lr> <min_lr>"
     # Per-level peak LR is set to half the last finite step's LR observed in
@@ -299,7 +310,10 @@ build_test5_patch() {
         read LR MIN_LR <<< "$(get_stable_lr $LEVELS)"
     fi
     local PSMW
-    PSMW=$(build_psmw $LEVELS)
+    # Uniform widths (all 1.0): testing O'Connor's "wider needed for proper
+    # information flow" hypothesis at high levels. Switch to build_psmw $LEVELS
+    # for the prior 1.0/0.5 split if uniform doesn't help.
+    PSMW=$(build_psmw_uniform $LEVELS)
     python -c "
 import json
 print(json.dumps({
@@ -318,7 +332,7 @@ print(json.dumps({
     'wavelet_crawl': False,
     'fht_input_cap_enabled': False,
     'fht_input_cap_value': 10000.0,
-    'fht_thue_morse_signflips': True,
+    'fht_thue_morse_signflips': False,
     'fht_thue_morse_increment': 21,
     'lr': $LR,
     'min_lr': $MIN_LR,
