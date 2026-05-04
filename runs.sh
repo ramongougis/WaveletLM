@@ -116,11 +116,10 @@ nan_safe_run() {
         return $?
     fi
 
-    # Poll log for "loss nan" (catches both train and val loss) every 30s.
-    # Case-insensitive to be robust to log-format changes.
+    # Poll log for NaN every 30s while training runs
     while kill -0 $TRAIN_PID 2>/dev/null; do
-        if grep -qi "loss nan" "$LOG_FILE" 2>/dev/null; then
-            echo "[runs.sh] NaN loss detected in $LOG_FILE; terminating PID $TRAIN_PID."
+        if grep -q "NaN" "$LOG_FILE" 2>/dev/null; then
+            echo "[runs.sh] NaN detected in $LOG_FILE; terminating PID $TRAIN_PID."
             kill -TERM $TRAIN_PID 2>/dev/null
             sleep 5
             kill -KILL $TRAIN_PID 2>/dev/null
@@ -210,19 +209,44 @@ nan_safe_run() {
 # fi
 
 # ============================================================
-# Test 5 Phase 2: retry levels=9 and 11 at lr=0.01 (original LR) now that
-# the FWHT fp16-overflow has been mitigated by mean-centering before the
-# forward FWHT (model.py 2026-05-04).
+# Test 5: Per-scale configuration sweep at bs=16384.
+# Hypothesis: optimal levels ≈ log2(block_size) − 3. At bs=256 with
+# levels=5, log2(256) − 5 = 3 was optimal. At bs=16384 (log2=14),
+# levels=11 (14 − 3) is the prediction. Sweep levels = 5, 7, 9, 11, 13;
+# matching per_scale_mixer_widths = (levels+1)/2 entries of 1.0 then
+# (levels+1)/2 entries of 0.5 (symmetric half-coarse / half-fine split).
 #
-# Each iteration runs 1 epoch at lr=0.01. After both finish, the iteration
-# with the lowest sliding-window BPB is auto-launched for a 5-epoch follow-up.
-# A NaN or non-zero exit on any iteration disqualifies it from the winner pick.
+# PHASE 2: retry levels=9 and 11 at lr=0.01 (the original LR) now that the
+# fp16-cumsum overflow in _compute_running_mean is fixed (model.py 2026-05-03).
+# The earlier K=3-attributed NaNs at deeper cascades were partly the cumsum
+# overflow we just fixed; this phase tests whether levels=9/11 are now
+# trainable at the original LR, eliminating the LR-confound from Phase 1's
+# heterogeneous-LR design.
 #
-# Levels=13 skipped (OOMs at bs=16384 / MBS=1 without gradient_checkpointing).
-# Levels=5 / 7 at lr=0.01 already completed in earlier sweeps — no re-run here;
-# their winning configuration is compared against this sweep's winner manually.
+# Sweep iterations to RUN this phase: {9, 11} at lr=0.01 with NaN detection
+# (~2.3h total if both succeed; less if either NaNs early).
+# Pre-populated (no re-run): levels=5 / 7 at lr=0.01 from Phase 1's results
+# (their BPB is read fresh from benchmark.txt — corrected post-rebench —
+# falling back to log.txt if benchmark.txt isn't present).
+# Levels=13 skipped (OOMs at this config without gradient_checkpointing).
+#
+# After the sweep, auto-picks the lowest-BPB level across the 4 candidates
+# (5/7/9/11) and runs 5 epochs at lr=0.01 with that level + matching
+# per_scale_mixer_widths. If levels=7 wins, reuses the existing 5-epoch run
+# at logs/wikitext-103_2026-05-03_02-13-07 instead of re-training.
+#
+# Total wall-clock: ~2.3h sweep + 0-8.7h follow-up = 2.3-11h depending on
+# whether 9/11 NaN at lr=0.01 and which level wins.
+#
+# All sweep runs share block_size=16384 + lr=0.01 + crawl=False, so their
+# BPB sliding numbers ARE directly comparable (same window count, same
+# stride, same eval set, same LR — fixed-LR apples-to-apples).
 # ============================================================
 TEST5_BLOCK_SIZE=16384
+TEST5_RESULTS_FILE="logs/test5_levels_sweep_results.txt"
+# Note: this file is truncated and re-populated inside the Phase 2 block
+# below (after parse_sliding_bpb_from_dir is defined) so that BPBs come
+# from the latest benchmark.txt / log.txt rather than stale hardcoded values.
 
 build_psmw() {
     # Builds a per_scale_mixer_widths JSON array for a given levels value.
@@ -236,16 +260,20 @@ print('[' + ', '.join(['1.0']*h + ['0.5']*h) + ']')
 
 get_stable_lr() {
     # get_stable_lr <levels> → echoes "<peak_lr> <min_lr>"
-    # NOTE: this table is now stale for L>=9 — pre-mean-centering the FWHT
-    # cliff forced lower per-level LRs. With the in-place mean-centering in
-    # model.py, all levels are believed stable at lr=0.01 (pending the active
-    # L=11 progression). Active sweep code passes `0.01 0.0002` explicitly,
-    # so this table is currently unused; left in place as a fallback for any
-    # caller that omits lr/min_lr.
+    # Per-level peak LR is set to half the last finite step's LR observed in
+    # the prior K=False sweep — fp16 cliff failures need real margin, and the
+    # observed NaN-onset between training-step granularity hides the actual
+    # cliff position. min_lr scaled to keep the cosine schedule's 50× peak/min
+    # ratio so the late-training optimization shape stays consistent.
+    #   levels=5/7  : trained stably at lr=0.01 with K=False → keep
+    #   levels=9    : last finite step at lr=6.84e-3 → peak=3.42e-3
+    #   levels=11   : last finite step at lr=2.28e-3 → peak=1.14e-3
     case "$1" in
-        5|7|9|11) echo "0.01 0.0002" ;;
-        13)       echo "0.001 0.00002" ;;  # OOMs at this config; LR is placeholder
-        *)        echo "0.01 0.0002" ;;
+        5|7)   echo "0.01 0.0002" ;;
+        9)     echo "0.00342 0.0000684" ;;
+        11)    echo "0.00114 0.0000228" ;;
+        13)    echo "0.001 0.00002" ;;  # OOMs at this config; LR is placeholder
+        *)     echo "0.01 0.0002" ;;
     esac
 }
 
@@ -288,11 +316,6 @@ print(json.dumps({
     'levels': $LEVELS,
     'per_scale_mixer_widths': $PSMW,
     'wavelet_crawl': False,
-    'decompose_bypass': False,
-    'decompose_bypass_cross_window': False,
-    'compile': True,
-    'fht_mean_centering': True,
-    'fht_log_transform': True,
     'lr': $LR,
     'min_lr': $MIN_LR,
     'eval_interval': 250,
@@ -302,218 +325,205 @@ print(json.dumps({
 
 # Read sliding-window BPB from a run directory. Prefers benchmark.txt
 # (post-fix corrected output, written by benchmark_only mode) and falls back
-# to log.txt. Returns empty if neither file or the BPB line is missing.
-extract_bpb_sliding() {
-    local DIR="$1"
-    local F=""
-    if [ -f "${DIR}/benchmark.txt" ]; then
-        F="${DIR}/benchmark.txt"
-    elif [ -f "${DIR}/log.txt" ]; then
-        F="${DIR}/log.txt"
+# to log.txt (original training-end benchmark output, may contain inf for
+# pre-fix runs). Returns the LAST match in either file so rebenched results
+# take precedence over original inf entries that remain above them.
+parse_sliding_bpb_from_dir() {
+    local LOG_DIR="$1"
+    # Strip any trailing slash
+    LOG_DIR="${LOG_DIR%/}"
+    local FILE="$LOG_DIR/log.txt"
+    if [ -f "$LOG_DIR/benchmark.txt" ]; then
+        FILE="$LOG_DIR/benchmark.txt"
     fi
-    [ -n "$F" ] || return 1
-    # First "BPB:" line that follows the "[BENCHMARK - Sliding Window]" header.
-    awk '/\[BENCHMARK - Sliding Window\]/{flag=1; next} flag && /BPB:/{print $2; exit}' "$F"
+    python -c "
+import re
+log = open('$FILE', encoding='utf-8', errors='replace').read()
+m = list(re.finditer(r'\[BENCHMARK - Sliding Window\].*?BPB:\s*([\d.]+|inf)', log, re.DOTALL))
+print(m[-1].group(1) if m else 'N/A')
+"
 }
 
-# Launch `python train.py` in the background, identify the new log dir it
-# creates, and poll log.txt every 30s for a NaN train- or val-loss entry
-# (matches lines like "Step 750: train loss nan, val loss nan ..."). On NaN,
-# terminates the train PID and returns 99. Otherwise returns train.py's exit
-# code. Sets RUN_LOGDIR to the captured log dir (empty if none was created).
-RUN_LOGDIR=""
-run_train_with_nan_watch() {
-    RUN_LOGDIR=""
-    local PRE_LATEST
-    PRE_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
-
-    python train.py &
-    local TRAIN_PID=$!
-
-    # Wait up to 2 min for train.py to create its run folder
-    local LOG_FILE=""
-    for i in $(seq 1 60); do
-        sleep 2
-        local POST_LATEST
-        POST_LATEST=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1)
-        if [ -n "$POST_LATEST" ] && [ "$POST_LATEST" != "$PRE_LATEST" ]; then
-            RUN_LOGDIR="$POST_LATEST"
-            LOG_FILE="${POST_LATEST}log.txt"
-            echo "[runs.sh] Monitoring $LOG_FILE for NaN."
-            break
-        fi
-    done
-
-    if [ -z "$LOG_FILE" ]; then
-        echo "[runs.sh] No new log folder after 2 min; falling through to wait."
-        wait $TRAIN_PID
-        return $?
-    fi
-
-    # Poll log for "loss nan" (catches both train and val loss) every 30s.
-    # `loss nan` is specific enough to avoid false positives on unrelated tokens.
-    while kill -0 $TRAIN_PID 2>/dev/null; do
-        if grep -qi "loss nan" "$LOG_FILE" 2>/dev/null; then
-            echo "[runs.sh] NaN loss detected in $LOG_FILE; terminating PID $TRAIN_PID."
-            kill -TERM $TRAIN_PID 2>/dev/null
-            sleep 5
-            kill -KILL $TRAIN_PID 2>/dev/null
-            wait $TRAIN_PID 2>/dev/null
-            sleep 10  # give CUDA a moment to release VRAM
-            return 99
-        fi
-        sleep 30
-    done
-
-    wait $TRAIN_PID
-    return $?
-}
-
-# Run one Phase-2 tier: builds the levels-N base patch, optionally overlays
-# a tier-specific override (e.g. {"mlp_expansion": 9} or {"compile": false}),
-# launches train.py under NaN-watch early stopping, and judges success by
-# whether the run produced a parseable sliding-window BPB. Captures the new
-# log dir into PHASE2_LOGDIR and the resulting BPB into PHASE2_BPB. Returns
-# 0 on success (BPB present), non-zero otherwise (NaN-killed or other crash).
-PHASE2_LOGDIR=""
-PHASE2_BPB=""
-run_test5_phase2_tier() {
+# Run a single Phase-2 levels iteration at lr=0.01 with NaN detection. On
+# NaN, the run is killed mid-flight and recorded as N/A. On any non-zero
+# exit, recorded as failure. On success, parses sliding BPB from the
+# resulting log dir and appends an "ok" row. Commits + pushes the result
+# (success OR failure) after each run.
+run_test5_phase2_iter() {
     local LEVELS=$1
-    local TIER_LABEL="$2"
-    local OVERRIDE_JSON="$3"
     local SCALES=$((LEVELS + 1))
-    local LABEL="Test 5 Phase 2: levels=$LEVELS (S=$SCALES) @ lr=0.01, bs=$TEST5_BLOCK_SIZE, tier=[$TIER_LABEL]"
+    local LABEL="Test 5 Phase 2: levels=$LEVELS (S=$SCALES) @ lr=0.01, bs=$TEST5_BLOCK_SIZE, crawl=False (cumsum fp32-fix in place)"
+    # Force lr=0.01 / min_lr=0.0002 for the Phase 2 retry (overrides
+    # get_stable_lr's heterogeneous-LR values from Phase 1).
+    local PATCH
+    PATCH=$(build_test5_patch $LEVELS 1 0.01 0.0002)
 
-    echo ""
-    echo "============================================================"
-    echo "=== ${LABEL}"
-    echo "============================================================"
-
-    set_keys "$(build_test5_patch $LEVELS 1 0.01 0.0002)"
-    if [ -n "$OVERRIDE_JSON" ]; then
-        set_keys "$OVERRIDE_JSON"
-    fi
-    run_train_with_nan_watch
+    nan_safe_run "$LABEL" "$PATCH"
     local EXIT=$?
-    PHASE2_LOGDIR="$RUN_LOGDIR"
 
-    PHASE2_BPB=""
-    if [ -n "$PHASE2_LOGDIR" ]; then
-        PHASE2_BPB=$(extract_bpb_sliding "$PHASE2_LOGDIR")
-    fi
+    local LATEST_LOG_DIR
+    LATEST_LOG_DIR=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1 | sed 's:/$::')
 
-    if [ -n "$PHASE2_BPB" ]; then
-        git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] completed (BPB sliding=$PHASE2_BPB)"
-        return 0
+    if [ $EXIT -eq 99 ]; then
+        echo "[runs.sh] levels=$LEVELS NaN'd at lr=0.01 ($LATEST_LOG_DIR). Recording N/A."
+        printf "%s\t%s\t%s/log.txt\tphase2\tnan\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" >> "$TEST5_RESULTS_FILE"
+        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 NaN'd"
+    elif [ $EXIT -ne 0 ]; then
+        echo "[runs.sh] levels=$LEVELS failed exit $EXIT ($LATEST_LOG_DIR). Recording N/A."
+        printf "%s\t%s\t%s/log.txt\tphase2\texit=%s\n" "$LEVELS" "N/A" "$LATEST_LOG_DIR" "$EXIT" >> "$TEST5_RESULTS_FILE"
+        sleep 10
+        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 FAILED exit $EXIT"
     else
-        if [ "$EXIT" -eq 99 ]; then
-            echo "[runs.sh] L=$LEVELS [$TIER_LABEL] killed by NaN-watch."
-            git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] FAILED (NaN early-stop)"
-        else
-            echo "[runs.sh] L=$LEVELS [$TIER_LABEL] failed (exit $EXIT, no BPB)."
-            git_commit_push "Test 5 Phase 2: L=$LEVELS [$TIER_LABEL] FAILED exit $EXIT (no BPB)"
-        fi
-        return 1
+        local BPB
+        BPB=$(parse_sliding_bpb_from_dir "$LATEST_LOG_DIR")
+        echo "[runs.sh] levels=$LEVELS @ lr=0.01 sliding BPB = $BPB ($LATEST_LOG_DIR)"
+        printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$LEVELS" "$BPB" "$LATEST_LOG_DIR" >> "$TEST5_RESULTS_FILE"
+        git_commit_push "Test 5 Phase 2: levels=$LEVELS @ lr=0.01 → BPB sliding $BPB"
     fi
 }
 
-# L=11 progression. Stop at the first tier that produces a parseable BPB.
-# Each tier loosens the failure mode the previous tier could not cure:
-#   mlp10+compile → mlp_expansion=10, compile=True (matches production default)
-#   mlp9+compile  → mlp_expansion=9 (test whether the lowered MLP expansion in
-#                   the diagnostic was the real fix vs. mean centering)
-# All tiers also have fht_mean_centering=True and fht_log_transform=True via
-# build_test5_patch (the FHT stability defaults are not part of the override).
-# The previously-attempted no-compile tier was removed: at L=11/bs=16384/MBS=1
-# eager mode reliably OOMs (model doesn't fit without torch.compile's fusion).
-# If both surviving tiers fail (NaN), the inconsistency between diagnostic and
-# training is deeper than the tested axes — investigate manually before
-# further sweeps.
-PHASE2_WIN_LEVEL=""
-PHASE2_WIN_BPB=""
-PHASE2_WIN_OVERRIDE=""
-PHASE2_WIN_TIER=""
-for TIER in "mlp10+compile|" "mlp9+compile|{\"mlp_expansion\": 9}"; do
-    TIER_LABEL="${TIER%%|*}"
-    OVERRIDE="${TIER#*|}"
-    if run_test5_phase2_tier 11 "$TIER_LABEL" "$OVERRIDE"; then
-        PHASE2_WIN_LEVEL=11
-        PHASE2_WIN_BPB="$PHASE2_BPB"
-        PHASE2_WIN_OVERRIDE="$OVERRIDE"
-        PHASE2_WIN_TIER="$TIER_LABEL"
-        break
-    fi
+# ============================================================
+# Test 5 Phase 2: retry levels=9 and 11 at lr=0.01 with the cumsum fp32 fix
+# in place. The earlier K=3-attributed NaNs at deeper levels may have been
+# (partly) the fp16-overflow class we just fixed in _compute_running_mean.
+# This phase tests whether the original lr=0.01 is now trainable at deeper
+# cascades, which would give us a clean apples-to-apples per-level
+# comparison without LR-confound.
+# ============================================================
+
+# Refresh pre-populated rows by reading current BPB from benchmark.txt (post
+# rebench.sh) or log.txt for the existing levels=5/7 lr=0.01 runs. Reading
+# at script start ensures we use the latest corrected numbers, not stale
+# hardcoded values.
+PREPOP_TARGETS=(
+    "5 logs/wikitext-103_2026-05-02_20-32-04"
+    "7 logs/wikitext-103_2026-05-02_21-43-22"
+)
+# Truncate file (overrides the hardcoded pre-populate above) and refresh
+> "$TEST5_RESULTS_FILE"
+for entry in "${PREPOP_TARGETS[@]}"; do
+    L=$(echo $entry | awk '{print $1}')
+    DIR=$(echo $entry | awk '{print $2}')
+    BPB=$(parse_sliding_bpb_from_dir "$DIR")
+    printf "%s\t%s\t%s/log.txt\tphase2\tok\n" "$L" "$BPB" "$DIR" >> "$TEST5_RESULTS_FILE"
+    echo "[runs.sh] Pre-pop levels=$L → sliding BPB $BPB (from $DIR)"
 done
 
-# L=5 sanity ablation: confirm the combined (mean_centering=true, log_transform=true)
-# transform doesn't BPB-regress vs the previous L=5 baseline (which had no
-# log_transform). Runs at 1 epoch with the same patch builder, so it inherits
-# both flags = True. INFORMATIONAL ONLY — its BPB does NOT enter the 5-epoch
-# winner pick below; the 5-epoch follow-up is restricted to L=11 (winning tier)
-# or L=7 (fallback) per the existing logic.
-echo ""
-echo "============================================================"
-echo "=== L=5 sanity ablation: fht_mean_centering=True + fht_log_transform=True (1 epoch)"
-echo "============================================================"
-set_keys "$(build_test5_patch 5 1 0.01 0.0002)"
-run_train_with_nan_watch
-L5_ABLATION_EXIT=$?
-L5_ABLATION_BPB=""
-if [ -n "$RUN_LOGDIR" ]; then
-    L5_ABLATION_BPB=$(extract_bpb_sliding "$RUN_LOGDIR")
-fi
-if [ -n "$L5_ABLATION_BPB" ]; then
-    echo "[runs.sh] L=5 ablation completed: BPB sliding=$L5_ABLATION_BPB"
-    git_commit_push "Test 5 Phase 2 L=5 ablation [mean_center+log_transform]: BPB sliding=$L5_ABLATION_BPB"
-elif [ $L5_ABLATION_EXIT -eq 99 ]; then
-    echo "[runs.sh] L=5 ablation killed by NaN-watch."
-    git_commit_push "Test 5 Phase 2 L=5 ablation [mean_center+log_transform] FAILED (NaN early-stop)"
-else
-    echo "[runs.sh] L=5 ablation failed exit $L5_ABLATION_EXIT."
-    git_commit_push "Test 5 Phase 2 L=5 ablation [mean_center+log_transform] FAILED exit $L5_ABLATION_EXIT"
-fi
-
-# 5-epoch follow-up: at the L=11 winning tier if any survived, otherwise at
-# the prior best stable level (L=7, BPB sliding 1.0974 from the earlier sweep).
-# L=5 ablation result is intentionally NOT considered.
-echo ""
-echo "============================================================"
-echo "=== Test 5 Phase 2 follow-up pick"
-echo "============================================================"
-if [ -n "$PHASE2_WIN_LEVEL" ]; then
-    FOLLOWUP_LEVEL=$PHASE2_WIN_LEVEL
-    FOLLOWUP_OVERRIDE="$PHASE2_WIN_OVERRIDE"
-    FOLLOWUP_NOTE="L=$PHASE2_WIN_LEVEL [$PHASE2_WIN_TIER] (1-epoch BPB sliding=$PHASE2_WIN_BPB)"
-else
-    FOLLOWUP_LEVEL=7
-    FOLLOWUP_OVERRIDE=""
-    FOLLOWUP_NOTE="fallback to L=7 (all L=11 tiers failed)"
-fi
-echo "  → $FOLLOWUP_NOTE"
+# Run the new Phase 2 retries at lr=0.01
+for L in 9 11; do
+    run_test5_phase2_iter $L
+done
 
 echo ""
 echo "============================================================"
-echo "=== Test 5 Phase 2 follow-up: 5-epoch run at L=$FOLLOWUP_LEVEL"
+echo "=== Test 5 sweep results ($TEST5_RESULTS_FILE):"
 echo "============================================================"
-set_keys "$(build_test5_patch $FOLLOWUP_LEVEL 5 0.01 0.0002)"
-[ -n "$FOLLOWUP_OVERRIDE" ] && set_keys "$FOLLOWUP_OVERRIDE"
-run_train_with_nan_watch
-FOLLOWUP_EXIT=$?
-if [ $FOLLOWUP_EXIT -eq 0 ]; then
-    run_generation_if_ckpt
-    git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL @ lr=0.01 completed ($FOLLOWUP_NOTE)"
-elif [ $FOLLOWUP_EXIT -eq 99 ]; then
-    echo "[runs.sh] 5-epoch follow-up at L=$FOLLOWUP_LEVEL killed by NaN-watch."
-    git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL FAILED (NaN early-stop)"
+cat "$TEST5_RESULTS_FILE"
+
+# Auto-pick winner (lowest BPB among ok rows). All Phase 2 rows use
+# lr=0.01 so the comparison is apples-to-apples.
+WINNER_LEVELS=$(python -c "
+results = []
+for line in open('$TEST5_RESULTS_FILE'):
+    parts = line.rstrip('\n').split('\t')
+    # Format per row: levels, bpb, log, kind, status
+    if len(parts) >= 5 and parts[1] not in ('N/A', 'inf') and parts[4] == 'ok':
+        try:
+            results.append((int(parts[0]), float(parts[1])))
+        except ValueError:
+            pass
+print(min(results, key=lambda x: x[1])[0] if results else 'NONE')
+")
+
+# Helper: find the most recent log matching levels=$1, epochs=$2.
+# If $3 == "complete" require benchmark completion; if "inprogress" require absence.
+find_l_e_log() {
+    local target_L=$1 target_E=$2 status=$3
+    local f L E
+    for f in $(ls -dt logs/wikitext-103_*/log.txt 2>/dev/null | head -30); do
+        L=$(grep -m1 -E '^\[2026.*\][[:space:]]+levels[[:space:]]*:' "$f" 2>/dev/null | awk '{print $NF}')
+        E=$(grep -m1 -E '^\[2026.*\][[:space:]]+epochs[[:space:]]*:' "$f" 2>/dev/null | awk '{print $NF}')
+        [ "$L" = "$target_L" ] || continue
+        [ "$E" = "$target_E" ] || continue
+        if [ "$status" = "complete" ]; then
+            grep -q '=== TRAINING COMPLETE ===' "$f" 2>/dev/null && { echo "$f"; return; }
+        elif [ "$status" = "inprogress" ]; then
+            grep -q '=== TRAINING COMPLETE ===' "$f" 2>/dev/null || { echo "$f"; return; }
+        fi
+    done
+}
+
+if [ "$WINNER_LEVELS" = "NONE" ]; then
+    echo "[runs.sh] Test 5 sweep: no successful runs. Skipping 5-epoch follow-up."
+elif [ "$WINNER_LEVELS" = "7" ]; then
+    # levels=7 in this sweep uses lr=0.01, matching the 5-epoch levels=7 run
+    # that was already auto-launched by the prior sweep iteration. Reuse it
+    # if available rather than burning ~5.7h on a redundant run.
+    EXISTING_LOG=$(find_l_e_log 7 5 complete)
+    INPROGRESS_LOG=$(find_l_e_log 7 5 inprogress)
+    if [ -n "$EXISTING_LOG" ]; then
+        echo ""
+        echo "============================================================"
+        echo "=== Test 5 winner: levels=7 — REUSING existing complete 5-epoch run"
+        echo "===   $EXISTING_LOG"
+        echo "============================================================"
+        echo "[runs.sh] Same lr=0.01 / wavelet_crawl=False config; no need to re-train."
+    elif [ -n "$INPROGRESS_LOG" ]; then
+        echo ""
+        echo "============================================================"
+        echo "=== Test 5 winner: levels=7 — 5-epoch run is IN PROGRESS at:"
+        echo "===   $INPROGRESS_LOG"
+        echo "============================================================"
+        echo "[runs.sh] Skipping fresh launch to avoid GPU contention. The existing"
+        echo "         in-progress run will be the Test 5 final result once it finishes."
+    else
+        echo ""
+        echo "============================================================"
+        echo "=== Test 5 winner: levels=7 — no prior 5-epoch run found, launching fresh"
+        echo "============================================================"
+        WINNER_PATCH=$(build_test5_patch $WINNER_LEVELS 5 0.01 0.0002)
+        nan_safe_run "Test 5 Phase 2 final (5-ep): levels=$WINNER_LEVELS @ lr=0.01" "$WINNER_PATCH"
+        FINAL_EXIT=$?
+        FINAL_LOG_DIR=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1 | sed 's:/$::')
+        if [ $FINAL_EXIT -eq 99 ]; then
+            git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep NaN'd"
+        elif [ $FINAL_EXIT -ne 0 ]; then
+            git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS FAILED exit $FINAL_EXIT"
+        else
+            FINAL_BPB=$(parse_sliding_bpb_from_dir "$FINAL_LOG_DIR")
+            git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep → BPB sliding $FINAL_BPB"
+        fi
+    fi
 else
-    echo "[runs.sh] 5-epoch follow-up at L=$FOLLOWUP_LEVEL failed exit $FOLLOWUP_EXIT."
-    git_commit_push "Test 5 Phase 2 follow-up: 5-epoch L=$FOLLOWUP_LEVEL FAILED exit $FOLLOWUP_EXIT"
+    # Winner is levels ∈ {5, 9, 11}: launch fresh 5-epoch at lr=0.01 with
+    # NaN detection. Phase 2 forces lr=0.01 across all levels (heterogeneous
+    # LR was Phase 1's design; Phase 2 tests fixed-LR feasibility now that
+    # the cumsum overflow is fixed).
+    echo ""
+    echo "============================================================"
+    echo "=== Test 5 Phase 2 winner: levels=$WINNER_LEVELS — launching 5-epoch follow-up"
+    echo "============================================================"
+    WINNER_PATCH=$(build_test5_patch $WINNER_LEVELS 5 0.01 0.0002)
+    nan_safe_run "Test 5 Phase 2 final (5-ep): levels=$WINNER_LEVELS @ lr=0.01, bs=$TEST5_BLOCK_SIZE" "$WINNER_PATCH"
+    FINAL_EXIT=$?
+    FINAL_LOG_DIR=$(ls -dt logs/wikitext-103_*/ 2>/dev/null | head -1 | sed 's:/$::')
+    if [ $FINAL_EXIT -eq 99 ]; then
+        echo "[runs.sh] 5-epoch run NaN'd at levels=$WINNER_LEVELS / lr=0.01."
+        git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep NaN'd"
+    elif [ $FINAL_EXIT -ne 0 ]; then
+        echo "[runs.sh] 5-epoch run failed exit $FINAL_EXIT."
+        git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS FAILED exit $FINAL_EXIT"
+    else
+        FINAL_BPB=$(parse_sliding_bpb_from_dir "$FINAL_LOG_DIR")
+        echo "[runs.sh] 5-epoch BPB sliding: $FINAL_BPB"
+        git_commit_push "Test 5 Phase 2 final: levels=$WINNER_LEVELS @ lr=0.01 5-ep → BPB sliding $FINAL_BPB"
+    fi
 fi
 
 # ============================================================
 # Reset config to L=2 release default (matches README Training section)
 # ============================================================
-set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250, "decompose_bypass": false, "decompose_bypass_cross_window": false, "compile": true, "wavelet_crawl": false, "lr": 0.01, "min_lr": 0.0002, "fht_mean_centering": true, "fht_log_transform": false}'
+set_keys '{"dataset": "wikitext-103", "layers": 2, "epochs": 5, "mlp_expansion": 20, "pkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false, "micro_batch_size": 8, "grad_accum": 1, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "eval_interval": 250}'
 
 git_commit_push "Reset config.json to L=2 release default after Test 5 Phase 2"
 

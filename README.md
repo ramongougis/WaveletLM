@@ -517,25 +517,24 @@ Longer training time, more regularization, and parameter compression are the sur
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
 3. [(In Progress) Per-Scale Configuration at Longer Block Size](#in-progress-per-scale-configuration-at-longer-block-size)
-4. [Increased Learning Rates](#increased-learning-rates)
-5. [Wavelet Compression](#wavelet-compression)
-6. [Dropout Sweep](#dropout-sweep)
-7. [Weight Decay Sweep](#weight-decay-sweep)
-8. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-9. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-10. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-11. [Longer PG-19 Training](#longer-pg-19-training)
-12. [Dataset Comparisons](#dataset-comparisons)
-13. [Model Comparisons](#model-comparisons)
-14. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-15. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-16. [Multi-Transform Parallelization](#multi-transform-parallelization)
-17. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-18. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-19. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-20. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-21. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-22. [Other Post-Release Plans](#other-post-release-plans)
+4. [Wavelet Compression](#wavelet-compression)
+5. [Dropout Sweep](#dropout-sweep)
+6. [Weight Decay Sweep](#weight-decay-sweep)
+7. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+8. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+9. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+10. [Longer PG-19 Training](#longer-pg-19-training)
+11. [Dataset Comparisons](#dataset-comparisons)
+12. [Model Comparisons](#model-comparisons)
+13. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+14. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+15. [Multi-Transform Parallelization](#multi-transform-parallelization)
+16. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+17. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+18. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+19. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+20. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+21. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -552,10 +551,6 @@ Longer training time, more regularization, and parameter compression are the sur
 ### (In Progress) Per-Scale Configuration at Longer Block Size
 
 Sweep `levels` and `per_scale_mixer_widths` at the longer `block_size` to exploit coarse scales. Hypothesis: optimal `levels ≈ log2(block_size) − 3 = 11`. Currently running as Test 5 in [`runs.sh`](runs.sh) at bs=16384 with `wavelet_crawl=false` for stability at higher levels. Each iteration uses its max-stable peak LR (heterogeneous LR design): levels=5/7 at `lr=0.01`, levels=9 at `3.42e-3`, and levels=11 at `1.14e-3`, with `min_lr`s scaled proportionally. Levels=13 OOMs at this config and is deferred to a gradient checkpointing follow-up if warranted.
-
-### Increased Learning Rates
-
-The heterogeneous LR design (levels=9 at `3.42e-3`, levels=11 at `1.14e-3`) was forced by an fp16 NaN cliff in the FWHT. At high `levels`, the per-scale Hadamard input grew large enough that the post-fp32 cast back to fp16 saturated and propagated inf. With mean centering applied before the forward FWHT (May 2026), non-DC bins are bounded by `√N · max|x − mean|` instead of `√N · max|x|`, eliminating the dominant overflow source and pushing the cliff much higher. This invites a fresh max-stable LR sweep at the winning `levels` value: start at the original `lr=0.01` and step upward (e.g. 0.012, 0.015, 0.02) until either a NaN reappears or BPB plateaus, in which case the cosine schedule's lower `min_lr` should be scaled accordingly to keep the peak/min ratio at ~50×. If the new ceiling is meaningfully above 0.01, training time per BPB target drops proportionally and the heterogeneous-LR table can collapse back to a single shared `lr` across the entire `levels` axis.
 
 ### Wavelet Compression
 

@@ -58,26 +58,10 @@ def pad_features_to_pow2(x: torch.Tensor, C_pad: int):
 # 2. FREQUENCY SPACE - Fast Hadamard Transform
 # ==============================================================================
 
-@torch.compiler.disable
 def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
     """Iterative 'Butterfly' FWHT. Memory efficient (N log N), but kernel-heavy.
-    Best for very large dimensions (C >= 2048).
-
-    Cast to fp32 internally — fp16 cannot represent the transient magnitudes
-    in the butterfly cascade for inputs with |x| approaching fp16's range.
-    Each butterfly stage computes `(a+b, a-b)` which can transiently double
-    individual element magnitudes; with C=2048 that's 11 stages of potential
-    doubling. For an input element of magnitude ~47K (a value seen in
-    practice during levels=11 / lr=0.01 training just before NaN at step 431),
-    a single butterfly stage produces ~94K which overflows fp16 (max 65504),
-    propagating inf through the rest of the cascade.
-
-    fp32 has range ~3.4e38, so even with several stages of doubling a 47K
-    input would produce values well within range. The cast is local to this
-    op (a small fraction of total compute, O(C log C) per token vs the
-    O(C^2 * expansion) MLP block), so the wall-clock cost is negligible."""
-    orig_dtype = x.dtype
-    y = x.float()
+    Best for very large dimensions (C >= 2048)."""
+    y = x
     n = y.shape[-1]
     h = 1
     while h < n:
@@ -88,8 +72,8 @@ def fwht_ortho_iterative(x: torch.Tensor) -> torch.Tensor:
         y = torch.stack([c1, c2], dim=-2)
         y = y.reshape(y.shape[:-3] + (-1,))
         h *= 2
-    scale = torch.rsqrt(torch.tensor(n, device=x.device, dtype=torch.float32))
-    return (y * scale).to(orig_dtype)
+    scale = torch.rsqrt(torch.tensor(n, device=x.device, dtype=x.dtype))
+    return y * scale
 
 class FastHadamardTransform(nn.Module):
     """Hybrid FWHT: matrix multiply for dim < 2048, iterative butterfly otherwise."""
@@ -113,18 +97,9 @@ class FastHadamardTransform(nn.Module):
             torch.cat([h, -h], dim=1)
         ], dim=0)
 
-    @torch.compiler.disable
     def forward(self, x):
-        # @torch.compiler.disable forces this op out of any fused graph so the
-        # fp32 internal cast is preserved exactly. Without this, dynamo can
-        # fuse the FWHT with surrounding fp16 ops and elide the .float()
-        # promotion — diagnosed as the source of compile-only NaNs at L=11/
-        # bs=16384 (forward hooks suppress the NaN by introducing graph breaks
-        # at module boundaries; this decorator achieves the same effect by
-        # design, without the diagnostic overhead).
         if self.use_matrix:
-            orig_dtype = x.dtype
-            return torch.matmul(x.float(), self.H.float()).to(orig_dtype)
+            return torch.matmul(x, self.H)
         else:
             return fwht_ortho_iterative(x)
 
@@ -935,9 +910,6 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         per_layer_embedding: bool = False,
-        fht_mean_centering: bool = True,
-        fht_log_transform: bool = False,
-        fht_log_transform_eps: float = 0.1,
     ):
         super().__init__()
         self.C = C
@@ -945,9 +917,6 @@ class WaveletLMBlock(nn.Module):
         self.Cp = next_pow2(C)
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
-        self.fht_mean_centering = fht_mean_centering
-        self.fht_log_transform = fht_log_transform
-        self.fht_log_transform_eps = fht_log_transform_eps
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
 
         # Wavelet decomposition
@@ -1232,29 +1201,6 @@ class WaveletLMBlock(nn.Module):
         if self.decompose_bypass and gate_bias_scales is not None:
             stacked_coeffs = stacked_coeffs + gate_bias_scales
 
-        # Optional sign-preserving log compression on FWHT input via asinh.
-        # asinh(x) = log(x + √(x² + 1)):
-        #   - asinh(x) ≈ x for small |x| (identity near zero, no resolution loss)
-        #   - asinh(x) ≈ sign(x) · log(2|x|) for large |x| (log compression)
-        # Smooth at x=0 (unlike sign(x)·log(|x|+ε), which is discontinuous and
-        # generates spurious gradient spikes). Gradient 1/√(x²+1) ≤ 1 → fp16-safe
-        # forward and backward at any AMP scale, no ε tuning required. Single
-        # CUDA kernel, single allocation. Applied per-block and NOT inverted
-        # after invFWHT — residual contribution stays in compressed domain.
-        # Enabled via config['fht_log_transform']. (fht_log_transform_eps kept
-        # in config for API compat with the old sign·log formulation; unused.)
-        if self.fht_log_transform:
-            stacked_coeffs = torch.asinh(stacked_coeffs)
-
-        # Optional mean-centering on Cp before FWHT to bound non-DC output bins
-        # for the fp16 cast. (DC bin = √N · mean still risks overflow; non-DC
-        # bins become √N · max|x − mean|, much smaller when inputs cluster.)
-        # Restored after invFWHT below. Enabled via config['fht_mean_centering'].
-        fht_dc = None
-        if self.fht_mean_centering:
-            fht_dc = stacked_coeffs.mean(dim=-1, keepdim=True)
-            stacked_coeffs = stacked_coeffs.sub_(fht_dc)
-
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
@@ -1296,12 +1242,6 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
-
-        # Restore DC offset removed before the forward FWHT (when centering on).
-        # NOTE: log transform (if enabled above) is intentionally NOT inverted —
-        # the residual stream sees the log-domain contribution.
-        if fht_dc is not None:
-            mixed_all = mixed_all.add_(fht_dc)
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
@@ -1531,9 +1471,6 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 per_layer_embedding=config.get("per_layer_embedding", False),
-                fht_mean_centering=config.get("fht_mean_centering", True),
-                fht_log_transform=config.get("fht_log_transform", False),
-                fht_log_transform_eps=config.get("fht_log_transform_eps", 0.1),
             )
             for _ in range(layer_build_count)
         ])
@@ -1962,7 +1899,7 @@ def parameter_breakdown(model, config, logger=None):
     out(f"\n{'='*60}")
     out(f"PARAMETER BREAKDOWN")
     out(f"{'='*60}")
-    out(f"Total parameters:  {total:>{W},} ({total/1e6:.2f}M)")
+    out(f"Total parameters:    {total:>{W},} ({total/1e6:.2f}M)")
     if trainable != total:
         out(f"Trainable parameters:{trainable:>{W},} ({trainable/1e6:.2f}M)")
 
@@ -1984,62 +1921,27 @@ def parameter_breakdown(model, config, logger=None):
             out(f"  Shared lifting:  {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
 
         out(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")
-        out(f"  Layers:          {layer_params:>{W},} ({layer_params/1e6:.2f}M)")
+        out(f"  Layers (total):  {layer_params:>{W},} ({layer_params/1e6:.2f}M)")
 
-        # Per-component totals across all N layers. Each `*_per` is the
-        # per-block count; multiply by num_layers to get the total. Tracks the
-        # named-component sum so we can report a residual "Other" bucket whose
-        # per-layer parts sum exactly to (block_total − shared-lifting-when-shared).
+        # Per-layer component breakdown
         block0 = model.layers[0]
-        num_layers = len(model.layers)
-        block_total = sum(p.numel() for p in block0.parameters())
-        named_per = 0
-
-        if model.shared_lifting_weights and hasattr(block0, 'lifting_wavelet'):
-            shared_lift = sum(p.numel() for p in block0.lifting_wavelet.parameters())
-        else:
-            shared_lift = 0
-            if hasattr(block0, 'lifting_wavelet'):
-                lifting_per = sum(p.numel() for p in block0.lifting_wavelet.parameters())
-                lifting_tot = lifting_per * num_layers
-                out(f"    Lifting:       {lifting_tot:>{W},} ({lifting_tot/1e6:.2f}M)")
-                named_per += lifting_per
-
         if block0.mixer_depth > 1:
             if hasattr(block0, 'scale_mixers_by_depth'):
                 mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())
                 norm_per = sum(p.numel() for p in block0.mixer_depth_norms.parameters())
-                mixer_tot = (mixer_per + norm_per) * num_layers
-                out(f"    Mixer (depth={block0.mixer_depth}):{mixer_tot:>{W-2},} ({mixer_tot/1e6:.2f}M)")
-                named_per += mixer_per + norm_per
+                out(f"    Mixer (depth={block0.mixer_depth}):{mixer_per + norm_per:>{W-2},} ({(mixer_per + norm_per)/1e6:.2f}M)")
         else:
             mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
-            mixer_tot = mixer_per * num_layers
-            out(f"    Mixer:         {mixer_tot:>{W},} ({mixer_tot/1e6:.2f}M)")
-            named_per += mixer_per
+            out(f"    Mixer/layer:   {mixer_per:>{W},} ({mixer_per/1e6:.2f}M)")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
-            mlp_tot = mlp_per * num_layers
-            out(f"    MLP:           {mlp_tot:>{W},} ({mlp_tot/1e6:.2f}M)")
-            named_per += mlp_per
+            out(f"    MLP/layer:     {mlp_per:>{W},} ({mlp_per/1e6:.2f}M)")
         if block0.pkm_enabled:
             pkm_per = sum(p.numel() for p in block0.pkm.parameters())
-            pkm_tot = pkm_per * num_layers
-            out(f"    PKM:           {pkm_tot:>{W},} ({pkm_tot/1e6:.2f}M)")
-            named_per += pkm_per
+            out(f"    PKM/layer:     {pkm_per:>{W},} ({pkm_per/1e6:.2f}M)")
         if block0.fwpkm_enabled:
             fwpkm_per = sum(p.numel() for p in block0.fwpkm.parameters())
-            fwpkm_tot = fwpkm_per * num_layers
-            out(f"    FwPKM:         {fwpkm_tot:>{W},} ({fwpkm_tot/1e6:.2f}M)")
-            named_per += fwpkm_per
-        # block_total includes shared-lifting params when shared (lifting_wavelet
-        # is a child of every block); exclude them so "Other" reflects only the
-        # block-local glue (proj_out, scale_routing/weights, history_gains,
-        # learned_residual alphas, ln1/ln2, embedding_residual_gamma, etc.).
-        other_per = block_total - named_per - shared_lift
-        if other_per > 0:
-            other_tot = other_per * num_layers
-            out(f"    Other:         {other_tot:>{W},} ({other_tot/1e6:.2f}M)")
+            out(f"    FwPKM/layer:   {fwpkm_per:>{W},} ({fwpkm_per/1e6:.2f}M)")
 
         out(f"  LM head:         {lm_params:>{W},} ({lm_params/1e6:.2f}M)")
         out(f"  Final LayerNorm: {ln_params:>{W},} ({ln_params/1e6:.2f}M)")
