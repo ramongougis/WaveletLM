@@ -17,7 +17,7 @@
 #   2. E5_5ep                         5ep   per_scale_mixer_widths=[1.5×4, 0.5×4]   (uncompressed coarse expansion confirmation)
 #   3. R1_5ep                         5ep   low_rank=16                              (winner confirmation)
 #   4. M1..M4                         1ep   off-diagonal magnitude-pruned masking sweep (0.1/1/5/10%)
-#   5. M1r..M4r                       1ep   off-diagonal random masking (controls at matched densities)
+#   5. M1r..M4r                       1ep   off-diagonal random masking (full controls at matched densities)
 #
 # After everything completes (likely tomorrow morning), a new combined 5-epoch
 # run will fold the surviving winners into a new post-parameter-reduction
@@ -172,17 +172,20 @@ run_ablation "M4 off-diagonal magnitude 10%" \
     "M4: off-diagonal magnitude-pruned 10% (1ep, L=7)"
 
 # ---- 5. Random off-diagonal masking controls (1ep each) ---------------------
-# Same densities as M1/M3/M4 with a random mask seed instead of the
+# Same densities as M1/M2/M3/M4 with a random mask seed instead of the
 # magnitude-pruned ranking. Isolates the deliberate-vs-random contribution at
-# each density. M2r (1% random) skipped — M2 vs M2r is the most informative
-# pair if M2 lands cleanly; if M2 fails, the M3/M4 randomized pairs above
-# still provide control coverage.
+# each density.
 OFFDIAG_RANDOM_BASE='{"low_rank": 16, "lifting_diaglowrank": true, "lifting_offdiag_mask": true, "lifting_offdiag_mask_source": "random", "lifting_offdiag_mask_seed": 1337}'
 
 run_ablation "M1r off-diagonal random 0.1%" \
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$OFFDIAG_RANDOM_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
     "M1r: off-diagonal random 0.1% (1ep, L=7)"
+
+run_ablation "M2r off-diagonal random 1%" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$OFFDIAG_RANDOM_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
+    "M2r: off-diagonal random 1% (1ep, L=7)"
 
 run_ablation "M3r off-diagonal random 5%" \
     "$BASE_PATCH_1EP" \
