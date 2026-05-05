@@ -517,7 +517,7 @@ Longer training time, more regularization, and parameter compression are the sur
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
 3. [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size)
-4. [Wavelet Compression](#wavelet-compression)
+4. [(Complete) Wavelet Compression](#complete-wavelet-compression)
 5. [Per-Scale Mixer Width Expansion](#per-scale-mixer-width-expansion)
 6. [Low Rank Ablations](#low-rank-ablations)
 7. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
@@ -557,9 +557,11 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** ship `levels=7`; `levels ≥ 9` deferred until the optimizer sweep. 
 
-### Wavelet Compression
+### (Complete) Wavelet Compression
 
-[`analyze_lifting.py`](analyze_lifting.py) on the L=1 / levels=7 / 5-epoch winner ([logs/wikitext-103_2026-05-03_02-13-07/best_model.pt](logs/wikitext-103_2026-05-03_02-13-07/log.txt)) confirms strong **diagonal dominance** across the four lifting matrix types — average diagonal Frobenius energy is **71.80% / 76.28% / 72.54% / 48.73%** for `predict_nets[L].0` / `predict_nets[L].3` / `update_nets[L].0` / `update_nets[L].3` respectively, vs a 0.0488% random baseline (~1000-1500× above random for three of four types). Generic low-rank is weak (r99 ≈ 1875-1950 out of 2048), so `W ≈ D + U·V^T` (diagonal + small low-rank correction) at r=16 captures the structure at **31× compression per matrix** (135K vs 4.19M params). Cross-level similarity is moderate — average pairwise cosine **0.738 / 0.774 / 0.754** for the three well-behaved types — suggesting group-wise sharing across levels (2-3 groups for 7 levels) as an alternative or complement, saving ~12.58M params per matrix type. The outlier `update_nets[L].3` (48.73% diag energy, 0.537 avg cosine) needs gentler treatment — r=64 instead of r=16, and group sharing is less viable. The 28 lifting weight tensors total 117.44M params and are already tied between `lifting_wavelet` and `lifting_reconstruct.decompose` (PyTorch parameter sharing), so there's no double-count to recover. Method: derive strategies per-matrix-type (D + UV^T at r=16 for the three diagonal-dominant types, r=64 for the outlier; group sharing as a layered second pass), test each individually for 1 epoch, combine winners (those within ±0.018 BPB of 1.0974) for a 5-epoch confirmation, and keep the changes if final BPB stays within ±0.0015. Successful application would shrink lifting from 117.44M → ~5-7M params (~94-96%), bringing the total model from **392.91M → ~280M**.
+**Result:** D + U·V^T compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting from 117.44M → 3.33M (97%) and total params by 29%, but landed at 1-epoch BPB sliding 1.2860 vs reference 1.2361 - a +0.0499 regression, well outside the ±0.018 noise tolerance. Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250 (lr ≈ 1e-2) due to amplified gradient accumulation across shared cascade levels. [`analyze_lifting.py`](analyze_lifting.py)'s structural findings (~75% diagonal energy, weak generic low-rank, moderate cross-level cosine ≈ 0.74) replicated; the failure is the compression's expressive ceiling, not the analysis.
+
+**Decision:** shelved at this regime, but whether or not a 29% reduction in parameters is worth the regression in BPB is an engineering decision. Revisit if the optimizer sweep or larger dataset training (PG-19) shifts the architecture out of WikiText-103's data-bottlenecked range, where lifting capacity becomes a real constraint that aggressive compression can absorb.
 
 ### Per-Scale Mixer Width Expansion
 
