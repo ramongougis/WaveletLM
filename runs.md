@@ -320,6 +320,22 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 64 | | | ~380M | | | | Higher rank; ~13M extra params, still cheap |
 |   | 128 | | | ~393M | | | | Contingent on rank=64; only if 64 keeps improving |
 
+### Low-rank ablations: post-combined-reduction baseline (L=1, levels=7, epochs=1)
+
+Re-test of `low_rank` at the current sweep regime (L=1 / levels=7 / bs=16384 /
+per_scale_mixer_widths=[1,1,1,1,0.5,0.5,0.5,0.5], post-combined-reduction).
+Motivated by the E5 finding that mixer-width expansion contributed nothing
+measurable beyond the headline; rank may be the under-explored axis.
+Each ablation only varies `low_rank`; all other settings match the R0 baseline.
+
+| Run | low_rank | Folder | BPB (sliding) | Params | U/V correction params | Time | Train VRAM | Delta vs R0 | Notes |
+|-----|----------|--------|---------------|--------|------------------------|------|------------|--------------|-------|
+| R0  | 4 (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 16K/scale × 8 = 128K   | ~70m | 23,411 MiB | — | Reference |
+| R1  | 16   | | | ~395M | 256K/scale × 8 = 2.05M    | | | | |
+| R2  | 128  | | | ~410M | 2.10M/scale × 8 = 16.78M  | | | | |
+| R3  | 1024 | | | ~527M | 16.78M/scale × 8 = 134M   | | | | Matches main mixer matrix capacity |
+| R4* | 2048 | | | ~661M | 33.55M/scale × 8 = 268M   | | | | Run only if R3 wins; verifies saturating-at-full-rank |
+
 ### Lifting hidden multiplier
 
 | Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
