@@ -82,10 +82,20 @@ run_ablation "R1.5 low_rank=32" '{"low_rank": 32}'
 # R1.75: closer to R2's instability boundary
 run_ablation "R1.75 low_rank=64" '{"low_rank": 64}'
 
+# DBD: validates the Decompose Bypass Disablement plan from Future Plans #7
+# while the 1-epoch baseline is fresh. Combines the new low_rank=16 winner
+# with both decompose_bypass flags disabled. Boolean ablation at L=1/E=1
+# previously found both within ±0.0015 BPB of baseline (within noise);
+# this run confirms at L=7 / bs=16384 / 1-epoch / low_rank=16. Tolerance
+# vs R1's 1.2342: ±0.018 BPB = passing range [1.2162, 1.2522].
+run_ablation "DBD decompose_bypass=false + low_rank=16" \
+    '{"low_rank": 16, "decompose_bypass": false, "decompose_bypass_cross_window": false}'
+
 echo ""
 echo "============================================================"
-echo "=== low_rank intermediate ablations complete."
+echo "=== low_rank intermediate ablations + DBD complete."
 echo "===   Reference: R1 low_rank=16 → BPB sliding 1.2342"
 echo "===   If R1.5 or R1.75 beats 1.2342 cleanly: take winner to 5 epochs."
 echo "===   If both diverge / fail to beat R1: R1 (low_rank=16) wins."
+echo "===   DBD pass criterion: ±0.018 BPB of R1 → ship as new defaults."
 echo "============================================================"
