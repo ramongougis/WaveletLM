@@ -522,23 +522,24 @@ Longer training time, more regularization, and parameter compression are the sur
 6. [Low Rank Ablations](#low-rank-ablations)
 7. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
 8. [Wavelet Off-Diagonal Masking](#wavelet-off-diagonal-masking)
-9. [Dropout Sweep](#dropout-sweep)
-10. [Weight Decay Sweep](#weight-decay-sweep)
-11. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-12. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-13. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-14. [Longer PG-19 Training](#longer-pg-19-training)
-15. [Dataset Comparisons](#dataset-comparisons)
-16. [Model Comparisons](#model-comparisons)
-17. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-18. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-19. [Multi-Transform Parallelization](#multi-transform-parallelization)
-20. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-21. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-22. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-23. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-24. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-25. [Other Post-Release Plans](#other-post-release-plans)
+9. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+10. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+11. [Dropout Sweep](#dropout-sweep)
+12. [Weight Decay Sweep](#weight-decay-sweep)
+13. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+14. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+15. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+16. [Longer PG-19 Training](#longer-pg-19-training)
+17. [Dataset Comparisons](#dataset-comparisons)
+18. [Model Comparisons](#model-comparisons)
+19. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+20. [Multi-Transform Parallelization](#multi-transform-parallelization)
+21. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+22. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+23. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+24. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+25. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+26. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -602,6 +603,18 @@ Sweep is at L=1 / levels=7 / bs=16384 / `low_rank=16` / 1 epoch each over off-di
 
 If any density lands within ±0.018 BPB of the reference, that density gets a 5-epoch confirmation against the L=1 / levels=7 / 5-epoch winner (1.0974). The smallest density that holds at 5 epochs becomes the shipped config — the parameter-vs-BPB tradeoff is ultimately an engineering decision (same calculus as A1's "shelved at this regime"), but a sub-±0.018-BPB result at any density meaningfully shifts that decision. Implementation lands as a new boolean `lifting_offdiag_mask` plus `lifting_offdiag_density` and `lifting_offdiag_mask_source` (`magnitude` | `random`), forwarded through `LiftingWaveletDecompose` alongside the existing `lifting_diaglowrank` flag.
 
+### Optimizer Sweep (Muon → AdamW)
+
+Adagrad (lr=0.01, eps=2e-13) sits in the failure path for our two recurring NaN modes — the L=11 cascade explosion at bs=16384 and high-`low_rank` blowups (R1.5 / R2 / R3) — and is the highest-priority unblocker before regularization sweeps, which won't transfer cleanly across optimizers.
+
+**Phase 1: Muon** ([Jordan et al., 2025](https://arxiv.org/abs/2502.16982); used in DeepSeek-V4). Newton-Schulz orthogonalization bounds every update's spectral norm — structurally the same property mHC uses to scale residual depth, applied to our matrix-heavy MLP / mixer / lifting `Linear(C, C)`. Start from DeepSeek-V4's hybrid recipe (8 iterations at (3.4445, -4.7750, 2.0315) + 2 at (2, -1.5, 0.5)); embedding / LM head / RMSNorm stay on AdamW. **Phase 2: AdamW** as fallback baseline.
+
+**Procedure.** 1-epoch peak-LR screening at L=1 / levels=7 / bs=16384 against Adagrad reference 1.2361, 5-epoch confirmation against headline 1.0974, then retest at `levels=9 / 11` — orthogonalized updates may clear the deferred L=11 cliff. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
+
+### Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)
+
+**Source: [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections/deepseek-ai/deepseek-v4).** HCA-style summarized history as a data-loader transformation: bisect the input — recent `block_size/2` tokens uncompressed (the only loss-bearing positions), past `block_size/2` slots each holding the mean of `g = ceil((block_size_compressed − block_size/2) / (block_size/2))` consecutive corpus tokens. For `block_size=16384`, `block_size_compressed=1,000,000` → `g=122`, ~1.007M-token span; 4M context → `g=488`. Because the seam sits at a power of 2, the bisection is preserved at every wavelet level (seam moves inward, two regimes never mix within a single coarse coefficient), with O(log block_size) total seam-bridging predict/update operations. Sweep `block_size_compressed` ∈ {65K, 262K, 1M, 4M} at L=1 / levels=7 / bs=16384 vs headline 1.0974, ±0.018 BPB tolerance; promote best to 5 epochs. Earlier tiered/recall variants archived in [plans/old_compression_ideas.md](plans/old_compression_ideas.md).
+
 ### Dropout Sweep
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
@@ -637,10 +650,6 @@ The best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, an
 ### Model Comparisons
 
 Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
-
-### Optimizer Sweep (Adagrad / AdamW / Muon)
-
-Adagrad (lr=0.01) is the validated optimizer for the released model but has not been directly compared against properly-tuned alternatives. WaveletLM is matrix-parameter-heavy (MLP at expansion=20 produces Linear(2048, 40960) weights, plus per-scale mixers and lifting matrices), so [Muon (Jordan et al., 2025)](https://arxiv.org/abs/2502.16982) - which orthogonalizes matrix gradient updates via Newton-Schulz iteration and reports 1.5–2× wall-clock speedups vs AdamW on small transformers - is a strong candidate. Plan: a 2-phase sweep (1-epoch LR screening + 5-epoch finalist validation) across Adagrad, AdamW, and Muon. Even a 30% wall-clock speedup compounds across every subsequent ablation and the B200 scale-up. **Once the per-optimizer best hyperparameters are identified, retest each on `levels=9` and `levels=11`** at bs=16384 to see whether the new optimizer (and its tuned learning rate) clears the fp16 NaN cliff that blocked higher levels under Adagrad — the same sweep that now ships levels=7 may swing to a deeper optimum once a different update rule is in place. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
 
 ### Bit-Packed PTQ Kernels
 
