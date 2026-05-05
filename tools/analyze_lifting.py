@@ -16,9 +16,9 @@ Output: tables to stdout with concrete compression recommendations and
 estimated parameter savings. CPU-only, runs in 1–10 min depending on levels
 count (each SVD on 2048×2048 takes ~5-10s on a modern CPU).
 
-Usage:
-    python analyze_lifting.py
-    python analyze_lifting.py --checkpoint logs/wikitext-103_2026-05-03_02-13-07/best_model.pt
+Usage (runs from anywhere; paths resolve against the repo root):
+    python tools/analyze_lifting.py
+    python tools/analyze_lifting.py --checkpoint logs/wikitext-103_2026-05-03_02-13-07/best_model.pt
 """
 import argparse
 import os
@@ -29,13 +29,17 @@ from collections import defaultdict
 import torch
 
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 # ============================================================================
 # Checkpoint loading
 # ============================================================================
 
 def find_latest_checkpoint() -> str | None:
+    logs_dir = os.path.join(REPO_ROOT, "logs")
     candidates = []
-    for root, _dirs, files in os.walk("logs"):
+    for root, _dirs, files in os.walk(logs_dir):
         if "best_model.pt" in files:
             candidates.append(os.path.join(root, "best_model.pt"))
     return max(candidates, key=os.path.getmtime) if candidates else None
@@ -333,6 +337,8 @@ def main():
     args = ap.parse_args()
 
     ckpt_path = args.checkpoint or find_latest_checkpoint()
+    if ckpt_path is not None and not os.path.isabs(ckpt_path):
+        ckpt_path = os.path.join(REPO_ROOT, ckpt_path)
     if ckpt_path is None or not os.path.isfile(ckpt_path):
         sys.exit(f"No checkpoint at: {ckpt_path or '(none found under logs/)'}")
 

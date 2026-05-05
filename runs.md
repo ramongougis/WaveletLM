@@ -317,40 +317,6 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 0  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4; full rank) |
 |   | 4  | [link](logs/wikitext-103_2026-04-16_10-43-48/log.txt) | 1.1702 | 367.40M | 18,835 MiB | 2,184 MiB | -0.0045 | Slight improvement! Worth keeping at small cost |
 |   | 16 | [link](logs/wikitext-103_2026-04-16_14-02-48/log.txt) | 1.1691 | 369.86M | 18,887 MiB | 2,196 MiB | -0.0057 | Slightly better than rank=4; small marginal gain (-0.0012) |
-|   | 64 | | | ~380M | | | | Higher rank; ~13M extra params, still cheap |
-|   | 128 | | | ~393M | | | | Contingent on rank=64; only if 64 keeps improving |
-
-### Low-rank ablations: post-combined-reduction baseline (L=1, levels=7, epochs=1)
-
-Re-test of `low_rank` at the current sweep regime (L=1 / levels=7 / bs=16384 /
-per_scale_mixer_widths=[1,1,1,1,0.5,0.5,0.5,0.5], post-combined-reduction).
-Motivated by the E5 finding that mixer-width expansion contributed nothing
-measurable beyond the headline; rank may be the under-explored axis.
-Each ablation only varies `low_rank`; all other settings match the R0 baseline.
-
-| Run | low_rank | Folder | BPB (sliding) | Params | U/V correction params | Time | Train VRAM | Delta vs R0 | Notes |
-|-----|----------|--------|---------------|--------|------------------------|------|------------|--------------|-------|
-| R0  | 4 (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 16K/scale × 8 = 128K   | ~70m | 23,411 MiB | — | Reference |
-| R1  | 16   | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) | **1.2342** | 393.21M | 256K/scale × 8 = 2.05M | 80m | — | **−0.0019** | **PASS.** Stable; modest improvement, +0.30M params. Best 1-epoch low_rank candidate so far. |
-| R1.5 | 32  | | | ~393.5M | 512K/scale × 8 = 4.10M | | | | Pending — between R1 and R2; tests upper stability boundary |
-| R1.75 | 64 | | | ~394.5M | 1.05M/scale × 8 = 8.39M | | | | Pending — closer to R2 |
-| R2  | 128  | [link](logs/wikitext-103_2026-05-05_08-29-00/log.txt) | 13.7913 (NaN-affected) | 395.96M | 2.10M/scale × 8 = 16.78M | — | — | — | **Effective NaN.** Best Val Loss 4.987 at epoch end; checkpoint produces noise-level BPB. Diverged mid-run. |
-| R3  | 1024 | [link](logs/wikitext-103_2026-05-05_09-47-01/log.txt) | NaN at step 2000 | ~527M | 16.78M/scale × 8 = 134M  | — | — | — | NaN at lr=9.12e-3, well into warmup peak. Capacity-matched to main mixer matrix destabilizes. |
-
-### Mixer width contractions: post-combined-reduction baseline (L=1, levels=7, epochs=1)
-
-Per-scale mixer width contraction sweep. Same baseline as the low_rank table above. After E5 (uncompressed lifting + width=1.5 coarse) tracked the headline reference closely at 5 epochs, we tested the opposite direction: can the mixer be made *smaller* than baseline at no quality cost? `low_rank` held at the default 4.
-
-| Run | per_scale_mixer_widths | Folder | BPB (sliding) | Params | Mixer total | Time | Train VRAM | Delta vs R0 | Notes |
-|-----|------------------------|--------|---------------|--------|-------------|------|------------|--------------|-------|
-| R0  | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 23,411 MiB | — | Reference |
-| W1  | [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05] | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) | NaN | 339.53M | 5.44M | — | — | — | NaN at step 1250 (lr=5.7e-3). Extreme contraction destabilizes — proj_in's 10-20× crush from Cp=2048 to 205/102 channels likely cascades to fp16 saturation. |
-| W2  | [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25] | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) | **1.2437** | 369.80M | 35.70M | 78m | — | **+0.0076** | **PASS** (within ±0.018 tolerance). 5.9% smaller total, **39.3% smaller mixer**, marginal BPB cost. Trained stably through warmup peak (lr=0.01) with no instability. Promote to default candidate; 5-epoch confirmation pending. |
-
-**Width-floor finding:** the boundary between stable contraction and NaN lives somewhere between W2's coarse=0.5 / fine=0.25 and W1's coarse=0.1 / fine=0.05. Follow-up tightenings worth testing if W2 ships at 5 epochs:
-- `[0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]` — 80% of W2
-- `[0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]` — 60% of W2
-- `[0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]` — 50% of W2 (approaches W1 territory)
 
 ### Lifting hidden multiplier
 
@@ -700,6 +666,58 @@ Quality-wise, val loss landed at **3.4170** (Δ = +0.083 vs Test 1, +0.078 vs Te
 Test 4 BPB sliding (1.1149) is **not directly comparable** to bs=256 runs' BPB — only 34 windows of length 16384 vs 2246 windows of length 256 (see methodology caveat above). Re-evaluation at bs=256 stride=128 in `benchmark_only` mode would give the apples-to-apples number.
 
 See [plans/findings.md](plans/findings.md#combined-parameter-reduction-better-than-free-at-l1) for the full analysis.
+
+### Low-rank ablations: post-combined-reduction baseline (L=1, levels=7, epochs=1)
+
+Re-test of `low_rank` at the current sweep regime (L=1 / levels=7 / bs=16384 /
+per_scale_mixer_widths=[1,1,1,1,0.5,0.5,0.5,0.5], post-combined-reduction).
+Motivated by the E5 finding that mixer-width expansion contributed nothing
+measurable beyond the headline; rank may be the under-explored axis.
+Each ablation only varies `low_rank`; all other settings match the R0 baseline.
+
+| Run | low_rank | Folder | BPB (sliding) | Params | U/V correction params | Time | Train VRAM | Delta vs R0 | Notes |
+|-----|----------|--------|---------------|--------|------------------------|------|------------|--------------|-------|
+| R0  | 4 (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 16K/scale × 8 = 128K   | ~70m | 23,411 MiB | — | Reference |
+| R1  | 16   | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) | **1.2342** | 393.21M | 256K/scale × 8 = 2.05M | 80m | — | **−0.0019** | **PASS / WINNER.** Stable; modest improvement, +0.30M params. The 1-epoch low_rank champion. |
+| R1.5 | 32  | [link](logs/wikitext-103_2026-05-05_11-23-29/log.txt) | NaN at step 2250 | 393.60M | 512K/scale × 8 = 4.10M | — | — | — | NaN at peak lr=1.00e-2 (end of warmup). Stability boundary lives between low_rank=16 and 32. |
+| R1.75 | 64 | — | — | — | — | — | — | — | **Cancelled.** R1.5 already destabilized at low_rank=32; 64 is further into the unstable region. |
+| R2  | 128  | [link](logs/wikitext-103_2026-05-05_08-29-00/log.txt) | 13.7913 (NaN-affected) | 395.96M | 2.10M/scale × 8 = 16.78M | — | — | — | **Effective NaN.** Best Val Loss 4.987 at epoch end; checkpoint produces noise-level BPB. Diverged mid-run. |
+| R3  | 1024 | [link](logs/wikitext-103_2026-05-05_09-47-01/log.txt) | NaN at step 2000 | ~527M | 16.78M/scale × 8 = 134M  | — | — | — | NaN at lr=9.12e-3, well into warmup peak. Capacity-matched to main mixer matrix destabilizes. |
+
+**Conclusion:** `low_rank=16` is the stable improvement at this regime. The upper stability boundary lives between 16 and 32 at lr=1.00e-2 / Adagrad eps=2e-13. 5-epoch confirmation queued.
+
+### Mixer width contractions: post-combined-reduction baseline (L=1, levels=7, epochs=1)
+
+Per-scale mixer width contraction sweep. Same baseline as the low_rank table above. After E5 (uncompressed lifting + width=1.5 coarse) tracked the headline reference closely at 5 epochs, we tested the opposite direction: can the mixer be made *smaller* than baseline at no quality cost? `low_rank` held at the default 4.
+
+| Run | per_scale_mixer_widths | Folder | BPB (sliding) | Params | Mixer total | Time | Train VRAM | Delta vs R0 | Notes |
+|-----|------------------------|--------|---------------|--------|-------------|------|------------|--------------|-------|
+| R0  | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 23,411 MiB | — | Reference |
+| W1  | [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05] | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) | NaN | 339.53M | 5.44M | — | — | — | NaN at step 1250 (lr=5.7e-3). Extreme contraction destabilizes — proj_in's 10-20× crush from Cp=2048 to 205/102 channels likely cascades to fp16 saturation. |
+| W2  | [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25] | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) | **1.2437** | 369.80M | 35.70M | 78m | — | **+0.0076** | **PASS** (within ±0.018 tolerance). 5.9% smaller total, **39.3% smaller mixer**, marginal BPB cost. Trained stably through warmup peak (lr=0.01) with no instability. Promote to default candidate; 5-epoch confirmation pending. |
+
+**Width-floor finding:** the boundary between stable contraction and NaN lives somewhere between W2's coarse=0.5 / fine=0.25 and W1's coarse=0.1 / fine=0.05. Follow-up tightenings worth testing if W2 ships at 5 epochs:
+- `[0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]` — 80% of W2
+- `[0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]` — 60% of W2
+- `[0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]` — 50% of W2 (approaches W1 territory)
+
+### Wavelet off-diagonal masking sweep (planned, L=1, levels=7, epochs=1)
+
+Off-diagonal masking ablations for [Future Plans → Wavelet Off-Diagonal Masking](README.md#wavelet-off-diagonal-masking). Each lifting `Linear(C, C)` is parameterized as `W = D + (S ⊙ M)`: mandatory diagonal `D` (`lifting_diaglowrank=true`), a learnable dense off-diagonal `S`, and a fixed binary mask `M` over the top-`k`% of off-diagonal positions by magnitude (computed once at training start from the L=1 / levels=7 / 5-epoch winner [logs/wikitext-103_2026-05-03_02-13-07/best_model.pt](logs/wikitext-103_2026-05-03_02-13-07/log.txt) and frozen for training and inference). `low_rank=16` carried forward as the winner. Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
+
+| Run | Mask source | Off-diagonal density | Off-diagonal entries per Linear(2048, 2048) | Approx. lifting params | Folder | BPB (sliding) | Notes |
+|-----|-------------|----------------------|----------------------------------------------|------------------------|--------|---------------|-------|
+| M0  | (none, = A1) | 0%                   | 0                                            | 3.33M                  | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) | 1.2860 | Reference floor; +0.0499 BPB. |
+| M1  | magnitude   | 0.1%                 | ~4.2K                                        | ~3.4M (~97% reduction) | | | Cheapest non-trivial recovery test. |
+| M2  | magnitude   | 1%                   | ~41.9K                                       | ~4.5M (~96% reduction) | | | Primary candidate density. |
+| M3  | magnitude   | 5%                   | ~209K                                        | ~9.0M (~92% reduction) | | | Larger off-diagonal budget; tradeoff midpoint. |
+| M4  | magnitude   | 10%                  | ~419K                                        | ~14.7M (~87% reduction) | | | Upper end before the compression ratio gets unattractive. |
+| M1r | random      | 0.1%                 | ~4.2K                                        | ~3.4M                  | | | Random-mask control at M1 density. |
+| M2r | random      | 1%                   | ~41.9K                                       | ~4.5M                  | | | Random-mask control at M2 density. (Deferred — see runs.sh queue note; runs only if M2 lands cleanly.) |
+| M3r | random      | 5%                   | ~209K                                        | ~9.0M                  | | | Random-mask control at M3 density. |
+| M4r | random      | 10%                  | ~419K                                        | ~14.7M                 | | | Random-mask control at M4 density. |
+
+The four matched M{n} vs M{n}r pairs isolate the magnitude-pruning contribution at each density. Lottery-ticket / RIGL pattern would be magnitude beating random by more than the noise floor at higher densities (M3, M4) and converging at M1. If magnitude and random tie everywhere, density alone is what matters and the cheaper random construction wins.
 
 ### Post-release: bit-packed PTQ kernels
 

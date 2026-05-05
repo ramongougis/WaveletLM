@@ -521,23 +521,24 @@ Longer training time, more regularization, and parameter compression are the sur
 5. [Per-Scale Mixer Width Expansion](#per-scale-mixer-width-expansion)
 6. [Low Rank Ablations](#low-rank-ablations)
 7. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
-8. [Dropout Sweep](#dropout-sweep)
-9. [Weight Decay Sweep](#weight-decay-sweep)
-10. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-11. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-12. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-13. [Longer PG-19 Training](#longer-pg-19-training)
-14. [Dataset Comparisons](#dataset-comparisons)
-15. [Model Comparisons](#model-comparisons)
-16. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-17. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-18. [Multi-Transform Parallelization](#multi-transform-parallelization)
-19. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-20. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-21. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-22. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-23. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-24. [Other Post-Release Plans](#other-post-release-plans)
+8. [Wavelet Off-Diagonal Masking](#wavelet-off-diagonal-masking)
+9. [Dropout Sweep](#dropout-sweep)
+10. [Weight Decay Sweep](#weight-decay-sweep)
+11. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+12. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+13. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+14. [Longer PG-19 Training](#longer-pg-19-training)
+15. [Dataset Comparisons](#dataset-comparisons)
+16. [Model Comparisons](#model-comparisons)
+17. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+18. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+19. [Multi-Transform Parallelization](#multi-transform-parallelization)
+20. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+21. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+22. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+23. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+24. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+25. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -559,7 +560,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### (Complete) Wavelet Compression
 
-**Result:** D + U·V^T compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting from 117.44M → 3.33M (97%) and total params by 29%, but landed at 1-epoch BPB sliding 1.2860 vs reference 1.2361 - a +0.0499 regression, well outside the ±0.018 noise tolerance. Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250 (lr ≈ 1e-2) due to amplified gradient accumulation across shared cascade levels. [`analyze_lifting.py`](analyze_lifting.py)'s structural findings (~75% diagonal energy, weak generic low-rank, moderate cross-level cosine ≈ 0.74) replicated; the failure is the compression's expressive ceiling, not the analysis.
+**Result:** D + U·V^T compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting from 117.44M → 3.33M (97%) and total params by 29%, but landed at 1-epoch BPB sliding 1.2860 vs reference 1.2361 - a +0.0499 regression, well outside the ±0.018 noise tolerance. Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250 (lr ≈ 1e-2) due to amplified gradient accumulation across shared cascade levels. [`tools/analyze_lifting.py`](tools/analyze_lifting.py)'s structural findings (~75% diagonal energy, weak generic low-rank, moderate cross-level cosine ≈ 0.74) replicated; the failure is the compression's expressive ceiling, not the analysis.
 
 **Decision:** shelved at this regime, but whether or not a 29% reduction in parameters is worth the regression in BPB is an engineering decision. Revisit if the optimizer sweep or larger dataset training (PG-19) shifts the architecture out of WikiText-103's data-bottlenecked range, where lifting capacity becomes a real constraint that aggressive compression can absorb.
 
@@ -580,15 +581,26 @@ The mixer's `low_rank` (controlling the U, V parallel correction inside `GatedSp
 | Run | low_rank | BPB sliding | Notes |
 |-----|----------|-------------|-------|
 | R0  | 4 (baseline) | 1.2361 | Reference |
-| R1  | 16 | **1.2342** | -0.0019 vs baseline. Stable, modest improvement. |
+| R1  | 16 | **1.2342** | -0.0019 vs baseline. Stable, modest improvement. **Winner.** |
+| R1.5 | 32 | NaN at step 2250 | NaN at peak lr=1.00e-2 (end of warmup). Stability boundary lives between 16 and 32. R1.75 (64) cancelled as a result. |
 | R2  | 128 | 13.7913 (effectively NaN) | Diverged mid-run; saved checkpoint is non-functional. |
 | R3  | 1024 | NaN at step 2000 (lr=9.12e-3) | Capacity-matched to main mixer matrix; destabilizes. |
 
-**Result:** `low_rank=16` is the stable improvement; rank values past ~16 destabilize at this LR / per-parameter Adagrad accumulator regime. Two intermediate values (32, 64) are queued at 1 epoch to find the upper boundary of stability before promoting to a 5-epoch run. If both train cleanly and one beats 1.2342, that's the new default candidate; otherwise `low_rank=16` is.
+**Result:** `low_rank=16` is the stable improvement; the upper stability boundary lives between 16 and 32 at lr=1.00e-2 with the per-parameter Adagrad accumulator regime. R1 promoted to a 5-epoch confirmation run.
 
 ### Decompose Bypass Disablement Ablation
 
 Re-run the L=1 / levels=7 / 5-epoch winner ([logs/wikitext-103_2026-05-03_02-13-07](logs/wikitext-103_2026-05-03_02-13-07/log.txt), BPB sliding 1.0974) with `decompose_bypass=false` and `decompose_bypass_cross_window=false`. The Boolean ablation table at L=1 / E=1 found both within ±0.0015 BPB of baseline (within noise), and the Test 5 sweep showed that toggling them at L=1 / E=1 / bs=16384 also had no measurable effect on either training trajectory or NaN onset. If the 5-epoch L=1 / levels=7 run reproduces within ±0.0015 BPB of 1.0974 with both off, both flags become permanent `false` defaults, and the running-mean × `history_gains` machinery can be removed from the forward path entirely (a small step-time win and one fewer growth-prone accumulator in the residual stream). If a regression > ±0.0015 BPB appears at this scale, leave them at the headline-baseline `true` and revisit only after the optimizer sweep clears up the L=11 instability picture. Single 5-epoch run at the existing winning configuration; ~6.5h on a 5090.
+
+### Wavelet Off-Diagonal Masking
+
+A middle-ground compression regime sitting between A1's pure-diagonal `lifting_diaglowrank` (BPB sliding 1.2860, -97% lifting params, +0.0499 BPB regression) and the uncompressed reference (1.2361, 117.44M lifting params). Each lifting `Linear(C, C)` is parameterized as `W = D + (S ⊙ M)`, where `D` is the always-on diagonal (the structural backbone, mandatory at every density), `S` is a learnable dense matrix of off-diagonal entries, and `M ∈ {0, 1}^{C×C}` is a **fixed binary mask** with the diagonal forced to zero (already covered by `D`) and a top-`k`% of off-diagonal positions held active. `M` is computed once at the start of training from the magnitudes of the L=1 / levels=7 / 5-epoch winner ([logs/wikitext-103_2026-05-03_02-13-07](logs/wikitext-103_2026-05-03_02-13-07/log.txt))'s lifting weights — i.e. the magnitude-pruned regime — and frozen for the entire training and inference lifetime. Only the values at unmasked positions update during training; everywhere else `S ⊙ M = 0`.
+
+The motivation is the gap [`tools/analyze_lifting.py`](tools/analyze_lifting.py) exposed (full output: [tools/analyze_lifting_output.txt](tools/analyze_lifting_output.txt)): ~75% of the lifting matrices' Frobenius energy lives on the diagonal, but the remaining 25% does not factor through a clean low-rank structure (weak generic low-rank, r99 ≈ 1875-1950 of 2048). A1 captured the 75% and lost +0.0499 BPB; that residual mass has to be recovered selectively rather than via a low-rank refactor. Magnitude-pruned masking targets the highest-energy off-diagonal entries directly, which is what the lottery-ticket / RIGL line of work has shown beats random masks at non-trivial densities. Random masks of the same density will be tested as a control to confirm the deliberate choice is doing real work; structured masks (banded/dilated, block) are deferred to a follow-up section if magnitude pruning underperforms.
+
+Sweep is at L=1 / levels=7 / bs=16384 / `low_rank=16` / 1 epoch each over off-diagonal densities 0.1% / 1% / 5% / 10%, with magnitude-pruned (M1-M4) and random (M1r-M4r) variants at matched densities to isolate placement vs density. Pass criterion: BPB sliding within the ±0.018 noise tolerance of the 1.2361 reference. Expected ordering is M0 < M1 < M2 < M3 < M4 < uncompressed in BPB, with the question being how quickly the curve closes the +0.0499 gap. The full table (densities, parameter footprints, log links) lives in [runs.md → Wavelet off-diagonal masking sweep](runs.md#wavelet-off-diagonal-masking-sweep-planned-l1-levels7-epochs1).
+
+If any density lands within ±0.018 BPB of the reference, that density gets a 5-epoch confirmation against the L=1 / levels=7 / 5-epoch winner (1.0974). The smallest density that holds at 5 epochs becomes the shipped config — the parameter-vs-BPB tradeoff is ultimately an engineering decision (same calculus as A1's "shelved at this regime"), but a sub-±0.018-BPB result at any density meaningfully shifts that decision. Implementation lands as a new boolean `lifting_offdiag_mask` plus `lifting_offdiag_density` and `lifting_offdiag_mask_source` (`magnitude` | `random`), forwarded through `LiftingWaveletDecompose` alongside the existing `lifting_diaglowrank` flag.
 
 ### Dropout Sweep
 

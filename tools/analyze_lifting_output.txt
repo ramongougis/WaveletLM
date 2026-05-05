@@ -1,0 +1,345 @@
+root@e9ec3f885efc:/workspace/EXARCH# python analyze_lifting.py --checkpoint logs/wikitext-103_2026-05-03_02-13-07/best_model.pt
+=== Lifting weights compression analysis ===
+  Checkpoint: logs/wikitext-103_2026-05-03_02-13-07/best_model.pt
+
+  Detected 28 pair(s) of tied tensors (parameter sharing in PyTorch). Showing first 5:
+    layers.0.lifting_wavelet.predict_nets.0.0.weight
+      ≡ layers.0.lifting_reconstruct.decompose.predict_nets.0.0.weight
+    layers.0.lifting_wavelet.predict_nets.0.3.weight
+      ≡ layers.0.lifting_reconstruct.decompose.predict_nets.0.3.weight
+    layers.0.lifting_wavelet.predict_nets.1.0.weight
+      ≡ layers.0.lifting_reconstruct.decompose.predict_nets.1.0.weight
+    layers.0.lifting_wavelet.predict_nets.1.3.weight
+      ≡ layers.0.lifting_reconstruct.decompose.predict_nets.1.3.weight
+    layers.0.lifting_wavelet.predict_nets.2.0.weight
+      ≡ layers.0.lifting_reconstruct.decompose.predict_nets.2.0.weight
+    ... and 23 more
+  Tied tensors are analyzed once per logical entry; counted toward
+  total only at their first appearance.
+
+============================================================================
+  Path: layers.0.lifting_reconstruct.decompose
+============================================================================
+
+  predict_nets: 7 levels, Linear indices [0, 3]
+
+  layers.0.lifting_reconstruct.decompose.predict_nets.[L].0.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1630  1898   2018   2048      46.04    0.5113   76.01%     0.0287  4.149 2.049 2.009 1.942 1.922
+    1    2048×2048  1586  1875   2012   2048      48.43    0.5877   70.73%     0.0335  6.372 2.850 2.743 2.697 2.675
+    2    2048×2048  1581  1874   2012   2048      48.76    0.6130   68.67%     0.0352  7.203 3.201 3.137 3.009 2.929
+    3    2048×2048  1596  1884   2014   2048      46.91    0.5959   68.92%     0.0349  6.727 3.448 3.308 3.199 3.063
+    4    2048×2048  1607  1893   2016   2048      43.14    0.5541   70.96%     0.0314  4.799 2.884 2.835 2.726 2.681
+    5    2048×2048  1617  1895   2012   2048      38.72    0.5241   73.45%     0.0270  3.460 2.654 2.431 2.368 2.246
+    6    2048×2048  1616  1888   2005   2048      36.82    0.5242   73.87%     0.0261  3.701 2.475 2.415 2.384 2.332
+
+  layers.0.lifting_reconstruct.decompose.predict_nets.[L].0.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.743   0.730   0.729   0.736   0.746   0.747
+  L=1   0.743   1.000   0.727   0.717   0.717   0.723   0.722
+  L=2   0.730   0.727   1.000   0.731   0.717   0.717   0.714
+  L=3   0.729   0.717   0.731   1.000   0.748   0.736   0.727
+  L=4   0.736   0.717   0.717   0.748   1.000   0.784   0.765
+  L=5   0.746   0.723   0.717   0.736   0.784   1.000   0.816
+  L=6   0.747   0.722   0.714   0.727   0.765   0.816   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.738   0.759   0.744   0.706   0.673   0.667
+  L=1   0.702   0.000   0.742   0.741   0.718   0.696   0.693
+  L=2   0.717   0.737   0.000   0.721   0.717   0.701   0.702
+  L=3   0.730   0.765   0.750   0.000   0.685   0.683   0.689
+  L=4   0.754   0.806   0.810   0.745   0.000   0.631   0.651
+  L=5   0.800   0.870   0.883   0.827   0.703   0.000   0.595
+  L=6   0.834   0.912   0.929   0.878   0.762   0.625   0.000
+
+  layers.0.lifting_reconstruct.decompose.predict_nets.[L].3.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1732  1950   2032   2048      45.10    0.4077   84.03%     0.0231  2.589 2.113 2.080 2.057 2.038
+    1    2048×2048  1679  1919   2021   2048      45.63    0.4841   78.15%     0.0276  2.880 2.555 2.451 2.420 2.334
+    2    2048×2048  1656  1905   2014   2048      44.82    0.5120   75.41%     0.0289  3.303 2.953 2.722 2.506 2.401
+    3    2048×2048  1648  1901   2012   2048      42.24    0.5099   74.95%     0.0279  3.248 2.960 2.748 2.624 2.393
+    4    2048×2048  1612  1890   2011   2048      39.81    0.5230   73.57%     0.0268  2.838 2.545 2.383 2.253 2.188
+    5    2048×2048  1597  1886   2013   2048      36.14    0.5257   74.22%     0.0238  2.505 2.314 2.093 1.927 1.841
+    6    2048×2048  1581  1874   2005   2048      34.28    0.5392   73.64%     0.0228  2.803 2.425 2.033 1.786 1.729
+
+  layers.0.lifting_reconstruct.decompose.predict_nets.[L].3.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.817   0.798   0.793   0.783   0.783   0.779
+  L=1   0.817   1.000   0.784   0.771   0.759   0.759   0.754
+  L=2   0.798   0.784   1.000   0.776   0.755   0.752   0.746
+  L=3   0.793   0.771   0.776   1.000   0.776   0.766   0.756
+  L=4   0.783   0.759   0.755   0.776   1.000   0.786   0.768
+  L=5   0.783   0.759   0.752   0.766   0.786   1.000   0.793
+  L=6   0.779   0.754   0.746   0.756   0.768   0.793   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.610   0.634   0.627   0.631   0.622   0.628
+  L=1   0.603   0.000   0.653   0.655   0.661   0.652   0.657
+  L=2   0.638   0.664   0.000   0.653   0.670   0.661   0.666
+  L=3   0.670   0.708   0.692   0.000   0.653   0.650   0.658
+  L=4   0.715   0.758   0.754   0.693   0.000   0.631   0.648
+  L=5   0.777   0.824   0.820   0.760   0.695   0.000   0.629
+  L=6   0.826   0.874   0.871   0.810   0.753   0.663   0.000
+
+  update_nets: 7 levels, Linear indices [0, 3]
+
+  layers.0.lifting_reconstruct.decompose.update_nets.[L].0.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1633  1908   2021   2048      50.88    0.5802   73.50%     0.0338  6.504 3.478 3.090 2.954 2.729
+    1    2048×2048  1624  1905   2022   2048      50.90    0.5949   72.20%     0.0349  7.578 3.774 3.129 2.990 2.857
+    2    2048×2048  1629  1909   2023   2048      49.92    0.5804   72.65%     0.0342  7.747 3.548 3.166 3.025 2.803
+    3    2048×2048  1645  1914   2023   2048      46.83    0.5339   74.62%     0.0316  6.644 3.051 2.645 2.561 2.502
+    4    2048×2048  1638  1906   2014   2048      43.00    0.5213   74.09%     0.0286  4.797 2.384 2.276 2.186 2.162
+    5    2048×2048  1605  1883   2000   2048      39.38    0.5367   71.93%     0.0268  3.517 2.239 2.125 2.069 2.051
+    6    2048×2048  1571  1858   1982   2048      37.21    0.5651   68.82%     0.0265  2.896 2.314 2.146 2.052 2.043
+
+  layers.0.lifting_reconstruct.decompose.update_nets.[L].0.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.801   0.781   0.772   0.752   0.730   0.707
+  L=1   0.801   1.000   0.802   0.780   0.752   0.727   0.701
+  L=2   0.781   0.802   1.000   0.801   0.763   0.733   0.705
+  L=3   0.772   0.780   0.801   1.000   0.789   0.755   0.725
+  L=4   0.752   0.752   0.763   0.789   1.000   0.769   0.736
+  L=5   0.730   0.727   0.733   0.755   0.769   1.000   0.742
+  L=6   0.707   0.701   0.705   0.725   0.736   0.742   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.632   0.656   0.653   0.666   0.685   0.708
+  L=1   0.632   0.000   0.623   0.641   0.666   0.689   0.714
+  L=2   0.668   0.636   0.000   0.614   0.655   0.683   0.711
+  L=3   0.709   0.697   0.655   0.000   0.629   0.662   0.693
+  L=4   0.788   0.788   0.760   0.685   0.000   0.657   0.689
+  L=5   0.885   0.891   0.865   0.787   0.718   0.000   0.701
+  L=6   0.968   0.977   0.953   0.872   0.796   0.742   0.000
+
+  layers.0.lifting_reconstruct.decompose.update_nets.[L].3.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1456  1809   1985   2048      32.17    0.6387   59.60%     0.0264  3.157 2.980 2.360 2.229 2.202
+    1    2048×2048  1359  1727   1943   2048      32.93    0.6975   51.42%     0.0297  2.794 2.536 2.383 2.337 2.224
+    2    2048×2048  1331  1693   1917   2048      31.60    0.7208   48.18%     0.0294  2.392 2.289 2.181 2.113 2.051
+    3    2048×2048  1328  1681   1904   2048      29.41    0.7289   47.27%     0.0276  2.059 1.995 1.914 1.882 1.846
+    4    2048×2048  1319  1671   1898   2048      27.99    0.7387   46.11%     0.0264  1.878 1.714 1.614 1.598 1.566
+    5    2048×2048  1303  1657   1889   2048      26.88    0.7473   45.04%     0.0256  1.642 1.563 1.500 1.484 1.464
+    6    2048×2048  1296  1649   1882   2048      25.96    0.7582   43.46%     0.0250  1.571 1.419 1.400 1.382 1.375
+
+  layers.0.lifting_reconstruct.decompose.update_nets.[L].3.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.652   0.595   0.560   0.533   0.515   0.496
+  L=1   0.652   1.000   0.615   0.558   0.515   0.490   0.467
+  L=2   0.595   0.615   1.000   0.590   0.527   0.494   0.467
+  L=3   0.560   0.558   0.590   1.000   0.568   0.523   0.489
+  L=4   0.533   0.515   0.527   0.568   1.000   0.556   0.516
+  L=5   0.515   0.490   0.494   0.523   0.556   1.000   0.541
+  L=6   0.496   0.467   0.467   0.489   0.516   0.541   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.845   0.892   0.901   0.911   0.915   0.923
+  L=1   0.826   0.000   0.861   0.895   0.920   0.931   0.941
+  L=2   0.908   0.897   0.000   0.876   0.922   0.940   0.953
+  L=3   0.985   1.002   0.942   0.000   0.909   0.938   0.958
+  L=4   1.047   1.082   1.041   0.955   0.000   0.925   0.951
+  L=5   1.095   1.140   1.105   1.026   0.963   0.000   0.943
+  L=6   1.143   1.193   1.160   1.085   1.025   0.976   0.000
+
+============================================================================
+  Path: layers.0.lifting_wavelet
+============================================================================
+
+  predict_nets: 7 levels, Linear indices [0, 3]
+
+  layers.0.lifting_wavelet.predict_nets.[L].0.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1630  1898   2018   2048      46.04    0.5113   76.01%     0.0287  4.149 2.049 2.009 1.942 1.922
+    1    2048×2048  1586  1875   2012   2048      48.43    0.5877   70.73%     0.0335  6.372 2.850 2.743 2.697 2.675
+    2    2048×2048  1581  1874   2012   2048      48.76    0.6130   68.67%     0.0352  7.203 3.201 3.137 3.009 2.929
+    3    2048×2048  1596  1884   2014   2048      46.91    0.5959   68.92%     0.0349  6.727 3.448 3.308 3.199 3.063
+    4    2048×2048  1607  1893   2016   2048      43.14    0.5541   70.96%     0.0314  4.799 2.884 2.835 2.726 2.681
+    5    2048×2048  1617  1895   2012   2048      38.72    0.5241   73.45%     0.0270  3.460 2.654 2.431 2.368 2.246
+    6    2048×2048  1616  1888   2005   2048      36.82    0.5242   73.87%     0.0261  3.701 2.475 2.415 2.384 2.332
+
+  layers.0.lifting_wavelet.predict_nets.[L].0.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.743   0.730   0.729   0.736   0.746   0.747
+  L=1   0.743   1.000   0.727   0.717   0.717   0.723   0.722
+  L=2   0.730   0.727   1.000   0.731   0.717   0.717   0.714
+  L=3   0.729   0.717   0.731   1.000   0.748   0.736   0.727
+  L=4   0.736   0.717   0.717   0.748   1.000   0.784   0.765
+  L=5   0.746   0.723   0.717   0.736   0.784   1.000   0.816
+  L=6   0.747   0.722   0.714   0.727   0.765   0.816   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.738   0.759   0.744   0.706   0.673   0.667
+  L=1   0.702   0.000   0.742   0.741   0.718   0.696   0.693
+  L=2   0.717   0.737   0.000   0.721   0.717   0.701   0.702
+  L=3   0.730   0.765   0.750   0.000   0.685   0.683   0.689
+  L=4   0.754   0.806   0.810   0.745   0.000   0.631   0.651
+  L=5   0.800   0.870   0.883   0.827   0.703   0.000   0.595
+  L=6   0.834   0.912   0.929   0.878   0.762   0.625   0.000
+
+  layers.0.lifting_wavelet.predict_nets.[L].3.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1732  1950   2032   2048      45.10    0.4077   84.03%     0.0231  2.589 2.113 2.080 2.057 2.038
+    1    2048×2048  1679  1919   2021   2048      45.63    0.4841   78.15%     0.0276  2.880 2.555 2.451 2.420 2.334
+    2    2048×2048  1656  1905   2014   2048      44.82    0.5120   75.41%     0.0289  3.303 2.953 2.722 2.506 2.401
+    3    2048×2048  1648  1901   2012   2048      42.24    0.5099   74.95%     0.0279  3.248 2.960 2.748 2.624 2.393
+    4    2048×2048  1612  1890   2011   2048      39.81    0.5230   73.57%     0.0268  2.838 2.545 2.383 2.253 2.188
+    5    2048×2048  1597  1886   2013   2048      36.14    0.5257   74.22%     0.0238  2.505 2.314 2.093 1.927 1.841
+    6    2048×2048  1581  1874   2005   2048      34.28    0.5392   73.64%     0.0228  2.803 2.425 2.033 1.786 1.729
+
+  layers.0.lifting_wavelet.predict_nets.[L].3.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.817   0.798   0.793   0.783   0.783   0.779
+  L=1   0.817   1.000   0.784   0.771   0.759   0.759   0.754
+  L=2   0.798   0.784   1.000   0.776   0.755   0.752   0.746
+  L=3   0.793   0.771   0.776   1.000   0.776   0.766   0.756
+  L=4   0.783   0.759   0.755   0.776   1.000   0.786   0.768
+  L=5   0.783   0.759   0.752   0.766   0.786   1.000   0.793
+  L=6   0.779   0.754   0.746   0.756   0.768   0.793   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.610   0.634   0.627   0.631   0.622   0.628
+  L=1   0.603   0.000   0.653   0.655   0.661   0.652   0.657
+  L=2   0.638   0.664   0.000   0.653   0.670   0.661   0.666
+  L=3   0.670   0.708   0.692   0.000   0.653   0.650   0.658
+  L=4   0.715   0.758   0.754   0.693   0.000   0.631   0.648
+  L=5   0.777   0.824   0.820   0.760   0.695   0.000   0.629
+  L=6   0.826   0.874   0.871   0.810   0.753   0.663   0.000
+
+  update_nets: 7 levels, Linear indices [0, 3]
+
+  layers.0.lifting_wavelet.update_nets.[L].0.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1633  1908   2021   2048      50.88    0.5802   73.50%     0.0338  6.504 3.478 3.090 2.954 2.729
+    1    2048×2048  1624  1905   2022   2048      50.90    0.5949   72.20%     0.0349  7.578 3.774 3.129 2.990 2.857
+    2    2048×2048  1629  1909   2023   2048      49.92    0.5804   72.65%     0.0342  7.747 3.548 3.166 3.025 2.803
+    3    2048×2048  1645  1914   2023   2048      46.83    0.5339   74.62%     0.0316  6.644 3.051 2.645 2.561 2.502
+    4    2048×2048  1638  1906   2014   2048      43.00    0.5213   74.09%     0.0286  4.797 2.384 2.276 2.186 2.162
+    5    2048×2048  1605  1883   2000   2048      39.38    0.5367   71.93%     0.0268  3.517 2.239 2.125 2.069 2.051
+    6    2048×2048  1571  1858   1982   2048      37.21    0.5651   68.82%     0.0265  2.896 2.314 2.146 2.052 2.043
+
+  layers.0.lifting_wavelet.update_nets.[L].0.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.801   0.781   0.772   0.752   0.730   0.707
+  L=1   0.801   1.000   0.802   0.780   0.752   0.727   0.701
+  L=2   0.781   0.802   1.000   0.801   0.763   0.733   0.705
+  L=3   0.772   0.780   0.801   1.000   0.789   0.755   0.725
+  L=4   0.752   0.752   0.763   0.789   1.000   0.769   0.736
+  L=5   0.730   0.727   0.733   0.755   0.769   1.000   0.742
+  L=6   0.707   0.701   0.705   0.725   0.736   0.742   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.632   0.656   0.653   0.666   0.685   0.708
+  L=1   0.632   0.000   0.623   0.641   0.666   0.689   0.714
+  L=2   0.668   0.636   0.000   0.614   0.655   0.683   0.711
+  L=3   0.709   0.697   0.655   0.000   0.629   0.662   0.693
+  L=4   0.788   0.788   0.760   0.685   0.000   0.657   0.689
+  L=5   0.885   0.891   0.865   0.787   0.718   0.000   0.701
+  L=6   0.968   0.977   0.953   0.872   0.796   0.742   0.000
+
+  layers.0.lifting_wavelet.update_nets.[L].3.weight  (7 levels)
+    L        shape   r95   r99  r99.9  rfull     ||W||F   id_dist    diag%    p99 mag  top-5 σ
+    0    2048×2048  1456  1809   1985   2048      32.17    0.6387   59.60%     0.0264  3.157 2.980 2.360 2.229 2.202
+    1    2048×2048  1359  1727   1943   2048      32.93    0.6975   51.42%     0.0297  2.794 2.536 2.383 2.337 2.224
+    2    2048×2048  1331  1693   1917   2048      31.60    0.7208   48.18%     0.0294  2.392 2.289 2.181 2.113 2.051
+    3    2048×2048  1328  1681   1904   2048      29.41    0.7289   47.27%     0.0276  2.059 1.995 1.914 1.882 1.846
+    4    2048×2048  1319  1671   1898   2048      27.99    0.7387   46.11%     0.0264  1.878 1.714 1.614 1.598 1.566
+    5    2048×2048  1303  1657   1889   2048      26.88    0.7473   45.04%     0.0256  1.642 1.563 1.500 1.484 1.464
+    6    2048×2048  1296  1649   1882   2048      25.96    0.7582   43.46%     0.0250  1.571 1.419 1.400 1.382 1.375
+
+  layers.0.lifting_wavelet.update_nets.[L].3.weight — cross-level similarity
+  Cosine similarity (1.0=identical direction):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   1.000   0.652   0.595   0.560   0.533   0.515   0.496
+  L=1   0.652   1.000   0.615   0.558   0.515   0.490   0.467
+  L=2   0.595   0.615   1.000   0.590   0.527   0.494   0.467
+  L=3   0.560   0.558   0.590   1.000   0.568   0.523   0.489
+  L=4   0.533   0.515   0.527   0.568   1.000   0.556   0.516
+  L=5   0.515   0.490   0.494   0.523   0.556   1.000   0.541
+  L=6   0.496   0.467   0.467   0.489   0.516   0.541   1.000
+  Normalized Frobenius distance (0.0=identical):
+       L=0    L=1    L=2    L=3    L=4    L=5    L=6
+  L=0   0.000   0.845   0.892   0.901   0.911   0.915   0.923
+  L=1   0.826   0.000   0.861   0.895   0.920   0.931   0.941
+  L=2   0.908   0.897   0.000   0.876   0.922   0.940   0.953
+  L=3   0.985   1.002   0.942   0.000   0.909   0.938   0.958
+  L=4   1.047   1.082   1.041   0.955   0.000   0.925   0.951
+  L=5   1.095   1.140   1.105   1.026   0.963   0.000   0.943
+  L=6   1.143   1.193   1.160   1.085   1.025   0.976   0.000
+
+============================================================================
+  COMPRESSION RECOMMENDATIONS
+============================================================================
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.predict_nets.*.0] MODERATE similarity (avg cos 0.738)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.predict_nets.*.3] MODERATE similarity (avg cos 0.774)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.update_nets.*.0] MODERATE similarity (avg cos 0.754)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.update_nets.*.3] MODERATE similarity (avg cos 0.537)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.predict_nets.*.0] MODERATE similarity (avg cos 0.738)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.predict_nets.*.3] MODERATE similarity (avg cos 0.774)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.update_nets.*.0] MODERATE similarity (avg cos 0.754)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.update_nets.*.3] MODERATE similarity (avg cos 0.537)
+   → Group-wise sharing (2-3 groups across 7 levels) likely viable
+   → Estimated savings: ~12.58M params
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.predict_nets.*.0] DIAGONAL-DOMINANT (avg diag energy 71.80%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.predict_nets.*.3] DIAGONAL-DOMINANT (avg diag energy 76.28%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.update_nets.*.0] DIAGONAL-DOMINANT (avg diag energy 72.54%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_reconstruct.decompose.update_nets.*.3] DIAGONAL-DOMINANT (avg diag energy 48.73%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.predict_nets.*.0] DIAGONAL-DOMINANT (avg diag energy 71.80%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.predict_nets.*.3] DIAGONAL-DOMINANT (avg diag energy 76.28%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.update_nets.*.0] DIAGONAL-DOMINANT (avg diag energy 72.54%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+  [MEDIUM PRIORITY] [layers.0.lifting_wavelet.update_nets.*.3] DIAGONAL-DOMINANT (avg diag energy 48.73%, vs random baseline 0.0488%)
+   → Try W ≈ D + U·V^T parameterization (diagonal + low-rank correction)
+   → ~135K params per matrix at r=16 vs 4.19M for full
+
+============================================================================
+  Total lifting weight params analyzed: 117.44M
