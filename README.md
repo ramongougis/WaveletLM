@@ -517,26 +517,27 @@ Longer training time, more regularization, and parameter compression are the sur
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
 3. [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size)
-4. [Wavelet Compression and Per-Scale Mixer Width Expansion](#wavelet-compression-and-per-scale-mixer-width-expansion)
-5. [Low Rank Ablations](#low-rank-ablations)
-6. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
-7. [Dropout Sweep](#dropout-sweep)
-8. [Weight Decay Sweep](#weight-decay-sweep)
-9. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-10. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-11. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-12. [Longer PG-19 Training](#longer-pg-19-training)
-13. [Dataset Comparisons](#dataset-comparisons)
-14. [Model Comparisons](#model-comparisons)
-15. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
-16. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-17. [Multi-Transform Parallelization](#multi-transform-parallelization)
-18. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-19. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-20. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-21. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-22. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-23. [Other Post-Release Plans](#other-post-release-plans)
+4. [Wavelet Compression](#wavelet-compression)
+5. [Per-Scale Mixer Width Expansion](#per-scale-mixer-width-expansion)
+6. [Low Rank Ablations](#low-rank-ablations)
+7. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
+8. [Dropout Sweep](#dropout-sweep)
+9. [Weight Decay Sweep](#weight-decay-sweep)
+10. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+11. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+12. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+13. [Longer PG-19 Training](#longer-pg-19-training)
+14. [Dataset Comparisons](#dataset-comparisons)
+15. [Model Comparisons](#model-comparisons)
+16. [Optimizer Sweep (Adagrad / AdamW / Muon)](#optimizer-sweep-adagrad--adamw--muon)
+17. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+18. [Multi-Transform Parallelization](#multi-transform-parallelization)
+19. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+20. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+21. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+22. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+23. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+24. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -556,13 +557,32 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** ship `levels=7`; `levels ≥ 9` deferred until the optimizer sweep. 
 
-### Wavelet Compression and Per-Scale Mixer Width Expansion
+### Wavelet Compression
 
 [`analyze_lifting.py`](analyze_lifting.py) on the L=1 / levels=7 / 5-epoch winner ([logs/wikitext-103_2026-05-03_02-13-07/best_model.pt](logs/wikitext-103_2026-05-03_02-13-07/log.txt)) confirms strong **diagonal dominance** across the four lifting matrix types — average diagonal Frobenius energy is **71.80% / 76.28% / 72.54% / 48.73%** for `predict_nets[L].0` / `predict_nets[L].3` / `update_nets[L].0` / `update_nets[L].3` respectively, vs a 0.0488% random baseline (~1000-1500× above random for three of four types). Generic low-rank is weak (r99 ≈ 1875-1950 out of 2048), so `W ≈ D + U·V^T` (diagonal + small low-rank correction) at r=16 captures the structure at **31× compression per matrix** (135K vs 4.19M params). Cross-level similarity is moderate — average pairwise cosine **0.738 / 0.774 / 0.754** for the three well-behaved types — suggesting group-wise sharing across levels (2-3 groups for 7 levels) as an alternative or complement, saving ~12.58M params per matrix type. The outlier `update_nets[L].3` (48.73% diag energy, 0.537 avg cosine) needs gentler treatment — r=64 instead of r=16, and group sharing is less viable. The 28 lifting weight tensors total 117.44M params and are already tied between `lifting_wavelet` and `lifting_reconstruct.decompose` (PyTorch parameter sharing), so there's no double-count to recover. Method: derive strategies per-matrix-type (D + UV^T at r=16 for the three diagonal-dominant types, r=64 for the outlier; group sharing as a layered second pass), test each individually for 1 epoch, combine winners (those within ±0.018 BPB of 1.0974) for a 5-epoch confirmation, and keep the changes if final BPB stays within ±0.0015. Successful application would shrink lifting from 117.44M → ~5-7M params (~94-96%), bringing the total model from **392.91M → ~280M**.
 
+### Per-Scale Mixer Width Expansion
+
+**Width contraction win (W2):** a 1-epoch sweep at the L=1 / levels=7 / bs=16384 baseline found that `per_scale_mixer_widths=[0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) lands at **BPB sliding 1.2437** vs the default `[1,1,1,1,0.5,0.5,0.5,0.5]`'s 1.2361 — a +0.0076 regression well within the ±0.018 tolerance. The contracted config has **39% fewer mixer parameters (35.70M vs 58.82M)** and 5.9% fewer total parameters (369.80M vs 392.91M) at marginal BPB cost.
+
+**Width-floor empirical result:** more aggressive contraction at `[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250 (lr=5.7e-3) — the proj_in's 10-20× dimensionality crush from Cp=2048 to ~205/102 channels destabilizes fp16. The width floor lives somewhere between W2's 0.5/0.25 and W1's 0.1/0.05.
+
+**Expansion direction:** also tested at L=1 / E=1 (E5 at uncompressed widths `[1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]`, 5-epoch BPB 1.1037 vs reference 1.0974 = +0.0063 regression at +24% params). Expansion past the headline width contributes nothing measurable; this is consistent with the broader pattern that the architecture is data-bottlenecked at WikiText-103 / 5-epoch / ~400M-param scale.
+
+**Pending:** 5-epoch confirmation of W2 to promote it to default. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if W2 ships at 5 epochs.
+
 ### Low Rank Ablations
 
-The mixer's `low_rank` (controlling the U, V parallel correction inside `GatedSpectralMixer`) has been at 4 since the initial `low_rank` ablation found 4 → 16 gave a marginal -0.0012 BPB gain at C=512. At the current L=7 / Cp=2048 / per_scale_mixer_widths=[1,1,1,1,0.5,0.5,0.5,0.5] regime, the mixer's main `Linear(2048, 2048)` is 4.19M per scale; low_rank=4 contributes only 16K per scale (~128K total across 8 scales) — negligible relative to the main matrix. Sweep low_rank ∈ {16, 128, 1024} at 1 epoch each as a follow-on to the (E5) finding that mixer width contributes nothing measurable past the headline; if width is saturated, *rank* of the parallel correction may be the under-explored axis. The 1024 endpoint matches the main mixer matrix's capacity and tests whether "rank as alternative to width" is a real trade-off. Reference: 1-epoch L=7 baseline at BPB sliding 1.2361. Pass criterion: any ablation within ±0.018 BPB tolerance is taken to a 5-epoch confirmation. If 1024 wins, also test 2048 to verify saturating-at-full-rank behavior.
+The mixer's `low_rank` (controlling the U, V parallel correction inside `GatedSpectralMixer`) has been at 4 since the initial `low_rank` ablation found 4 → 16 gave a marginal -0.0012 BPB gain at C=512. At the L=1 / levels=7 / Cp=2048 / `per_scale_mixer_widths=[1,1,1,1,0.5,0.5,0.5,0.5]` regime, the mixer's main `Linear(2048, 2048)` is 4.19M per scale; low_rank=4 contributes only 16K per scale (~128K total) — negligible relative to the main matrix. Sweep at 1 epoch each:
+
+| Run | low_rank | BPB sliding | Notes |
+|-----|----------|-------------|-------|
+| R0  | 4 (baseline) | 1.2361 | Reference |
+| R1  | 16 | **1.2342** | -0.0019 vs baseline. Stable, modest improvement. |
+| R2  | 128 | 13.7913 (effectively NaN) | Diverged mid-run; saved checkpoint is non-functional. |
+| R3  | 1024 | NaN at step 2000 (lr=9.12e-3) | Capacity-matched to main mixer matrix; destabilizes. |
+
+**Result:** `low_rank=16` is the stable improvement; rank values past ~16 destabilize at this LR / per-parameter Adagrad accumulator regime. Two intermediate values (32, 64) are queued at 1 epoch to find the upper boundary of stability before promoting to a 5-epoch run. If both train cleanly and one beats 1.2342, that's the new default candidate; otherwise `low_rank=16` is.
 
 ### Decompose Bypass Disablement Ablation
 

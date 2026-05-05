@@ -331,10 +331,26 @@ Each ablation only varies `low_rank`; all other settings match the R0 baseline.
 | Run | low_rank | Folder | BPB (sliding) | Params | U/V correction params | Time | Train VRAM | Delta vs R0 | Notes |
 |-----|----------|--------|---------------|--------|------------------------|------|------------|--------------|-------|
 | R0  | 4 (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 16K/scale × 8 = 128K   | ~70m | 23,411 MiB | — | Reference |
-| R1  | 16   | | | ~395M | 256K/scale × 8 = 2.05M    | | | | |
-| R2  | 128  | | | ~410M | 2.10M/scale × 8 = 16.78M  | | | | |
-| R3  | 1024 | | | ~527M | 16.78M/scale × 8 = 134M   | | | | Matches main mixer matrix capacity |
-| R4* | 2048 | | | ~661M | 33.55M/scale × 8 = 268M   | | | | Run only if R3 wins; verifies saturating-at-full-rank |
+| R1  | 16   | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) | **1.2342** | 393.21M | 256K/scale × 8 = 2.05M | 80m | — | **−0.0019** | **PASS.** Stable; modest improvement, +0.30M params. Best 1-epoch low_rank candidate so far. |
+| R1.5 | 32  | | | ~393.5M | 512K/scale × 8 = 4.10M | | | | Pending — between R1 and R2; tests upper stability boundary |
+| R1.75 | 64 | | | ~394.5M | 1.05M/scale × 8 = 8.39M | | | | Pending — closer to R2 |
+| R2  | 128  | [link](logs/wikitext-103_2026-05-05_08-29-00/log.txt) | 13.7913 (NaN-affected) | 395.96M | 2.10M/scale × 8 = 16.78M | — | — | — | **Effective NaN.** Best Val Loss 4.987 at epoch end; checkpoint produces noise-level BPB. Diverged mid-run. |
+| R3  | 1024 | [link](logs/wikitext-103_2026-05-05_09-47-01/log.txt) | NaN at step 2000 | ~527M | 16.78M/scale × 8 = 134M  | — | — | — | NaN at lr=9.12e-3, well into warmup peak. Capacity-matched to main mixer matrix destabilizes. |
+
+### Mixer width contractions: post-combined-reduction baseline (L=1, levels=7, epochs=1)
+
+Per-scale mixer width contraction sweep. Same baseline as the low_rank table above. After E5 (uncompressed lifting + width=1.5 coarse) tracked the headline reference closely at 5 epochs, we tested the opposite direction: can the mixer be made *smaller* than baseline at no quality cost? `low_rank` held at the default 4.
+
+| Run | per_scale_mixer_widths | Folder | BPB (sliding) | Params | Mixer total | Time | Train VRAM | Delta vs R0 | Notes |
+|-----|------------------------|--------|---------------|--------|-------------|------|------------|--------------|-------|
+| R0  | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 23,411 MiB | — | Reference |
+| W1  | [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05] | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) | NaN | 339.53M | 5.44M | — | — | — | NaN at step 1250 (lr=5.7e-3). Extreme contraction destabilizes — proj_in's 10-20× crush from Cp=2048 to 205/102 channels likely cascades to fp16 saturation. |
+| W2  | [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25] | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) | **1.2437** | 369.80M | 35.70M | 78m | — | **+0.0076** | **PASS** (within ±0.018 tolerance). 5.9% smaller total, **39.3% smaller mixer**, marginal BPB cost. Trained stably through warmup peak (lr=0.01) with no instability. Promote to default candidate; 5-epoch confirmation pending. |
+
+**Width-floor finding:** the boundary between stable contraction and NaN lives somewhere between W2's coarse=0.5 / fine=0.25 and W1's coarse=0.1 / fine=0.05. Follow-up tightenings worth testing if W2 ships at 5 epochs:
+- `[0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]` — 80% of W2
+- `[0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]` — 60% of W2
+- `[0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]` — 50% of W2 (approaches W1 territory)
 
 ### Lifting hidden multiplier
 
