@@ -713,7 +713,7 @@ Off-diagonal masking ablations for [Future Plans → Wavelet Off-Diagonal Maskin
 | M3  | magnitude   | 5%                   | ~209K                                        | ~9.0M (~92% reduction) | | | Larger off-diagonal budget; tradeoff midpoint. |
 | M4  | magnitude   | 10%                  | ~419K                                        | ~14.7M (~87% reduction) | | | Upper end before the compression ratio gets unattractive. |
 | M1r | random      | 0.1%                 | ~4.2K                                        | ~3.4M                  | | | Random-mask control at M1 density. |
-| M2r | random      | 1%                   | ~41.9K                                       | ~4.5M                  | | | Random-mask control at M2 density. (Deferred — see runs.sh queue note; runs only if M2 lands cleanly.) |
+| M2r | random      | 1%                   | ~41.9K                                       | ~4.5M                  | | | Random-mask control at M2 density. |
 | M3r | random      | 5%                   | ~209K                                        | ~9.0M                  | | | Random-mask control at M3 density. |
 | M4r | random      | 10%                  | ~419K                                        | ~14.7M                 | | | Random-mask control at M4 density. |
 
