@@ -736,7 +736,7 @@ Off-diagonal masking ablations for [Future Plans → Wavelet Off-Diagonal Maskin
 
 **M1r-M4r cancelled.** M1, M2, and M3 all landed at exactly 1.2861 (M0 = 1.2860) — perfectly flat across three orders of magnitude in density. If magnitude-pruned masks at the highest-energy off-diagonal positions produce zero measurable improvement at any tested density, random masks at the same densities can produce nothing additional to disambiguate. The four matched M{n} vs M{n}r pairs were designed to test "does magnitude beat random?" — that question is moot when magnitude itself doesn't beat M0. The Lottery Ticket / RIGL hypothesis for this architecture is held pending a regime change or a fundamentally different structural prior (covered by the structural-prior alternatives sweep below).
 
-### Lifting matrix structural priors (planned, L=1, levels=7, epochs=1)
+### Wavelet off-diagonal masking with structured variants (planned, L=1, levels=7, epochs=1)
 
 Tests structured-sparsity *constraints* on the lifting predict/update `Linear(C, C)` matrices, rather than mask-selection of an already-trained reference's positions (which is what M1-M4 did). The two are different in kind: magnitude pruning selects a sparse subset of an *unconstrained* trained matrix's positions, while these constraints force gradient descent to find a *different* optimum that respects the structure. Distinct outcomes are possible despite the M-series nulls.
 
