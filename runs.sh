@@ -151,16 +151,28 @@ run_ablation() {
 #     "R1_5ep: low_rank=16 (5ep, L=7)"
 
 # ---- 4. Wavelet off-diagonal magnitude-pruned masking sweep (1ep each) ------
-# Always uses lifting_diaglowrank=false (the structural mask path includes the
-# diagonal by construction). Mask is computed once at training start from the
-# L=1/levels=7/5-epoch winner's lifting weight magnitudes
-# (logs/wikitext-103_2026-05-03_02-13-07/best_model.pt) and frozen.
-# low_rank=16 carried forward. Pass criterion vs reference 1.2361:
-# ±0.018 BPB = [1.2181, 1.2541].
 #
-# Option B: unified `lifting_offdiag_structure` flag. The `magnitude_topk`
-# value selects the magnitude-pruned mask path; `lifting_offdiag_density`
-# specifies the off-diagonal density (fraction of off-diagonal positions kept).
+# !!! WARNING: BOOTSTRAPPING DEPENDENCY !!!
+# magnitude_topk requires a pre-trained reference checkpoint matching the SAME
+# architecture (same C, levels, low_rank) — the mask is computed from that
+# checkpoint's lifting weight magnitudes per Linear. New scales (different
+# C / levels) and new architectures (e.g., semantic embedding, multi-transform,
+# B200 scale-up) CANNOT use magnitude_topk without first training an
+# uncompressed reference at the new config — a 2-stage training requirement.
+#
+# Architecturally portable alternatives that need no reference checkpoint:
+#   - random_topk (section 5): same density-vs-recovery curve, random placement
+#   - upper_triangular / lower_triangular / block_diagonal / banded / monarch
+#     (section 6): purely mathematical structures
+# If the M{n}r random controls in section 5 match magnitude_topk performance,
+# random becomes the preferred default for any future scale-up. If magnitude
+# meaningfully outperforms random, magnitude_topk is reserved for fine-tuning
+# a known architecture and other approaches must serve as scale-up defaults.
+#
+# This sweep loads from logs/wikitext-103_2026-05-03_02-13-07/best_model.pt
+# (the L=1 / levels=7 / 5-epoch winner). Always uses lifting_diaglowrank=false
+# (the structural mask path includes the diagonal by construction). low_rank=16
+# carried forward. Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
 OFFDIAG_MAG_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_structure": "magnitude_topk", "lifting_offdiag_mask_checkpoint": "logs/wikitext-103_2026-05-03_02-13-07/best_model.pt"}'
 
 run_ablation "M1 off-diagonal magnitude 0.1%" \
