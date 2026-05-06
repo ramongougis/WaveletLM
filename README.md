@@ -590,7 +590,11 @@ Both directions consistent with the data-bottlenecked-architecture finding: widt
 
 ### Wavelet Off-Diagonal Masking with Top-K Percent
 
-`W = D + (S ⊙ M)` diagonal plus a fixed top-`k`% off-diagonal mask based on an analysis of the weights for the [5-epoch winner](logs/wikitext-103_2026-05-03_02-13-07/log.txt using the [analyze lifting script](tools/analyze_lifting.py). A top k of 1% recovers 32.0% of the 0.0518 BPB gap between the diagonal-only wavelet ([1.2860 BPB](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) and uncompressed wavelet ([1.2342 BPB](logs/wikitext-103_2026-05-05_07-07-45/log.txt)). This means 99% of the off-diagonal wavelet parameters can be dropped, and we'd still retain 32% of the total off-diagonal wavelet parameters' effects. For all runs, see [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
+Wavelet diagonal plus a fixed top-k percent off-diagonal mask based on an analysis of the weights for the [5-epoch winner](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze lifting script](tools/analyze_lifting.py) and weighing by precedence. 
+
+A top-k of 1% recovers 32.0% of the 0.0518 BPB gap between the diagonal-only wavelet ([1.2860 BPB](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) and uncompressed wavelet ([1.2342 BPB](logs/wikitext-103_2026-05-05_07-07-45/log.txt)). This means 99% of the off-diagonal wavelet parameters can be dropped, and we'd still retain 32% of the total off-diagonal wavelet parameters' effects. Meanwhile, a top-k of 5% gives [1.2524 BPB](logs/wikitext-103_2026-05-06_16-10-39/log.txt), recovering 64.9% of the gap. 
+
+For all top-k runs, see [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
 
 ### Wavelet Off-Diagonal Masking with Structured Variants
 
