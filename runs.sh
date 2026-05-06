@@ -17,11 +17,16 @@
 #   2. E5_5ep                         5ep   per_scale_mixer_widths=[1.5×4, 0.5×4]   (uncompressed coarse expansion confirmation)
 #   3. R1_5ep                         5ep   low_rank=16                              (winner confirmation)
 #   4. M1..M4                         1ep   off-diagonal magnitude-pruned masking sweep (0.1/1/5/10%)
-#   5. M1r..M4r                       1ep   off-diagonal random masking (full controls at matched densities)
+#   5. (CANCELLED) M1r..M4r           1ep   off-diagonal random controls — cancelled because the magnitude
+#                                           trajectory (M1=M2=M3=1.2861, perfectly flat across 50× density)
+#                                           leaves nothing for the random controls to disambiguate
+#   6. Structural-prior alternatives  1ep   triangular / block-diagonal / banded / Monarch-butterfly families
+#                                           — different KIND of structured sparsity than magnitude pruning
+#                                           (constrains gradient descent rather than selecting from trained
+#                                           reference), so distinct outcomes possible despite M-series nulls
 #
-# After everything completes (likely tomorrow morning), a new combined 5-epoch
-# run will fold the surviving winners into a new post-parameter-reduction
-# relative baseline.
+# After everything completes, a new combined 5-epoch run will fold the surviving
+# winners into a new post-parameter-reduction relative baseline.
 
 set -euo pipefail
 
@@ -118,30 +123,30 @@ run_ablation() {
 # ablation at L=1/E=1 previously found both flags within ±0.0015 BPB of
 # baseline (within noise); this run confirms at L=7 / bs=16384 / 1ep with the
 # new low_rank=16 winner. Pass: BPB sliding within ±0.018 of R1's 1.2342.
-run_ablation "DBD decompose_bypass=false + low_rank=16" \
-    "$BASE_PATCH_1EP" \
-    '{"low_rank": 16, "decompose_bypass": false, "decompose_bypass_cross_window": false}' \
-    "DBD: decompose_bypass=false + low_rank=16 (1ep, L=7)"
+# run_ablation "DBD decompose_bypass=false + low_rank=16" \
+#     "$BASE_PATCH_1EP" \
+#     '{"low_rank": 16, "decompose_bypass": false, "decompose_bypass_cross_window": false}' \
+#     "DBD: decompose_bypass=false + low_rank=16 (1ep, L=7)"
 
-# ---- 2. E5 confirmation: per_scale_mixer_widths=[1.5×4, 0.5×4] @ 5ep ---------
-# 5-epoch confirmation of the coarse-expansion config (E5 at 1ep was
-# +0.0063 BPB at +24% params — within tolerance but the 5-epoch behavior is
-# what determines whether expansion survives). Headline reference at 5ep is
-# 1.0974; pass criterion ±0.018 BPB = [1.0794, 1.1154].
-run_ablation "E5_5ep per_scale_mixer_widths=[1.5x4,0.5x4] (5 epochs)" \
-    "$BASE_PATCH_5EP" \
-    '{"per_scale_mixer_widths": [1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]}' \
-    "E5_5ep: per_scale_mixer_widths=[1.5x4,0.5x4] (5ep, L=7)"
+# # ---- 2. E5 confirmation: per_scale_mixer_widths=[1.5×4, 0.5×4] @ 5ep ---------
+# # 5-epoch confirmation of the coarse-expansion config (E5 at 1ep was
+# # +0.0063 BPB at +24% params — within tolerance but the 5-epoch behavior is
+# # what determines whether expansion survives). Headline reference at 5ep is
+# # 1.0974; pass criterion ±0.018 BPB = [1.0794, 1.1154].
+# run_ablation "E5_5ep per_scale_mixer_widths=[1.5x4,0.5x4] (5 epochs)" \
+#     "$BASE_PATCH_5EP" \
+#     '{"per_scale_mixer_widths": [1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]}' \
+#     "E5_5ep: per_scale_mixer_widths=[1.5x4,0.5x4] (5ep, L=7)"
 
 # ---- 3. R1 confirmation: low_rank=16 @ 5ep ----------------------------------
 # 5-epoch confirmation of the 1-epoch R1 winner. Compared against the headline
 # 5-epoch reference of 1.0974; if it beats or ties, low_rank=16 becomes the
 # new default. Pass: BPB sliding within ±0.018 of 1.0974 = [1.0794, 1.1154];
 # winner is whatever lands cleanly below 1.0974.
-run_ablation "R1_5ep low_rank=16 (5 epochs)" \
-    "$BASE_PATCH_5EP" \
-    '{"low_rank": 16}' \
-    "R1_5ep: low_rank=16 (5ep, L=7)"
+# run_ablation "R1_5ep low_rank=16 (5 epochs)" \
+#     "$BASE_PATCH_5EP" \
+#     '{"low_rank": 16}' \
+#     "R1_5ep: low_rank=16 (5ep, L=7)"
 
 # ---- 4. Wavelet off-diagonal magnitude-pruned masking sweep (1ep each) ------
 # Always uses lifting_diaglowrank=true (mandatory diagonal). Mask is computed
@@ -151,51 +156,112 @@ run_ablation "R1_5ep low_rank=16 (5 epochs)" \
 # Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
 OFFDIAG_BASE='{"low_rank": 16, "lifting_diaglowrank": true, "lifting_offdiag_mask": true, "lifting_offdiag_mask_source": "magnitude", "lifting_offdiag_mask_checkpoint": "logs/wikitext-103_2026-05-03_02-13-07/best_model.pt"}'
 
-run_ablation "M1 off-diagonal magnitude 0.1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
-    "M1: off-diagonal magnitude-pruned 0.1% (1ep, L=7)"
+# run_ablation "M1 off-diagonal magnitude 0.1%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
+#     "M1: off-diagonal magnitude-pruned 0.1% (1ep, L=7)"
 
-run_ablation "M2 off-diagonal magnitude 1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
-    "M2: off-diagonal magnitude-pruned 1% (1ep, L=7)"
+# run_ablation "M2 off-diagonal magnitude 1%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
+#     "M2: off-diagonal magnitude-pruned 1% (1ep, L=7)"
 
-run_ablation "M3 off-diagonal magnitude 5%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
-    "M3: off-diagonal magnitude-pruned 5% (1ep, L=7)"
+# run_ablation "M3 off-diagonal magnitude 5%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
+#     "M3: off-diagonal magnitude-pruned 5% (1ep, L=7)"
 
-run_ablation "M4 off-diagonal magnitude 10%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
-    "M4: off-diagonal magnitude-pruned 10% (1ep, L=7)"
+# run_ablation "M4 off-diagonal magnitude 10%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
+#     "M4: off-diagonal magnitude-pruned 10% (1ep, L=7)"
 
-# ---- 5. Random off-diagonal masking controls (1ep each) ---------------------
-# Same densities as M1/M2/M3/M4 with a random mask seed instead of the
-# magnitude-pruned ranking. Isolates the deliberate-vs-random contribution at
-# each density.
-OFFDIAG_RANDOM_BASE='{"low_rank": 16, "lifting_diaglowrank": true, "lifting_offdiag_mask": true, "lifting_offdiag_mask_source": "random", "lifting_offdiag_mask_seed": 1337}'
+# ---- 5. (CANCELLED) Random off-diagonal masking controls --------------------
+# M1r/M2r/M3r/M4r were originally queued as random-mask controls at matched
+# densities to the M-series. Cancelled after M1=M2=M3=1.2861 (perfectly flat
+# across 50× density span): if magnitude-pruned masks at the highest-energy
+# off-diagonal positions produce zero measurable improvement at any tested
+# density, random masks at the same densities can produce nothing additional
+# to disambiguate. The Lottery Ticket / RIGL hypothesis for this architecture
+# is held pending a regime change or a fundamentally different structural
+# prior (which is what section 6 below tests).
 
-run_ablation "M1r off-diagonal random 0.1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RANDOM_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
-    "M1r: off-diagonal random 0.1% (1ep, L=7)"
+# ---- 6. Structural-prior alternatives for lifting matrices (1ep each) -------
+# Tests structured-sparsity *constraints* on the lifting predict/update Linear(C, C)
+# matrices, rather than mask-selection of an already-trained reference's positions
+# (which is what M1-M4 did). The two are different in kind: magnitude pruning
+# selects from the unconstrained optimum, while these constraints force gradient
+# descent to find a DIFFERENT optimum that respects the structure. Distinct
+# outcomes are possible despite the M-series nulls.
+#
+# All variants: low_rank=16 (M-series baseline), lifting_diaglowrank=False
+# (these structures include the diagonal by construction), lifting_offdiag_mask=False.
+# Mutually exclusive with the existing diaglowrank/offdiag_mask paths;
+# model.py needs to support `lifting_offdiag_structure` and the per-structure
+# parameters before these runs will execute correctly.
+#
+# Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
+#
+# Per-matrix parameter counts (Linear(2048, 2048) = 4.19M baseline):
+#   T_upper / T_lower         : 2.10M  (50% reduction)
+#   BD64  block-diagonal      : 131K   (97% reduction, ~A1-equivalent compression)
+#   BD256 block-diagonal      : 524K   (87% reduction)
+#   BAND64 banded             : 264K   (94% reduction)
+#   BAND256 banded            : 1.05M  (75% reduction)
+#   MON32 Monarch (2 factors) : 262K   (94% reduction)
+#   MON64 Monarch (2 factors) : 131K   (97% reduction, ~A1-equivalent)
+STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mask": false}'
 
-run_ablation "M2r off-diagonal random 1%" \
+# Triangular: 50% density, channel-ordering imposed (each output sees only a half-cone of inputs).
+# Single variant per direction; the upper-vs-lower comparison is itself the ablation.
+run_ablation "T_upper upper triangular" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RANDOM_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
-    "M2r: off-diagonal random 1% (1ep, L=7)"
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='upper_triangular'; print(json.dumps(b))")" \
+    "T_upper: lifting upper triangular (1ep, L=7)"
 
-run_ablation "M3r off-diagonal random 5%" \
+run_ablation "T_lower lower triangular" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RANDOM_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
-    "M3r: off-diagonal random 5% (1ep, L=7)"
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='lower_triangular'; print(json.dumps(b))")" \
+    "T_lower: lifting lower triangular (1ep, L=7)"
 
-run_ablation "M4r off-diagonal random 10%" \
+# Block-diagonal: channel-permutation invariant (no arbitrary ordering),
+# each output sees only the b channels in its own block.
+# Two variants bracketing the A1-equivalent (97%) and moderate (87%) compression regimes.
+run_ablation "BD64 block-diagonal block_size=64" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RANDOM_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
-    "M4r: off-diagonal random 10% (1ep, L=7)"
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=64; print(json.dumps(b))")" \
+    "BD64: lifting block-diagonal blocks=32 of 64x64 (1ep, L=7)"
+
+run_ablation "BD256 block-diagonal block_size=256" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=256; print(json.dumps(b))")" \
+    "BD256: lifting block-diagonal blocks=8 of 256x256 (1ep, L=7)"
+
+# Banded: locality structure on the channel axis (1D-conv-like).
+# Two variants: tight bandwidth (94%) and wide bandwidth (75%).
+run_ablation "BAND64 banded bandwidth=64" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=64; print(json.dumps(b))")" \
+    "BAND64: lifting banded bandwidth=64 (1ep, L=7)"
+
+run_ablation "BAND256 banded bandwidth=256" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=256; print(json.dumps(b))")" \
+    "BAND256: lifting banded bandwidth=256 (1ep, L=7)"
+
+# Monarch (Dao et al., 2022, https://arxiv.org/abs/2204.00595): products of two
+# block-diagonal factors with permutations between, giving full-matrix expressivity
+# at sublinear params. Two variants at differing block counts (sqrt(C)≈45 for C=2048;
+# common power-of-2 choices are 32 and 64).
+run_ablation "MON32 Monarch nblocks=32" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
+    "MON32: lifting Monarch nblocks=32 (1ep, L=7)"
+
+run_ablation "MON64 Monarch nblocks=64" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
+    "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
 
 echo ""
 echo "============================================================"
@@ -204,7 +270,13 @@ echo "===   1) DBD (1ep)              — pass within ±0.018 of 1.2342"
 echo "===   2) E5_5ep widths=[1.5x4]  — pass within ±0.018 of 1.0974"
 echo "===   3) R1_5ep low_rank=16     — winner if <= 1.0974"
 echo "===   4) M1..M4 magnitude-pruned off-diagonal — pass within ±0.018 of 1.2361"
-echo "===   5) M1r/M2r/M3r/M4r random controls at matched densities"
+echo "===   5) M1r..M4r random controls — CANCELLED (M-series perfectly flat)"
+echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
+echo "===      — pass within ±0.018 of 1.2361"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
+echo "=== Note: section 6 requires model.py to support lifting_offdiag_structure"
+echo "===       (and lifting_block_size / lifting_band_width / lifting_monarch_blocks)"
+echo "===       before these runs will execute. Implementation is independent of"
+echo "===       sections 1-4, which are already validated."
 echo "============================================================"

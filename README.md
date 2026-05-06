@@ -521,25 +521,26 @@ Longer training time, more regularization, and parameter compression are the sur
 5. [Per-Scale Mixer Width Expansion](#per-scale-mixer-width-expansion)
 6. [Low Rank Ablations](#low-rank-ablations)
 7. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
-8. [Wavelet Off-Diagonal Masking](#wavelet-off-diagonal-masking)
-9. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-10. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-11. [Dropout Sweep](#dropout-sweep)
-12. [Weight Decay Sweep](#weight-decay-sweep)
-13. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-14. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-15. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-16. [Longer PG-19 Training](#longer-pg-19-training)
-17. [Dataset Comparisons](#dataset-comparisons)
-18. [Model Comparisons](#model-comparisons)
-19. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-20. [Multi-Transform Parallelization](#multi-transform-parallelization)
-21. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-22. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-23. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-24. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-25. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-26. [Other Post-Release Plans](#other-post-release-plans)
+8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
+9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
+10. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+11. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+12. [Dropout Sweep](#dropout-sweep)
+13. [Weight Decay Sweep](#weight-decay-sweep)
+14. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+15. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+16. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+17. [Longer PG-19 Training](#longer-pg-19-training)
+18. [Dataset Comparisons](#dataset-comparisons)
+19. [Model Comparisons](#model-comparisons)
+20. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+21. [Multi-Transform Parallelization](#multi-transform-parallelization)
+22. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+23. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+24. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+25. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+26. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+27. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -585,11 +586,27 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** keep both flags `true`. The running-mean × `history_gains` machinery is doing real stability work at this scale. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw); if Muon clears the cascade-amplification issue structurally, disablement can be retested.
 
-### Wavelet Off-Diagonal Masking
+### (Complete) Wavelet Off-Diagonal Masking with Top-K Percent
 
-Middle-ground compression between A1's pure-diagonal `lifting_diaglowrank` (1.2860, −97% lifting params, +0.0499 vs reference) and the uncompressed baseline. Each lifting `Linear(C, C)` is parameterized as `W = D + (S ⊙ M)`: mandatory diagonal plus a fixed binary mask `M` over the top-`k`% of off-diagonal positions by magnitude (computed once from the [5-epoch winner's](logs/wikitext-103_2026-05-03_02-13-07/log.txt) lifting weights, frozen). Motivated by [`tools/analyze_lifting.py`](tools/analyze_lifting.py)'s ~75% diagonal energy + weak generic low-rank finding; if Lottery Ticket / RIGL holds for this architecture, the highest-magnitude off-diagonal positions should beat random.
+**Result:** `W = D + (S ⊙ M)` where `M` is a fixed mask over the top-`k`% of off-diagonal positions by magnitude (computed once from the [5-epoch winner's](logs/wikitext-103_2026-05-03_02-13-07/log.txt) lifting weights). M1 (0.1%), M2 (1%), and M3 (5%) all land at **1.2861**, identical to M0's 1.2860 across three orders of magnitude in density. The off-diagonal mass is structurally distributed (matches [`tools/analyze_lifting.py`](tools/analyze_lifting.py)'s near-full-rank finding, r99 ≈ 1875-1950 of 2048) — no sparse subset captures it, and magnitude pruning has nothing to surface. M4 (10%) and M1r-M4r random controls cancelled (the flat trajectory leaves nothing for them to disambiguate). Full table in [runs.md](runs.md#wavelet-off-diagonal-masking-sweep-planned-l1-levels7-epochs1).
 
-**Status (held):** M1 (0.1%) and M2 (1%) both land at 1.2861, identical to M0's 1.2860 — high-magnitude off-diagonal positions are doing no measurable work at low density. M3 (5%) / M4 (10%) and M1r-M4r random controls remain queued; validating the Lottery Ticket hypothesis for this architecture would need many more random ablations than currently planned. Held pending those, additional density tests, or a regime change. Full table in [runs.md](runs.md#wavelet-off-diagonal-masking-sweep-planned-l1-levels7-epochs1).
+**Decision:** approach shelved at this regime. Validating Lottery Ticket / RIGL here would need either many more random ablations than planned or — more productively — a fundamentally different structural prior, which is the next section.
+
+### Wavelet Off-Diagonal Masking with Structured Variants
+
+Same `W = D + (S ⊙ M)` decomposition as above, but `M` is now a **structurally-defined** mask rather than magnitude-pruned: triangular, block-diagonal, banded, or Monarch/butterfly. Different in kind from the top-k approach — magnitude pruning selects from the positions an *unconstrained* trained matrix happened to populate, while structural masks force gradient descent to find a *different* optimum that respects the structure from initialization. Distinct outcomes are possible despite the M-series nulls.
+
+**Sweep (1ep, L=1 / levels=7 / bs=16384, low_rank=16):**
+
+| Variant | Density | Per-matrix params | Reduction | Notes |
+|---------|---------|-------------------|-----------|-------|
+| Upper triangular (`T_upper`) | 50% | 2.10M | 50% | Each output sees inputs at indices ≥ its own. |
+| Lower triangular (`T_lower`) | 50% | 2.10M | 50% | Each output sees inputs at indices ≤ its own. Upper-vs-lower is itself the ablation. |
+| Block-diagonal `BD64` / `BD256` | 3% / 13% | 131K / 524K | 97% / 87% | 32 blocks of 64×64, or 8 of 256×256. Channel-permutation-invariant. |
+| Banded `BAND64` / `BAND256` | 6% / 25% | 264K / 1.05M | 94% / 75% | Bandwidth 64 / 256. 1D-conv-style locality on the channel axis. |
+| Monarch ([Dao et al., 2022](https://arxiv.org/abs/2204.00595)) `MON32` / `MON64` | 6% / 3% | 262K / 131K | 94% / 97% | 2 factors × 32 blocks of 64×64, or 64 blocks of 32×32. Full-matrix expressivity at sublinear params; field-converged structured-matrix prior. |
+
+Pass criterion: BPB sliding within ±0.018 of reference 1.2361. **Strongest expected signals:** `BD64` and `MON64` (both ≈A1-density at 97%) directly compare structural-prior compression to A1's D + U·V^T at matched parameter count — if either beats A1's +0.0499, structure-via-blocks/factors is a viable lever. Triangular pair tests whether ANY single-direction off-diagonal structure helps at the most generous density. Mid-density variants trace the BPB-vs-density curve. If all eight regress hard (~+0.04+ BPB), this entire compression-via-structure direction is shelved alongside the top-k results. Implementation requires `model.py` to support `lifting_offdiag_structure` plus `lifting_block_size` / `lifting_band_width` / `lifting_monarch_blocks`. Full table in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
 
 ### Optimizer Sweep (Muon → AdamW)
 
