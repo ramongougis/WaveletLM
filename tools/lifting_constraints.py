@@ -387,28 +387,40 @@ def init_structured_lifting_linear(
         )
 
 
-def effective_param_count(module: nn.Module) -> int:
+def effective_param_count(
+    module: nn.Module, *, requires_grad_only: bool = False
+) -> int:
     """Sum the effective parameter count across `module`, accounting for
     StructuredLinear masks (count nonzeros) and MonarchLinear (already
     correctly sized parameters).
 
     For all other module types, sums direct (non-recursive) parameter numels.
+
+    If `requires_grad_only=True`, frozen parameters (requires_grad=False) are
+    excluded -- useful for distinguishing the trainable subset of params from
+    the full effective count.
     """
     total = 0
     seen_param_ids = set()
     for m in module.modules():
         if isinstance(m, StructuredLinear):
             for p in m.parameters(recurse=False):
-                if id(p) not in seen_param_ids:
-                    seen_param_ids.add(id(p))
-                    if p is m.weight:
-                        # Count nonzero positions in the mask instead of full numel
-                        total += int(m._struct_mask.sum().item())
-                    else:
-                        total += p.numel()
+                if id(p) in seen_param_ids:
+                    continue
+                seen_param_ids.add(id(p))
+                if requires_grad_only and not p.requires_grad:
+                    continue
+                if p is m.weight:
+                    # Count nonzero positions in the mask instead of full numel
+                    total += int(m._struct_mask.sum().item())
+                else:
+                    total += p.numel()
         else:
             for p in m.parameters(recurse=False):
-                if id(p) not in seen_param_ids:
-                    seen_param_ids.add(id(p))
-                    total += p.numel()
+                if id(p) in seen_param_ids:
+                    continue
+                seen_param_ids.add(id(p))
+                if requires_grad_only and not p.requires_grad:
+                    continue
+                total += p.numel()
     return total

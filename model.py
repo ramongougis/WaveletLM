@@ -2386,12 +2386,13 @@ def parameter_breakdown(model, config, logger=None):
 
     # Use effective_param_count so StructuredLinear masks are counted as their
     # nonzero entries (not full numel) and MonarchLinear factors are counted
-    # natively. Total / Shared lifting / Layers all reflect the structural prior
-    # if one is active; otherwise behavior is identical to sum(p.numel()).
+    # natively. Total / Trainable / Shared lifting / Layers all reflect the
+    # structural prior if one is active; otherwise behavior is identical to
+    # sum(p.numel()). Trainable uses the same effective semantics so it never
+    # exceeds Total -- masked positions have structurally zero gradient and
+    # are not "trainable" in any meaningful sense.
     total = effective_param_count(model)
-    trainable = sum(
-        p.numel() for p in model.parameters() if p.requires_grad
-    )  # trainability is unaffected by masks; report as-is
+    trainable = effective_param_count(model, requires_grad_only=True)
 
     W = 22  # alignment width for values
 
