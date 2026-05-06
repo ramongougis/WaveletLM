@@ -718,15 +718,21 @@ Per-scale mixer width contraction sweep. Same baseline as the low_rank table abo
 
 **Expansion direction confirmation (E5_5ep):** [link](logs/wikitext-103_2026-05-05_14-00-32/log.txt) — `per_scale_mixer_widths=[1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]`, 5 epochs, BPB sliding **1.1037** vs [5-epoch headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = **+0.0063** (within ±0.018 tolerance, but no improvement at +24% mixer params). Reproduces the prior 5-epoch E5 finding and confirms the broader pattern: at WikiText-103 / 5 epochs / ~400M params, the architecture is data-bottlenecked and added width contributes nothing measurable. Expansion direction shelved; contraction (W2) remains the preferred trajectory.
 
-### Wavelet off-diagonal masking with top-k percent (planned, L=1, levels=7, epochs=1)
+### Wavelet off-diagonal masking with top-k percent (in progress, L=1, levels=7, epochs=1)
 
 | Run | Mask source | Off-diagonal density | Off-diagonal entries per Linear(2048, 2048) | Approx. lifting params | Folder | BPB (sliding) | Notes |
 |-----|-------------|----------------------|----------------------------------------------|------------------------|--------|---------------|-------|
+| **Reference floor** (M0 = A1) | — (pure diagonal) | 0% | 0 | 3.33M | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) | **1.2860** | Pure-diagonal compression via `lifting_diaglowrank=True`. The "floor" the M-sweep aims to recover from. +0.0499 BPB vs uncompressed reference. |
+| **Reference ceiling** (R1) | — (uncompressed) | 100% | ~4.19M | 117.50M | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) | **1.2342** | Uncompressed `Linear(C, C)` lifting at low_rank=16. The "ceiling" the M-sweep aims to reach. |
+| M1  | magnitude_topk | 0.1%               | 4,192                                        | 0.23M (232,064)        | [link](logs/wikitext-103_2026-05-06_13-29-49/log.txt) | 1.2805 | Recovers ~10.6% of the 0.0518-BPB gap between pure diagonal (1.2860) and uncompressed reference (1.2342). Genuine Lottery Ticket / RIGL signal: 4,192 highest-magnitude off-diagonal positions per matrix already do measurable work on top of the diagonal. |
+| M2  | magnitude_topk | 1%                 | ~41,922                                      | 1.29M (1,288,532)      | [link](logs/wikitext-103_2026-05-06_14-50-38/log.txt) | 1.2694 | Recovers ~32.0% of gap. Marginal value per added off-diagonal position drops ~19× from the M0→M1 step (0.55 BPB-pts/K-positions) to the M1→M2 step (0.029 BPB-pts/K-positions) — sharp diminishing returns curve consistent with Lottery Ticket / RIGL prediction. |
 
 ### Wavelet off-diagonal masking with structured variants (planned, L=1, levels=7, epochs=1)
 
 | Run | Structure | Variant detail | Approx. params per Linear(2048, 2048) | Reduction vs full | Folder | BPB (sliding) | Notes |
 |-----|-----------|----------------|----------------------------------------|-------------------|--------|---------------|-------|
+| **Reference ceiling** (R1) | none (uncompressed) | — | 4.19M | 0% | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) | **1.2342** | Uncompressed `Linear(C, C)` at low_rank=16. The target the structured variants aim to match within ±0.018 BPB. |
+| **Reference floor** (A1) | D + U·V^T (lifting_diaglowrank) | r ∈ {16, 64} mixed | 67-264K mixed | 97% | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) | **1.2860** | Pure-diagonal-plus-low-rank compression. Structural-prior comparison anchor at A1-equivalent density (BD64 / MON64 sit at similar param counts and test whether structure-via-blocks-or-factors beats D + U·V^T at matched params). |
 
 ### Post-release: bit-packed PTQ kernels
 
