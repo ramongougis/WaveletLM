@@ -728,13 +728,32 @@ Off-diagonal masking ablations for [Future Plans → Wavelet Off-Diagonal Maskin
 | M1  | magnitude   | 0.1%                 | ~4.2K                                        | ~3.4M (~97% reduction) | [link](logs/wikitext-103_2026-05-06_04-09-51/log.txt) | 1.2861 | **No improvement over M0 (1.2860).** 4.2K off-diagonal entries per Linear(2048,2048) at the highest-magnitude positions add nothing measurable; +0.0500 BPB regression vs reference 1.2361, fails ±0.018 tolerance. Density too low for magnitude pruning to recover meaningful capacity at this scale. |
 | M2  | magnitude   | 1%                   | ~41.9K                                       | ~4.5M (~96% reduction) | [link](logs/wikitext-103_2026-05-06_05-22-49/log.txt) | 1.2861 | **Identical to M1 and M0** (1.2860/1.2861). 10× more off-diagonal entries than M1 buys zero measurable improvement; +0.0500 BPB regression vs reference 1.2361, fails ±0.018 tolerance. Decisive evidence the off-diagonal mass is distributed across all positions, not concentrated in high-magnitude entries. Magnitude-pruning hypothesis weakening. |
 | M3  | magnitude   | 5%                   | ~209K                                        | ~9.0M (~92% reduction) | [link](logs/wikitext-103_2026-05-06_06-34-16/log.txt) | 1.2861 | **Identical to M0/M1/M2** (1.2860/1.2861/1.2861). 5× more entries than M2 / 50× more than M1, still zero measurable improvement; +0.0500 BPB regression vs reference 1.2361, fails ±0.018 tolerance. Three nulls in a row across three orders of magnitude in density rules out any "below threshold" interpretation at the magnitude-pruned setting. |
-| M4  | magnitude   | 10%                  | ~419K                                        | ~14.7M (~87% reduction) | | | Upper end before the compression ratio gets unattractive. |
-| M1r | random      | 0.1%                 | ~4.2K                                        | ~3.4M                  | | | Random-mask control at M1 density. |
-| M2r | random      | 1%                   | ~41.9K                                       | ~4.5M                  | | | Random-mask control at M2 density. |
-| M3r | random      | 5%                   | ~209K                                        | ~9.0M                  | | | Random-mask control at M3 density. |
-| M4r | random      | 10%                  | ~419K                                        | ~14.7M                 | | | Random-mask control at M4 density. |
+| M4  | magnitude   | 10%                  | ~419K                                        | ~14.7M (~87% reduction) | | | Upper end before the compression ratio gets unattractive. Trajectory is perfectly flat through M3, so a step change at 10% is unlikely. |
+| ~~M1r~~ | ~~random~~ | ~~0.1%~~ | ~~~4.2K~~ | ~~~3.4M~~ | — | — | **CANCELLED.** |
+| ~~M2r~~ | ~~random~~ | ~~1%~~ | ~~~41.9K~~ | ~~~4.5M~~ | — | — | **CANCELLED.** |
+| ~~M3r~~ | ~~random~~ | ~~5%~~ | ~~~209K~~ | ~~~9.0M~~ | — | — | **CANCELLED.** |
+| ~~M4r~~ | ~~random~~ | ~~10%~~ | ~~~419K~~ | ~~~14.7M~~ | — | — | **CANCELLED.** |
 
-The four matched M{n} vs M{n}r pairs isolate the magnitude-pruning contribution at each density. Lottery-ticket / RIGL pattern would be magnitude beating random by more than the noise floor at higher densities (M3, M4) and converging at M1. If magnitude and random tie everywhere, density alone is what matters and the cheaper random construction wins.
+**M1r-M4r cancelled.** M1, M2, and M3 all landed at exactly 1.2861 (M0 = 1.2860) — perfectly flat across three orders of magnitude in density. If magnitude-pruned masks at the highest-energy off-diagonal positions produce zero measurable improvement at any tested density, random masks at the same densities can produce nothing additional to disambiguate. The four matched M{n} vs M{n}r pairs were designed to test "does magnitude beat random?" — that question is moot when magnitude itself doesn't beat M0. The Lottery Ticket / RIGL hypothesis for this architecture is held pending a regime change or a fundamentally different structural prior (covered by the structural-prior alternatives sweep below).
+
+### Lifting matrix structural priors (planned, L=1, levels=7, epochs=1)
+
+Tests structured-sparsity *constraints* on the lifting predict/update `Linear(C, C)` matrices, rather than mask-selection of an already-trained reference's positions (which is what M1-M4 did). The two are different in kind: magnitude pruning selects a sparse subset of an *unconstrained* trained matrix's positions, while these constraints force gradient descent to find a *different* optimum that respects the structure. Distinct outcomes are possible despite the M-series nulls.
+
+All variants share `low_rank=16` (matches M-series baseline), `lifting_diaglowrank=False`, `lifting_offdiag_mask=False` (these structures include the diagonal by construction and are mutually exclusive with the diaglowrank/mask paths). Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541]. Implementation requires `model.py` to support `lifting_offdiag_structure` plus the per-structure parameters (`lifting_block_size`, `lifting_band_width`, `lifting_monarch_blocks`).
+
+| Run | Structure | Variant detail | Approx. params per Linear(2048, 2048) | Reduction vs full | Folder | BPB (sliding) | Notes |
+|-----|-----------|----------------|----------------------------------------|-------------------|--------|---------------|-------|
+| T_upper  | Upper triangular (incl. diagonal) | — | 2.10M | 50% | | | Each output sees only inputs at indices ≥ its own (half-cone). |
+| T_lower  | Lower triangular (incl. diagonal) | — | 2.10M | 50% | | | Each output sees only inputs at indices ≤ its own (half-cone). Upper-vs-lower comparison itself is the ablation: difference would indicate the model learns a directional flow through channels. |
+| BD64     | Block-diagonal | 32 blocks of 64×64 | 131K | 97% | | | Channel-permutation-invariant. ~A1-equivalent compression but with a structural prior instead of D + U·V^T. |
+| BD256    | Block-diagonal | 8 blocks of 256×256 | 524K | 87% | | | Moderate-compression variant; bridges between A1-equivalent (BD64) and full expressivity. |
+| BAND64   | Banded | bandwidth 64 | 264K | 94% | | | 1D-convolution-style locality on the channel axis; each output sees a 129-wide window of inputs. |
+| BAND256  | Banded | bandwidth 256 | 1.05M | 75% | | | Wider window; least aggressive compression in this set, closest to full expressivity. |
+| MON32    | Monarch ([Dao et al., 2022](https://arxiv.org/abs/2204.00595)) | 2 factors × 32 blocks of 64×64 | 262K | 94% | | | Permuted block-diagonal product; full-matrix expressivity at sublinear params. |
+| MON64    | Monarch | 2 factors × 64 blocks of 32×32 | 131K | 97% | | | ~A1-equivalent compression with the field-converged structured-matrix prior. |
+
+**Reading the sweep.** The two A1-equivalent compressions (BD64, MON64 at 97%) directly test whether a structural prior at the same density as A1 can do meaningfully better than A1's +0.0499 BPB. If neither does, structured sparsity at A1-equivalent density is structurally insufficient at this regime. The triangular pair tests whether ANY single-direction off-diagonal structure helps at the most generous density (50%). The mid-density variants (BAND64 / MON32 / BD256 at 87-94%) trace out the BPB-vs-density curve more finely. **Strongest expected signal:** if MON32 / MON64 outperforms the rest at matched density, structured-matrix theory is a viable lever; if all eight regress hard (~+0.04+ BPB), this entire compression-via-structure direction is shelved alongside the M-series.
 
 ### Post-release: bit-packed PTQ kernels
 
