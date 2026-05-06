@@ -695,7 +695,11 @@ Each ablation only varies `low_rank`; all other settings match the R0 baseline.
 | R2  | 128  | [link](logs/wikitext-103_2026-05-05_08-29-00/log.txt) | 13.7913 (NaN-affected) | 395.96M | 2.10M/scale × 8 = 16.78M | — | — | — | **Effective NaN.** Best Val Loss 4.987 at epoch end; checkpoint produces noise-level BPB. Diverged mid-run. |
 | R3  | 1024 | [link](logs/wikitext-103_2026-05-05_09-47-01/log.txt) | NaN at step 2000 | ~527M | 16.78M/scale × 8 = 134M  | — | — | — | NaN at lr=9.12e-3, well into warmup peak. Capacity-matched to main mixer matrix destabilizes. |
 
-**Conclusion:** `low_rank=16` is the stable improvement at this regime. The upper stability boundary lives between 16 and 32 at lr=1.00e-2 / Adagrad eps=2e-13. 5-epoch confirmation queued.
+**Conclusion:** `low_rank=16` is the stable improvement at this regime. The upper stability boundary lives between 16 and 32 at lr=1.00e-2 / Adagrad eps=2e-13.
+
+**5-epoch confirmation (R1_5ep):** [link](logs/wikitext-103_2026-05-05_21-36-45/log.txt) — BPB sliding **1.0971** vs [5-epoch headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = **−0.0003** (within run-to-run noise). The 1-epoch -0.0019 advantage did not amplify with more training — a genuine capacity-related parameter would widen the gap with more steps, not close it. The 1-epoch win was most likely early-training expressivity that washes out once both ranks converge to their optima.
+
+**Decision:** **revert to `low_rank=4`** as the default. +1.92M params for a 5-epoch tie isn't worth promoting; we promote on measurable BPB gains, not 1-epoch transients. **Retest conditions:** B200 scale-up (Cp=4096 reduces the U·V^T fraction of the mixer, may shift the optimum) or post-Muon (orthogonalized updates may make higher rank tractable, opening a regime past R1.5/R2/R3 destabilization). PG-19 alone unlikely to move it.
 
 ### Mixer width contractions: post-combined-reduction baseline (L=1, levels=7, epochs=1)
 
@@ -712,6 +716,8 @@ Per-scale mixer width contraction sweep. Same baseline as the low_rank table abo
 - `[0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]` — 60% of W2
 - `[0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]` — 50% of W2 (approaches W1 territory)
 
+**Expansion direction confirmation (E5_5ep):** [link](logs/wikitext-103_2026-05-05_14-00-32/log.txt) — `per_scale_mixer_widths=[1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]`, 5 epochs, BPB sliding **1.1037** vs [5-epoch headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = **+0.0063** (within ±0.018 tolerance, but no improvement at +24% mixer params). Reproduces the prior 5-epoch E5 finding and confirms the broader pattern: at WikiText-103 / 5 epochs / ~400M params, the architecture is data-bottlenecked and added width contributes nothing measurable. Expansion direction shelved; contraction (W2) remains the preferred trajectory.
+
 ### Wavelet off-diagonal masking sweep (planned, L=1, levels=7, epochs=1)
 
 Off-diagonal masking ablations for [Future Plans → Wavelet Off-Diagonal Masking](README.md#wavelet-off-diagonal-masking). Each lifting `Linear(C, C)` is parameterized as `W = D + (S ⊙ M)`: mandatory diagonal `D` (`lifting_diaglowrank=true`), a learnable dense off-diagonal `S`, and a fixed binary mask `M` over the top-`k`% of off-diagonal positions by magnitude (computed once at training start from the L=1 / levels=7 / 5-epoch winner [logs/wikitext-103_2026-05-03_02-13-07/best_model.pt](logs/wikitext-103_2026-05-03_02-13-07/log.txt) and frozen for training and inference). `low_rank=16` carried forward as the winner. Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
@@ -719,8 +725,8 @@ Off-diagonal masking ablations for [Future Plans → Wavelet Off-Diagonal Maskin
 | Run | Mask source | Off-diagonal density | Off-diagonal entries per Linear(2048, 2048) | Approx. lifting params | Folder | BPB (sliding) | Notes |
 |-----|-------------|----------------------|----------------------------------------------|------------------------|--------|---------------|-------|
 | M0  | (none, = A1) | 0%                   | 0                                            | 3.33M                  | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) | 1.2860 | Reference floor; +0.0499 BPB. |
-| M1  | magnitude   | 0.1%                 | ~4.2K                                        | ~3.4M (~97% reduction) | | | Cheapest non-trivial recovery test. |
-| M2  | magnitude   | 1%                   | ~41.9K                                       | ~4.5M (~96% reduction) | | | Primary candidate density. |
+| M1  | magnitude   | 0.1%                 | ~4.2K                                        | ~3.4M (~97% reduction) | [link](logs/wikitext-103_2026-05-06_04-09-51/log.txt) | 1.2861 | **No improvement over M0 (1.2860).** 4.2K off-diagonal entries per Linear(2048,2048) at the highest-magnitude positions add nothing measurable; +0.0500 BPB regression vs reference 1.2361, fails ±0.018 tolerance. Density too low for magnitude pruning to recover meaningful capacity at this scale. |
+| M2  | magnitude   | 1%                   | ~41.9K                                       | ~4.5M (~96% reduction) | [link](logs/wikitext-103_2026-05-06_05-22-49/log.txt) | 1.2861 | **Identical to M1 and M0** (1.2860/1.2861). 10× more off-diagonal entries than M1 buys zero measurable improvement; +0.0500 BPB regression vs reference 1.2361, fails ±0.018 tolerance. Decisive evidence the off-diagonal mass is distributed across all positions, not concentrated in high-magnitude entries. Magnitude-pruning hypothesis weakening. |
 | M3  | magnitude   | 5%                   | ~209K                                        | ~9.0M (~92% reduction) | | | Larger off-diagonal budget; tradeoff midpoint. |
 | M4  | magnitude   | 10%                  | ~419K                                        | ~14.7M (~87% reduction) | | | Upper end before the compression ratio gets unattractive. |
 | M1r | random      | 0.1%                 | ~4.2K                                        | ~3.4M                  | | | Random-mask control at M1 density. |
