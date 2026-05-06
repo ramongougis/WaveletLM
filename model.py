@@ -29,8 +29,20 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 from torch.utils.checkpoint import checkpoint
+
+# Structural-prior infrastructure for the lifting predict/update Linears.
+# See tools/lifting_constraints.py for the StructuredLinear / MonarchLinear
+# classes and the make_structural_mask / build_structured_lifting_linear /
+# init_structured_lifting_linear / effective_param_count helpers.
+from tools.lifting_constraints import (
+    StructuredLinear,
+    MonarchLinear,
+    build_structured_lifting_linear,
+    init_structured_lifting_linear,
+    effective_param_count,
+)
 
 # ==============================================================================
 # 1. UTILITIES
@@ -197,6 +209,66 @@ class DiagonalLowRankLinear(nn.Module):
         return y
 
 
+def _load_lifting_reference_weights(
+    checkpoint_path: str,
+) -> Dict[Tuple[int, str, int], torch.Tensor]:
+    """Load a trained checkpoint and extract the lifting predict/update weights
+    keyed by (level, role, lin_idx).
+
+    Used by lifting_offdiag_structure='magnitude_topk' to rank off-diagonal
+    positions by magnitude in the loaded reference. Returns a dict like
+    {(0, 'predict', 0): tensor(C, C), (0, 'predict', 3): tensor(C, C),
+     (0, 'update', 0): tensor(C, C), (0, 'update', 3): tensor(C, C),
+     ...}
+    Handles both `model_state` and `model` top-level keys, plus bare state-dict
+    checkpoints.
+    """
+    import re
+    if not os.path.isfile(checkpoint_path):
+        raise FileNotFoundError(
+            f"lifting_offdiag_mask_checkpoint not found: {checkpoint_path}"
+        )
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    # Unwrap state_dict
+    state_dict = ckpt
+    if isinstance(ckpt, dict):
+        for key in ("model_state", "model"):
+            inner = ckpt.get(key)
+            if isinstance(inner, dict) and inner:
+                state_dict = inner
+                break
+    if not isinstance(state_dict, dict) or not all(
+        isinstance(v, torch.Tensor) for v in state_dict.values()
+    ):
+        raise ValueError(
+            f"Could not unwrap state dict from {checkpoint_path}"
+        )
+    # Match keys like:
+    #   layers.0.lifting_wavelet.predict_nets.<L>.<lin>.weight
+    #   layers.0.lifting_reconstruct.decompose.predict_nets.<L>.<lin>.weight
+    # Pull the first match per (level, role, lin_idx) — under shared_lifting_weights
+    # both paths reference the same tensor, so deduplication via dict is safe.
+    pattern = re.compile(
+        r"^.*?\.(?:lifting_wavelet|lifting_reconstruct\.decompose)"
+        r"\.(?P<role>predict|update)_nets"
+        r"\.(?P<level>\d+)\.(?P<lin>\d+)\.weight$"
+    )
+    out: Dict[Tuple[int, str, int], torch.Tensor] = {}
+    for key, tensor in state_dict.items():
+        m = pattern.match(key)
+        if m is None:
+            continue
+        triple = (int(m.group("level")), m.group("role"), int(m.group("lin")))
+        if triple not in out:
+            out[triple] = tensor.detach().to(torch.float32)
+    if not out:
+        raise ValueError(
+            f"No lifting predict/update weights found in {checkpoint_path}. "
+            f"Sample keys: {list(state_dict.keys())[:5]}"
+        )
+    return out
+
+
 def _lifting_compression_group(level: int, num_levels: int) -> int:
     """3-group level-sharing assignment for the compressed lifting cascade.
 
@@ -236,6 +308,18 @@ class LiftingWaveletDecompose(nn.Module):
         wavelet_crawl_k: int = 3,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
+        # Structural / top-k off-diagonal priors (Option B unified flag).
+        # When set, replaces the unconstrained Linear(C, C) in the lifting
+        # predict/update Sequentials with a constrained variant. See
+        # tools/lifting_constraints.py for the supported `lifting_offdiag_structure`
+        # values and their per-structure parameters.
+        lifting_offdiag_structure: str = "none",
+        lifting_block_size: int = 64,
+        lifting_band_width: int = 64,
+        lifting_monarch_blocks: int = 32,
+        lifting_offdiag_density: float = 0.0,
+        lifting_offdiag_mask_seed: int = 1337,
+        lifting_reference_weights: Optional[Dict[Tuple[int, str, int], torch.Tensor]] = None,
     ):
         super().__init__()
         self.levels = levels
@@ -247,6 +331,26 @@ class LiftingWaveletDecompose(nn.Module):
         self.wavelet_crawl_k = wavelet_crawl_k
         self.lifting_diaglowrank = lifting_diaglowrank
         self.lifting_level_sharing = lifting_level_sharing
+        self.lifting_offdiag_structure = lifting_offdiag_structure
+        self.lifting_block_size = lifting_block_size
+        self.lifting_band_width = lifting_band_width
+        self.lifting_monarch_blocks = lifting_monarch_blocks
+        self.lifting_offdiag_density = lifting_offdiag_density
+        self.lifting_offdiag_mask_seed = lifting_offdiag_mask_seed
+
+        # Mutual exclusion: structural priors are incompatible with the existing
+        # diaglowrank / level_sharing / linear_only / hidden_mult>1 paths.
+        if lifting_offdiag_structure not in (None, "none"):
+            if lifting_diaglowrank or lifting_level_sharing:
+                raise ValueError(
+                    "lifting_offdiag_structure is mutually exclusive with "
+                    "lifting_diaglowrank and lifting_level_sharing."
+                )
+            if linear_only or hidden_mult != 1:
+                raise ValueError(
+                    "lifting_offdiag_structure requires linear_only=False "
+                    "and hidden_mult=1 (the analyzed lifting configuration)."
+                )
 
         # Compression validity: only supports the standard hidden_mult=1, non-
         # linear-only path. Other configurations weren't covered by the
@@ -394,6 +498,51 @@ class LiftingWaveletDecompose(nn.Module):
                     update_3.init_zero()
                 elif init_wavelet == 'random':
                     update_3.init_random()
+            elif lifting_offdiag_structure not in (None, "none"):
+                # Structural / top-k off-diagonal prior path. Replaces the four
+                # Linear(C, C) in predict/update Sequentials with constrained
+                # variants from tools/lifting_constraints.py. The validity
+                # check at the top of __init__ ensures hidden_mult=1 (so
+                # hidden_dim == C and these Linears are square).
+                def _build_lifting_linear(role: str, lin_idx: int):
+                    ref_w = None
+                    if (
+                        lifting_offdiag_structure == "magnitude_topk"
+                        and lifting_reference_weights is not None
+                    ):
+                        ref_w = lifting_reference_weights.get((level, role, lin_idx))
+                        if ref_w is None:
+                            raise ValueError(
+                                f"magnitude_topk: missing reference weight for "
+                                f"(level={level}, role={role}, lin_idx={lin_idx}). "
+                                f"Available keys: {sorted(lifting_reference_weights.keys())}"
+                            )
+                    return build_structured_lifting_linear(
+                        C, C, lifting_offdiag_structure,
+                        block_size=lifting_block_size,
+                        band_width=lifting_band_width,
+                        monarch_blocks=lifting_monarch_blocks,
+                        reference_weight=ref_w,
+                        density=lifting_offdiag_density,
+                        seed=lifting_offdiag_mask_seed,
+                        device=device, dtype=dtype,
+                    )
+                predict_0 = _build_lifting_linear("predict", 0)
+                predict_3 = _build_lifting_linear("predict", 3)
+                update_0  = _build_lifting_linear("update",  0)
+                update_3  = _build_lifting_linear("update",  3)
+
+                predict = nn.Sequential(predict_0, nn.GELU(), nn.Dropout(dropout), predict_3)
+                update  = nn.Sequential(update_0,  nn.GELU(), nn.Dropout(dropout), update_3)
+
+                # Haar-style init: predict_0/predict_3/update_0 → I, update_3 → 0.5*I.
+                init_structured_lifting_linear(predict_0, init_wavelet, scale=1.0)
+                init_structured_lifting_linear(predict_3, init_wavelet, scale=1.0)
+                init_structured_lifting_linear(update_0,  init_wavelet, scale=1.0)
+                init_structured_lifting_linear(
+                    update_3, init_wavelet,
+                    scale=0.5 if init_wavelet == "haar" else 1.0,
+                )
             else:
                 predict = nn.Sequential(
                     nn.Linear(C, hidden_dim, device=device, dtype=dtype),
@@ -467,6 +616,15 @@ class LiftingWaveletDecompose(nn.Module):
                             _lifting_compression_group(level - 1, levels)
                         ):
                             predict[3].scale_by(lvl_scale)
+                    elif lifting_offdiag_structure not in (None, "none"):
+                        # StructuredLinear has .weight (mask is reapplied at forward);
+                        # MonarchLinear has .scale_by() that scales the L factor.
+                        for net in (predict, update):
+                            mod = net[3]
+                            if isinstance(mod, MonarchLinear):
+                                mod.scale_by(lvl_scale)
+                            else:
+                                mod.weight.data.mul_(lvl_scale)
                     else:
                         predict[3].weight.data.mul_(lvl_scale)
                         update[3].weight.data.mul_(lvl_scale)
@@ -1112,6 +1270,13 @@ class WaveletLMBlock(nn.Module):
         fht_thue_morse_increment: int = 21,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
+        lifting_offdiag_structure: str = "none",
+        lifting_block_size: int = 64,
+        lifting_band_width: int = 64,
+        lifting_monarch_blocks: int = 32,
+        lifting_offdiag_density: float = 0.0,
+        lifting_offdiag_mask_seed: int = 1337,
+        lifting_reference_weights: Optional[Dict[Tuple[int, str, int], torch.Tensor]] = None,
     ):
         super().__init__()
         self.C = C
@@ -1178,6 +1343,13 @@ class WaveletLMBlock(nn.Module):
                     wavelet_crawl_k=wavelet_crawl_k,
                     lifting_diaglowrank=lifting_diaglowrank,
                     lifting_level_sharing=lifting_level_sharing,
+                    lifting_offdiag_structure=lifting_offdiag_structure,
+                    lifting_block_size=lifting_block_size,
+                    lifting_band_width=lifting_band_width,
+                    lifting_monarch_blocks=lifting_monarch_blocks,
+                    lifting_offdiag_density=lifting_offdiag_density,
+                    lifting_offdiag_mask_seed=lifting_offdiag_mask_seed,
+                    lifting_reference_weights=lifting_reference_weights,
                 )
 
             if untied_reconstruction:
@@ -1204,6 +1376,13 @@ class WaveletLMBlock(nn.Module):
                         stab_lifting_level_scaling=stab_lifting_level_scaling,
                         lifting_diaglowrank=lifting_diaglowrank,
                         lifting_level_sharing=lifting_level_sharing,
+                        lifting_offdiag_structure=lifting_offdiag_structure,
+                        lifting_block_size=lifting_block_size,
+                        lifting_band_width=lifting_band_width,
+                        lifting_monarch_blocks=lifting_monarch_blocks,
+                        lifting_offdiag_density=lifting_offdiag_density,
+                        lifting_offdiag_mask_seed=lifting_offdiag_mask_seed,
+                        lifting_reference_weights=lifting_reference_weights,
                     )
                     self.lifting_reconstruct = LiftingWaveletReconstruct(self.lifting_reconstruct_wavelet)
             else:
@@ -1579,6 +1758,41 @@ class WaveletLM(nn.Module):
         skip_proj_out = config.get("skip_proj_out", True)
         learned_residual = config.get("learned_residual", True)
 
+        # Off-diagonal structural / top-k prior config (Option B unified flag).
+        lifting_offdiag_structure = config.get("lifting_offdiag_structure", "none")
+        lifting_block_size = config.get("lifting_block_size", 64)
+        lifting_band_width = config.get("lifting_band_width", 64)
+        lifting_monarch_blocks = config.get("lifting_monarch_blocks", 32)
+        lifting_offdiag_density = config.get("lifting_offdiag_density", 0.0)
+        lifting_offdiag_mask_seed = config.get("lifting_offdiag_mask_seed", 1337)
+        lifting_offdiag_mask_checkpoint = config.get("lifting_offdiag_mask_checkpoint", "")
+
+        # For magnitude_topk, load the reference checkpoint and extract the trained
+        # lifting weights as a dict keyed by (level, role, lin_idx). Other modes
+        # don't need a reference, so this dict stays None and is ignored downstream.
+        lifting_reference_weights = None
+        if lifting_offdiag_structure == "magnitude_topk":
+            if not lifting_offdiag_mask_checkpoint:
+                raise ValueError(
+                    "lifting_offdiag_structure='magnitude_topk' requires "
+                    "lifting_offdiag_mask_checkpoint (path to a trained checkpoint "
+                    "to rank off-diagonal positions by magnitude)."
+                )
+            lifting_reference_weights = _load_lifting_reference_weights(
+                lifting_offdiag_mask_checkpoint
+            )
+            print(
+                f"[Lifting] magnitude_topk: loaded {len(lifting_reference_weights)} "
+                f"reference weights from {lifting_offdiag_mask_checkpoint}"
+            )
+        if lifting_offdiag_structure not in (None, "none"):
+            print(
+                f"[Lifting] lifting_offdiag_structure={lifting_offdiag_structure!r}, "
+                f"density={lifting_offdiag_density}, "
+                f"block_size={lifting_block_size}, band_width={lifting_band_width}, "
+                f"monarch_blocks={lifting_monarch_blocks}, seed={lifting_offdiag_mask_seed}"
+            )
+
         # Shared lifting wavelet module
         shared_lifting = None
         self.shared_lifting_weights = config.get("shared_lifting_weights", True)
@@ -1600,9 +1814,16 @@ class WaveletLM(nn.Module):
                 wavelet_crawl_k=config.get("wavelet_crawl_k", 3),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
+                lifting_offdiag_structure=lifting_offdiag_structure,
+                lifting_block_size=lifting_block_size,
+                lifting_band_width=lifting_band_width,
+                lifting_monarch_blocks=lifting_monarch_blocks,
+                lifting_offdiag_density=lifting_offdiag_density,
+                lifting_offdiag_mask_seed=lifting_offdiag_mask_seed,
+                lifting_reference_weights=lifting_reference_weights,
             )
-            lifting_params = sum(p.numel() for p in shared_lifting.parameters())
-            print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params")
+            lifting_params = effective_param_count(shared_lifting)
+            print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params (effective)")
 
         if config.get("untied_reconstruction", False):
             print(f"[Lifting] Untied reconstruction: per-layer separate decompose/reconstruct weights")
@@ -1736,6 +1957,13 @@ class WaveletLM(nn.Module):
                 fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
+                lifting_offdiag_structure=lifting_offdiag_structure,
+                lifting_block_size=lifting_block_size,
+                lifting_band_width=lifting_band_width,
+                lifting_monarch_blocks=lifting_monarch_blocks,
+                lifting_offdiag_density=lifting_offdiag_density,
+                lifting_offdiag_mask_seed=lifting_offdiag_mask_seed,
+                lifting_reference_weights=lifting_reference_weights,
             )
             for _ in range(layer_build_count)
         ])
@@ -2156,8 +2384,14 @@ def parameter_breakdown(model, config, logger=None):
     """
     out = (lambda s: logger.log(s)) if logger is not None else print
 
-    total = sum(p.numel() for p in model.parameters())
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # Use effective_param_count so StructuredLinear masks are counted as their
+    # nonzero entries (not full numel) and MonarchLinear factors are counted
+    # natively. Total / Shared lifting / Layers all reflect the structural prior
+    # if one is active; otherwise behavior is identical to sum(p.numel()).
+    total = effective_param_count(model)
+    trainable = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )  # trainability is unaffected by masks; report as-is
 
     W = 22  # alignment width for values
 
@@ -2170,7 +2404,7 @@ def parameter_breakdown(model, config, logger=None):
 
     if isinstance(model, MultiNodeWaveletLM):
         for i, cell in enumerate(model.cells):
-            cell_params = sum(p.numel() for p in cell.parameters())
+            cell_params = effective_param_count(cell)
             out(f"  Cell {i}:           {cell_params:>{W},} ({cell_params/1e6:.2f}M)")
         if model.cross_cell_gating:
             gate_params = sum(p.numel() for p in model.cross_cell_gates.parameters())
@@ -2178,11 +2412,11 @@ def parameter_breakdown(model, config, logger=None):
     elif isinstance(model, WaveletLM):
         emb_params = model.token_embedding.weight.numel()
         lm_params = sum(p.numel() for p in model.lm_head.parameters())
-        layer_params = sum(p.numel() for p in model.layers.parameters())
+        layer_params = effective_param_count(model.layers)
         ln_params = sum(p.numel() for p in model.final_ln.parameters())
 
         if model.shared_lifting_weights and hasattr(model.layers[0], 'lifting_wavelet'):
-            lift_params = sum(p.numel() for p in model.layers[0].lifting_wavelet.parameters())
+            lift_params = effective_param_count(model.layers[0].lifting_wavelet)
             out(f"  Shared lifting:  {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
 
         out(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")

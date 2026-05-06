@@ -518,10 +518,10 @@ Longer training time, more regularization, and parameter compression are the sur
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
 3. [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size)
 4. [(Complete) Wavelet Compression](#complete-wavelet-compression)
-5. [Per-Scale Mixer Width Expansion](#per-scale-mixer-width-expansion)
-6. [Low Rank Ablations](#low-rank-ablations)
-7. [Decompose Bypass Disablement Ablation](#decompose-bypass-disablement-ablation)
-8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
+5. [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion)
+6. [(Complete) Low Rank Ablations](#complete-low-rank-ablations)
+7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
+8. [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent)
 9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
 10. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 11. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
@@ -566,13 +566,15 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** shelved at this regime. Whether 29% parameter reduction justifies the BPB regression is an engineering call. Revisit after the optimizer sweep or PG-19 if the data-bottleneck shifts.
 
-### Per-Scale Mixer Width Expansion
+### (Complete) Per-Scale Mixer Width Expansion
 
-**Width contraction win (W2):** `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) lands at 1-epoch BPB sliding **1.2437** vs default's 1.2361 — +0.0076 within ±0.018, with **39% fewer mixer params (35.70M vs 58.82M)** and 5.9% fewer total. Aggressive contraction at `[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250; the width floor lives between W2's 0.5/0.25 and W1's 0.1/0.05.
+**Result:** both directions tested at L=1 / levels=7 / bs=16384.
+- *Contraction* — W2 at `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) lands at 1-epoch BPB sliding **1.2437** vs default's 1.2361 = +0.0076 (within ±0.018), with **39% fewer mixer params (35.70M vs 58.82M)** and 5.9% fewer total. Aggressive contraction at `[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250 — the width floor lives between W2 and W1.
+- *Expansion* — E5_5ep at `[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) lands at 5-epoch BPB **1.1037** vs [headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = +0.0063 at +24% mixer params (within tolerance, no improvement).
 
-**Expansion direction:** `[1.5×4, 0.5×4]` 5-epoch ([E5_5ep](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) at BPB 1.1037 vs reference 1.0974 = +0.0063 at +24% params — within tolerance but no improvement. Consistent with the broader pattern that the architecture is data-bottlenecked at WikiText-103 / 5ep / ~400M params.
+Both directions consistent with the data-bottlenecked-architecture finding: width perturbations don't move BPB measurably in either direction. Contraction is free (small param savings at marginal BPB cost); expansion is wasted compute. Full detail in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Pending:** 5-epoch confirmation of W2 to promote it to default. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if W2 ships at 5 epochs.
+**Decision:** ship W2 (`[0.5×4, 0.25×4]`) as the contracted-mixer candidate when the next combined 5-epoch baseline runs; expansion shelved. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if W2's 5-epoch confirmation ships cleanly.
 
 ### (Complete) Low Rank Ablations
 
@@ -586,27 +588,11 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Decision:** keep both flags `true`. The running-mean × `history_gains` machinery is doing real stability work at this scale. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw); if Muon clears the cascade-amplification issue structurally, disablement can be retested.
 
-### (Complete) Wavelet Off-Diagonal Masking with Top-K Percent
+### Wavelet Off-Diagonal Masking with Top-K Percent
 
-**Result:** `W = D + (S ⊙ M)` where `M` is a fixed mask over the top-`k`% of off-diagonal positions by magnitude (computed once from the [5-epoch winner's](logs/wikitext-103_2026-05-03_02-13-07/log.txt) lifting weights). **M1 (0.1%), M2 (1%), M3 (5%), and M4 (10%) all land at 1.2861, identical to M0's 1.2860 across four orders of magnitude in density.** The lifting matrices' off-diagonal mass requires whole-matrix coordination to do its work — it's not "extra capacity distributed widely" that any subset can recapture, it's *structural*. Matches [`tools/analyze_lifting.py`](tools/analyze_lifting.py)'s near-full-rank finding (r99 ≈ 1875-1950 of 2048). M1r-M4r random controls cancelled (the perfectly flat magnitude trajectory leaves nothing for matched-density random masks to disambiguate). Full table in [runs.md](runs.md#wavelet-off-diagonal-masking-sweep-planned-l1-levels7-epochs1).
-
-**Decision:** approach shelved at this regime. The relevant degree of freedom isn't *which positions to keep* but *what kind of structure the matrix is allowed to take* — see the next section for the structured-prior sweep that tests exactly this.
 
 ### Wavelet Off-Diagonal Masking with Structured Variants
 
-Same `W = D + (S ⊙ M)` decomposition as above, but `M` is now a **structurally-defined** mask rather than magnitude-pruned: triangular, block-diagonal, banded, or Monarch/butterfly. Different in kind from the top-k approach — magnitude pruning selects from the positions an *unconstrained* trained matrix happened to populate, while structural masks force gradient descent to find a *different* optimum that respects the structure from initialization. Distinct outcomes are possible despite the M-series nulls.
-
-**Sweep (1ep, L=1 / levels=7 / bs=16384, low_rank=16):**
-
-| Variant | Density | Per-matrix params | Reduction | Notes |
-|---------|---------|-------------------|-----------|-------|
-| Upper triangular (`T_upper`) | 50% | 2.10M | 50% | Each output sees inputs at indices ≥ its own. |
-| Lower triangular (`T_lower`) | 50% | 2.10M | 50% | Each output sees inputs at indices ≤ its own. Upper-vs-lower is itself the ablation. |
-| Block-diagonal `BD64` / `BD256` | 3% / 13% | 131K / 524K | 97% / 87% | 32 blocks of 64×64, or 8 of 256×256. Channel-permutation-invariant. |
-| Banded `BAND64` / `BAND256` | 6% / 25% | 264K / 1.05M | 94% / 75% | Bandwidth 64 / 256. 1D-conv-style locality on the channel axis. |
-| Monarch ([Dao et al., 2022](https://arxiv.org/abs/2204.00595)) `MON32` / `MON64` | 6% / 3% | 262K / 131K | 94% / 97% | 2 factors × 32 blocks of 64×64, or 64 blocks of 32×32. Full-matrix expressivity at sublinear params; field-converged structured-matrix prior. |
-
-Pass criterion: BPB sliding within ±0.018 of reference 1.2361. **Strongest expected signals:** `BD64` and `MON64` (both ≈A1-density at 97%) directly compare structural-prior compression to A1's D + U·V^T at matched parameter count — if either beats A1's +0.0499, structure-via-blocks/factors is a viable lever. Triangular pair tests whether ANY single-direction off-diagonal structure helps at the most generous density. Mid-density variants trace the BPB-vs-density curve. If all eight regress hard (~+0.04+ BPB), this entire compression-via-structure direction is shelved alongside the top-k results. Implementation requires `model.py` to support `lifting_offdiag_structure` plus `lifting_block_size` / `lifting_band_width` / `lifting_monarch_blocks`. Full table in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
 
 ### Optimizer Sweep (Muon → AdamW)
 
