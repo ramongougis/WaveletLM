@@ -326,6 +326,17 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 |   | 2 | [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt) | NaN | 555.51M | — | — | — | NaN at step 2500 (LR=0.0057); wider lifting unstable at L=20. Future stability fixes (e.g., spectral norm on lifting predict/update, or scaled init for hidden dims) may make this viable. |
 | N/A | 4 | — | — | — | — | — | — | Cancelled; mult=2 already NaN'd. Revisit with stability fixes. |
 
+### Decompose Bypass Disablement (DBD): post-combined-reduction baseline (L=1, levels=7, epochs=1)
+
+Tests whether the running-mean × `history_gains` machinery (`decompose_bypass` and `decompose_bypass_cross_window`) can be removed at the post-combined-reduction regime with the new `low_rank=16` winner. Prior smaller-scale ablations (Boolean ablation table at L=1 / E=1 and the Test 5 sweep) found both flags within ±0.0015 BPB of baseline (within noise) and projected they could be turned off "for free." This run validates the projection at L=1 / levels=7 / bs=16384 / `low_rank=16`.
+
+| Run | decompose_bypass | decompose_bypass_cross_window | low_rank | Folder | BPB (sliding) | Notes |
+|-----|------------------|-------------------------------|----------|--------|---------------|-------|
+| R0  | true (baseline) | true | 4 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | Reference |
+| DBD | **false** | **false** | 16 | [link](logs/wikitext-103_2026-05-05_12-47-12/log.txt) | NaN at step 1500 | NaN at lr=6.84e-3 (mid-warmup), earlier than R1.5's NaN at step 2250 / lr=1.00e-2 with the flags on. Both flags doing real stability work at this regime. |
+
+**Conclusion:** keep `decompose_bypass=true` and `decompose_bypass_cross_window=true` as headline defaults. Prior projections of "free disablement" do not hold once `levels=7` and `low_rank=16` are stacked. Removal is off the table until the optimizer sweep (Muon) clears the cascade-amplification picture; if Muon makes the bypass redundant, DBD can be retested then.
+
 ### New Baseline
 
 The baseline used for all 1-epoch screening ablations. Combines proven wins (levels=5; low_rank=4) on top of the wide & shallow config. Halves per-epoch runtime vs the previous C=512/L=20 baseline. **PKM and FwPKM are intentionally OFF** during screening — they get re-introduced for the final 5-epoch best-run candidate (saves ~10-15% time and ~150M params per 1-epoch run).

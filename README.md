@@ -589,9 +589,11 @@ The mixer's `low_rank` (controlling the U, V parallel correction inside `GatedSp
 
 **Result:** `low_rank=16` is the stable improvement; the upper stability boundary lives between 16 and 32 at lr=1.00e-2 with the per-parameter Adagrad accumulator regime. R1 promoted to a 5-epoch confirmation run.
 
-### Decompose Bypass Disablement Ablation
+### (Complete) Decompose Bypass Disablement Ablation
 
-Re-run the L=1 / levels=7 / 5-epoch winner ([logs/wikitext-103_2026-05-03_02-13-07](logs/wikitext-103_2026-05-03_02-13-07/log.txt), BPB sliding 1.0974) with `decompose_bypass=false` and `decompose_bypass_cross_window=false`. The Boolean ablation table at L=1 / E=1 found both within ±0.0015 BPB of baseline (within noise), and the Test 5 sweep showed that toggling them at L=1 / E=1 / bs=16384 also had no measurable effect on either training trajectory or NaN onset. If the 5-epoch L=1 / levels=7 run reproduces within ±0.0015 BPB of 1.0974 with both off, both flags become permanent `false` defaults, and the running-mean × `history_gains` machinery can be removed from the forward path entirely (a small step-time win and one fewer growth-prone accumulator in the residual stream). If a regression > ±0.0015 BPB appears at this scale, leave them at the headline-baseline `true` and revisit only after the optimizer sweep clears up the L=11 instability picture. Single 5-epoch run at the existing winning configuration; ~6.5h on a 5090.
+**Result:** at L=1 / levels=7 / bs=16384 / `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) **NaN'd at step 1500, lr=6.84e-3** (mid-warmup): earlier than R1.5's NaN at step 2250 / lr=1.00e-2 with the flags on. Prior conclusions from the smaller-scale Boolean ablation (L=1 / E=1, both flags within ±0.0015 BPB of baseline) and the Test 5 sweep do not hold at the current bs=16384 / `low_rank=16` regime.
+
+**Decision:** keep `decompose_bypass=true` and `decompose_bypass_cross_window=true` as the headline defaults. The running-mean × `history_gains` machinery is doing real stability work at this scale, a fact that wasn't visible until both `levels=7` and `low_rank=16` were stacked. Removal is off the table until the optimizer sweep (Muon) is in place; if Muon clears the cascade-amplification issue structurally, the bypass becomes redundant and disablement can be retested then.
 
 ### Wavelet Off-Diagonal Masking
 
