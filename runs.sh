@@ -301,6 +301,31 @@ run_ablation "MON64 Monarch nblocks=64" \
     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
 
+# ---- 7. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
+# After the 1-epoch sweep in sections 4-6 completes, the best-performing
+# configuration goes to a 5-epoch confirmation run against the L=1 / levels=7
+# 5-epoch headline (logs/wikitext-103_2026-05-03_02-13-07/log.txt, BPB 1.0974).
+#
+# Currently leading 1-epoch candidates:
+#   - M4 (magnitude_topk, density=0.10): BPB 1.2438 (+0.0096 vs 1ep ref 1.2361)
+#     -- but bootstrapping-dependent; only valid if a same-architecture
+#        reference checkpoint exists.
+#   - Whichever random_topk / structural variant matches or beats M4 at
+#     comparable lifting params -- see runs.md tables for the final winner.
+#
+# Pass criterion vs 5-epoch headline 1.0974: ±0.018 BPB = [1.0794, 1.1154].
+# Strongest result: BPB cleanly below 1.0974, indicating compression doesn't
+# only preserve performance at scale but improves it (e.g., via reduced
+# overfitting to the lifting cascade's full param footprint).
+#
+# Uncomment and fill in the chosen winner config before launching:
+#
+# WINNER_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_structure": "<chosen>", "lifting_offdiag_density": <chosen>, "lifting_offdiag_mask_checkpoint": "logs/wikitext-103_2026-05-03_02-13-07/best_model.pt"}'
+# run_ablation "C5ep <chosen> winner @ 5 epochs" \
+#     "$BASE_PATCH_5EP" \
+#     "$WINNER_BASE" \
+#     "C5ep: <chosen> winner (5ep, L=7) -- top-k 5-epoch confirmation"
+
 echo ""
 echo "============================================================"
 echo "=== Queue complete."
@@ -311,6 +336,8 @@ echo "===   4) M1..M4 magnitude-pruned off-diagonal — pass within ±0.018 of 1
 echo "===   5) M1r..M4r random controls at matched densities — pass within ±0.018 of 1.2361"
 echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
 echo "===      — pass within ±0.018 of 1.2361"
+echo "===   7) 5-epoch confirmation of chosen winner — pass within ±0.018 of 1.0974"
+echo "===      (placeholder; uncomment after sections 4-6 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
 echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"
