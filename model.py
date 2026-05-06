@@ -224,11 +224,45 @@ def _load_lifting_reference_weights(
     checkpoints.
     """
     import re
+    import sys
+
+    def _friendly_exit(reason: str):
+        """Print a compact, multi-line warning explaining the bootstrapping
+        dependency, list architecturally-portable alternatives, then exit.
+        Both the warning and the alternatives go to stdout, which train.py
+        captures into log.txt via its standard tee."""
+        print()
+        print("[Lifting] !!! magnitude_topk: reference checkpoint missing or invalid !!!")
+        print(f"[Lifting]   Path:   {checkpoint_path!r}")
+        print(f"[Lifting]   Reason: {reason}")
+        print("[Lifting]")
+        print("[Lifting]   magnitude_topk requires a pre-trained reference at the SAME architecture")
+        print("[Lifting]   (matching C, levels, low_rank) to compute per-matrix masks. New scales,")
+        print("[Lifting]   new architectures, and first-time runs cannot use it without first")
+        print("[Lifting]   training an uncompressed reference (2-stage training).")
+        print("[Lifting]")
+        print("[Lifting]   Architecturally portable alternatives -- set lifting_offdiag_structure to:")
+        print("[Lifting]     random_topk          random mask at matched density (bootstrap-free)")
+        print("[Lifting]     upper_triangular     50% mask")
+        print("[Lifting]     lower_triangular     50% mask")
+        print("[Lifting]     block_diagonal       set lifting_block_size (e.g. 64 or 256)")
+        print("[Lifting]     banded               set lifting_band_width (e.g. 64 or 256)")
+        print("[Lifting]     monarch              set lifting_monarch_blocks (e.g. 32 or 64)")
+        print("[Lifting]")
+        print("[Lifting]   Or train an uncompressed reference first and point")
+        print("[Lifting]   `lifting_offdiag_mask_checkpoint` at its best_model.pt.")
+        print("[Lifting]   Exiting.")
+        print()
+        sys.exit(1)
+
+    if not checkpoint_path:
+        _friendly_exit("lifting_offdiag_mask_checkpoint is empty")
     if not os.path.isfile(checkpoint_path):
-        raise FileNotFoundError(
-            f"lifting_offdiag_mask_checkpoint not found: {checkpoint_path}"
-        )
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        _friendly_exit("file does not exist")
+    try:
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    except Exception as e:
+        _friendly_exit(f"torch.load failed: {type(e).__name__}: {e}")
     # Unwrap state_dict
     state_dict = ckpt
     if isinstance(ckpt, dict):
@@ -240,9 +274,7 @@ def _load_lifting_reference_weights(
     if not isinstance(state_dict, dict) or not all(
         isinstance(v, torch.Tensor) for v in state_dict.values()
     ):
-        raise ValueError(
-            f"Could not unwrap state dict from {checkpoint_path}"
-        )
+        _friendly_exit("could not unwrap state_dict from checkpoint")
     # Match keys like:
     #   layers.0.lifting_wavelet.predict_nets.<L>.<lin>.weight
     #   layers.0.lifting_reconstruct.decompose.predict_nets.<L>.<lin>.weight
@@ -262,9 +294,9 @@ def _load_lifting_reference_weights(
         if triple not in out:
             out[triple] = tensor.detach().to(torch.float32)
     if not out:
-        raise ValueError(
-            f"No lifting predict/update weights found in {checkpoint_path}. "
-            f"Sample keys: {list(state_dict.keys())[:5]}"
+        _friendly_exit(
+            f"no lifting predict/update weights found "
+            f"(sample keys: {list(state_dict.keys())[:5]})"
         )
     return out
 

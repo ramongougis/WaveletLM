@@ -523,24 +523,25 @@ Longer training time, more regularization, and parameter compression are the sur
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent)
 9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
-10. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-11. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-12. [Dropout Sweep](#dropout-sweep)
-13. [Weight Decay Sweep](#weight-decay-sweep)
-14. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-15. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-16. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-17. [Longer PG-19 Training](#longer-pg-19-training)
-18. [Dataset Comparisons](#dataset-comparisons)
-19. [Model Comparisons](#model-comparisons)
-20. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-21. [Multi-Transform Parallelization](#multi-transform-parallelization)
-22. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-23. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-24. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-25. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-26. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-27. [Other Post-Release Plans](#other-post-release-plans)
+10. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
+11. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+12. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+13. [Dropout Sweep](#dropout-sweep)
+14. [Weight Decay Sweep](#weight-decay-sweep)
+15. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+16. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+17. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+18. [Longer PG-19 Training](#longer-pg-19-training)
+19. [Dataset Comparisons](#dataset-comparisons)
+20. [Model Comparisons](#model-comparisons)
+21. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+22. [Multi-Transform Parallelization](#multi-transform-parallelization)
+23. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+24. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+25. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+26. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+27. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+28. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -590,9 +591,37 @@ Both directions consistent with the data-bottlenecked-architecture finding: widt
 
 ### Wavelet Off-Diagonal Masking with Top-K Percent
 
+Wavelet diagonal plus a fixed top-k percent off-diagonal mask based on an analysis of the weights for the [5-epoch winner](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze lifting script](tools/analyze_lifting.py) and weighing by precedence. 
+
+A top-k of 1% recovers 32.0% of the 0.0518 BPB gap between the diagonal-only wavelet ([1.2860 BPB](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) and uncompressed wavelet ([1.2342 BPB](logs/wikitext-103_2026-05-05_07-07-45/log.txt)). This means 99% of the off-diagonal wavelet parameters can be dropped, and we'd still retain 32% of the total off-diagonal wavelet parameters' effects. Meanwhile, a top-k of 5% gives [1.2524 BPB](logs/wikitext-103_2026-05-06_16-10-39/log.txt), recovering 64.9% of the gap. 
+
+For all top-k runs, see [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
+
+**Portability caveat.** The `magnitude_topk` path requires a pre-trained reference checkpoint matching the *same* architecture (same `C`, `levels`, `low_rank`). The mask is computed at runtime from each lifting matrix's trained weight magnitudes in that reference .pt file. First-time training runs all need an uncompressed training done first to produce the reference, then a second compressed training run on top. The random-mask variants (`random_topk`) and the [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants) (triangular, block-diagonal, banded, Monarch) do not require a reference .pt file: they construct their masks with no checkpoint dependency. **The M{n}r random controls become the load-bearing portability test:** if random matches magnitude at each density, random is the preferred default for new scales; if magnitude meaningfully outperforms random, `magnitude_topk` is reserved for compressing a fine-tuned reference of an already-trained architecture, and the structural variants or random-mask path become the defaults for new scales.
 
 ### Wavelet Off-Diagonal Masking with Structured Variants
 
+
+### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
+
+The [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size) sweep hit an unrecoverable NaN cliff at `levels=9` and `levels=11` under fp16 AMP — the lifting cascade was the suspected parameter-amplification source, and the unblock was deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw). The M-series unlocks an **independent, complementary** path: if magnitude_topk at 5-10% density genuinely retains BPB performance (M3 at 64.9% gap recovered, M4 in progress), the lifting at deeper level counts becomes proportionally cheaper *and* less amplification-prone — fewer effective parameters per cascade level means less mass for fp16 to saturate.
+
+**Plan.** Once the M-sweep and structured-variant queue finishes and the best surviving density is identified (likely M3 or M4), rerun `levels=9` and `levels=11` at L=1 / bs=16384 with magnitude_topk lifting compression at that density. Pass criteria, in order of decreasing strictness:
+1. **Stability** — does the run complete without NaN? (Necessary; the original goal of the levels=9/11 deferral.)
+2. **BPB sliding within ±0.018 of the levels=7 5-epoch headline 1.0974**, where deeper decomposition gains offset the compression cost.
+3. **BPB sliding cleanly below 1.0974** — the strongest result, indicating compressed deeper cascades *outperform* uncompressed shorter ones at matched footprint.
+
+**Approximate parameter math at M3-equivalent (94.9% lifting reduction):**
+
+| Config | Lifting (full) | Lifting (M3-compressed) | Total model |
+|--------|---------------|-------------------------|-------------|
+| L=7 (current) | 117.5M | 5.98M | 393M / 282M (compressed) |
+| L=9 | 151M | 7.7M | ~415M / ~283M |
+| L=11 | 184M | 9.4M | ~437M / ~285M |
+
+A compressed L=11 model lands at **~285M total params — smaller than the current uncompressed L=7 baseline (393M)** — while accessing four additional decomposition levels (effective context reach 2¹¹ = 2048× the fine token resolution, vs 2⁷ = 128×). If the cliff clears under compression alone, the M-sweep finding compounds from "lifting compression" into "depth unlock" — a structural regime change for the architecture.
+
+**Complementary to the [Optimizer Sweep](#optimizer-sweep-muon--adamw)**, not redundant: Muon tests whether orthogonalized updates handle the cascade amplification *structurally*; lifting compression tests whether reducing the cascade's parameter mass *directly* is sufficient. If both clear independently, they may compose constructively (Muon + compressed lifting + deep levels = the deepest stable regime). If only one works, that path stands alone. If neither works individually, the combination is the natural last resort before declaring `levels ≥ 9` infeasible at fp16.
 
 ### Optimizer Sweep (Muon → AdamW)
 
