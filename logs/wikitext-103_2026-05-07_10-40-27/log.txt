@@ -1,0 +1,303 @@
+[2026-05-07 10:40:27] Starting WaveletLM Training on WIKITEXT-103
+[2026-05-07 10:40:27] Device: cuda, AMP: True (fp16)
+[2026-05-07 10:40:27] 
+[2026-05-07 10:40:27] 	dataset                             : wikitext-103
+[2026-05-07 10:40:27] 	tokenizer                           : auto
+[2026-05-07 10:40:27] 	out_dir                             : logs
+[2026-05-07 10:40:27] 	compile                             : True
+[2026-05-07 10:40:27] 	compile_mode                        : default
+[2026-05-07 10:40:27] 	seed                                : 1337
+[2026-05-07 10:40:27] 	epochs                              : 1
+[2026-05-07 10:40:27] 	micro_batch_size                    : 1
+[2026-05-07 10:40:27] 	grad_accum                          : 1
+[2026-05-07 10:40:27] 	block_size                          : 16384
+[2026-05-07 10:40:27] 	eval_interval                       : 250
+[2026-05-07 10:40:27] 	skip_warmup_saves                   : True
+[2026-05-07 10:40:27] 	C                                   : 2048
+[2026-05-07 10:40:27] 	layers                              : 1
+[2026-05-07 10:40:27] 	levels                              : 7
+[2026-05-07 10:40:27] 	low_rank                            : 16
+[2026-05-07 10:40:27] 	mlp_expansion                       : 10
+[2026-05-07 10:40:27] 	mlp_layers                          : 2
+[2026-05-07 10:40:27] 	pkm_enabled                         : False
+[2026-05-07 10:40:27] 	pkm_num_keys                        : 16384
+[2026-05-07 10:40:27] 	pkm_top_k                           : 32
+[2026-05-07 10:40:27] 	pkm_heads                           : 1
+[2026-05-07 10:40:27] 	fwpkm_enabled                       : True
+[2026-05-07 10:40:27] 	fwpkm_num_keys                      : 8281
+[2026-05-07 10:40:27] 	fwpkm_top_k                         : 32
+[2026-05-07 10:40:27] 	fwpkm_heads                         : 1
+[2026-05-07 10:40:27] 	fwpkm_inference_updates             : False
+[2026-05-07 10:40:27] 	fwpkm_update_lr                     : 0.01
+[2026-05-07 10:40:27] 	fwpkm_chunk_size                    : 64
+[2026-05-07 10:40:27] 	wavelet_mode                        : lifting
+[2026-05-07 10:40:27] 	shared_lifting_weights              : True
+[2026-05-07 10:40:27] 	untied_reconstruction               : False
+[2026-05-07 10:40:27] 	multi_basis_lifting                 : False
+[2026-05-07 10:40:27] 	multi_basis_inits                   : ['haar', 'random']
+[2026-05-07 10:40:27] 	cross_scale_gating                  : True
+[2026-05-07 10:40:27] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-05-07 10:40:27] 	stable_parametrization              : False
+[2026-05-07 10:40:27] 	stab_spectral_norm                  : False
+[2026-05-07 10:40:27] 	stab_ff_scaling                     : False
+[2026-05-07 10:40:27] 	stab_embed_scaling                  : False
+[2026-05-07 10:40:27] 	stab_proj_out_scaling               : False
+[2026-05-07 10:40:27] 	stab_mixer_eps_scaling              : False
+[2026-05-07 10:40:27] 	stab_lifting_level_scaling          : False
+[2026-05-07 10:40:27] 	looped_blocks                       : False
+[2026-05-07 10:40:27] 	looped_blocks_count                 : 8
+[2026-05-07 10:40:27] 	wavelet_crawl                       : False
+[2026-05-07 10:40:27] 	wavelet_crawl_k                     : 3
+[2026-05-07 10:40:27] 	lifting_linear_only                 : False
+[2026-05-07 10:40:27] 	lifting_hidden_mult                 : 1
+[2026-05-07 10:40:27] 	lifting_init                        : haar
+[2026-05-07 10:40:27] 	lifting_dropout                     : 0.0
+[2026-05-07 10:40:27] 	lifting_diaglowrank                 : False
+[2026-05-07 10:40:27] 	lifting_level_sharing               : False
+[2026-05-07 10:40:27] 	lifting_offdiag_structure           : block_diagonal
+[2026-05-07 10:40:27] 	lifting_block_size                  : 128
+[2026-05-07 10:40:27] 	lifting_band_width                  : 64
+[2026-05-07 10:40:27] 	lifting_monarch_blocks              : 32
+[2026-05-07 10:40:27] 	lifting_offdiag_density             : 0.0
+[2026-05-07 10:40:27] 	lifting_offdiag_mask_seed           : 1337
+[2026-05-07 10:40:27] 	lifting_offdiag_mask_checkpoint     : 
+[2026-05-07 10:40:27] 	use_mixer_gate                      : True
+[2026-05-07 10:40:27] 	mixer_gate_activation               : silu
+[2026-05-07 10:40:27] 	mixer_depth                         : 1
+[2026-05-07 10:40:27] 	mixer_depth_stabilizers             : False
+[2026-05-07 10:40:27] 	mixer_depth_residuals               : False
+[2026-05-07 10:40:27] 	decompose_bypass                    : True
+[2026-05-07 10:40:27] 	decompose_bypass_cross_window       : True
+[2026-05-07 10:40:27] 	decompose_bypass_ema                : False
+[2026-05-07 10:40:27] 	learned_residual                    : True
+[2026-05-07 10:40:27] 	skip_proj_out                       : False
+[2026-05-07 10:40:27] 	stochastic_depth_rate               : 0.0
+[2026-05-07 10:40:27] 	dropout_embedding                   : 0.2
+[2026-05-07 10:40:27] 	dropout_projection                  : 0.1
+[2026-05-07 10:40:27] 	dropout_mixer                       : 0.1
+[2026-05-07 10:40:27] 	dropout_mlp                         : 0.1
+[2026-05-07 10:40:27] 	dropout_lm_head                     : 0.24
+[2026-05-07 10:40:27] 	optimizer                           : Adagrad
+[2026-05-07 10:40:27] 	optimizer_eps                       : 2e-13
+[2026-05-07 10:40:27] 	lr                                  : 0.01
+[2026-05-07 10:40:27] 	min_lr                              : 0.0002
+[2026-05-07 10:40:27] 	warmup_fraction                     : 0.3
+[2026-05-07 10:40:27] 	grad_clip                           : 1.0
+[2026-05-07 10:40:27] 	tie_embedding_to_lm_head            : True
+[2026-05-07 10:40:27] 	gradient_checkpointing              : False
+[2026-05-07 10:40:27] 	use_amp                             : True
+[2026-05-07 10:40:27] 	amp_dtype                           : fp16
+[2026-05-07 10:40:27] 	allow_tf32                          : True
+[2026-05-07 10:40:27] 	generation_prompt                   : The history of
+[2026-05-07 10:40:27] 	temperature                         : 1.0
+[2026-05-07 10:40:27] 	num_new_tokens                      : 512
+[2026-05-07 10:40:27] 	top_p                               : 0.95
+[2026-05-07 10:40:27] 	repetition_penalty                  : 1.1
+[2026-05-07 10:40:27] 	benchmark_only                      : False
+[2026-05-07 10:40:27] 	benchmark_run_dir                   : 
+[2026-05-07 10:40:27] 	multinodal_enabled                  : False
+[2026-05-07 10:40:27] 	multinodal_num_cells                : 2
+[2026-05-07 10:40:27] 	multinodal_cell_dim                 : 512
+[2026-05-07 10:40:27] 	multinodal_seeds                    : [42, 137]
+[2026-05-07 10:40:27] 	multinodal_combination              : average
+[2026-05-07 10:40:27] 	multinodal_cross_cell_gating        : False
+[2026-05-07 10:40:27] 	multinodal_cross_cell_gate_interval : 1
+[2026-05-07 10:40:27] 	multinodal_features_per_cell        : -1
+[2026-05-07 10:40:27] 	multinodal_bagged_eps               : 1e-06
+[2026-05-07 10:40:27] 	quantize_enabled                    : False
+[2026-05-07 10:40:27] 	quantize_mixer_coarse_bits          : 8
+[2026-05-07 10:40:27] 	quantize_mixer_mid_bits             : 4
+[2026-05-07 10:40:27] 	quantize_mixer_fine_bits            : 2
+[2026-05-07 10:40:27] 	quantize_mlp_bits                   : 4
+[2026-05-07 10:40:27] 	quantize_lifting_bits               : 16
+[2026-05-07 10:40:27] 	quantize_embedding_bits             : 8
+[2026-05-07 10:40:27] 	per_layer_embedding                 : True
+[2026-05-07 10:40:27] 	loop_iterations                     : 1
+[2026-05-07 10:40:27] 	weight_decay                        : 1e-06
+[2026-05-07 10:40:27] 	lifting_offdiag_mask                : False
+[2026-05-07 10:40:27] 
+[2026-05-07 10:40:27] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-07 10:40:27] [Dataset] Loading wikitext-103 from cache...
+[2026-05-07 10:40:28] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-07 10:40:28] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-07 10:40:28] [Dataset] Vocab size: 50257
+[2026-05-07 10:40:28] [Schedule] 7307 steps/epoch, 7307 total steps
+[2026-05-07 10:40:28] [Schedule] Warmup: 2192 steps (30%)
+[2026-05-07 10:40:31] [Run Folder] logs/wikitext-103_2026-05-07_10-40-27
+[2026-05-07 10:40:31] 
+============================================================
+[2026-05-07 10:40:31] PARAMETER BREAKDOWN
+[2026-05-07 10:40:31] ============================================================
+[2026-05-07 10:40:31] Total parameters:             283,107,404 (283.11M)
+[2026-05-07 10:40:31]   Shared lifting:               7,397,376 (7.40M)
+[2026-05-07 10:40:31]   Token embedding:            102,926,336 (102.93M)
+[2026-05-07 10:40:31]   Layers (total):             180,176,972 (180.18M)
+[2026-05-07 10:40:31]     Mixer/layer:               59,113,472 (59.11M)
+[2026-05-07 10:40:31]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-07 10:40:31]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-07 10:40:31]   LM head (shared):                     0 additional
+[2026-05-07 10:40:31]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-07 10:40:31] ============================================================
+
+[2026-05-07 10:40:31] [Model] 283.11M parameters (283.11M trainable)
+[2026-05-07 10:40:31] [Compile] torch.compile enabled (mode=default)
+[2026-05-07 10:40:33] [Optimizer] Adagrad, lr=0.01, eps=2e-13, weight_decay=1e-06
+[2026-05-07 10:40:33] 
+=== EPOCH 1/1 ===
+[2026-05-07 10:43:21] Step 250: train loss 6.3157, val loss 6.2819		lr=1.14e-03
+[2026-05-07 10:43:21] New Best Val: 6.2819 (skipping save during warmup)
+[2026-05-07 10:45:57] Step 500: train loss 5.8264, val loss 5.7589		lr=2.28e-03
+[2026-05-07 10:45:57] New Best Val: 5.7589 (skipping save during warmup)
+[2026-05-07 10:48:34] Step 750: train loss 5.5351, val loss 5.4999		lr=3.42e-03
+[2026-05-07 10:48:34] New Best Val: 5.4999 (skipping save during warmup)
+[2026-05-07 10:51:10] Step 1000: train loss 5.3639, val loss 5.3256		lr=4.56e-03
+[2026-05-07 10:51:10] New Best Val: 5.3256 (skipping save during warmup)
+[2026-05-07 10:53:46] Step 1250: train loss 5.1762, val loss 5.1337		lr=5.70e-03
+[2026-05-07 10:53:46] New Best Val: 5.1337 (skipping save during warmup)
+[2026-05-07 10:56:22] Step 1500: train loss 5.0822, val loss 5.0488		lr=6.84e-03
+[2026-05-07 10:56:22] New Best Val: 5.0488 (skipping save during warmup)
+[2026-05-07 10:58:59] Step 1750: train loss 4.9726, val loss 4.9582		lr=7.98e-03
+[2026-05-07 10:58:59] New Best Val: 4.9582 (skipping save during warmup)
+[2026-05-07 11:01:35] Step 2000: train loss 5.0095, val loss 4.9927		lr=9.12e-03
+[2026-05-07 11:04:12] Step 2250: train loss 4.8909, val loss 4.8691		lr=1.00e-02
+[2026-05-07 11:04:12] New Best Val: 4.8691. Saving...
+[2026-05-07 11:06:52] Step 2500: train loss 4.6895, val loss 4.6035		lr=9.91e-03
+[2026-05-07 11:06:52] New Best Val: 4.6035. Saving...
+[2026-05-07 11:09:35] Step 2750: train loss 4.5945, val loss 4.5618		lr=9.72e-03
+[2026-05-07 11:09:35] New Best Val: 4.5618. Saving...
+[2026-05-07 11:12:18] Step 3000: train loss 4.5814, val loss 4.5027		lr=9.41e-03
+[2026-05-07 11:12:18] New Best Val: 4.5027. Saving...
+[2026-05-07 11:15:01] Step 3250: train loss 4.4246, val loss 4.4081		lr=9.00e-03
+[2026-05-07 11:15:01] New Best Val: 4.4081. Saving...
+[2026-05-07 11:17:44] Step 3500: train loss 4.3581, val loss 4.3260		lr=8.50e-03
+[2026-05-07 11:17:44] New Best Val: 4.3260. Saving...
+[2026-05-07 11:20:30] Step 3750: train loss 4.2761, val loss 4.2604		lr=7.93e-03
+[2026-05-07 11:20:30] New Best Val: 4.2604. Saving...
+[2026-05-07 11:23:13] Step 4000: train loss 4.2676, val loss 4.2365		lr=7.28e-03
+[2026-05-07 11:23:13] New Best Val: 4.2365. Saving...
+[2026-05-07 11:25:56] Step 4250: train loss 4.1609, val loss 4.1556		lr=6.58e-03
+[2026-05-07 11:25:56] New Best Val: 4.1556. Saving...
+[2026-05-07 11:28:41] Step 4500: train loss 4.1088, val loss 4.1465		lr=5.85e-03
+[2026-05-07 11:28:41] New Best Val: 4.1465. Saving...
+[2026-05-07 11:31:23] Step 4750: train loss 4.0549, val loss 4.0842		lr=5.10e-03
+[2026-05-07 11:31:23] New Best Val: 4.0842. Saving...
+[2026-05-07 11:34:04] Step 5000: train loss 4.0349, val loss 4.0217		lr=4.35e-03
+[2026-05-07 11:34:04] New Best Val: 4.0217. Saving...
+[2026-05-07 11:36:46] Step 5250: train loss 4.0045, val loss 3.9838		lr=3.62e-03
+[2026-05-07 11:36:46] New Best Val: 3.9838. Saving...
+[2026-05-07 11:39:29] Step 5500: train loss 3.9479, val loss 3.9848		lr=2.92e-03
+[2026-05-07 11:42:06] Step 5750: train loss 3.9348, val loss 3.9632		lr=2.28e-03
+[2026-05-07 11:42:06] New Best Val: 3.9632. Saving...
+[2026-05-07 11:44:49] Step 6000: train loss 3.8932, val loss 3.9384		lr=1.70e-03
+[2026-05-07 11:44:49] New Best Val: 3.9384. Saving...
+[2026-05-07 11:47:34] Step 6250: train loss 3.8687, val loss 3.9314		lr=1.20e-03
+[2026-05-07 11:47:34] New Best Val: 3.9314. Saving...
+[2026-05-07 11:50:20] Step 6500: train loss 3.8860, val loss 3.8963		lr=7.91e-04
+[2026-05-07 11:50:20] New Best Val: 3.8963. Saving...
+[2026-05-07 11:53:02] Step 6750: train loss 3.8585, val loss 3.9264		lr=4.85e-04
+[2026-05-07 11:55:38] Step 7000: train loss 3.8781, val loss 3.8879		lr=2.87e-04
+[2026-05-07 11:55:38] New Best Val: 3.8879. Saving...
+[2026-05-07 11:58:21] Step 7250: train loss 3.8542, val loss 3.8968		lr=2.03e-04
+[2026-05-07 11:59:46] Epoch 1 done. Time: 4689.6s (1.30h)
+[2026-05-07 11:59:46]   Train loss: 3.8610, Val loss: 3.8915
+[2026-05-07 11:59:46]   Cumulative time: 1.32h
+[2026-05-07 11:59:46] 
+=== TRAINING COMPLETE ===
+[2026-05-07 11:59:46] Best Val Loss: 3.8879 (epoch 1)
+[2026-05-07 11:59:46] Avg Epoch Time: 4689.6s
+[2026-05-07 11:59:46] Total Time: 4753.6s
+[2026-05-07 11:59:46] 
+Training Peak VRAM: 23864 MiB
+[2026-05-07 11:59:47] 
+Loading best model for benchmarks...
+[2026-05-07 11:59:54] Best model loaded.
+[2026-05-07 11:59:54] 
+[BENCHMARK] Non-overlapping: 17 windows of length 16384
+[2026-05-07 11:59:57] 
+[BENCHMARK - Non-overlapping]
+[2026-05-07 11:59:57]   Perplexity: 50.3459
+[2026-05-07 11:59:57]   BPT: 5.6538
+[2026-05-07 11:59:57]   BPB: 1.2545
+[2026-05-07 11:59:57]   Avg Loss: 3.9189
+[2026-05-07 11:59:57] 
+[SLIDING WINDOW] block_size=16384, stride=8192, min_context=8192, 34 windows
+[2026-05-07 12:00:04] 
+[BENCHMARK - Sliding Window]
+[2026-05-07 12:00:04]   Perplexity: 50.6551
+[2026-05-07 12:00:04]   BPT: 5.6626
+[2026-05-07 12:00:04]   BPB: 1.2564
+[2026-05-07 12:00:04]   Avg Loss: 3.9250
+[2026-05-07 12:00:04]   Stride: 8192, Min Context: 8192
+[2026-05-07 12:00:04] 
+=== GENERATION — Standard ===
+[2026-05-07 12:00:04] Prompt: The history of
+[2026-05-07 12:00:11] Generated:
+The history of the boat 's cargo hold up was the Annals of Farnborough 's old ship . In a short , sighted and cables , Iran fought during the Korean War . New York , including fields and villages themselves were made between 10 and 26 people and closed in late December , 59 and 45 during the passage of the second period . The Civil Protection Act was propelled by housing units . All a private boats were lost from the burial quarry on the King 's wishes , and the neck of a coffin , were bent on setting the whole of the abbey . 
+
+
+
+
+ = = The decline in historical imperial activity and settlement took place here in 1763 , when it opened , by the Byzantines the seven towns . Scots @-@ speaking captains the 12th Cavalry Division also served on the Confederate left flank , but one Title and another two were placed on the hill . Despite extensive error , the cannons of the Dutch garrison numbered about 10 @,@ 000 men , could not be made only 18 @,@ 000 , all out for a year ; twelve men in the town were involved in a revolutionary attack on the British , and British government refused charges of fatal wounds . 
+
+
+ Other major garrison groups for the British forces was detached from the Military Forces to combat a series of revolts along the northern border . Major General Geoffrey D. Wells reported that " ... of the treaty was an ultimoo of the Union Army 's high ground they ( in the area of the original war ) , and were astonished that this would make this Ancon properly de facto government , the Breda garrison be politically neutral . " First and Second War then , it was important that the French of Rossia had still not been Egypt , under the throne if James I remarked : " there was no habit of fighting shall be did and the crown in that law would have come to action at all " . only guarantee of the full principle was created in Polish waters of Constitution , which was subsequently repealed by the province of Bourbon , in that same local fiscal counterparts , whose position was more liberal than the agency . 
+
+
+
+
+ = = = Russia = = = 
+
+
+
+
+ On March 16 , 1810 Wark proposed the Angevin arms to be established as a separate species . Many of the Annals ( including Saint Eric , the Earl of Orange ) , was the first imperial throne . Despite this , when the Court decided that a new special commission had been called in . The 18th century , a charter was established on the Bottom of the
+
+[2026-05-07 12:00:11] === GENERATION — Strategies ===
+[2026-05-07 12:00:11] Prompt: The history of
+[2026-05-07 12:00:24] Generated:
+The history of the event was a result of an incident in which a man died . 
+
+
+ In August 2008 , after the United States entered World War II , it became the second largest city to reach the world 's third @-@ most populous country and the sixth highest in the history of all time . It is also the first time that the number of athletes who were not able to use their name during this period , but they may have been the subject of much controversy as to whether or not any other American nor Indian nations are at least likely . 
+
+
+ The term " Big East " was written by the German newspaper K. P. T. L.A. ( 2002 ) , while the latter two had no official names ; one of these names is the same list used for the category of the three categories : 
+
+
+ Most of the major awards for the Australian Olympic Games ( AASM ) , with the exception of the award winning the 2012 Summer Olympics , has hosted the 2006 Winter Olympics , the first ever gold medal . However , the team did not make it to be named the best sport in the nation since the 1990s . 
+
+
+ In 2001 , the University of Chicago was ranked No. 2 on its list of top 100 lists among sportsmen of all time . All four players from each group were selected to represent the following categories : 
+
+
+
+
+ = = = Awards = = = 
+
+
+
+
+ As of 2014 , there are over 1 million units worldwide . 
+
+
+ The teams have won seven consecutive titles : in 2003 – 04 , 2014 
+
+
+
+
+ = = = International = = = 
+
+
+
+
+ There are currently eight countries where the number of clubs compete at every tournament is held . 
+
+
+ Players can choose to participate in the competition and perform a regular season championship . For example , the national football club has won more than twice the overall record of the year . The next season , the men 's basketball team plays in the National Basketball Association ( NCAA ) Championship championships , and the 2015 FIFA Women 's World Cup and UEFA Super League , and the 2011 NHL Entry Draft . They have won the Stanley Cup Finals and the 2013 NBA draft . 
+
+
+ The Flames have won the game 3 – 0 , the 2009 Stanley Cup Playoffs , the only other European to win the Stanley Cup , was played between the NHL and the U.S. Open Cup . Their rivalry is marked by a short @-@ lived roster spot on the final day of the season . The team then defeated the Minnesota
+
+[2026-05-07 12:00:24] Metrics: MeanLogP=-1.2395 | MeanH=4.21 | D1=0.553 | D2=0.843 | D3=0.929 | Rep4=0.139
+[2026-05-07 12:00:24] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
+[2026-05-07 12:00:24] Training Peak VRAM: 23864 MiB
