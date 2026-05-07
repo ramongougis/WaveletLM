@@ -474,23 +474,6 @@ run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
     "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, L=7)"
 
-# 1.5625% density: BAND W=16, BD b=32, (p,q) d=0.015625 -> p=96, q=32
-run_ablation "MLP_BAND015625 (W=16)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":16}')")" \
-    "MLP_BAND015625: MLP banded W=16 per (C,C) block, ~1.61% W1+W2 density (1ep, L=7)"
-
-run_ablation "MLP_BD015625 (b=32)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":32}')")" \
-    "MLP_BD015625: MLP block_diagonal b=32 per (C,C) block, 1.5625% W1+W2 density (1ep, L=7)"
-
-run_ablation "MLP_PQ015625 (d=0.015625 -> p=96,q=32)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.015625,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ015625: MLP (p,q) striding at d=0.015625 structural (p=96,q=32) (1ep, L=7)"
-
-
 # ---- 9. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
 # configuration goes to a 5-epoch confirmation run against the L=1 / levels=7

@@ -768,7 +768,7 @@ Tests sparsifying the 102.93M token embedding via the (p, q) phantom-token strid
 
 ### MLP structural compression (planned, L=1, levels=7, epochs=1)
 
-Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (E·C, C), using the existing `StructuredLinear` infrastructure plus a new `make_mlp_mask` helper in [tools/lifting_constraints.py](tools/lifting_constraints.py). At E=10 (1-epoch sweep), MLP is 83.91M of 281M total; ~10% density takes that to ~8.4M. Five density points (25% / 12.5% / 6.25% / 3.125% / 1.5625%) × three structures (banded tiled / block_diagonal tiled / pq_strided) = 15 runs.
+Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (E·C, C), using the existing `StructuredLinear` infrastructure plus a new `make_mlp_mask` helper in [tools/lifting_constraints.py](tools/lifting_constraints.py). At E=10 (1-epoch sweep), MLP is 83.91M of 281M total; ~10% density takes that to ~8.4M. Five density points (25% / 12.5% / 6.25% / 3.125%) × three structures (banded tiled / block_diagonal tiled / pq_strided) = 15 runs.
 
 **Three structural variants:**
 - **`banded`** — tiled per-(C, C)-block bilateral band of width W. Per-block density (2W+1)/C, identical to BAND on the lifting (C, C) matrix.
@@ -791,9 +791,6 @@ Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (
 | **MLP_BAND03125** | banded | bandwidth=32 per block, ~3.17% per-block density | 1.33M | 3.17% | | | Aggressive density. BD64 lifting recovered 47.7% at this density. |
 | **MLP_BD03125** | block_diagonal | block_size=64 per block, 3.125% per-block density | 1.31M | 3.125% | | | Aggressive density. 32 (b, b) blocks per (C, C). Same param count as BD64 lifting. |
 | **MLP_PQ03125** | pq_strided | (p=48, q=16) | 1.31M | 3.125% | | | Aggressive density. Structural picks (48, 16) — q=32 fails (32 \| 2048). |
-| **MLP_BAND015625** | banded | bandwidth=16 per block, ~1.61% per-block density | 0.69M | 1.65% | | | **Floor probe.** Tests where BAND breaks down on MLP. Each output expansion neuron sees only ±16 input neighbors. |
-| **MLP_BD015625** | block_diagonal | block_size=32 per block, 1.5625% per-block density | 0.66M | 1.5625% | | | **Floor probe.** 64 tiny (32, 32) blocks per (C, C); each expansion neuron sees only its 32-block. |
-| **MLP_PQ015625** | pq_strided | (p=96, q=32) | 0.66M | 1.5625% | | | **Floor probe.** Most extreme structurally-meaningful (p, q). q=32 is the closest valid candidate to √C=45. |
 | **MLP_winner_5ep** | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch MLP variant, layered on top of the chosen lifting + embedding compression. |
 
 ### Post-release: bit-packed PTQ kernels
