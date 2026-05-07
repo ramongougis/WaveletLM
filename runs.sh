@@ -5,7 +5,7 @@
 # Settled wins so far:
 #   - low_rank=16 (R1):                BPB 1.2342, -0.0019 vs reference 1.2361
 #   - per_scale_mixer_widths=[0.5×4, 0.25×4] (W2):
-#                                      BPB 1.2437, +0.0076 (within ±0.018), -39% mixer
+#                                      BPB 1.2437, +0.0076 vs default 1.2361, -39% mixer
 #   - lifting_diaglowrank=False (A1 shelved at +0.0499)
 #
 # Cancelled:
@@ -124,7 +124,7 @@ run_ablation() {
 # Validates Future Plans #7 while the 1-epoch baseline is fresh. Boolean
 # ablation at L=1/E=1 previously found both flags within ±0.0015 BPB of
 # baseline (within noise); this run confirms at L=7 / bs=16384 / 1ep with the
-# new low_rank=16 winner. Pass: BPB sliding within ±0.018 of R1's 1.2342.
+# new low_rank=16 winner. Compare BPB sliding directly against R1's 1.2342.
 # run_ablation "DBD decompose_bypass=false + low_rank=16" \
 #     "$BASE_PATCH_1EP" \
 #     '{"low_rank": 16, "decompose_bypass": false, "decompose_bypass_cross_window": false}' \
@@ -132,9 +132,9 @@ run_ablation() {
 
 # # ---- 2. E5 confirmation: per_scale_mixer_widths=[1.5×4, 0.5×4] @ 5ep ---------
 # # 5-epoch confirmation of the coarse-expansion config (E5 at 1ep was
-# # +0.0063 BPB at +24% params — within tolerance but the 5-epoch behavior is
+# # +0.0063 BPB at +24% params — small delta, but the 5-epoch behavior is
 # # what determines whether expansion survives). Headline reference at 5ep is
-# # 1.0974; pass criterion ±0.018 BPB = [1.0794, 1.1154].
+# # 1.0974; compare BPB delta directly against this baseline.
 # run_ablation "E5_5ep per_scale_mixer_widths=[1.5x4,0.5x4] (5 epochs)" \
 #     "$BASE_PATCH_5EP" \
 #     '{"per_scale_mixer_widths": [1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]}' \
@@ -143,7 +143,7 @@ run_ablation() {
 # ---- 3. R1 confirmation: low_rank=16 @ 5ep ----------------------------------
 # 5-epoch confirmation of the 1-epoch R1 winner. Compared against the headline
 # 5-epoch reference of 1.0974; if it beats or ties, low_rank=16 becomes the
-# new default. Pass: BPB sliding within ±0.018 of 1.0974 = [1.0794, 1.1154];
+# new default. Compare BPB sliding directly against the 1.0974 baseline;
 # winner is whatever lands cleanly below 1.0974.
 # run_ablation "R1_5ep low_rank=16 (5 epochs)" \
 #     "$BASE_PATCH_5EP" \
@@ -172,7 +172,7 @@ run_ablation() {
 # This sweep loads from logs/wikitext-103_2026-05-03_02-13-07/best_model.pt
 # (the L=1 / levels=7 / 5-epoch winner). Always uses lifting_diaglowrank=false
 # (the structural mask path includes the diagonal by construction). low_rank=16
-# carried forward. Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
+# carried forward. Compare BPB delta directly against reference 1.2361.
 OFFDIAG_MAG_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_structure": "magnitude_topk", "lifting_offdiag_mask_checkpoint": "logs/wikitext-103_2026-05-03_02-13-07/best_model.pt"}'
 
 run_ablation "M1 off-diagonal magnitude 0.1%" \
@@ -238,7 +238,8 @@ run_ablation "M4r off-diagonal random 10%" \
 # model.py needs to support `lifting_offdiag_structure` and the per-structure
 # parameters before these runs will execute correctly.
 #
-# Pass criterion vs reference 1.2361: ±0.018 BPB = [1.2181, 1.2541].
+# Compare BPB delta directly against reference 1.2361, alongside lifting
+# parameter count for per-parameter efficiency comparisons.
 #
 # Per-matrix parameter counts (Linear(2048, 2048) = 4.19M baseline):
 #   T_upper / T_lower         : 2.10M  (50% reduction)
@@ -328,7 +329,7 @@ run_ablation "MON64 Monarch nblocks=64" \
 #   - Whichever random_topk / structural variant matches or beats M4 at
 #     comparable lifting params -- see runs.md tables for the final winner.
 #
-# Pass criterion vs 5-epoch headline 1.0974: ±0.018 BPB = [1.0794, 1.1154].
+# Compare 5-epoch BPB delta directly against the 5-epoch headline 1.0974.
 # Strongest result: BPB cleanly below 1.0974, indicating compression doesn't
 # only preserve performance at scale but improves it (e.g., via reduced
 # overfitting to the lifting cascade's full param footprint).
@@ -347,11 +348,11 @@ echo "=== Queue complete."
 echo "===   1) DBD     (already complete)"
 echo "===   2) E5_5ep  (already complete)"
 echo "===   3) R1_5ep  (already complete)"
-echo "===   4) M1..M4 magnitude-pruned off-diagonal — pass within ±0.018 of 1.2361"
-echo "===   5) M1r..M4r random controls at matched densities — pass within ±0.018 of 1.2361"
+echo "===   4) M1..M4 magnitude-pruned off-diagonal — compare BPB delta vs 1.2361"
+echo "===   5) M1r..M4r random controls at matched densities — compare BPB delta vs 1.2361"
 echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
-echo "===      — pass within ±0.018 of 1.2361"
-echo "===   7) 5-epoch confirmation of chosen winner — pass within ±0.018 of 1.0974"
+echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
+echo "===   7) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
 echo "===      (placeholder; uncomment after sections 4-6 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
