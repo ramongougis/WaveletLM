@@ -275,6 +275,21 @@ run_ablation "BD256 block-diagonal block_size=256" \
     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=256; print(json.dumps(b))")" \
     "BD256: lifting block-diagonal blocks=8 of 256x256 (1ep, L=7)"
 
+# Block-diagonal follow-ups (uncomment after BD256 confirms the per-density curve):
+# BD128 fills the gap between BD64 (3% density, 47.7% recovery) and BD256 (~12.5% density);
+# BD512 anchors the upper end (~25% density, expected ~92-96% recovery near reference).
+# Block-diagonal is the leading portable structural prior; these two runs trace the BPB-vs-density
+# curve in the high-recovery regime where the production default likely lives.
+# run_ablation "BD128 block-diagonal block_size=128" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=128; print(json.dumps(b))")" \
+#     "BD128: lifting block-diagonal blocks=16 of 128x128 (1ep, L=7)"
+#
+# run_ablation "BD512 block-diagonal block_size=512" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=512; print(json.dumps(b))")" \
+#     "BD512: lifting block-diagonal blocks=4 of 512x512 (1ep, L=7)"
+
 # Banded: locality structure on the channel axis (1D-conv-like).
 # Two variants: tight bandwidth (94%) and wide bandwidth (75%).
 run_ablation "BAND64 banded bandwidth=64" \
