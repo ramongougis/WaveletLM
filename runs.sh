@@ -252,65 +252,65 @@ run_ablation "M4r off-diagonal random 10%" \
 STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mask": false}'
 
 # Triangular: 50% density, channel-ordering imposed (each output sees only a half-cone of inputs).
-# Single variant per direction; the upper-vs-lower comparison is itself the ablation.
-run_ablation "T_upper upper triangular" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='upper_triangular'; print(json.dumps(b))")" \
-    "T_upper: lifting upper triangular (1ep, L=7)"
-
-run_ablation "T_lower lower triangular" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='lower_triangular'; print(json.dumps(b))")" \
-    "T_lower: lifting lower triangular (1ep, L=7)"
-
-# Block-diagonal: channel-permutation invariant (no arbitrary ordering),
-# each output sees only the b channels in its own block.
-# Two variants bracketing the A1-equivalent (97%) and moderate (87%) compression regimes.
-run_ablation "BD64 block-diagonal block_size=64" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=64; print(json.dumps(b))")" \
-    "BD64: lifting block-diagonal blocks=32 of 64x64 (1ep, L=7)"
-
-run_ablation "BD256 block-diagonal block_size=256" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=256; print(json.dumps(b))")" \
-    "BD256: lifting block-diagonal blocks=8 of 256x256 (1ep, L=7)"
-
-# Block-diagonal follow-ups (uncomment after BD256 confirms the per-density curve):
-# BD128 fills the gap between BD64 (3% density, 47.7% recovery) and BD256 (~12.5% density);
-# BD512 anchors the upper end (~25% density, expected ~92-96% recovery near reference).
-# Block-diagonal is the leading portable structural prior; these two runs trace the BPB-vs-density
-# curve in the high-recovery regime where the production default likely lives.
-# run_ablation "BD128 block-diagonal block_size=128" \
+# # Single variant per direction; the upper-vs-lower comparison is itself the ablation.
+# run_ablation "T_upper upper triangular" \
 #     "$BASE_PATCH_1EP" \
-#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=128; print(json.dumps(b))")" \
-#     "BD128: lifting block-diagonal blocks=16 of 128x128 (1ep, L=7)"
-#
-# run_ablation "BD512 block-diagonal block_size=512" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='upper_triangular'; print(json.dumps(b))")" \
+#     "T_upper: lifting upper triangular (1ep, L=7)"
+
+# run_ablation "T_lower lower triangular" \
 #     "$BASE_PATCH_1EP" \
-#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=512; print(json.dumps(b))")" \
-#     "BD512: lifting block-diagonal blocks=4 of 512x512 (1ep, L=7)"
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='lower_triangular'; print(json.dumps(b))")" \
+#     "T_lower: lifting lower triangular (1ep, L=7)"
 
-# Banded: locality structure on the channel axis (1D-conv-like).
-# Two variants: tight bandwidth (94%) and wide bandwidth (75%).
-run_ablation "BAND64 banded bandwidth=64" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=64; print(json.dumps(b))")" \
-    "BAND64: lifting banded bandwidth=64 (1ep, L=7)"
+# # Block-diagonal: channel-permutation invariant (no arbitrary ordering),
+# # each output sees only the b channels in its own block.
+# # Two variants bracketing the A1-equivalent (97%) and moderate (87%) compression regimes.
+# run_ablation "BD64 block-diagonal block_size=64" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=64; print(json.dumps(b))")" \
+#     "BD64: lifting block-diagonal blocks=32 of 64x64 (1ep, L=7)"
 
-run_ablation "BAND256 banded bandwidth=256" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=256; print(json.dumps(b))")" \
-    "BAND256: lifting banded bandwidth=256 (1ep, L=7)"
+# run_ablation "BD256 block-diagonal block_size=256" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=256; print(json.dumps(b))")" \
+#     "BD256: lifting block-diagonal blocks=8 of 256x256 (1ep, L=7)"
 
-# Monarch (Dao et al., 2022, https://arxiv.org/abs/2204.00595): products of two
-# block-diagonal factors with permutations between, giving full-matrix expressivity
-# at sublinear params. Two variants at differing block counts (sqrt(C)≈45 for C=2048;
-# common power-of-2 choices are 32 and 64).
-run_ablation "MON32 Monarch nblocks=32" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
-    "MON32: lifting Monarch nblocks=32 (1ep, L=7)"
+# # Block-diagonal follow-ups (uncomment after BD256 confirms the per-density curve):
+# # BD128 fills the gap between BD64 (3% density, 47.7% recovery) and BD256 (~12.5% density);
+# # BD512 anchors the upper end (~25% density, expected ~92-96% recovery near reference).
+# # Block-diagonal is the leading portable structural prior; these two runs trace the BPB-vs-density
+# # curve in the high-recovery regime where the production default likely lives.
+# # run_ablation "BD128 block-diagonal block_size=128" \
+# #     "$BASE_PATCH_1EP" \
+# #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=128; print(json.dumps(b))")" \
+# #     "BD128: lifting block-diagonal blocks=16 of 128x128 (1ep, L=7)"
+# #
+# # run_ablation "BD512 block-diagonal block_size=512" \
+# #     "$BASE_PATCH_1EP" \
+# #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=512; print(json.dumps(b))")" \
+# #     "BD512: lifting block-diagonal blocks=4 of 512x512 (1ep, L=7)"
+
+# # Banded: locality structure on the channel axis (1D-conv-like).
+# # Two variants: tight bandwidth (94%) and wide bandwidth (75%).
+# run_ablation "BAND64 banded bandwidth=64" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=64; print(json.dumps(b))")" \
+#     "BAND64: lifting banded bandwidth=64 (1ep, L=7)"
+
+# run_ablation "BAND256 banded bandwidth=256" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=256; print(json.dumps(b))")" \
+#     "BAND256: lifting banded bandwidth=256 (1ep, L=7)"
+
+# # Monarch (Dao et al., 2022, https://arxiv.org/abs/2204.00595): products of two
+# # block-diagonal factors with permutations between, giving full-matrix expressivity
+# # at sublinear params. Two variants at differing block counts (sqrt(C)≈45 for C=2048;
+# # common power-of-2 choices are 32 and 64).
+# run_ablation "MON32 Monarch nblocks=32" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
+#     "MON32: lifting Monarch nblocks=32 (1ep, L=7)"
 
 run_ablation "MON64 Monarch nblocks=64" \
     "$BASE_PATCH_1EP" \
