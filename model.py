@@ -919,6 +919,8 @@ class FeedForward(nn.Module):
                 band_width=mlp_band_width,
                 pq_density=mlp_pq_density,
                 pq_mode=mlp_pq_mode,
+                tile_C=C,
+                outer_dim=hidden_dim,
             )
 
         layers = []

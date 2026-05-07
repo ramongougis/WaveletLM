@@ -312,10 +312,10 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
 #     "MON32: lifting Monarch nblocks=32 (1ep, L=7)"
 
-run_ablation "MON64 Monarch nblocks=64" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
-    "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
+# run_ablation "MON64 Monarch nblocks=64" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
+#     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
 
 # More runs to complete ablation matrices: BD128, BD512, BAND32, and BAND128.
 # These four fill in the matched-param-count pairs that the existing data leaves
@@ -326,25 +326,25 @@ run_ablation "MON64 Monarch nblocks=64" \
 #   BD256 (14.74M, done) <-> BAND128 (14.33M)
 #   BD512 (29.42M) <-> BAND256 (27.63M, done)
 
-run_ablation "BD128 block-diagonal block_size=128" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=128; print(json.dumps(b))")" \
-    "BD128: lifting block-diagonal blocks=16 of 128x128 (1ep, L=7)"
+# run_ablation "BD128 block-diagonal block_size=128" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=128; print(json.dumps(b))")" \
+#     "BD128: lifting block-diagonal blocks=16 of 128x128 (1ep, L=7)"
 
-run_ablation "BD512 block-diagonal block_size=512" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=512; print(json.dumps(b))")" \
-    "BD512: lifting block-diagonal blocks=4 of 512x512 (1ep, L=7)"
+# run_ablation "BD512 block-diagonal block_size=512" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=512; print(json.dumps(b))")" \
+#     "BD512: lifting block-diagonal blocks=4 of 512x512 (1ep, L=7)"
 
-run_ablation "BAND32 banded bandwidth=32" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=32; print(json.dumps(b))")" \
-    "BAND32: lifting banded bandwidth=32 (1ep, L=7)"
+# run_ablation "BAND32 banded bandwidth=32" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=32; print(json.dumps(b))")" \
+#     "BAND32: lifting banded bandwidth=32 (1ep, L=7)"
 
-run_ablation "BAND128 banded bandwidth=128" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=128; print(json.dumps(b))")" \
-    "BAND128: lifting banded bandwidth=128 (1ep, L=7)"
+# run_ablation "BAND128 banded bandwidth=128" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=128; print(json.dumps(b))")" \
+#     "BAND128: lifting banded bandwidth=128 (1ep, L=7)"
 
 
 # ---- 7. Sparse (p, q) phantom-token embedding sweep -------------------------

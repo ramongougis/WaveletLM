@@ -396,60 +396,73 @@ def make_mlp_mask(
     band_width: int = 64,
     pq_density: float = 0.1,
     pq_mode: str = "structural",
+    tile_C: int | None = None,
+    outer_dim: int | None = None,
     device=None,
     dtype=None,
 ) -> torch.Tensor:
     """Build a (out_features, in_features) binary mask for an MLP weight matrix.
 
-    For the MLP shapes (C, E·C) and (E·C, C):
+    Supports three matrix shapes that arise in a standard MLP block at C / E·C:
+      - W1 (out=E·C, in=C):  the expansion matrix
+      - W2 (out=C, in=E·C):  the contraction matrix
+      - middle (E·C, E·C):   appears when hidden_layers > 2
 
-    - 'banded' / 'block_diagonal': matrix is tiled into E concatenated (C, C)
-      blocks along the larger dimension, where C = min(in, out) and E = max/C.
-      Each block gets the standard square-matrix structural pattern. Per-block
-      density matches the lifting BAND/BD curves at the same (block_size /
-      band_width).
-    - 'pq_strided': single 1D walk (alternating p, q steps) over the flattened
-      (out · in) tensor. q must be a common divisor of in_features and
-      out_features; for the typical MLP shape (smaller=C, larger=E·C),
-      gcd = C and the same (p, q) tuple is valid for both W1 and W2 (with
-      transpose for W2). Density = 2/(p+q).
+    Tiling is parametrized by `tile_C`, the per-block tile size (architectural
+    C of the model). Both `in_features` and `out_features` must be multiples of
+    `tile_C`. Defaults to `min(in_features, out_features)` for backward compat
+    when only outer linears are involved (tile_C = C in that case).
+
+    `outer_dim` (the architectural E·C) is used by `pq_strided` to find a single
+    (p, q) tuple valid across all three matrix shapes. Defaults to
+    `max(in_features, out_features)`, which is correct for any individual MLP
+    matrix; pass explicitly if you want to share the same (p, q) across W1 / W2 /
+    middle linears (see `FeedForward._make_linear`).
+
+    - 'banded' / 'block_diagonal': matrix is tiled into a (E_out × E_in) grid
+      of (tile_C, tile_C) blocks, each with the standard square-matrix
+      structural pattern from `make_structural_mask`. Per-block density matches
+      the lifting BAND/BD curves at the same (block_size / band_width).
+    - 'pq_strided': 1D walk (alternating p, q steps) directly over the
+      (out, in) tensor. q must divide tile_C (which guarantees q divides every
+      dim of every MLP matrix that's a multiple of tile_C). p must not divide
+      tile_C or outer_dim, which find_pq's two-pronged check enforces.
+      Density = 2/(p+q).
     """
     dtype = dtype or torch.float32
+    if tile_C is None:
+        tile_C = min(in_features, out_features)
+    if in_features % tile_C != 0 or out_features % tile_C != 0:
+        raise ValueError(
+            f"Both in_features ({in_features}) and out_features ({out_features}) "
+            f"must be multiples of tile_C ({tile_C})."
+        )
+    if outer_dim is None:
+        outer_dim = max(in_features, out_features)
+
     if structure in ("banded", "block_diagonal"):
-        C = min(in_features, out_features)
-        if max(in_features, out_features) % C != 0:
-            raise ValueError(
-                f"MLP weight dimensions ({out_features}, {in_features}) must be "
-                f"commensurate (one a multiple of the other) for tiled "
-                f"{structure!r}; got C = {C}."
-            )
-        E_total = max(in_features, out_features) // C
+        E_in = in_features // tile_C
+        E_out = out_features // tile_C
         block_mask = make_structural_mask(
-            structure, C,
+            structure, tile_C,
             block_size=block_size, band_width=band_width,
             device=device, dtype=dtype,
         )
-        if out_features > in_features:
-            return block_mask.repeat(E_total, 1)
-        elif in_features > out_features:
-            return block_mask.repeat(1, E_total)
-        else:
-            return block_mask
+        return block_mask.repeat(E_out, E_in)
 
     elif structure == "pq_strided":
         from tools.sparse_pq_embedding import find_pq, make_pq_mask
-        smaller = min(in_features, out_features)
-        larger = max(in_features, out_features)
-        # find_pq(C=smaller, N=larger) -> q | smaller, also q | (larger if commensurate),
-        # p ∤ smaller AND p ∤ larger. Returns phantom_rows = 0 when larger is a
-        # multiple of q (the typical MLP case).
-        p, q, N_prime, _phantom = find_pq(smaller, larger, pq_density, mode=pq_mode)
-        mask = make_pq_mask(larger, smaller, p, q, N_prime)
-        if out_features >= in_features:
-            result = mask
-        else:
-            result = mask.t().contiguous()
-        return result.to(device=device, dtype=dtype)
+        # find_pq with C=tile_C, N=outer_dim ensures the resulting (p, q) is
+        # valid for *every* MLP matrix that has both dims as multiples of
+        # tile_C and outer_dim as the largest dim (so q | tile_C => q | dim,
+        # and the p ∤ outer_dim check covers the largest dim's row-stride).
+        p, q, _N_prime, _phantom = find_pq(
+            tile_C, outer_dim, pq_density, mode=pq_mode
+        )
+        # Direct walk over (out_features, in_features); no phantom rows needed
+        # since out_features is already a multiple of q (q | tile_C | out_features).
+        mask = make_pq_mask(out_features, in_features, p, q, N_prime=out_features)
+        return mask.to(device=device, dtype=dtype)
 
     else:
         raise ValueError(
@@ -467,15 +480,22 @@ def build_structured_mlp_linear(
     band_width: int = 64,
     pq_density: float = 0.1,
     pq_mode: str = "structural",
+    tile_C: int | None = None,
+    outer_dim: int | None = None,
     bias: bool = True,
     device=None,
     dtype=None,
 ) -> "StructuredLinear":
-    """Construct a StructuredLinear for an MLP layer using the given structure."""
+    """Construct a StructuredLinear for an MLP layer using the given structure.
+
+    `tile_C` controls per-block tiling; `outer_dim` controls (p, q) selection so
+    the same tuple is valid across W1, W2, and middle linears. See `make_mlp_mask`.
+    """
     mask = make_mlp_mask(
         in_features, out_features, structure,
         block_size=block_size, band_width=band_width,
         pq_density=pq_density, pq_mode=pq_mode,
+        tile_C=tile_C, outer_dim=outer_dim,
         device=device, dtype=dtype,
     )
     return StructuredLinear(

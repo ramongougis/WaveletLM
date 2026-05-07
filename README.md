@@ -627,7 +627,7 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 | T upper | 58.81M | 50.05% | 1.2381 | 92.5% |
 | T lower | 58.81M | 50.05% | 1.2380 | 92.7% |
 | BD 64 | 3.73M | 3.17% | 1.2613 | 47.7% |
-| BD 128 | 7.40M | 6.30% | — | — |
+| BD 128 | 7.40M | 6.30% | 1.2564 | 57.1% |
 | BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% |
 | BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% |
 | BAND 128 | 14.33M | 12.20% | — | — |
@@ -638,7 +638,7 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 
 Two findings stand out from the matrix:
 1. **At matched lifting param count, triangular >> block-diagonal / banded** (T_upper 92.5% at 50% params vs BD's projected ~88% at 50% params). Triangular preserves *all* cross-channel pathways in one direction; block-diagonal severs them entirely; banded preserves them only within a bandwidth radius. The hierarchy is structural, not coincidental.
-2. **At matched lifting param count, banded ≈ block-diagonal** at low/mid density (BAND64 vs hypothetical BD~7.3M, BAND256's edge over BD256 comes from extra params). The matched-param picture is roughly tied; BAND's apparent advantage over BD256 was mostly a param-count effect, not a structural one. **The pending BAND128 vs BD256 (both ~14M lifting) is the load-bearing direct test.**
+2. **At matched lifting param count + matched per-element density, banded ≈ block-diagonal.** BD128 (7.40M, 6.30% density, 1.2564, 57.1%) lands within 0.0001 BPB of BAND64 (7.34M, 6.30% density, 1.2563, 57.3%) — direct confirmation that the apparent BAND advantage at the BD256-vs-BAND256 comparison was a *param-count effect* (BAND256 has 2× the params of BD256), not a structural-prior effect. At equal density, BD's "no cross-block" hard ceiling and BAND's "soft" cross-channel bleeding produce statistically indistinguishable BPB on this architecture. The pending BAND128 vs BD256 confirmation at 12.5% density would round out the parity test at the production-relevant density tier.
 
 **Updated production-default landscape (M4 vs BD256):**
 
