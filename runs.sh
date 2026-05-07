@@ -317,6 +317,36 @@ run_ablation "MON64 Monarch nblocks=64" \
     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
 
+# More runs to complete ablation matrices: BD128, BD512, BAND32, and BAND128.
+# These four fill in the matched-param-count pairs that the existing data leaves
+# in a checker pattern. After these runs, every BD/BAND comparison can be made at
+# nearly identical lifting params:
+#   BD64 (3.73M)   <-> BAND32  (3.76M)
+#   BD128 (7.40M)  <-> BAND64  (7.34M, done)
+#   BD256 (14.74M, done) <-> BAND128 (14.33M)
+#   BD512 (29.42M) <-> BAND256 (27.63M, done)
+
+run_ablation "BD128 block-diagonal block_size=128" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=128; print(json.dumps(b))")" \
+    "BD128: lifting block-diagonal blocks=16 of 128x128 (1ep, L=7)"
+
+run_ablation "BD512 block-diagonal block_size=512" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='block_diagonal'; b['lifting_block_size']=512; print(json.dumps(b))")" \
+    "BD512: lifting block-diagonal blocks=4 of 512x512 (1ep, L=7)"
+
+run_ablation "BAND32 banded bandwidth=32" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=32; print(json.dumps(b))")" \
+    "BAND32: lifting banded bandwidth=32 (1ep, L=7)"
+
+run_ablation "BAND128 banded bandwidth=128" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='banded'; b['lifting_band_width']=128; print(json.dumps(b))")" \
+    "BAND128: lifting banded bandwidth=128 (1ep, L=7)"
+
+
 # ---- 7. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
 # configuration goes to a 5-epoch confirmation run against the L=1 / levels=7
