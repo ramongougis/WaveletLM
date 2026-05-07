@@ -768,7 +768,7 @@ Tests sparsifying the 102.93M token embedding via the (p, q) phantom-token strid
 
 ### MLP structural compression (planned, L=1, levels=7, epochs=1)
 
-Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (E·C, C), using the existing `StructuredLinear` infrastructure plus a new `make_mlp_mask` helper in [tools/lifting_constraints.py](tools/lifting_constraints.py). At E=10 (1-epoch sweep), MLP is 83.91M of 281M total; ~10% density takes that to ~8.4M. Five density points (25% / 12.5% / 6.25% / 3.125%) × three structures (banded tiled / block_diagonal tiled / pq_strided) = 15 runs.
+Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (E·C, C), using the existing `StructuredLinear` infrastructure plus a new `make_mlp_mask` helper in [tools/lifting_constraints.py](tools/lifting_constraints.py). At E=10 (1-epoch sweep), MLP is 83.91M of 281M total; ~10% density takes that to ~8.4M. Four density points (25% / 12.5% / 6.25% / 3.125%) × three structures (banded tiled / block_diagonal tiled / pq_strided) = 12 runs.
 
 **Three structural variants:**
 - **`banded`** — tiled per-(C, C)-block bilateral band of width W. Per-block density (2W+1)/C, identical to BAND on the lifting (C, C) matrix.

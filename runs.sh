@@ -403,8 +403,8 @@ run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
 #
 # At C=2048 / E=10 (1-epoch sweep), MLP is 83.91M of 281M total. ~10% density
 # would compress that to ~8.4M, taking the model from 281M to ~205M before
-# stacking with the lifting + embedding compression. Five density points to
-# locate the recovery floor: 25%, 12.5%, 6.25%, 3.125%, 1.5625%.
+# stacking with the lifting + embedding compression. Four density points to
+# locate the recovery floor: 25%, 12.5%, 6.25%, 3.125%.
 #
 # Compare 1-epoch BPB delta against the L=1 / levels=7 / bs=16384 reference
 # 1.2361 alongside per-param efficiency (pp recovered / M params).
@@ -511,8 +511,8 @@ echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
 echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
 echo "===   7) Sparse (p, q) phantom-token embedding sweep at d=0.10"
 echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs 1.2361"
-echo "===   8) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%, 1.5625%"
-echo "===      15 runs (5 densities × 3 structures) — compare BPB delta vs 1.2361 alongside per-param efficiency"
+echo "===   8) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
+echo "===      12 runs (4 densities × 3 structures) — compare BPB delta vs 1.2361 alongside per-param efficiency"
 echo "===   9) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
 echo "===      (placeholder; uncomment after sections 4-8 complete and a winner is chosen)"
 echo "==="

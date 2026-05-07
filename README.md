@@ -669,7 +669,7 @@ The MLP is the second-largest single component after the token embedding (83.91M
 
 Lifting empirical priors (BAND 80.1% > BD 67.8% at matched density on the lifting cascade) suggest BAND likely wins on MLP too — but the MLP nonlinearity in the middle changes the calculus, BD has a cleaner architectural story (grouped MLP), and (p, q) brings a third connectivity pattern (global walk vs local band vs grouped block) into the comparison.
 
-**Planned sweep:** five density points (25%, 12.5%, 6.25%, 3.125%, 1.5625%) × three structures = 15 runs at 1-epoch, locating the recovery floor and identifying which structural prior wins on MLP. Stacked with the lifting + embedding compression, the production-default candidate stack lands in the 100-150M total-parameter range. Full table in [runs.md](runs.md#mlp-structural-compression-planned-l1-levels7-epochs1).
+**Planned sweep:** four density points (25%, 12.5%, 6.25%, 3.125%) × three structures = 12 runs at 1-epoch, locating the recovery floor and identifying which structural prior wins on MLP. Stacked with the lifting + embedding compression, the production-default candidate stack lands in the 100-150M total-parameter range. Full table in [runs.md](runs.md#mlp-structural-compression-planned-l1-levels7-epochs1).
 
 ### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
 
