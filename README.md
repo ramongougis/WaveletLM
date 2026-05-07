@@ -523,25 +523,26 @@ Longer training time, more regularization, and parameter compression are the sur
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent)
 9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
-10. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
-11. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-12. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-13. [Dropout Sweep](#dropout-sweep)
-14. [Weight Decay Sweep](#weight-decay-sweep)
-15. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-16. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-17. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-18. [Longer PG-19 Training](#longer-pg-19-training)
-19. [Dataset Comparisons](#dataset-comparisons)
-20. [Model Comparisons](#model-comparisons)
-21. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-22. [Multi-Transform Parallelization](#multi-transform-parallelization)
-23. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-24. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-25. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-26. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-27. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-28. [Other Post-Release Plans](#other-post-release-plans)
+10. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
+11. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
+12. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+13. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+14. [Dropout Sweep](#dropout-sweep)
+15. [Weight Decay Sweep](#weight-decay-sweep)
+16. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+17. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+18. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+19. [Longer PG-19 Training](#longer-pg-19-training)
+20. [Dataset Comparisons](#dataset-comparisons)
+21. [Model Comparisons](#model-comparisons)
+22. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+23. [Multi-Transform Parallelization](#multi-transform-parallelization)
+24. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+25. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+26. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+27. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+28. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+29. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -609,20 +610,31 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 
 **T_upper / T_lower (50% off-diagonal density, 58.81M lifting):** both land at BPB sliding 1.2380-1.2381, recovering ~92.6% of gap (+0.0038-0.0039 vs reference 1.2342). **The two are essentially identical** — the model has no measurable directional preference in channel flow. Treat them as tied; "triangular" is the reference for that variant going forward.
 
-**BD256 (block_size=256, 14.74M lifting) lands at BPB sliding 1.2509** ([log](logs/wikitext-103_2026-05-07_04-12-07/log.txt)) — recovers 67.8% of the gap, +0.0148 vs reference 1.2361. **First structural variant at near-A1 lifting param count whose BPB delta lands within the noise band of the W2 / E5 / R1 confirmations.** Recovery is meaningfully lower than I had initially projected (85-90%), because BD's "no cross-block channel interactions" structural ceiling becomes binding faster than the magnitude_topk curve does — going from BD64 (3% density) to BD256 (12.5% density) added only 20 pp of recovery, vs the M-curve's ~50 pp for similar density change.
+**BD256 (block_size=256, 14.74M lifting) lands at BPB sliding 1.2509** ([log](logs/wikitext-103_2026-05-07_04-12-07/log.txt)) — recovers 67.8% of the gap. Recovery is meaningfully lower than I had initially projected (85-90%), because BD's "no cross-block channel interactions" structural ceiling becomes binding faster than the magnitude_topk curve does — going from BD64 (3% density) to BD256 (12.5% density) added only 20 pp of recovery, vs the M-curve's ~50 pp for similar density change.
 
-**Revised predictions and outlook:**
+**BAND256 (bandwidth=256, 27.63M lifting) lands at BPB sliding 1.2445** ([log](logs/wikitext-103_2026-05-07_06-52-52/log.txt)) — recovers 80.1% of the gap, **essentially tying M4** (1.2445 vs M4's 1.2438) at 2.3× M4's lifting params. BAND scales better than BD at high density: doubling params (BD256 → BAND256) added +12 pp recovery, because banded doesn't have BD's hard "no cross-block" ceiling. **Currently the leading portable production-default candidate at BPB-equivalent-to-M4 level.**
 
-| Variant | block_size | Density | Lifting | Recovery | BPB | Tolerance? |
-|---------|------------|---------|---------|----------|-----|-------------|
-| BD64 (done) | 64 | 3.05% | 3.73M | 47.7% | 1.2613 | fails |
-| BD128 (pending) | 128 | 6.13% | 7.40M | ~58% | ~1.256 | borderline-fail |
-| **BD256 (done)** | **256** | **12.46%** | **14.74M** | **67.8%** | **1.2509** | **passes** |
-| BD512 (pending) | 512 | 24.96% | 29.42M | ~78% | ~1.246 | passes |
-| (BD1024 if run) | 1024 | 49.9% | 58.78M | ~88% | ~1.240 | passes |
-| T_upper (done, comparison) | (50% incl. diag) | 50% | 58.81M | 92.6% | 1.2380 | passes |
+**MON32 (Monarch, nblocks=32, block_size=64, 5.56M lifting) lands at BPB sliding 1.2612** ([log](logs/wikitext-103_2026-05-07_08-13-16/log.txt)) — recovers 47.9% of the gap, **essentially identical to BD64's 47.7% despite using 49% more lifting params (5.56M vs 3.73M).** The Monarch parameterization (M = R·P·L·P^T with two perfect-shuffle permutations) was hypothesized to capture cross-channel interactions that pure block-diagonal misses; at this density it shows no per-parameter advantage over BD. Per-param efficiency: 0.116M / pp recovered, worse than BD64's 0.078M / pp. **Block-diagonal is the more efficient parameterization at low density.** Whether MON64 (same param count, finer blocks) tips the result is the open question.
 
-At matched lifting param count, **triangular outperforms block-diagonal** (T_upper 92.6% vs predicted BD1024 88%) because triangular preserves cross-channel information that BD's block-isolation doesn't. The two architectures hit different recovery ceilings.
+**Full structural-variant comparison.** Order: reference floor (Diagonal only) → triangular → block-diagonal sweep → banded sweep → Monarch sweep → reference ceiling (Full wavelet).
+
+| Variant | Lifting params | % of full params | Sliding BPB | % gap recovered |
+|---------|---------------:|----------:|------------:|----------------:|
+| Diagonal only (M0 / A1) | 3.33M | 2.83% | 1.2860 | 0% (floor) |
+| T upper | 58.81M | 50.05% | 1.2381 | 92.5% |
+| T lower | 58.81M | 50.05% | 1.2380 | 92.7% |
+| BD 64 | 3.73M | 3.17% | 1.2613 | 47.7% |
+| BD 128 | 7.40M | 6.30% | — | — |
+| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% |
+| BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% |
+| BAND 128 | 14.33M | 12.20% | — | — |
+| BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% |
+| **MON 32** | **5.56M** | **4.73%** | **1.2612** | **47.9%** |
+| Full wavelet (R1) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
+
+Two findings stand out from the matrix:
+1. **At matched lifting param count, triangular >> block-diagonal / banded** (T_upper 92.5% at 50% params vs BD's projected ~88% at 50% params). Triangular preserves *all* cross-channel pathways in one direction; block-diagonal severs them entirely; banded preserves them only within a bandwidth radius. The hierarchy is structural, not coincidental.
+2. **At matched lifting param count, banded ≈ block-diagonal** at low/mid density (BAND64 vs hypothetical BD~7.3M, BAND256's edge over BD256 comes from extra params). The matched-param picture is roughly tied; BAND's apparent advantage over BD256 was mostly a param-count effect, not a structural one. **The pending BAND128 vs BD256 (both ~14M lifting) is the load-bearing direct test.**
 
 **Updated production-default landscape (M4 vs BD256):**
 
@@ -634,6 +646,14 @@ At matched lifting param count, **triangular outperforms block-diagonal** (T_upp
 M4 wins on absolute BPB by 0.0071 and on lifting params by 24%, but **BD256 wins on every other production-relevant axis**: portable to new architectures (no 2-stage training), checkpoint stores only the per-block tensor (drops the full `(C, C)` storage by ~87%), and inference compute is structurally faster (~8× speedup at this block_size via per-block batched matmul instead of dense). For scientific evaluation: M4. For production deployment / scale-up: BD256.
 
 **Production storage win for block-diagonal.** A `BlockDiagonalLinear` module (storing only the per-block weight tensor of shape `(nblocks, block_size, block_size)` instead of the full `(C, C)` matrix) would give us drop-in compression at *both* training and inference, and ship a checkpoint that's 10-25% the size of the current uncompressed weights for the lifting block alone. Combined with similar compression of MLP / mixer / FwPKM (see [memory: project_module_wide_compression_followup.md](#)), the resulting WaveletLM lands in the 100-150M total parameter range — Hyena territory at the same architectural footprint, with deeper-level training feasible due to the natural stability gains of fewer parameters in the cascade. The full table for the 1-epoch sweep is in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
+
+### Sparse Embedding with (p, q) Striding
+
+The structural-variant sweep above compresses the lifting cascade. The token embedding (102.93M params, ~26% of the model — larger than MLP, mixer, or FwPKM individually) is the next natural compression target. Standard approaches exist (ALBERT-style factorization, vocab pruning, hash embeddings); the **(p, q) phantom-token striding scheme** is a number-theoretic alternative that preserves the (N × C) embedding shape exactly, masks the embedding via a deterministic 1D walk over the flattened tensor with alternating step sizes p and q (density = 2/(p+q)), and uses a "phantom token" trick to pad N to a value with useful divisibility properties without ever allocating the padded rows.
+
+The scheme is content-blind, deterministic, has O(1) metadata cost, and ships with a **q ≈ √C structural-mode heuristic** that aligns with the Monarch / butterfly factorization philosophy already empirically validated in the lifting compression. A planned ablation compares (p=18, q=2) vs (p=12, q=8) at d = 10% to test whether macrocell structure matters empirically, and benchmarks both against a `random_topk` content-blind control at matched density.
+
+Full scheme, requirements, selection algorithm, worked candidates for C=2048 at common densities, cognitive/linguistic framing, and the planned ablation are in [plans/new_compression_ideas.md](plans/new_compression_ideas.md).
 
 ### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
 
