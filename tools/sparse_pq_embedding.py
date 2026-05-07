@@ -134,10 +134,12 @@ class SparsePQEmbedding(nn.Embedding):
             self.weight.mul_(mask)
 
         # Gradient hook: zero gradients at non-mask positions before optimizer step.
-        # Captured via closure so the hook survives device moves of self.pq_mask
-        # (the buffer reference inside self resolves at hook-call time).
+        # Captured via closure so the hook resolves self.pq_mask at call time
+        # (after any device move). Bool * float uses PyTorch's implicit dtype
+        # promotion in the multiply kernel, so no separate fp32 copy of the
+        # mask is materialized at backward time.
         def _grad_hook(grad: torch.Tensor) -> torch.Tensor:
-            return grad * self.pq_mask.to(dtype=grad.dtype, device=grad.device)
+            return grad * self.pq_mask
         self.weight.register_hook(_grad_hook)
 
     def effective_param_count(self) -> int:

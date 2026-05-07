@@ -307,15 +307,25 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 # # block-diagonal factors with permutations between, giving full-matrix expressivity
 # # at sublinear params. Two variants at differing block counts (sqrt(C)≈45 for C=2048;
 # # common power-of-2 choices are 32 and 64).
-# run_ablation "MON32 Monarch nblocks=32" \
-#     "$BASE_PATCH_1EP" \
-#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
-#     "MON32: lifting Monarch nblocks=32 (1ep, L=7)"
+run_ablation "MON32 Monarch nblocks=32" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
+    "MON32: lifting Monarch nblocks=32 (1ep, levels=7)"
 
 # run_ablation "MON64 Monarch nblocks=64" \
 #     "$BASE_PATCH_1EP" \
 #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
 #     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
+
+run_ablation "MON32 Monarch nblocks=128" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=128; print(json.dumps(b))")" \
+    "MON32: lifting Monarch nblocks=128 (1ep, levels=7)"
+    
+run_ablation "MON32 Monarch nblocks=256" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=256; print(json.dumps(b))")" \
+    "MON32: lifting Monarch nblocks=256 (1ep, levels=7)"
 
 # More runs to complete ablation matrices: BD128, BD512, BAND32, and BAND128.
 # These four fill in the matched-param-count pairs that the existing data leaves
@@ -374,12 +384,12 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 run_ablation "PQ_EMB10_smallest_q (p=18,q=2,d=0.10,smallest_q)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='smallest_q'; print(json.dumps(b))")" \
-    "PQ_EMB10_smallest_q: sparse embedding d=0.10 mode=smallest_q (1ep, L=7)"
+    "PQ_EMB10_smallest_q: sparse embedding d=0.10 mode=smallest_q (1ep, levels=7)"
 
 run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
-    "PQ_EMB10_structural: sparse embedding d=0.10 mode=structural (1ep, L=7)"
+    "PQ_EMB10_structural: sparse embedding d=0.10 mode=structural (1ep, levels=7)"
 
 # Density sweep at structural mode (after d=0.10 lands; uncomment to run):
 # run_ablation "PQ_EMB05_structural (d=0.05)" \
@@ -414,65 +424,65 @@ MLP_BASE_1EP_PATCH='{}'  # MLP-compression flags layered per-run below
 run_ablation "MLP_BAND25 (W=256)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":256}')")" \
-    "MLP_BAND25: MLP banded W=256 per (C,C) block, ~25% W1+W2 density (1ep, L=7)"
+    "MLP_BAND25: MLP banded W=256 per (C,C) block, ~25% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_BD25 (b=512)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":512}')")" \
-    "MLP_BD25: MLP block_diagonal b=512 per (C,C) block, ~25% W1+W2 density (1ep, L=7)"
+    "MLP_BD25: MLP block_diagonal b=512 per (C,C) block, ~25% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_PQ25 (d=0.25 -> p=6,q=2)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.25,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ25: MLP (p,q) striding at d=0.25 structural (p=6,q=2) (1ep, L=7)"
+    "MLP_PQ25: MLP (p,q) striding at d=0.25 structural (p=6,q=2) (1ep, levels=7)"
 
 # 12.5% density: BAND W=128, BD b=256, (p,q) d=0.125 -> p=12, q=4
 run_ablation "MLP_BAND125 (W=128)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":128}')")" \
-    "MLP_BAND125: MLP banded W=128 per (C,C) block, ~12.5% W1+W2 density (1ep, L=7)"
+    "MLP_BAND125: MLP banded W=128 per (C,C) block, ~12.5% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_BD125 (b=256)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":256}')")" \
-    "MLP_BD125: MLP block_diagonal b=256 per (C,C) block, 12.5% W1+W2 density (1ep, L=7)"
+    "MLP_BD125: MLP block_diagonal b=256 per (C,C) block, 12.5% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_PQ125 (d=0.125 -> p=12,q=4)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.125,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ125: MLP (p,q) striding at d=0.125 structural (p=12,q=4) (1ep, L=7)"
+    "MLP_PQ125: MLP (p,q) striding at d=0.125 structural (p=12,q=4) (1ep, levels=7)"
 
 # 6.25% density: BAND W=64, BD b=128, (p,q) d=0.0625 -> p=24, q=8
 run_ablation "MLP_BAND0625 (W=64)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":64}')")" \
-    "MLP_BAND0625: MLP banded W=64 per (C,C) block, ~6.25% W1+W2 density (1ep, L=7)"
+    "MLP_BAND0625: MLP banded W=64 per (C,C) block, ~6.25% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_BD0625 (b=128)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":128}')")" \
-    "MLP_BD0625: MLP block_diagonal b=128 per (C,C) block, 6.25% W1+W2 density (1ep, L=7)"
+    "MLP_BD0625: MLP block_diagonal b=128 per (C,C) block, 6.25% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_PQ0625 (d=0.0625 -> p=24,q=8)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.0625,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ0625: MLP (p,q) striding at d=0.0625 structural (p=24,q=8) (1ep, L=7)"
+    "MLP_PQ0625: MLP (p,q) striding at d=0.0625 structural (p=24,q=8) (1ep, levels=7)"
 
 # 3.125% density: BAND W=32, BD b=64, (p,q) d=0.03125 -> p=48, q=16
 run_ablation "MLP_BAND03125 (W=32)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":32}')")" \
-    "MLP_BAND03125: MLP banded W=32 per (C,C) block, ~3.17% W1+W2 density (1ep, L=7)"
+    "MLP_BAND03125: MLP banded W=32 per (C,C) block, ~3.17% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_BD03125 (b=64)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":64}')")" \
-    "MLP_BD03125: MLP block_diagonal b=64 per (C,C) block, 3.125% W1+W2 density (1ep, L=7)"
+    "MLP_BD03125: MLP block_diagonal b=64 per (C,C) block, 3.125% W1+W2 density (1ep, levels=7)"
 
 run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, L=7)"
+    "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, levels=7)"
 
 # ---- 9. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
