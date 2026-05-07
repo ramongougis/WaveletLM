@@ -64,3 +64,36 @@ At d = 10% with C = 2048, expected feature overlap between random pairs is d²·
 **Planned ablation.** Compare (p=18, q=2) vs (p=12, q=8) at d = 10% — test whether macrocell structure (q > 2) provides any BPB benefit over near-stride behavior (q = 2). If no significant difference, default to smallest_q for simplicity. If structural q wins, validate at d = 5% and d = 1% with √C-mode picks. Sweep also versus a `random_topk` content-blind control at matched density to measure what the deterministic structure actually buys (if anything) over uniform random sparsity.
 
 **Storage win.** Mask reconstruction at load time costs ~10 lines of code and (N·C) / 8 bytes of bit-packed mask if materialized — but with the phantom-token "never allocate" approach, only the selected real-token positions are stored as a flat array of shape (real_selected_count,) plus the (p, q, N) tuple. For C = 2048, N = 50,257, d = 10%: ~10.3M parameters stored vs the full 102.93M of an uncompressed embedding — a 90% reduction at the embedding tier, on top of whatever compression the lifting / MLP / mixer tiers achieve via the M-sweep / structural-variant work.
+
+---
+
+## MLP Structural Compression (Three-Way Connectivity Comparison)
+
+**Source: developed in-conversation 2026-05-07** as the natural follow-up to the embedding (p, q) work. The MLP is the second-largest single component (83.91M @ E=10, 167.82M @ E=20). Three structural variants are tested at five density points (25%, 12.5%, 6.25%, 3.125%, 1.5625%) for a clean three-way connectivity comparison.
+
+**Three variants** applied to the MLP weight matrices W1 (C, E·C) and W2 (E·C, C):
+
+1. **Tiled banded** — view W1 as E concatenated `(C, C)` blocks left-to-right; in each block apply a bilateral band of width W around the block's main diagonal. Each output expansion neuron sees its ±W-neighborhood of input dims. Per-block density `(2W+1)/C`, identical to BAND on the lifting matrices. The user's "diagonals are included" definition: the (c, c+k·C) entries for k ∈ {0, ..., E-1} are the main diagonals of the E tiled blocks, automatically captured by the per-block bilateral band.
+
+2. **Tiled block-diagonal** — same per-block view, but with block-of-blocks pattern of size b. Per-block density `b/C`. Each output "expansion group" sees only its own input group — an architecturally clean grouped-MLP / channel-grouped feedforward interpretation, well-studied in the convolutional-network literature (grouped convolutions, depthwise-separable convs).
+
+3. **(p, q) striding** — single 1D walk over the flattened weight tensor with alternating step sizes p and q. **No phantom-token padding needed** because `gcd(C, E·C) = C` (since `C | E·C`), so any divisor of C is automatically a common divisor. Same `find_pq` algorithm as the embedding scheme, with the substitution `N → E·C` and `C → C`. The same (p, q) tuple is valid for both W1 and W2 (with transpose for W2's (C, E·C) shape).
+
+**Worked candidates for C=2048, E=10 or E=20 (q | C and p ∤ C, p ∤ E·C):**
+
+| Target d | s = p+q | Structural (p, q) | Density |
+|---|---|---|---|
+| 25% | 8 | (6, 2) — only valid | 25.0% |
+| 12.5% | 16 | (12, 4) | 12.5% |
+| 6.25% | 32 | (24, 8) | 6.25% |
+| 3.125% | 64 | (48, 16) | 3.125% |
+| 1.5625% | 128 | (96, 32) | 1.5625% |
+
+**Per-block density equivalence across structures.** At density d, the three structures are tuned to produce the same total parameter count: BAND with bandwidth `W ≈ d·C/2`, BD with block_size `b = d·C`, (p, q) at density `d`. Total W1 + W2 effective params ≈ `2 · d · E · C²`. At C=2048, E=10, d=12.5%: ~10.5M params per matrix, ~21M for the MLP block (vs uncompressed 84M).
+
+**Hypothesis priors** from the lifting empirical data (BAND > BD by ~12 pp at matched density):
+- BAND likely wins on MLP at most densities, but the MLP nonlinearity in the middle changes the calculus — BAND's "soft" cross-channel bleeding may matter more or less.
+- BD has a cleaner architectural story (grouped MLP / depthwise-conv-like) and may win at production densities.
+- (p, q) is the wild card — global walk vs local band vs grouped block. Matches lifting's `random_topk` family as a content-blind structural baseline.
+
+**Implementation.** Single new helper `make_mlp_mask(in_features, out_features, structure, ...)` in `tools/lifting_constraints.py`, wrapping the existing `make_structural_mask` (for tiled banded / block_diagonal) and the embedding scheme's `find_pq` / `make_pq_mask` (for pq_strided). Plumbed through `model.py` at the `FeedForward` construction site via five new config flags: `mlp_offdiag_structure`, `mlp_block_size`, `mlp_band_width`, `mlp_pq_density`, `mlp_pq_mode`. 15-run ablation block in `runs.sh` section 8.

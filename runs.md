@@ -752,6 +752,47 @@ Per-scale mixer width contraction sweep. Same baseline as the low_rank table abo
 | MON32 | monarch | nblocks=32, blocks of 64x64 + perfect shuffle | 198K | 95% | [link](logs/wikitext-103_2026-05-07_08-13-16/log.txt) | **1.2612** | Recovers **47.9%** of gap, **essentially identical to BD64's 47.7% despite using 49% more lifting params (5.56M vs 3.73M)**. Per-param efficiency 0.116M / pp recovered, worse than BD64's 0.078M / pp. The Monarch parameterization (M = R·P·L·P^T with two perfect-shuffle permutations) was hypothesized to capture cross-channel interactions that pure block-diagonal misses; at this density it shows no per-param advantage over BD. |
 | MON64 | monarch | nblocks=64, blocks of 32x32 + perfect shuffle | 198K | 95% | [link](logs/wikitext-103_2026-05-07_09-31-54/log.txt) | **1.2615** | Recovers **47.3%** of gap, **virtually identical to MON32 (Δ = 0.0003 BPB)**. R, L blocks total nblocks × block_size² params regardless of which is larger, so MON32 and MON64 share param count by symmetry — and now also share recovery. **Confirms Monarch's effective capacity at this density is bounded by total params, not block-shape choice.** Structural hypothesis (R·P·L·P^T captures interactions BD can't) rejected at this scale; **block-diagonal is the more efficient parameterization at low density**. |
 
+### Sparse (p, q) phantom-token embedding striding (planned, L=1, levels=7, epochs=1)
+
+Tests sparsifying the 102.93M token embedding via the (p, q) phantom-token striding scheme — see [plans/new_compression_ideas.md](plans/new_compression_ideas.md) for the full design and the [Sparse Embedding with (p, q) Striding](README.md#sparse-embedding-with-p-q-striding) Future Plans section in the README. Token embedding is the largest non-cascade block in the model; ~90% reduction at d=10% saves ~92.6M params, taking the whole model from 393M to ~300M before any lifting compression and ~210M when stacked with the lifting-cascade winner from the structured-variants sweep above. Default mode is `structural` (q closest to √C ≈ 45 — square macrocells, aligns with Monarch / butterfly philosophy). Compare 1-epoch BPB delta against the **reference row** (the best-chosen winner from the [Wavelet off-diagonal masking with structured variants](#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1) sweep above, set after that 1-epoch sweep completes); a working scheme should land within ~0.005 BPB of that reference at d ∈ {5%, 10%, 25%}, with d ∈ {1%, 0.1%} probing where the inter-token bridging story breaks down (expected floor ~0.1% by Poisson tail analysis on feature-overlap).
+
+| Run | Density | Mode | (p, q, N') | Phantom rows | Effective embedding params | % of full embedding | Folder | BPB (sliding) | Notes |
+|-----|---------|------|------------|--------------|----------------------------|---------------------|--------|---------------|-------|
+| **Reference** (best wavelet-compression winner from section 6, no embedding compression) | — | — | — | — | 102.93M | 100% | TBD | TBD | The 1-epoch baseline against which all (p, q) variants are compared. Set after section 6 winners are confirmed. Uses the chosen lifting compression (likely BAND256, BD256, or M4) with full token embedding. |
+| PQ_EMB001 | 0.1% | structural | (1968, 32, 50272) | 15 | ~103K (0.10M) | 0.1% | | | **Stress test for the bridging hypothesis.** Below the d ≈ 0.1% floor where 2-hop bridging starts to fail by Poisson tail (E[overlap] = d²·C ≈ 0.002). Expected to fail or near-fail; result tells us where the scheme floor sits. |
+| PQ_EMB01 | 1% | structural | (168, 32, 50272) | 15 | ~1.03M | 1% | | | At this density E[overlap] ≈ 0.2 features per random pair — single-shared-feature bridging, multi-hop required for most pairs. Tests whether the model can learn the bridging structure. |
+| PQ_EMB05 | 5% | structural | (24, 16, 50272) | 15 | ~5.15M | 5% | | | E[overlap] ≈ 5 features per pair — direct bridging usually possible. Plausible production density if 10% lands within tolerance and 5% is needed for headroom. |
+| PQ_EMB10 | 10% | structural | (12, 8, 50264) | 7 | ~10.29M | 10% | | | **Default candidate density.** E[overlap] ≈ 20 features per pair — 2-hop bridging essentially guaranteed (P[overlap=0] vanishingly small at λ=20). Storage win: ~92.6M params (90% of embedding) saved. |
+| PQ_EMB25 | 25% | smallest_q | (6, 2, 50258) | 1 | ~25.73M | 25% | | | At s = p+q = 8, only q=2 is valid (q=4 makes p=4 divide 2048), so structural and smallest_q converge. Conservative density; if 10% is borderline, this is the production-safe fallback at 75% embedding reduction. |
+| **PQ_EMB_winner_5ep** | TBD | TBD | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch (p, q) variant. Compare against the 5-epoch lifting-compression winner (the new compressed baseline from section 8). **Strongest result:** BPB cleanly below the 5-epoch lifting-compressed baseline, suggesting embedding sparsity reduces overfitting at the embedding tier in the same way lifting sparsity does at the cascade tier. |
+
+### MLP structural compression (planned, L=1, levels=7, epochs=1)
+
+Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (E·C, C), using the existing `StructuredLinear` infrastructure plus a new `make_mlp_mask` helper in [tools/lifting_constraints.py](tools/lifting_constraints.py). At E=10 (1-epoch sweep), MLP is 83.91M of 281M total; ~10% density takes that to ~8.4M. Four density points (25% / 12.5% / 6.25% / 3.125%) × three structures (banded tiled / block_diagonal tiled / pq_strided) = 12 runs.
+
+**Three structural variants:**
+- **`banded`** — tiled per-(C, C)-block bilateral band of width W. Per-block density (2W+1)/C, identical to BAND on the lifting (C, C) matrix.
+- **`block_diagonal`** — tiled per-(C, C)-block diagonal of size b. Per-block density b/C, identical to BD on lifting.
+- **`pq_strided`** — single 1D walk over flattened (out · in) tensor with alternating p, q steps. Cross-pollinated from the embedding (p, q) scheme. q | C and p ∤ C, p ∤ E·C. Density 2/(p+q).
+
+**Reference:** the L=1 / levels=7 / bs=16384 reference 1.2361 (uncompressed MLP) — once the lifting + embedding sweeps complete and a combined-compression baseline is set, the MLP sweep can layer on top of that for the production-stack comparison.
+
+| Run | Structure | Variant detail | W1 effective | W1 % of dense (41.94M) | Folder | BPB (sliding) | Notes |
+|-----|-----------|----------------|-------------:|----------------------:|--------|---------------|-------|
+| **MLP_BAND25** | banded | bandwidth=256 per block, ~25% per-block density | 10.51M | 25.05% | | | High-density anchor for BAND. Should land closest to uncompressed MLP performance. |
+| **MLP_BD25** | block_diagonal | block_size=512 per block, 25% per-block density | 10.49M | 25.00% | | | High-density anchor for BD. Direct comparison with MLP_BAND25 at matched density. |
+| **MLP_PQ25** | pq_strided | (p=6, q=2) (only valid candidate at d=25%) | 10.49M | 25.00% | | | High-density anchor for (p, q). Note: at s=8 only q=2 is valid, so structural and smallest_q both pick (6, 2). |
+| **MLP_BAND125** | banded | bandwidth=128 per block, ~12.5% per-block density | 5.27M | 12.55% | | | Mid-density. Banded keeps cross-channel bleed within ±128 positions. |
+| **MLP_BD125** | block_diagonal | block_size=256 per block, 12.5% per-block density | 5.24M | 12.50% | | | Mid-density. BD256 lifting recovered 67.8% of gap; expect similar order on MLP. |
+| **MLP_PQ125** | pq_strided | (p=12, q=4) | 5.24M | 12.50% | | | Mid-density. Two valid (p, q): structural picks (12, 4) (q closer to √C=45). |
+| **MLP_BAND0625** | banded | bandwidth=64 per block, ~6.25% per-block density | 2.64M | 6.30% | | | Lower-mid density. BAND64 lifting recovered 57.3% of gap. |
+| **MLP_BD0625** | block_diagonal | block_size=128 per block, 6.25% per-block density | 2.62M | 6.25% | | | Lower-mid density. Only 16 blocks per (C, C); cross-block isolation tighter. |
+| **MLP_PQ0625** | pq_strided | (p=24, q=8) | 2.62M | 6.25% | | | Lower-mid density. Structural picks (24, 8). |
+| **MLP_BAND03125** | banded | bandwidth=32 per block, ~3.17% per-block density | 1.33M | 3.17% | | | Aggressive density. BD64 lifting recovered 47.7% at this density. |
+| **MLP_BD03125** | block_diagonal | block_size=64 per block, 3.125% per-block density | 1.31M | 3.125% | | | Aggressive density. 32 (b, b) blocks per (C, C). Same param count as BD64 lifting. |
+| **MLP_PQ03125** | pq_strided | (p=48, q=16) | 1.31M | 3.125% | | | Aggressive density. Structural picks (48, 16) — q=32 fails (32 \| 2048). |
+| **MLP_winner_5ep** | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch MLP variant, layered on top of the chosen lifting + embedding compression. |
+
 ### Post-release: bit-packed PTQ kernels
 
 Follow-up to the PTQ sweep above. The current `QuantizedLinear` / `QuantizedEmbedding` path stores int8 weights but dequantizes to fp16 inside `forward()`, then runs a standard fp16 matmul. That pays the dequant cost on every step without realizing the bandwidth win, which is why generation is 12% slower than fp16 despite the 1.95× storage compression — and why sub-8-bit variants (`03_uniform_4bit`, `08_mixed_aggressive`) compress identically to 8-bit on disk (one value per byte regardless of bit-width).
