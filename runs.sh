@@ -393,7 +393,105 @@ run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
 #     "PQ_EMB20_structural: sparse embedding d=0.20 mode=structural (1ep, L=7)"
 
 
-# ---- 8. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
+# ---- 8. MLP structural compression sweep ------------------------------------
+# Tests sparsifying the MLP weight matrices (W1: (E·C, C), W2: (C, E·C)) via
+# three structural variants:
+#   - banded:         tiled per-(C,C)-block bilateral band of width W
+#   - block_diagonal: tiled per-(C,C)-block diagonal of size b
+#   - pq_strided:     1D walk over flattened (out·in) with alternating p,q
+#                     steps; q | C and p ∤ C, p ∤ E·C
+#
+# At C=2048 / E=10 (1-epoch sweep), MLP is 83.91M of 281M total. ~10% density
+# would compress that to ~8.4M, taking the model from 281M to ~205M before
+# stacking with the lifting + embedding compression. Five density points to
+# locate the recovery floor: 25%, 12.5%, 6.25%, 3.125%, 1.5625%.
+#
+# Compare 1-epoch BPB delta against the L=1 / levels=7 / bs=16384 reference
+# 1.2361 alongside per-param efficiency (pp recovered / M params).
+MLP_BASE_1EP_PATCH='{}'  # MLP-compression flags layered per-run below
+
+# 25% density: BAND W=256 (per-block density 25.05%), BD b=512 (25.0%), (p,q) d=0.25 (only valid is p=6, q=2)
+run_ablation "MLP_BAND25 (W=256)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":256}')")" \
+    "MLP_BAND25: MLP banded W=256 per (C,C) block, ~25% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_BD25 (b=512)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":512}')")" \
+    "MLP_BD25: MLP block_diagonal b=512 per (C,C) block, ~25% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_PQ25 (d=0.25 -> p=6,q=2)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.25,\"mlp_pq_mode\":\"structural\"}')")" \
+    "MLP_PQ25: MLP (p,q) striding at d=0.25 structural (p=6,q=2) (1ep, L=7)"
+
+# 12.5% density: BAND W=128, BD b=256, (p,q) d=0.125 -> p=12, q=4
+run_ablation "MLP_BAND125 (W=128)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":128}')")" \
+    "MLP_BAND125: MLP banded W=128 per (C,C) block, ~12.5% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_BD125 (b=256)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":256}')")" \
+    "MLP_BD125: MLP block_diagonal b=256 per (C,C) block, 12.5% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_PQ125 (d=0.125 -> p=12,q=4)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.125,\"mlp_pq_mode\":\"structural\"}')")" \
+    "MLP_PQ125: MLP (p,q) striding at d=0.125 structural (p=12,q=4) (1ep, L=7)"
+
+# 6.25% density: BAND W=64, BD b=128, (p,q) d=0.0625 -> p=24, q=8
+run_ablation "MLP_BAND0625 (W=64)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":64}')")" \
+    "MLP_BAND0625: MLP banded W=64 per (C,C) block, ~6.25% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_BD0625 (b=128)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":128}')")" \
+    "MLP_BD0625: MLP block_diagonal b=128 per (C,C) block, 6.25% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_PQ0625 (d=0.0625 -> p=24,q=8)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.0625,\"mlp_pq_mode\":\"structural\"}')")" \
+    "MLP_PQ0625: MLP (p,q) striding at d=0.0625 structural (p=24,q=8) (1ep, L=7)"
+
+# 3.125% density: BAND W=32, BD b=64, (p,q) d=0.03125 -> p=48, q=16
+run_ablation "MLP_BAND03125 (W=32)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":32}')")" \
+    "MLP_BAND03125: MLP banded W=32 per (C,C) block, ~3.17% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_BD03125 (b=64)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":64}')")" \
+    "MLP_BD03125: MLP block_diagonal b=64 per (C,C) block, 3.125% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
+    "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, L=7)"
+
+# 1.5625% density: BAND W=16, BD b=32, (p,q) d=0.015625 -> p=96, q=32
+run_ablation "MLP_BAND015625 (W=16)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":16}')")" \
+    "MLP_BAND015625: MLP banded W=16 per (C,C) block, ~1.61% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_BD015625 (b=32)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":32}')")" \
+    "MLP_BD015625: MLP block_diagonal b=32 per (C,C) block, 1.5625% W1+W2 density (1ep, L=7)"
+
+run_ablation "MLP_PQ015625 (d=0.015625 -> p=96,q=32)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.015625,\"mlp_pq_mode\":\"structural\"}')")" \
+    "MLP_PQ015625: MLP (p,q) striding at d=0.015625 structural (p=96,q=32) (1ep, L=7)"
+
+
+# ---- 9. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
 # configuration goes to a 5-epoch confirmation run against the L=1 / levels=7
 # 5-epoch headline (logs/wikitext-103_2026-05-03_02-13-07/log.txt, BPB 1.0974).
@@ -430,8 +528,10 @@ echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
 echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
 echo "===   7) Sparse (p, q) phantom-token embedding sweep at d=0.10"
 echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs 1.2361"
-echo "===   8) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
-echo "===      (placeholder; uncomment after sections 4-7 complete and a winner is chosen)"
+echo "===   8) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%, 1.5625%"
+echo "===      15 runs (5 densities × 3 structures) — compare BPB delta vs 1.2361 alongside per-param efficiency"
+echo "===   9) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
+echo "===      (placeholder; uncomment after sections 4-8 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
 echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"

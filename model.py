@@ -40,6 +40,7 @@ from tools.lifting_constraints import (
     StructuredLinear,
     MonarchLinear,
     build_structured_lifting_linear,
+    build_structured_mlp_linear,
     init_structured_lifting_linear,
     effective_param_count,
 )
@@ -900,17 +901,34 @@ class PerScaleMixer(nn.Module):
 
 class FeedForward(nn.Module):
     def __init__(self, C, expansion=2, dropout_mlp=0.0, hidden_layers=2,
-                 stab_ff_scaling: bool = False):
+                 stab_ff_scaling: bool = False,
+                 mlp_offdiag_structure: str = "none",
+                 mlp_block_size: int = 64,
+                 mlp_band_width: int = 64,
+                 mlp_pq_density: float = 0.1,
+                 mlp_pq_mode: str = "structural"):
         super().__init__()
         hidden_dim = C * expansion
+
+        def _make_linear(in_f, out_f):
+            if mlp_offdiag_structure in (None, "none"):
+                return nn.Linear(in_f, out_f)
+            return build_structured_mlp_linear(
+                in_f, out_f, mlp_offdiag_structure,
+                block_size=mlp_block_size,
+                band_width=mlp_band_width,
+                pq_density=mlp_pq_density,
+                pq_mode=mlp_pq_mode,
+            )
+
         layers = []
-        layers.append(nn.Linear(C, hidden_dim))
+        layers.append(_make_linear(C, hidden_dim))
         for _ in range(hidden_layers - 2):
             layers.append(nn.GELU())
-            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(_make_linear(hidden_dim, hidden_dim))
         if hidden_layers >= 2:
             layers.append(nn.GELU())
-        layers.append(nn.Linear(hidden_dim, C))
+        layers.append(_make_linear(hidden_dim, C))
         layers.append(nn.Dropout(dropout_mlp))
         self.net = nn.Sequential(*layers)
         final_linear = self.net[-2]
@@ -922,6 +940,8 @@ class FeedForward(nn.Module):
             else:
                 final_linear.weight.mul_(0.02)
             final_linear.bias.zero_()
+            if hasattr(final_linear, '_struct_mask'):
+                final_linear.weight.mul_(final_linear._struct_mask)
 
     def forward(self, x):
         return self.net(x)
@@ -1302,6 +1322,11 @@ class WaveletLMBlock(nn.Module):
         fht_thue_morse_increment: int = 21,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
+        mlp_offdiag_structure: str = "none",
+        mlp_block_size: int = 64,
+        mlp_band_width: int = 64,
+        mlp_pq_density: float = 0.1,
+        mlp_pq_mode: str = "structural",
         lifting_offdiag_structure: str = "none",
         lifting_block_size: int = 64,
         lifting_band_width: int = 64,
@@ -1568,7 +1593,12 @@ class WaveletLMBlock(nn.Module):
         if self.use_mlp:
             self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
                                     dropout_mlp=dropout_mlp, hidden_layers=mlp_layers,
-                                    stab_ff_scaling=stab_ff_scaling)
+                                    stab_ff_scaling=stab_ff_scaling,
+                                    mlp_offdiag_structure=mlp_offdiag_structure,
+                                    mlp_block_size=mlp_block_size,
+                                    mlp_band_width=mlp_band_width,
+                                    mlp_pq_density=mlp_pq_density,
+                                    mlp_pq_mode=mlp_pq_mode)
 
         self.pkm_enabled = pkm_enabled
         if pkm_enabled:
@@ -2006,6 +2036,11 @@ class WaveletLM(nn.Module):
                 fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
+                mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
+                mlp_block_size=config.get("mlp_block_size", 64),
+                mlp_band_width=config.get("mlp_band_width", 64),
+                mlp_pq_density=config.get("mlp_pq_density", 0.1),
+                mlp_pq_mode=config.get("mlp_pq_mode", "structural"),
                 lifting_offdiag_structure=lifting_offdiag_structure,
                 lifting_block_size=lifting_block_size,
                 lifting_band_width=lifting_band_width,

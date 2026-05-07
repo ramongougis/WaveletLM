@@ -387,6 +387,102 @@ def init_structured_lifting_linear(
         )
 
 
+def make_mlp_mask(
+    in_features: int,
+    out_features: int,
+    structure: str,
+    *,
+    block_size: int = 64,
+    band_width: int = 64,
+    pq_density: float = 0.1,
+    pq_mode: str = "structural",
+    device=None,
+    dtype=None,
+) -> torch.Tensor:
+    """Build a (out_features, in_features) binary mask for an MLP weight matrix.
+
+    For the MLP shapes (C, E·C) and (E·C, C):
+
+    - 'banded' / 'block_diagonal': matrix is tiled into E concatenated (C, C)
+      blocks along the larger dimension, where C = min(in, out) and E = max/C.
+      Each block gets the standard square-matrix structural pattern. Per-block
+      density matches the lifting BAND/BD curves at the same (block_size /
+      band_width).
+    - 'pq_strided': single 1D walk (alternating p, q steps) over the flattened
+      (out · in) tensor. q must be a common divisor of in_features and
+      out_features; for the typical MLP shape (smaller=C, larger=E·C),
+      gcd = C and the same (p, q) tuple is valid for both W1 and W2 (with
+      transpose for W2). Density = 2/(p+q).
+    """
+    dtype = dtype or torch.float32
+    if structure in ("banded", "block_diagonal"):
+        C = min(in_features, out_features)
+        if max(in_features, out_features) % C != 0:
+            raise ValueError(
+                f"MLP weight dimensions ({out_features}, {in_features}) must be "
+                f"commensurate (one a multiple of the other) for tiled "
+                f"{structure!r}; got C = {C}."
+            )
+        E_total = max(in_features, out_features) // C
+        block_mask = make_structural_mask(
+            structure, C,
+            block_size=block_size, band_width=band_width,
+            device=device, dtype=dtype,
+        )
+        if out_features > in_features:
+            return block_mask.repeat(E_total, 1)
+        elif in_features > out_features:
+            return block_mask.repeat(1, E_total)
+        else:
+            return block_mask
+
+    elif structure == "pq_strided":
+        from tools.sparse_pq_embedding import find_pq, make_pq_mask
+        smaller = min(in_features, out_features)
+        larger = max(in_features, out_features)
+        # find_pq(C=smaller, N=larger) -> q | smaller, also q | (larger if commensurate),
+        # p ∤ smaller AND p ∤ larger. Returns phantom_rows = 0 when larger is a
+        # multiple of q (the typical MLP case).
+        p, q, N_prime, _phantom = find_pq(smaller, larger, pq_density, mode=pq_mode)
+        mask = make_pq_mask(larger, smaller, p, q, N_prime)
+        if out_features >= in_features:
+            result = mask
+        else:
+            result = mask.t().contiguous()
+        return result.to(device=device, dtype=dtype)
+
+    else:
+        raise ValueError(
+            f"Unknown MLP structure: {structure!r}. Expected one of: "
+            f"banded, block_diagonal, pq_strided."
+        )
+
+
+def build_structured_mlp_linear(
+    in_features: int,
+    out_features: int,
+    structure: str,
+    *,
+    block_size: int = 64,
+    band_width: int = 64,
+    pq_density: float = 0.1,
+    pq_mode: str = "structural",
+    bias: bool = True,
+    device=None,
+    dtype=None,
+) -> "StructuredLinear":
+    """Construct a StructuredLinear for an MLP layer using the given structure."""
+    mask = make_mlp_mask(
+        in_features, out_features, structure,
+        block_size=block_size, band_width=band_width,
+        pq_density=pq_density, pq_mode=pq_mode,
+        device=device, dtype=dtype,
+    )
+    return StructuredLinear(
+        in_features, out_features, mask, bias=bias, device=device, dtype=dtype,
+    )
+
+
 def effective_param_count(
     module: nn.Module, *, requires_grad_only: bool = False
 ) -> int:
