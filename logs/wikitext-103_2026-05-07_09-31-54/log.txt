@@ -1,0 +1,288 @@
+[2026-05-07 09:31:54] Starting WaveletLM Training on WIKITEXT-103
+[2026-05-07 09:31:54] Device: cuda, AMP: True (fp16)
+[2026-05-07 09:31:54] 
+[2026-05-07 09:31:54] 	dataset                             : wikitext-103
+[2026-05-07 09:31:54] 	tokenizer                           : auto
+[2026-05-07 09:31:54] 	out_dir                             : logs
+[2026-05-07 09:31:54] 	compile                             : True
+[2026-05-07 09:31:54] 	compile_mode                        : default
+[2026-05-07 09:31:54] 	seed                                : 1337
+[2026-05-07 09:31:54] 	epochs                              : 1
+[2026-05-07 09:31:54] 	micro_batch_size                    : 1
+[2026-05-07 09:31:54] 	grad_accum                          : 1
+[2026-05-07 09:31:54] 	block_size                          : 16384
+[2026-05-07 09:31:54] 	eval_interval                       : 250
+[2026-05-07 09:31:54] 	skip_warmup_saves                   : True
+[2026-05-07 09:31:54] 	C                                   : 2048
+[2026-05-07 09:31:54] 	layers                              : 1
+[2026-05-07 09:31:54] 	levels                              : 7
+[2026-05-07 09:31:54] 	low_rank                            : 16
+[2026-05-07 09:31:54] 	mlp_expansion                       : 10
+[2026-05-07 09:31:54] 	mlp_layers                          : 2
+[2026-05-07 09:31:54] 	pkm_enabled                         : False
+[2026-05-07 09:31:54] 	pkm_num_keys                        : 16384
+[2026-05-07 09:31:54] 	pkm_top_k                           : 32
+[2026-05-07 09:31:54] 	pkm_heads                           : 1
+[2026-05-07 09:31:54] 	fwpkm_enabled                       : True
+[2026-05-07 09:31:54] 	fwpkm_num_keys                      : 8281
+[2026-05-07 09:31:54] 	fwpkm_top_k                         : 32
+[2026-05-07 09:31:54] 	fwpkm_heads                         : 1
+[2026-05-07 09:31:54] 	fwpkm_inference_updates             : False
+[2026-05-07 09:31:54] 	fwpkm_update_lr                     : 0.01
+[2026-05-07 09:31:54] 	fwpkm_chunk_size                    : 64
+[2026-05-07 09:31:54] 	wavelet_mode                        : lifting
+[2026-05-07 09:31:54] 	shared_lifting_weights              : True
+[2026-05-07 09:31:54] 	untied_reconstruction               : False
+[2026-05-07 09:31:54] 	multi_basis_lifting                 : False
+[2026-05-07 09:31:54] 	multi_basis_inits                   : ['haar', 'random']
+[2026-05-07 09:31:54] 	cross_scale_gating                  : True
+[2026-05-07 09:31:54] 	per_scale_mixer_widths              : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-05-07 09:31:54] 	stable_parametrization              : False
+[2026-05-07 09:31:54] 	stab_spectral_norm                  : False
+[2026-05-07 09:31:54] 	stab_ff_scaling                     : False
+[2026-05-07 09:31:54] 	stab_embed_scaling                  : False
+[2026-05-07 09:31:54] 	stab_proj_out_scaling               : False
+[2026-05-07 09:31:54] 	stab_mixer_eps_scaling              : False
+[2026-05-07 09:31:54] 	stab_lifting_level_scaling          : False
+[2026-05-07 09:31:54] 	looped_blocks                       : False
+[2026-05-07 09:31:54] 	looped_blocks_count                 : 8
+[2026-05-07 09:31:54] 	wavelet_crawl                       : False
+[2026-05-07 09:31:54] 	wavelet_crawl_k                     : 3
+[2026-05-07 09:31:54] 	lifting_linear_only                 : False
+[2026-05-07 09:31:54] 	lifting_hidden_mult                 : 1
+[2026-05-07 09:31:54] 	lifting_init                        : haar
+[2026-05-07 09:31:54] 	lifting_dropout                     : 0.0
+[2026-05-07 09:31:54] 	lifting_diaglowrank                 : False
+[2026-05-07 09:31:54] 	lifting_level_sharing               : False
+[2026-05-07 09:31:54] 	lifting_offdiag_structure           : monarch
+[2026-05-07 09:31:54] 	lifting_block_size                  : 64
+[2026-05-07 09:31:54] 	lifting_band_width                  : 64
+[2026-05-07 09:31:54] 	lifting_monarch_blocks              : 64
+[2026-05-07 09:31:54] 	lifting_offdiag_density             : 0.0
+[2026-05-07 09:31:54] 	lifting_offdiag_mask_seed           : 1337
+[2026-05-07 09:31:54] 	lifting_offdiag_mask_checkpoint     : 
+[2026-05-07 09:31:54] 	use_mixer_gate                      : True
+[2026-05-07 09:31:54] 	mixer_gate_activation               : silu
+[2026-05-07 09:31:54] 	mixer_depth                         : 1
+[2026-05-07 09:31:54] 	mixer_depth_stabilizers             : False
+[2026-05-07 09:31:54] 	mixer_depth_residuals               : False
+[2026-05-07 09:31:54] 	decompose_bypass                    : True
+[2026-05-07 09:31:54] 	decompose_bypass_cross_window       : True
+[2026-05-07 09:31:54] 	decompose_bypass_ema                : False
+[2026-05-07 09:31:54] 	learned_residual                    : True
+[2026-05-07 09:31:54] 	skip_proj_out                       : False
+[2026-05-07 09:31:54] 	stochastic_depth_rate               : 0.0
+[2026-05-07 09:31:54] 	dropout_embedding                   : 0.2
+[2026-05-07 09:31:54] 	dropout_projection                  : 0.1
+[2026-05-07 09:31:54] 	dropout_mixer                       : 0.1
+[2026-05-07 09:31:54] 	dropout_mlp                         : 0.1
+[2026-05-07 09:31:54] 	dropout_lm_head                     : 0.24
+[2026-05-07 09:31:54] 	optimizer                           : Adagrad
+[2026-05-07 09:31:54] 	optimizer_eps                       : 2e-13
+[2026-05-07 09:31:54] 	lr                                  : 0.01
+[2026-05-07 09:31:54] 	min_lr                              : 0.0002
+[2026-05-07 09:31:54] 	warmup_fraction                     : 0.3
+[2026-05-07 09:31:54] 	grad_clip                           : 1.0
+[2026-05-07 09:31:54] 	tie_embedding_to_lm_head            : True
+[2026-05-07 09:31:54] 	gradient_checkpointing              : False
+[2026-05-07 09:31:54] 	use_amp                             : True
+[2026-05-07 09:31:54] 	amp_dtype                           : fp16
+[2026-05-07 09:31:54] 	allow_tf32                          : True
+[2026-05-07 09:31:54] 	generation_prompt                   : The history of
+[2026-05-07 09:31:54] 	temperature                         : 1.0
+[2026-05-07 09:31:54] 	num_new_tokens                      : 512
+[2026-05-07 09:31:54] 	top_p                               : 0.95
+[2026-05-07 09:31:54] 	repetition_penalty                  : 1.1
+[2026-05-07 09:31:54] 	benchmark_only                      : False
+[2026-05-07 09:31:54] 	benchmark_run_dir                   : 
+[2026-05-07 09:31:54] 	multinodal_enabled                  : False
+[2026-05-07 09:31:54] 	multinodal_num_cells                : 2
+[2026-05-07 09:31:54] 	multinodal_cell_dim                 : 512
+[2026-05-07 09:31:54] 	multinodal_seeds                    : [42, 137]
+[2026-05-07 09:31:54] 	multinodal_combination              : average
+[2026-05-07 09:31:54] 	multinodal_cross_cell_gating        : False
+[2026-05-07 09:31:54] 	multinodal_cross_cell_gate_interval : 1
+[2026-05-07 09:31:54] 	multinodal_features_per_cell        : -1
+[2026-05-07 09:31:54] 	multinodal_bagged_eps               : 1e-06
+[2026-05-07 09:31:54] 	quantize_enabled                    : False
+[2026-05-07 09:31:54] 	quantize_mixer_coarse_bits          : 8
+[2026-05-07 09:31:54] 	quantize_mixer_mid_bits             : 4
+[2026-05-07 09:31:54] 	quantize_mixer_fine_bits            : 2
+[2026-05-07 09:31:54] 	quantize_mlp_bits                   : 4
+[2026-05-07 09:31:54] 	quantize_lifting_bits               : 16
+[2026-05-07 09:31:54] 	quantize_embedding_bits             : 8
+[2026-05-07 09:31:54] 	per_layer_embedding                 : True
+[2026-05-07 09:31:54] 	loop_iterations                     : 1
+[2026-05-07 09:31:54] 	weight_decay                        : 1e-06
+[2026-05-07 09:31:54] 	lifting_offdiag_mask                : False
+[2026-05-07 09:31:54] 
+[2026-05-07 09:31:54] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-07 09:31:54] [Dataset] Loading wikitext-103 from cache...
+[2026-05-07 09:31:56] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-07 09:31:56] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-07 09:31:56] [Dataset] Vocab size: 50257
+[2026-05-07 09:31:56] [Schedule] 7307 steps/epoch, 7307 total steps
+[2026-05-07 09:31:56] [Schedule] Warmup: 2192 steps (30%)
+[2026-05-07 09:31:59] [Run Folder] logs/wikitext-103_2026-05-07_09-31-54
+[2026-05-07 09:31:59] 
+============================================================
+[2026-05-07 09:31:59] PARAMETER BREAKDOWN
+[2026-05-07 09:31:59] ============================================================
+[2026-05-07 09:31:59] Total parameters:             281,272,396 (281.27M)
+[2026-05-07 09:31:59]   Shared lifting:               5,562,368 (5.56M)
+[2026-05-07 09:31:59]   Token embedding:            102,926,336 (102.93M)
+[2026-05-07 09:31:59]   Layers (total):             178,341,964 (178.34M)
+[2026-05-07 09:31:59]     Mixer/layer:               59,113,472 (59.11M)
+[2026-05-07 09:31:59]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-07 09:31:59]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-07 09:31:59]   LM head (shared):                     0 additional
+[2026-05-07 09:31:59]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-07 09:31:59] ============================================================
+
+[2026-05-07 09:31:59] [Model] 281.27M parameters (281.27M trainable)
+[2026-05-07 09:31:59] [Compile] torch.compile enabled (mode=default)
+[2026-05-07 09:32:00] [Optimizer] Adagrad, lr=0.01, eps=2e-13, weight_decay=1e-06
+[2026-05-07 09:32:00] 
+=== EPOCH 1/1 ===
+[2026-05-07 09:34:32] Step 250: train loss 6.2019, val loss 6.1597		lr=1.14e-03
+[2026-05-07 09:34:32] New Best Val: 6.1597 (skipping save during warmup)
+[2026-05-07 09:36:47] Step 500: train loss 5.8436, val loss 5.7711		lr=2.28e-03
+[2026-05-07 09:36:47] New Best Val: 5.7711 (skipping save during warmup)
+[2026-05-07 09:39:01] Step 750: train loss 5.5420, val loss 5.5073		lr=3.42e-03
+[2026-05-07 09:39:01] New Best Val: 5.5073 (skipping save during warmup)
+[2026-05-07 09:41:15] Step 1000: train loss 5.3537, val loss 5.3202		lr=4.56e-03
+[2026-05-07 09:41:15] New Best Val: 5.3202 (skipping save during warmup)
+[2026-05-07 09:43:29] Step 1250: train loss 5.1613, val loss 5.1192		lr=5.70e-03
+[2026-05-07 09:43:29] New Best Val: 5.1192 (skipping save during warmup)
+[2026-05-07 09:45:43] Step 1500: train loss 5.1055, val loss 5.0712		lr=6.84e-03
+[2026-05-07 09:45:43] New Best Val: 5.0712 (skipping save during warmup)
+[2026-05-07 09:47:58] Step 1750: train loss 4.9716, val loss 4.9494		lr=7.98e-03
+[2026-05-07 09:47:58] New Best Val: 4.9494 (skipping save during warmup)
+[2026-05-07 09:50:12] Step 2000: train loss 5.0363, val loss 5.0152		lr=9.12e-03
+[2026-05-07 09:52:26] Step 2250: train loss 4.9028, val loss 4.8842		lr=1.00e-02
+[2026-05-07 09:52:26] New Best Val: 4.8842. Saving...
+[2026-05-07 09:54:43] Step 2500: train loss 4.7054, val loss 4.6189		lr=9.91e-03
+[2026-05-07 09:54:43] New Best Val: 4.6189. Saving...
+[2026-05-07 09:57:01] Step 2750: train loss 4.5881, val loss 4.5572		lr=9.72e-03
+[2026-05-07 09:57:01] New Best Val: 4.5572. Saving...
+[2026-05-07 09:59:19] Step 3000: train loss 4.5935, val loss 4.5183		lr=9.41e-03
+[2026-05-07 09:59:19] New Best Val: 4.5183. Saving...
+[2026-05-07 10:01:36] Step 3250: train loss 4.4397, val loss 4.4227		lr=9.00e-03
+[2026-05-07 10:01:36] New Best Val: 4.4227. Saving...
+[2026-05-07 10:03:54] Step 3500: train loss 4.3742, val loss 4.3410		lr=8.50e-03
+[2026-05-07 10:03:54] New Best Val: 4.3410. Saving...
+[2026-05-07 10:06:13] Step 3750: train loss 4.2961, val loss 4.2786		lr=7.93e-03
+[2026-05-07 10:06:13] New Best Val: 4.2786. Saving...
+[2026-05-07 10:08:31] Step 4000: train loss 4.2862, val loss 4.2518		lr=7.28e-03
+[2026-05-07 10:08:31] New Best Val: 4.2518. Saving...
+[2026-05-07 10:10:48] Step 4250: train loss 4.1749, val loss 4.1635		lr=6.58e-03
+[2026-05-07 10:10:48] New Best Val: 4.1635. Saving...
+[2026-05-07 10:13:06] Step 4500: train loss 4.1295, val loss 4.1639		lr=5.85e-03
+[2026-05-07 10:15:20] Step 4750: train loss 4.0752, val loss 4.1025		lr=5.10e-03
+[2026-05-07 10:15:20] New Best Val: 4.1025. Saving...
+[2026-05-07 10:17:37] Step 5000: train loss 4.0552, val loss 4.0414		lr=4.35e-03
+[2026-05-07 10:17:37] New Best Val: 4.0414. Saving...
+[2026-05-07 10:19:56] Step 5250: train loss 4.0252, val loss 4.0024		lr=3.62e-03
+[2026-05-07 10:19:56] New Best Val: 4.0024. Saving...
+[2026-05-07 10:22:15] Step 5500: train loss 3.9686, val loss 4.0014		lr=2.92e-03
+[2026-05-07 10:22:15] New Best Val: 4.0014. Saving...
+[2026-05-07 10:24:32] Step 5750: train loss 3.9534, val loss 3.9804		lr=2.28e-03
+[2026-05-07 10:24:32] New Best Val: 3.9804. Saving...
+[2026-05-07 10:26:50] Step 6000: train loss 3.9150, val loss 3.9559		lr=1.70e-03
+[2026-05-07 10:26:50] New Best Val: 3.9559. Saving...
+[2026-05-07 10:29:07] Step 6250: train loss 3.8907, val loss 3.9501		lr=1.20e-03
+[2026-05-07 10:29:07] New Best Val: 3.9501. Saving...
+[2026-05-07 10:31:25] Step 6500: train loss 3.9074, val loss 3.9146		lr=7.91e-04
+[2026-05-07 10:31:25] New Best Val: 3.9146. Saving...
+[2026-05-07 10:33:43] Step 6750: train loss 3.8784, val loss 3.9452		lr=4.85e-04
+[2026-05-07 10:35:57] Step 7000: train loss 3.8987, val loss 3.9050		lr=2.87e-04
+[2026-05-07 10:35:57] New Best Val: 3.9050. Saving...
+[2026-05-07 10:38:16] Step 7250: train loss 3.8744, val loss 3.9150		lr=2.03e-04
+[2026-05-07 10:39:30] Epoch 1 done. Time: 3993.7s (1.11h)
+[2026-05-07 10:39:30]   Train loss: 3.8807, Val loss: 3.9086
+[2026-05-07 10:39:30]   Cumulative time: 1.12h
+[2026-05-07 10:39:30] 
+=== TRAINING COMPLETE ===
+[2026-05-07 10:39:30] Best Val Loss: 3.9050 (epoch 1)
+[2026-05-07 10:39:30] Avg Epoch Time: 3993.7s
+[2026-05-07 10:39:30] Total Time: 4049.4s
+[2026-05-07 10:39:30] 
+Training Peak VRAM: 25037 MiB
+[2026-05-07 10:39:30] 
+Loading best model for benchmarks...
+[2026-05-07 10:39:36] Best model loaded.
+[2026-05-07 10:39:36] 
+[BENCHMARK] Non-overlapping: 17 windows of length 16384
+[2026-05-07 10:39:39] 
+[BENCHMARK - Non-overlapping]
+[2026-05-07 10:39:39]   Perplexity: 51.1755
+[2026-05-07 10:39:39]   BPT: 5.6774
+[2026-05-07 10:39:39]   BPB: 1.2597
+[2026-05-07 10:39:39]   Avg Loss: 3.9353
+[2026-05-07 10:39:39] 
+[SLIDING WINDOW] block_size=16384, stride=8192, min_context=8192, 34 windows
+[2026-05-07 10:39:46] 
+[BENCHMARK - Sliding Window]
+[2026-05-07 10:39:46]   Perplexity: 51.4586
+[2026-05-07 10:39:46]   BPT: 5.6853
+[2026-05-07 10:39:46]   BPB: 1.2615
+[2026-05-07 10:39:46]   Avg Loss: 3.9408
+[2026-05-07 10:39:46]   Stride: 8192, Min Context: 8192
+[2026-05-07 10:39:47] 
+=== GENERATION — Standard ===
+[2026-05-07 10:39:47] Prompt: The history of
+[2026-05-07 10:39:57] Generated:
+The history of the War with its Rušić – Maguire College . / Hintin from Stavanger is also shown as one of the most cheerful games seen in the piano . 
+
+
+ In some areas , some of the innovative development ( Igbo ) had become very popular ( ... ) 
+
+
+ Tbilisi deals with that species at the same time trendy men — are far superior —serpine , and all consisted of Yamaguchi 's names : And or Árpád , [ d ] 
+
+
+ [ S ] , [ y / ] , by o croels ” , in ' 7 , [ D ] c ] / DO ( b. buphichof ) , and tromoleic , I am ( o ) här . [ ɛˈsɔːbiə Wave / [ɛˈghɒnæme ] ) ; 1600 – 1933 " Lady William Lloyd Willis " ( st ) – 6 – 9 ) as a system of the Duke of Kent Samak ( 7 , 1836 ) , was a Chrono Trigger specialist . Its abrupt end specifies the flavor of the noun , " yous brought around with the grey eyes " also from the flag " and sprain the burh " . However , he noted processes of redoubts were designed for him , and hence , in the battle , he thought it would be " more of an unmarried boy to deal with . " 
+
+
+ Biographer Henry Calvert was responsible for designing the expansion of the Clova restoration work onouness of Rush , John Searle , German traveller Pierre Jeffery , a small Polish artist . From 1930 , the Annals of Farnborough 's work was maintained in favour of a suffragette living : in 1845 , and The Statute of Datta fields ( " Hurricane officer " and " Captain " ) and his brother Alexander to Henry Fulton : " ... who may have looked down on almost any other team . " 
+
+
+
+
+ = = Later life : 2009 – 12 = = 
+
+
+
+
+ In his first public training camp , Reale married Maria Perceval . 
+
+
+yn became an active member of the colony of Saint Theodosian imperial family , a great @-@ nephew , , was baptized and raised by Gaunt , a Caucasian who had served Scots @-@ speaking captains the 12th Baronet . He served on the Confederate Academy of Sciences in September 1756 . 
+
+
+ Kolb
+
+[2026-05-07 10:39:57] === GENERATION — Strategies ===
+[2026-05-07 10:39:57] Prompt: The history of
+[2026-05-07 10:40:14] Generated:
+The history of the area was a " strong and complex " , with an estimated population of 1 @.@ 8 million . 
+
+
+ The first public performance on the tour was in March 1864 when the American Civil War broke out , but it was not until the following year 's end . The family moved to the United States at the time , becoming the third nation in the UK , where it won three consecutive titles : the highest number of people were from the country . In the same month , two women played their last match for England against the Netherlands in the second half of the century , only one in the country . A few days later , in 1969 , the final season of the American League was in decline , as the most successful sport in Europe since World War II . 
+
+
+ The first African Americans were the only countries to have participated in the Battle of Britain , which lasted for six weeks while the French and Italian Wars had been reduced from 10 to 12 months , although many of these losses were not achieved ; however , this was only due to the lack of a major naval battle during the war , which occurred in October 1918 . It also saw action in France , Germany , France , Greece , Italy and Spain , where they remained in captivity . There is no evidence that there was a small number of British military personnel who served in the Royal Navy during the Spanish – American War , though he remained with the rank of commander . He died in February 1777 by the Treaty of Paris under King John I , who was appointed Chief Justice of the Union Army . 
+
+
+
+
+ = = Early life = = 
+
+
+
+
+ Edward was born in London on 30 January 1567 ( O.S. ) of Virginia , Massachusetts . His father was an Englishman and his wife , Lady Mary Jane ( née Thompson ) , in the spring of 1690 . She married Henry V , daughter of William de Lacy , Countess of Blois , and was buried in St. George 's Church , Oxfordshire . James was a prominent figure in the diocese of New York . When Thomas was seven years old , the son of Elizabeth , was born in Norfolk , Kent , and Annals of Lincoln , the younger brother of King Charles I of England . After her husband 's death in 1180 , she was raised by his older sister Eleanor , 2nd Earl of Northumberland , who had earlier inherited his mother 's estate and his family , the future king of Scotland was given birth . Her first marriage , Edmund , was probably born around
+
+[2026-05-07 10:40:14] Metrics: MeanLogP=-1.4192 | MeanH=4.24 | D1=0.582 | D2=0.912 | D3=0.982 | Rep4=0.039
+[2026-05-07 10:40:14] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
+[2026-05-07 10:40:14] Training Peak VRAM: 25037 MiB
