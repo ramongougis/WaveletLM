@@ -175,25 +175,25 @@ run_ablation() {
 # carried forward. Compare BPB delta directly against reference 1.2361.
 OFFDIAG_MAG_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_structure": "magnitude_topk", "lifting_offdiag_mask_checkpoint": "logs/wikitext-103_2026-05-03_02-13-07/best_model.pt"}'
 
-run_ablation "M1 off-diagonal magnitude 0.1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
-    "M1: off-diagonal magnitude-pruned 0.1% (1ep, L=7)"
+# run_ablation "M1 off-diagonal magnitude 0.1%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
+#     "M1: off-diagonal magnitude-pruned 0.1% (1ep, L=7)"
 
-run_ablation "M2 off-diagonal magnitude 1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
-    "M2: off-diagonal magnitude-pruned 1% (1ep, L=7)"
+# run_ablation "M2 off-diagonal magnitude 1%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
+#     "M2: off-diagonal magnitude-pruned 1% (1ep, L=7)"
 
-run_ablation "M3 off-diagonal magnitude 5%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
-    "M3: off-diagonal magnitude-pruned 5% (1ep, L=7)"
+# run_ablation "M3 off-diagonal magnitude 5%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
+#     "M3: off-diagonal magnitude-pruned 5% (1ep, L=7)"
 
-run_ablation "M4 off-diagonal magnitude 10%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
-    "M4: off-diagonal magnitude-pruned 10% (1ep, L=7)"
+# run_ablation "M4 off-diagonal magnitude 10%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_MAG_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
+#     "M4: off-diagonal magnitude-pruned 10% (1ep, L=7)"
 
 # ---- 5. Random off-diagonal masking controls (1ep each) ---------------------
 # Same densities as M1/M2/M3/M4 but with a random binary mask (deterministic
@@ -204,27 +204,27 @@ run_ablation "M4 off-diagonal magnitude 10%" \
 # alone is what matters and the cheaper random construction wins.
 OFFDIAG_RAND_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_structure": "random_topk", "lifting_offdiag_mask_seed": 1337}'
 
-run_ablation "M1r off-diagonal random 0.1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
-    "M1r: off-diagonal random 0.1% (1ep, L=7)"
+# run_ablation "M1r off-diagonal random 0.1%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.001; print(json.dumps(b))")" \
+#     "M1r: off-diagonal random 0.1% (1ep, L=7)"
 
-run_ablation "M2r off-diagonal random 1%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
-    "M2r: off-diagonal random 1% (1ep, L=7)"
+# run_ablation "M2r off-diagonal random 1%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.01; print(json.dumps(b))")" \
+#     "M2r: off-diagonal random 1% (1ep, L=7)"
 
-run_ablation "M3r off-diagonal random 5%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
-    "M3r: off-diagonal random 5% (1ep, L=7)"
+# run_ablation "M3r off-diagonal random 5%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.05; print(json.dumps(b))")" \
+#     "M3r: off-diagonal random 5% (1ep, L=7)"
 
-run_ablation "M4r off-diagonal random 10%" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
-    "M4r: off-diagonal random 10% (1ep, L=7)"
+# run_ablation "M4r off-diagonal random 10%" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$OFFDIAG_RAND_BASE'''); b['lifting_offdiag_density']=0.10; print(json.dumps(b))")" \
+#     "M4r: off-diagonal random 10% (1ep, L=7)"
 
-# ---- 6. Structural-prior alternatives for lifting matrices (1ep each) -------
+# # ---- 6. Structural-prior alternatives for lifting matrices (1ep each) -------
 # Tests structured-sparsity *constraints* on the lifting predict/update Linear(C, C)
 # matrices, rather than mask-selection of an already-trained reference's positions
 # (which is what M1-M4 did). The two are different in kind: magnitude pruning
