@@ -347,7 +347,53 @@ run_ablation "BAND128 banded bandwidth=128" \
     "BAND128: lifting banded bandwidth=128 (1ep, L=7)"
 
 
-# ---- 7. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
+# ---- 7. Sparse (p, q) phantom-token embedding sweep -------------------------
+# Tests sparsifying the 102.93M token embedding via the (p, q) striding scheme
+# from plans/new_compression_ideas.md. Token embedding is the largest non-cascade
+# block in the model; ~90% reduction at d=0.10 saves ~92.6M params, taking the
+# whole model from 393M to ~300M before any lifting compression and ~210M when
+# stacked with BAND256 (the leading portable lifting variant from section 6).
+#
+# Three modes:
+#   - smallest_q:  minimal phantom rows; near-stride-p behavior
+#   - structural:  q closest to sqrt(C); square macrocells (default)
+#   - budget:      largest q under phantom-row budget
+#
+# At d=0.10 with C=2048, N=50257:
+#   - smallest_q -> (p=18, q=2, N'=50258, phantom=1)
+#   - structural -> (p=12, q=8, N'=50264, phantom=7)
+#
+# Compare 1-epoch BPB delta against the L=1/levels=7/bs=16384 references:
+#   - M0/A1 floor (diagonal only):       1.2860
+#   - 1ep reference (uncompressed E5W2): 1.2361
+# A working sparse embedding scheme should land within ~0.005 BPB of 1.2361
+# at d=0.10 if the model is robust to embedding sparsity (i.e., inter-token
+# semantics learnable through the resulting feature-overlap graph).
+PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding_density": 0.1}'
+
+run_ablation "PQ_EMB10_smallest_q (p=18,q=2,d=0.10,smallest_q)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='smallest_q'; print(json.dumps(b))")" \
+    "PQ_EMB10_smallest_q: sparse embedding d=0.10 mode=smallest_q (1ep, L=7)"
+
+run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+    "PQ_EMB10_structural: sparse embedding d=0.10 mode=structural (1ep, L=7)"
+
+# Density sweep at structural mode (after d=0.10 lands; uncomment to run):
+# run_ablation "PQ_EMB05_structural (d=0.05)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.05; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+#     "PQ_EMB05_structural: sparse embedding d=0.05 mode=structural (1ep, L=7)"
+#
+# run_ablation "PQ_EMB20_structural (d=0.20)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.20; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+#     "PQ_EMB20_structural: sparse embedding d=0.20 mode=structural (1ep, L=7)"
+
+
+# ---- 8. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
 # configuration goes to a 5-epoch confirmation run against the L=1 / levels=7
 # 5-epoch headline (logs/wikitext-103_2026-05-03_02-13-07/log.txt, BPB 1.0974).
@@ -382,8 +428,10 @@ echo "===   4) M1..M4 magnitude-pruned off-diagonal — compare BPB delta vs 1.2
 echo "===   5) M1r..M4r random controls at matched densities — compare BPB delta vs 1.2361"
 echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
 echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
-echo "===   7) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
-echo "===      (placeholder; uncomment after sections 4-6 complete and a winner is chosen)"
+echo "===   7) Sparse (p, q) phantom-token embedding sweep at d=0.10"
+echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs 1.2361"
+echo "===   8) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
+echo "===      (placeholder; uncomment after sections 4-7 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
 echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"

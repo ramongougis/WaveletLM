@@ -614,7 +614,9 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 
 **BAND256 (bandwidth=256, 27.63M lifting) lands at BPB sliding 1.2445** ([log](logs/wikitext-103_2026-05-07_06-52-52/log.txt)) — recovers 80.1% of the gap, **essentially tying M4** (1.2445 vs M4's 1.2438) at 2.3× M4's lifting params. BAND scales better than BD at high density: doubling params (BD256 → BAND256) added +12 pp recovery, because banded doesn't have BD's hard "no cross-block" ceiling. **Currently the leading portable production-default candidate at BPB-equivalent-to-M4 level.**
 
-**MON32 (Monarch, nblocks=32, block_size=64, 5.56M lifting) lands at BPB sliding 1.2612** ([log](logs/wikitext-103_2026-05-07_08-13-16/log.txt)) — recovers 47.9% of the gap, **essentially identical to BD64's 47.7% despite using 49% more lifting params (5.56M vs 3.73M).** The Monarch parameterization (M = R·P·L·P^T with two perfect-shuffle permutations) was hypothesized to capture cross-channel interactions that pure block-diagonal misses; at this density it shows no per-parameter advantage over BD. Per-param efficiency: 0.116M / pp recovered, worse than BD64's 0.078M / pp. **Block-diagonal is the more efficient parameterization at low density.** Whether MON64 (same param count, finer blocks) tips the result is the open question.
+**MON32 (Monarch, nblocks=32, block_size=64, 5.56M lifting) lands at BPB sliding 1.2612** ([log](logs/wikitext-103_2026-05-07_08-13-16/log.txt)) — recovers 47.9% of the gap, **essentially identical to BD64's 47.7% despite using 49% more lifting params (5.56M vs 3.73M).** The Monarch parameterization (M = R·P·L·P^T with two perfect-shuffle permutations) was hypothesized to capture cross-channel interactions that pure block-diagonal misses; at this density it shows no per-parameter advantage over BD. Per-param efficiency: 0.116M / pp recovered, worse than BD64's 0.078M / pp.
+
+**MON64 (Monarch, nblocks=64, block_size=32, 5.56M lifting) lands at BPB sliding 1.2615** ([log](logs/wikitext-103_2026-05-07_09-31-54/log.txt)) — recovers 47.3% of the gap, **virtually identical to MON32 (Δ = 0.0003 BPB)**. The two Monarch configurations share the same param count by symmetry of the R·P·L·P^T parameterization (R, L blocks total nblocks × block_size² params regardless of which is larger), and the result confirms that Monarch's effective capacity at this density is bounded by total parameter count, not block-shape choice. **Block-diagonal is the more efficient parameterization at low density**, full stop — Monarch's two-factor structure adds parameter overhead without buying recovery. The structural hypothesis (R · P · L · P^T captures interactions BD can't) is rejected at this scale.
 
 **Full structural-variant comparison.** Order: reference floor (Diagonal only) → triangular → block-diagonal sweep → banded sweep → Monarch sweep → reference ceiling (Full wavelet).
 
@@ -630,6 +632,7 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 | BAND 128 | 14.33M | 12.20% | — | — |
 | BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% |
 | **MON 32** | **5.56M** | **4.73%** | **1.2612** | **47.9%** |
+| **MON 64** | **5.56M** | **4.73%** | **1.2615** | **47.3%** |
 | Full wavelet (R1) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
 
 Two findings stand out from the matrix:
