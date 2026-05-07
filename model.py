@@ -1771,8 +1771,25 @@ class WaveletLM(nn.Module):
         self.vocab_size = vocab_size
 
         # Embedding
-        self.token_embedding = nn.Embedding(vocab_size, C)
-        nn.init.normal_(self.token_embedding.weight, mean=0.0, std=1.0 / math.sqrt(C))
+        if config.get('sparse_pq_embedding_enabled', False):
+            from tools.sparse_pq_embedding import SparsePQEmbedding
+            density = config.get('sparse_pq_embedding_density', 0.1)
+            mode = config.get('sparse_pq_embedding_mode', 'structural')
+            self.token_embedding = SparsePQEmbedding(
+                vocab_size, C, density=density, mode=mode,
+                init_std=1.0 / math.sqrt(C),
+            )
+            print(
+                f"[Embedding] SparsePQEmbedding: p={self.token_embedding.p}, "
+                f"q={self.token_embedding.q}, N'={self.token_embedding.N_prime}, "
+                f"phantom_rows={self.token_embedding.phantom_rows}, "
+                f"density={self.token_embedding.density_actual:.4f} "
+                f"({self.token_embedding.effective_param_count():,} of "
+                f"{self.token_embedding.weight.numel():,} params)"
+            )
+        else:
+            self.token_embedding = nn.Embedding(vocab_size, C)
+            nn.init.normal_(self.token_embedding.weight, mean=0.0, std=1.0 / math.sqrt(C))
 
         # Dropout
         self.dropout_emb = nn.Dropout(config.get('dropout_embedding', 0.0))
@@ -2443,7 +2460,10 @@ def parameter_breakdown(model, config, logger=None):
             gate_params = sum(p.numel() for p in model.cross_cell_gates.parameters())
             out(f"  Cross-cell gates: {gate_params:>{W},} ({gate_params/1e6:.2f}M)")
     elif isinstance(model, WaveletLM):
-        emb_params = model.token_embedding.weight.numel()
+        if hasattr(model.token_embedding, 'effective_param_count'):
+            emb_params = model.token_embedding.effective_param_count()
+        else:
+            emb_params = model.token_embedding.weight.numel()
         lm_params = sum(p.numel() for p in model.lm_head.parameters())
         layer_params = effective_param_count(model.layers)
         ln_params = sum(p.numel() for p in model.final_ln.parameters())
