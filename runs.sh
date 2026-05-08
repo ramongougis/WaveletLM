@@ -379,7 +379,57 @@ run_ablation "C1ep combined-reductions baseline (W2 + low_rank=4 + BAND128)" \
     "C1ep: combined-reductions baseline (W2 + low_rank=4 + BAND128) (1ep, L=7)"
 
 
-# ---- 8. Sparse (p, q) phantom-token embedding sweep -------------------------
+# ---- 8. Factored encoder-decoder embedding sweep ----------------------------
+# Tests the factored embedding architecture (V → C_emb via embedding lookup,
+# C_emb → C via learnable decoder, ... model ..., C → C_emb via learnable
+# encoder, C_emb → V via tied embedding.weight^T). The decoder and encoder
+# are SEPARATE learnable matrices; the model's nonlinearities (GELU, gating,
+# lifting cascade) break the linear-inverse symmetry that would otherwise
+# allow sharing the same matrix in both directions.
+#
+# All runs layer on top of the combined-reductions baseline (W2 + low_rank=4
+# + BAND 128), so the comparison vs C1ep isolates the embedding-compression
+# effect.
+#
+# Param counts at C=2048, V=50257 (full embedding = 102.93M dense):
+#   C_emb=128  -> 6.43M + 0.26M + 0.26M  ≈   6.95M  (93% reduction)
+#   C_emb=256  -> 12.87M + 0.53M + 0.53M ≈  13.92M  (87% reduction)
+#   C_emb=512  -> 25.73M + 1.05M + 1.05M ≈  27.83M  (73% reduction)
+#   C_emb=1024 -> 51.46M + 2.10M + 2.10M ≈  55.66M  (46% reduction)
+#   C_emb=2048 -> 102.93M + 4.20M + 4.20M ≈ 111.33M (no compression; full-rank
+#                  refinement around the standard embedding for capacity ablation)
+#
+# Compare 1-epoch BPB delta against C1ep (combined-reductions baseline). The
+# elbow on the recovery-vs-density curve identifies the production sweet spot.
+FE_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128, "sparse_encoder_decoder_embedding": true}'
+
+run_ablation "FE128 factored embedding C_emb=128" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$FE_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
+    "FE128: factored embedding C_emb=128, 93% reduction (1ep, L=7)"
+
+run_ablation "FE256 factored embedding C_emb=256" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$FE_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
+    "FE256: factored embedding C_emb=256, 87% reduction (1ep, L=7)"
+
+run_ablation "FE512 factored embedding C_emb=512" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$FE_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=512; print(json.dumps(b))")" \
+    "FE512: factored embedding C_emb=512, 73% reduction (1ep, L=7)"
+
+run_ablation "FE1024 factored embedding C_emb=1024" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$FE_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=1024; print(json.dumps(b))")" \
+    "FE1024: factored embedding C_emb=1024, 46% reduction (1ep, L=7)"
+
+run_ablation "FE2048 factored embedding C_emb=C=2048 (full-rank refinement)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$FE_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
+    "FE2048: factored embedding C_emb=2048 (full-rank refinement, no compression) (1ep, L=7)"
+
+
+# ---- 9. Sparse (p, q) phantom-token embedding sweep -------------------------
 # Tests sparsifying the 102.93M token embedding via the (p, q) striding scheme
 # from plans/new_compression_ideas.md. Token embedding is the largest non-cascade
 # block in the model; ~90% reduction at d=0.10 saves ~92.6M params, taking the
@@ -425,7 +475,7 @@ run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
 #     "PQ_EMB20_structural: sparse embedding d=0.20 mode=structural (1ep, L=7)"
 
 
-# ---- 9. MLP structural compression sweep ------------------------------------
+# ---- 10. MLP structural compression sweep -----------------------------------
 # Tests sparsifying the MLP weight matrices (W1: (E·C, C), W2: (C, E·C)) via
 # three structural variants:
 #   - banded:         tiled per-(C,C)-block bilateral band of width W
@@ -506,7 +556,7 @@ run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
     "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, levels=7)"
 
-# ---- 10. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner ------
+# ---- 11. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner ------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
 # configuration goes to a 5-epoch confirmation run against the L=1 / levels=7
 # 5-epoch headline (logs/wikitext-103_2026-05-03_02-13-07/log.txt, BPB 1.0974).
@@ -542,13 +592,15 @@ echo "===   5) M1r..M4r random controls at matched densities — compare BPB del
 echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
 echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
 echo "===   7) Combined-reductions baseline (W2 mixer + low_rank=4 + BAND128) at 1ep"
-echo "===      — establishes the new reference BPB for sections 8 and 9 onwards"
-echo "===   8) Sparse (p, q) phantom-token embedding sweep at d=0.10"
+echo "===      — establishes the new reference BPB for sections 8 onwards"
+echo "===   8) Factored encoder-decoder embedding sweep: C_emb in {128, 256, 512, 1024, 2048}"
+echo "===      5 runs — compare BPB delta vs section-7 baseline; locate elbow on recovery-vs-density curve"
+echo "===   9) Sparse (p, q) phantom-token embedding sweep at d=0.10"
 echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs section-7 baseline"
-echo "===   9) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
+echo "===  10) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
 echo "===      12 runs (4 densities × 3 structures) — compare BPB delta vs section-7 baseline"
-echo "===  10) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
-echo "===      (placeholder; uncomment after sections 4-9 complete and a winner is chosen)"
+echo "===  11) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
+echo "===      (placeholder; uncomment after sections 4-10 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
 echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"
