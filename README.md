@@ -81,9 +81,9 @@ Training logs, checkpoints, and configs are saved to `logs/<dataset>_<timestamp>
 
 Obtain weights from [HuggingFace](https://huggingface.co/anarmorarm/WaveletLM/tree/main), then use `best_model_pg-19.pt`, `best_model_wikitext-103.pt`, or whichever weights file is desired as the checkpoint in the commands below.
 
-The [current best PG-19 model](logs\pg19_2026-04-25_13-34-46\benchmark.txt) requires 4,544 MiB for inference and generates at 28.3 tokens/s on a 5090.
+The [current best PG-19 model](logs\pg19_2026-04-25_13-34-46\benchmark.txt) requires 5,266 MiB for inference and generates at 28.3 tokens/s on a 5090.
 
-The [current best WikiText-103 model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 4,918 MiB for inference and generates at 28.8 tokens/s on a 5090.
+The [current best WikiText-103 model](logs/wikitext-103_2026-04-22_01-36-47/log.txt) requires 5,730 MiB for inference and generates at 28.8 tokens/s on a 5090.
 
 Recommended commands:
 
@@ -691,7 +691,7 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 | C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs C1ep |
 |---|---|---|---|---|---|
-| 128 ([log](logs/wikitext-103_2026-05-08_09-12-05/log.txt)) | 170.66M | 22,012 MiB | **2,200 MiB** (−27%) | 1.4808 | +0.2222 |
+| 128 ([log](logs/wikitext-103_2026-05-08_09-12-05/log.txt)) | 170.66M | 22,012 MiB | **2,198 MiB** (−27%) | 1.4808 | +0.2222 |
 | 256 ([log](logs/wikitext-103_2026-05-08_11-54-53/log.txt)) | 177.62M | 22,087 MiB | **2,452 MiB** (−19%) | 1.3916 | +0.1330 |
 | 512 / 1024 / 2048 | pending | | | | |
 

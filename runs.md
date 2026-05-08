@@ -60,33 +60,33 @@
 
 | Run | C | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---|--------|---------------|--------|------------|----------------|-------|
-| 1   | 64   | [link](logs/wikitext-103_2026-04-02_11-53-11/log.txt) | 1.5178 | 11.42M | 5,110 MiB | 169 MiB | Pipeline test; LR=0.02 |
-| 2   | 128  | [link](logs/wikitext-103_2026-04-03_10-22-17/log.txt) | 1.4766 | 32.66M | 6,360 MiB | 285 MiB | LR=0.02 |
-| 3   | 256  | [link](logs/wikitext-103_2026-04-03_07-37-34/log.txt) | 1.2938 | 98.63M | 9,958 MiB | 689 MiB | LR=0.02 |
-| 4   | 512  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | LR=0.01 |
-| 5   | 1024 | [link](logs/wikitext-103_2026-04-02_22-51-10/log.txt) | 1.1423 | 1362.31M | 42,643 MiB | 7,890 MiB | LR=0.005 |
+| 1   | 64   | [link](logs/wikitext-103_2026-04-02_11-53-11/log.txt) | 1.5178 | 11.42M | 5,110 MiB | 169 MiB (PyTorch-allocated) | Pipeline test; LR=0.02 |
+| 2   | 128  | [link](logs/wikitext-103_2026-04-03_10-22-17/log.txt) | 1.4766 | 32.66M | 6,360 MiB | 285 MiB (PyTorch-allocated) | LR=0.02 |
+| 3   | 256  | [link](logs/wikitext-103_2026-04-03_07-37-34/log.txt) | 1.2938 | 98.63M | 9,958 MiB | 689 MiB (PyTorch-allocated) | LR=0.02 |
+| 4   | 512  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | LR=0.01 |
+| 5   | 1024 | [link](logs/wikitext-103_2026-04-02_22-51-10/log.txt) | 1.1423 | 1362.31M | 42,643 MiB | 7,890 MiB (PyTorch-allocated) | LR=0.005 |
 
 ### Epochs: C = 512, mlp_expansion = 1
 
 | Run | Epochs | Folder | BPB (sliding) | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|------------|----------------|-------|
-| 4   | 1  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 18,738 MiB | 2,179 MiB | Shared with width sweep (Run 4) |
-| 6   | 3  | [link](logs/wikitext-103_2026-04-03_14-34-51/log.txt) | 1.1167 | 18,738 MiB | 2,179 MiB | Ablation baseline |
-| 7   | 5  | [link](logs/wikitext-103_2026-04-03_22-59-40/log.txt) | 1.1233 | 18,738 MiB | 2,179 MiB | Overfit; best val at epoch 4, not 5. No dropout. |
+| 4   | 1  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Shared with width sweep (Run 4) |
+| 6   | 3  | [link](logs/wikitext-103_2026-04-03_14-34-51/log.txt) | 1.1167 | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Ablation baseline |
+| 7   | 5  | [link](logs/wikitext-103_2026-04-03_22-59-40/log.txt) | 1.1233 | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Overfit; best val at epoch 4, not 5. No dropout. |
 
 ### Boolean ablations part 1: C = 512, epochs = 1, mlp_expansion = 1
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------|
-| 4   | Baseline (all standard) | | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB | |
-| 8   | `decompose_bypass` | false | [link](logs/wikitext-103_2026-04-04_13-38-15/log.txt) | 1.1734 | 361.23M | 2.83h | 17,764 MiB | 2,147 MiB | -0.0014 |
-| 9   | `decompose_bypass_cross_window` | false | [link](logs/wikitext-103_2026-04-04_16-31-53/log.txt) | 1.1745 | 366.58M | 2.62h | 18,809 MiB | 2,178 MiB | -0.0003 |
-| 10  | `learned_residual` | false | [link](logs/wikitext-103_2026-04-04_19-12-31/log.txt) | 1.1810 | 366.58M | 2.66h | 18,818 MiB | 2,178 MiB | +0.0063 |
-| 11  | `use_mixer_gate` | false | [link](logs/wikitext-103_2026-04-04_21-55-38/log.txt) | 1.2006 | 314.15M | 2.45h | 16,518 MiB | 1,878 MiB | +0.0258 |
-| 12  | `skip_proj_out` | true | [link](logs/wikitext-103_2026-04-05_00-26-06/log.txt) | 1.1876 | 361.33M | 2.60h | 18,668 MiB | 2,148 MiB | +0.0084 |
-| 13  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-05_03-05-29/log.txt) | 1.1856 | 186.92M | 2.42h | 16,762 MiB | 1,150 MiB | +0.0108 |
-| 14  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_05-33-33/log.txt) | 1.1891 | 272.02M | 1.79h | 13,236 MiB | 1,637 MiB | +0.0141 |
-| 15  | `tie_embedding_to_lm_head` | true | [link](logs/wikitext-103_2026-04-05_07-23-27/log.txt) | 1.1811 | 340.85M | 2.77h | 18,523 MiB | 2,080 MiB | +0.0064 |
+| 4   | Baseline (all standard) | | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 2.78h | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | |
+| 8   | `decompose_bypass` | false | [link](logs/wikitext-103_2026-04-04_13-38-15/log.txt) | 1.1734 | 361.23M | 2.83h | 17,764 MiB | 2,147 MiB (PyTorch-allocated) | -0.0014 |
+| 9   | `decompose_bypass_cross_window` | false | [link](logs/wikitext-103_2026-04-04_16-31-53/log.txt) | 1.1745 | 366.58M | 2.62h | 18,809 MiB | 2,178 MiB (PyTorch-allocated) | -0.0003 |
+| 10  | `learned_residual` | false | [link](logs/wikitext-103_2026-04-04_19-12-31/log.txt) | 1.1810 | 366.58M | 2.66h | 18,818 MiB | 2,178 MiB (PyTorch-allocated) | +0.0063 |
+| 11  | `use_mixer_gate` | false | [link](logs/wikitext-103_2026-04-04_21-55-38/log.txt) | 1.2006 | 314.15M | 2.45h | 16,518 MiB | 1,878 MiB (PyTorch-allocated) | +0.0258 |
+| 12  | `skip_proj_out` | true | [link](logs/wikitext-103_2026-04-05_00-26-06/log.txt) | 1.1876 | 361.33M | 2.60h | 18,668 MiB | 2,148 MiB (PyTorch-allocated) | +0.0084 |
+| 13  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-05_03-05-29/log.txt) | 1.1856 | 186.92M | 2.42h | 16,762 MiB | 1,150 MiB (PyTorch-allocated) | +0.0108 |
+| 14  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_05-33-33/log.txt) | 1.1891 | 272.02M | 1.79h | 13,236 MiB | 1,637 MiB (PyTorch-allocated) | +0.0141 |
+| 15  | `tie_embedding_to_lm_head` | true | [link](logs/wikitext-103_2026-04-05_07-23-27/log.txt) | 1.1811 | 340.85M | 2.77h | 18,523 MiB | 2,080 MiB (PyTorch-allocated) | +0.0064 |
 
 ### Boolean ablations part 2: C = 512, epochs = 3, mlp_expansion = 1
 
@@ -94,10 +94,10 @@ Baseline: Run 6 (3 epochs, all defaults) = BPB 1.1169
 
 | Run | Setting | Value | Folder | BPB (sliding) | Params | Time | Train VRAM | Inference VRAM | Delta (3ep) | Delta (1ep) | Notes |
 |-----|---------|-------|--------|---------------|--------|------|------------|----------------|-------------|-------------|-------|
-| 6   | Baseline (3ep) | | [link](logs/wikitext-103_2026-04-03_14-34-51/log.txt) | 1.1167 | 366.58M | 8.34h | 18,738 MiB | 2,179 MiB | | | |
-| 16  | `decompose_bypass` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1173 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB | +0.0010 | -0.0014 | DB true is better. |
-| 17  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1341 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB | +0.0168 | +0.0141 | LLO true performs worse with more epochs. |
-| 18  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1253 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB | +0.0089 | +0.0108 | SLW true performs better with more epochs. |
+| 6   | Baseline (3ep) | | [link](logs/wikitext-103_2026-04-03_14-34-51/log.txt) | 1.1167 | 366.58M | 8.34h | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | | | |
+| 16  | `decompose_bypass` | false | [link](logs/wikitext-103_2026-04-05_16-08-09/log.txt) | 1.1173 | 361.23M | 7.60h | 17,764 MiB | 2,147 MiB (PyTorch-allocated) | +0.0010 | -0.0014 | DB true is better. |
+| 17  | `lifting_linear_only` | true | [link](logs/wikitext-103_2026-04-05_23-45-27/log.txt) | 1.1341 | 272.02M | 5.17h | 13,236 MiB | 1,637 MiB (PyTorch-allocated) | +0.0168 | +0.0141 | LLO true performs worse with more epochs. |
+| 18  | `shared_lifting_weights` | true | [link](logs/wikitext-103_2026-04-06_04-59-03/log.txt) | 1.1253 | 186.92M | 7.20h | 16,762 MiB | 1,150 MiB (PyTorch-allocated) | +0.0089 | +0.0108 | SLW true performs better with more epochs. |
 
 > **Notes:** With epochs >= 3 `decompose_bypass=true` is best, as is `lifting_linear_only=false`. It's likely that at much higher epochs, `shared_lifting_weights=true` is best; the parameters, run time, and extreme VRAM savings (~1/2 at 3 epochs!) it saves could be better used elsewhere (larger MLP, more epochs, larger micro batch size, etc.).
 
@@ -107,42 +107,42 @@ All defaults are optimal with epochs = 3. No boolean change improved BPB. Note t
 
 | Run | Folder | BPB (sliding) | Params | Training time | VRAM (Train/Inf) | Notes |
 |-----|--------|---------------|--------|---------------|------------------|-------|
-| 6   | [link](logs/wikitext-103_2026-04-03_14-34-51/log.txt) | 1.1167 | 366.58M | 8.34h | 18,738 / 2,179 MiB | Baseline IS the best combo |
+| 6   | [link](logs/wikitext-103_2026-04-03_14-34-51/log.txt) | 1.1167 | 366.58M | 8.34h | 18,738 / 2,179 MiB (PyTorch-allocated) | Baseline IS the best combo |
 
 ### MLP expansion: C = 512, epochs = 1, optimal booleans
 
 | Run | mlp_expansion | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|--------|---------------|--------|------------|----------------|-------|
-| 4   | 1  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4) |
-| 19  | 2  | [link](logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1674 | 377.08M | 19,118 MiB | 2,239 MiB | -0.0073 |
-| 20  | 10 | [link](logs/wikitext-103_2026-04-06_17-51-28/log.txt) | 1.1529 | 461.04M | 21,519 MiB | 2,719 MiB | -0.0219 |
-| 21  | 20 | [link](logs/wikitext-103_2026-04-06_20-38-06/log.txt) | 1.1483 | 566.00M | 24,520 MiB | 3,320 MiB | -0.0264 |
-| 22  | 50 | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1406 | 880.88M | 33,524 MiB | 5,121 MiB | -0.0342 |
+| 4   | 1  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Baseline (Run 4) |
+| 19  | 2  | [link](logs/wikitext-103_2026-04-06_15-09-30/log.txt) | 1.1674 | 377.08M | 19,118 MiB | 2,239 MiB (PyTorch-allocated) | -0.0073 |
+| 20  | 10 | [link](logs/wikitext-103_2026-04-06_17-51-28/log.txt) | 1.1529 | 461.04M | 21,519 MiB | 2,719 MiB (PyTorch-allocated) | -0.0219 |
+| 21  | 20 | [link](logs/wikitext-103_2026-04-06_20-38-06/log.txt) | 1.1483 | 566.00M | 24,520 MiB | 3,320 MiB (PyTorch-allocated) | -0.0264 |
+| 22  | 50 | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1406 | 880.88M | 33,524 MiB | 5,121 MiB (PyTorch-allocated) | -0.0342 |
 
 ### Memory: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | PKM | FwPKM | PKM num keys | FwPKM num keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
-| 4   | off | off | | | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4, MLP only) |
-| 23  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1726 | 377.48M | 19,293 MiB | 2,230 MiB | PKM default; -0.0022 vs baseline |
-| 24  | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1622 | 540.91M | 21,177 MiB | 2,856 MiB | PKM large; -0.0126 vs baseline, +174M params |
-| 25  | off | on  | | 529 | [link](logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1722 | 377.48M | 19,474 MiB | 2,251 MiB | FwPKM default; -0.0025 vs baseline |
-| 26  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1710 | 388.37M | 19,949 MiB | 2,303 MiB | PKM+FwPKM default; -0.0038 vs baseline |
-| 27  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1575 | 715.23M | 24,335 MiB | 4,173 MiB | PKM+FwPKM large; -0.0172 vs baseline |
-| 28  | off | off | | | [link](logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2000 | 356.07M | 18,357 MiB | 2,118 MiB | MLP off; wavelet pipeline only; +0.0252 vs baseline |
-| 29  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1985 | 366.97M | 18,913 MiB | 2,170 MiB | MLP off, PKM only; +0.0237 vs baseline |
-| 30  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1957 | 377.86M | 19,569 MiB | 2,243 MiB | MLP off, PKM+FwPKM; +0.0209 vs baseline |
-| 31  | off | on  | | 1681 | [link](logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1732 | 389.46M | 19,667 MiB | 2,343 MiB | FwPKM param-matched; -0.0016 vs baseline |
+| 4   | off | off | | | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Baseline (Run 4, MLP only) |
+| 23  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_03-43-32/log.txt) | 1.1726 | 377.48M | 19,293 MiB | 2,230 MiB (PyTorch-allocated) | PKM default; -0.0022 vs baseline |
+| 24  | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-07_06-37-05/log.txt) | 1.1622 | 540.91M | 21,177 MiB | 2,856 MiB (PyTorch-allocated) | PKM large; -0.0126 vs baseline, +174M params |
+| 25  | off | on  | | 529 | [link](logs/wikitext-103_2026-04-07_09-40-03/log.txt) | 1.1722 | 377.48M | 19,474 MiB | 2,251 MiB (PyTorch-allocated) | FwPKM default; -0.0025 vs baseline |
+| 26  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-07_12-58-11/log.txt) | 1.1710 | 388.37M | 19,949 MiB | 2,303 MiB (PyTorch-allocated) | PKM+FwPKM default; -0.0038 vs baseline |
+| 27  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-07_16-36-23/log.txt) | 1.1575 | 715.23M | 24,335 MiB | 4,173 MiB (PyTorch-allocated) | PKM+FwPKM large; -0.0172 vs baseline |
+| 28  | off | off | | | [link](logs/wikitext-103_2026-04-07_20-21-24/log.txt) | 1.2000 | 356.07M | 18,357 MiB | 2,118 MiB (PyTorch-allocated) | MLP off; wavelet pipeline only; +0.0252 vs baseline |
+| 29  | on  | off | 529 | | [link](logs/wikitext-103_2026-04-07_23-11-07/log.txt) | 1.1985 | 366.97M | 18,913 MiB | 2,170 MiB (PyTorch-allocated) | MLP off, PKM only; +0.0237 vs baseline |
+| 30  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-08_02-19-39/log.txt) | 1.1957 | 377.86M | 19,569 MiB | 2,243 MiB (PyTorch-allocated) | MLP off, PKM+FwPKM; +0.0209 vs baseline |
+| 31  | off | on  | | 1681 | [link](logs/wikitext-103_2026-04-09_21-03-15/log.txt) | 1.1732 | 389.46M | 19,667 MiB | 2,343 MiB (PyTorch-allocated) | FwPKM param-matched; -0.0016 vs baseline |
 
 ### MLP expansion = 50 + memory
 
 | Run | PKM | FwPKM | PKM num keys | FwPKM num keys | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|-----|-------|--------------|----------------|--------|---------------|--------|------------|----------------|-------|
-| 22  | off | off | | | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1406 | 880.88M | 33,524 MiB | 5,121 MiB | MLP-50 baseline (from MLP sweep) |
+| 22  | off | off | | | [link](logs/wikitext-103_2026-04-06_23-32-36/log.txt) | 1.1406 | 880.88M | 33,524 MiB | 5,121 MiB (PyTorch-allocated) | MLP-50 baseline (from MLP sweep) |
 | 32  | on  | off | 16384 | | [link](logs/wikitext-103_2026-04-09_00-16-49/log.txt) | NaN | 1055.21M | 35,882 MiB | — | Diverged at step 3600 (LR=0.008) |
-| 33  | off | on  | | 16384 | [link](logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1408 | 1055.21M | 36,682 MiB | 6,439 MiB | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
-| 34  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1381 | 1229.54M | 39,041 MiB | 7,116 MiB | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
-| 35  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1394 | 902.67M | 34,655 MiB | 5,246 MiB | Both default; -0.0011 vs MLP-50 |
+| 33  | off | on  | | 16384 | [link](logs/wikitext-103_2026-04-09_03-57-03/log.txt) | 1.1408 | 1055.21M | 36,682 MiB | 6,439 MiB (PyTorch-allocated) | FwPKM large; -0.0002 vs MLP-50 baseline; stable where PKM NaN'd |
+| 34  | on  | on  | 16384 | 16384 | [link](logs/wikitext-103_2026-04-09_08-29-18/log.txt) | 1.1381 | 1229.54M | 39,041 MiB | 7,116 MiB (PyTorch-allocated) | Both large; -0.0024 vs MLP-50; FwPKM stabilized PKM |
+| 35  | on  | on  | 529 | 529 | [link](logs/wikitext-103_2026-04-09_13-22-27/log.txt) | 1.1394 | 902.67M | 34,655 MiB | 5,246 MiB (PyTorch-allocated) | Both default; -0.0011 vs MLP-50 |
 
 ### Per-layer embedding (PLE): C = 512, epochs = 1, optimal booleans + mlp_expansion = 1
 
@@ -150,8 +150,8 @@ Reintroduces original token embedding as a learned per-channel residual at each 
 
 | Run | per_layer_embedding | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
-| 4   | false | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-| 36  | true  | [link](logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1738 | 366.59M | 18,898 MiB | 2,179 MiB | -0.0009 | +10,240 params; essentially free |
+| 4   | false | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | | Baseline (Run 4) |
+| 36  | true  | [link](logs/wikitext-103_2026-04-09_18-06-43/log.txt) | 1.1738 | 366.59M | 18,898 MiB | 2,179 MiB (PyTorch-allocated) | -0.0009 | +10,240 params; essentially free |
 
 > **Note:** FwPKM trains statically (identical to PKM). Inference-time weight updates (`fwpkm_inference_update`) tested separately in generation quality, not BPB.
 
@@ -161,24 +161,24 @@ Stacked spectral mixing within each block — adding depth to the per-scale gate
 
 | Run | mixer_depth | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|--------|---------------|--------|------------|----------------|-------|-------|
-| 4   | 1 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
-| 37  | 2 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1661 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | First depth increase |
-| 38  | 3 | [link](logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1743 | 576.91M | 28,837 MiB | 3,381 MiB | -0.0033 | Diminishing vs depth=2 |
+| 4   | 1 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | | Baseline (Run 4) |
+| 37  | 2 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1661 | 471.74M | 23,428 MiB | 2,780 MiB (PyTorch-allocated) | -0.0098 | First depth increase |
+| 38  | 3 | [link](logs/wikitext-103_2026-04-08_13-46-39/log.txt) | 1.1743 | 576.91M | 28,837 MiB | 3,381 MiB (PyTorch-allocated) | -0.0033 | Diminishing vs depth=2 |
 | 39  | 5 | [link](logs/wikitext-103_2026-04-08_18-26-31/log.txt) | NaN | 787.24M | 39,657 MiB | — | — | Diverged at step 3600 (LR=0.008); vanishing/exploding gradients without residuals |
 
 ### Mixer depth + higher LR
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-| 37  | 2 | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1661 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
+| 37  | 2 | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1661 | 471.74M | 23,428 MiB | 2,780 MiB (PyTorch-allocated) | -0.0098 | From depth sweep |
 | 40  | 2 | 0.02 | [link](logs/wikitext-103_2026-04-10_00-23-31/log.txt) | NaN | 471.74M | — | — | — | Diverged step 2200 (LR=0.01); LN alone insufficient at 2x LR |
 
 ### Mixer depth stabilizers ablation: alpha_d, beta_d (init 1/D), scaled mixer init
 
 | Run | mixer_depth | stabilizers | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-| 37  | 2 | false | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1661 | 471.74M | 23,428 MiB | 2,780 MiB | -0.0098 | From depth sweep |
-| 41  | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1715 | 471.74M | 23,428 MiB | 2,781 MiB | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
+| 37  | 2 | false | 0.01 | [link](logs/wikitext-103_2026-04-08_09-51-47/log.txt) | 1.1661 | 471.74M | 23,428 MiB | 2,780 MiB (PyTorch-allocated) | -0.0098 | From depth sweep |
+| 41  | 2 | true  | 0.01 | [link](logs/wikitext-103_2026-04-10_03-29-19/log.txt) | 1.1715 | 471.74M | 23,428 MiB | 2,781 MiB (PyTorch-allocated) | -0.0032 | Stabilizers cost +0.0066 BPB vs unstabilized |
 | 42  | 2 | true  | 0.02 | [link](logs/wikitext-103_2026-04-10_07-14-48/log.txt) | NaN | 471.74M | — | — | — | Diverged step 1800 (LR=0.008); stabilizers made it worse |
 
 ### Mixer depth + lower LR: can reduced LR stabilize deeper mixers?
@@ -187,14 +187,14 @@ NaN threshold is consistently at LR reaching ~0.008. Lower peak LR to stay below
 
 | Run | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|-------------|-----|--------|---------------|--------|------------|----------------|-------|-------|
-| 43  | 5 | 0.004 | [link](logs/wikitext-103_2026-04-10_07-59-36/log.txt) | 1.2895 | 787.24M | 39,657 MiB | 4,584 MiB | +0.1146 | Stable but severely undertrained; LR too low for 1 epoch |
+| 43  | 5 | 0.004 | [link](logs/wikitext-103_2026-04-10_07-59-36/log.txt) | 1.2895 | 787.24M | 39,657 MiB | 4,584 MiB (PyTorch-allocated) | +0.1146 | Stable but severely undertrained; LR too low for 1 epoch |
 | 44  | 10 | 0.001 | | | 1313.06M | | | | MBS=4, GA=4 to fit in VRAM; extreme depth stress test |
 
 ### Layers = 1: C = 512, epochs = 1, optimal booleans + mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-| 45  | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3245 | 67.22M | 4,684 MiB | 448 MiB | 17min train; 46.6 tok/s gen |
+| 45  | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3245 | 67.22M | 4,684 MiB | 448 MiB (PyTorch-allocated) | 17min train; 46.6 tok/s gen |
 
 > Note: The speed and results are so good that it warrants further testing various configurations of layers = 1 immediately.
 
@@ -206,15 +206,15 @@ All runs use MBS=8, GA=2 except run 46 (noted below).
 
 | Run | mlp_expansion | mixer_depth | lr | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------|-------------|-----|--------|---------------|--------|------------|----------------|-------|
-| 45  | 1   | 1  | 0.01 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3245 | 67.22M | 4,684 MiB | 448 MiB | L=1 baseline |
-| 46  | 100 | 1  | 0.01 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2577 | 119.18M | 4,324 MiB | 759 MiB | **MBS=4, GA=4.** Massive MLP; -0.0708 vs L=1 baseline; 28min total |
-| 47  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4755 | 114.54M | 7,078 MiB | 719 MiB | MD=10 no residuals; +0.1580 vs L=1 baseline; WORSE |
+| 45  | 1   | 1  | 0.01 | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3245 | 67.22M | 4,684 MiB | 448 MiB (PyTorch-allocated) | L=1 baseline |
+| 46  | 100 | 1  | 0.01 | [link](logs/wikitext-103_2026-04-10_17-14-18/log.txt) | 1.2577 | 119.18M | 4,324 MiB | 759 MiB (PyTorch-allocated) | **MBS=4, GA=4.** Massive MLP; -0.0708 vs L=1 baseline; 28min total |
+| 47  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_17-54-03/log.txt) | 1.4755 | 114.54M | 7,078 MiB | 719 MiB (PyTorch-allocated) | MD=10 no residuals; +0.1580 vs L=1 baseline; WORSE |
 | 48  | 1   | 10 | 0.02 | [link](logs/wikitext-103_2026-04-10_18-42-34/log.txt) | NaN | 114.54M | — | — | Diverged step 4200 (LR=0.019) |
-| 49  | 1   | 2  | 0.01 | [link](logs/wikitext-103_2026-04-10_19-29-57/log.txt) | 1.3043 | 72.48M | 4,915 MiB | 478 MiB | MD=2 no residuals; -0.0142 vs L=1 baseline |
-| 50  | 1   | 2  | 0.01 | [link](logs/wikitext-103_2026-04-10_19-49-29/log.txt) | 1.2924 | 72.48M | 4,915 MiB | 478 MiB | MD=2 + residuals; -0.0253 vs L=1 baseline |
-| 51  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_20-10-24/log.txt) | 1.2934 | 114.54M | 7,078 MiB | 719 MiB | MD=10 + residuals; -0.0241 vs L=1 baseline |
-| 52  | 100 | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_20-51-04/log.txt) | 1.5200 | 166.50M | 8,564 MiB | 1,041 MiB | MLP=100 + MD=10 no residuals; WORSE than either alone |
-| 53  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4393 | 114.54M | 7,082 MiB | 719 MiB | PLE=true; still worse than baseline (MD=10 no resid dominates) |
+| 49  | 1   | 2  | 0.01 | [link](logs/wikitext-103_2026-04-10_19-29-57/log.txt) | 1.3043 | 72.48M | 4,915 MiB | 478 MiB (PyTorch-allocated) | MD=2 no residuals; -0.0142 vs L=1 baseline |
+| 50  | 1   | 2  | 0.01 | [link](logs/wikitext-103_2026-04-10_19-49-29/log.txt) | 1.2924 | 72.48M | 4,915 MiB | 478 MiB (PyTorch-allocated) | MD=2 + residuals; -0.0253 vs L=1 baseline |
+| 51  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_20-10-24/log.txt) | 1.2934 | 114.54M | 7,078 MiB | 719 MiB (PyTorch-allocated) | MD=10 + residuals; -0.0241 vs L=1 baseline |
+| 52  | 100 | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_20-51-04/log.txt) | 1.5200 | 166.50M | 8,564 MiB | 1,041 MiB (PyTorch-allocated) | MLP=100 + MD=10 no residuals; WORSE than either alone |
+| 53  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_21-37-45/log.txt) | 1.4393 | 114.54M | 7,082 MiB | 719 MiB (PyTorch-allocated) | PLE=true; still worse than baseline (MD=10 no resid dominates) |
 | 54  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_22-16-17/log.txt) | NaN | 114.28M | 6,279 MiB | — | DB=false; NaN — DB provides critical stability at L=1 |
 | 55  | 1   | 10 | 0.01 | [link](logs/wikitext-103_2026-04-10_22-48-20/log.txt) | NaN | 354.92M | — | — | C=1024, MD=10 no resid; NaN step 4500 (LR=0.01) |
 
@@ -222,13 +222,13 @@ All runs use MBS=8, GA=2 except run 46 (noted below).
 
 | Run | C | MLP | MD | lr | block | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|------|-----|-----|------|-------|--------|---------------|--------|------------|----------------|-------|
-| 56  | 1024 | 1   | 2  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-10_23-37-19/log.txt) | 1.2151 | 186.90M | 7,100 MiB | 1,113 MiB | C=1024, resid; -0.0771 vs MD=2+resid C=512 |
-| 57  | 2048 | 1   | 2  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_00-15-26/log.txt) | **1.1657** | 541.57M | 13,453 MiB | 3,211 MiB | **C=2048 approaches L=20!** |
-| 58  | 512  | 1   | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_02-00-34/log.txt) | 1.3341 | 76.68M | 14,696 MiB | 505 MiB | Context alone doesn't help |
-| 59  | 1024 | 100 | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_02-19-23/log.txt) | 1.2547 | 411.41M | 28,847 MiB | 2,526 MiB | Kitchen sink A; PLE |
+| 56  | 1024 | 1   | 2  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-10_23-37-19/log.txt) | 1.2151 | 186.90M | 7,100 MiB | 1,113 MiB (PyTorch-allocated) | C=1024, resid; -0.0771 vs MD=2+resid C=512 |
+| 57  | 2048 | 1   | 2  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_00-15-26/log.txt) | **1.1657** | 541.57M | 13,453 MiB | 3,211 MiB (PyTorch-allocated) | **C=2048 approaches L=20!** |
+| 58  | 512  | 1   | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_02-00-34/log.txt) | 1.3341 | 76.68M | 14,696 MiB | 505 MiB (PyTorch-allocated) | Context alone doesn't help |
+| 59  | 1024 | 100 | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_02-19-23/log.txt) | 1.2547 | 411.41M | 28,847 MiB | 2,526 MiB (PyTorch-allocated) | Kitchen sink A; PLE |
 | 60  | 2048 | 20  | 2  | 0.01 | 2048 | [link](logs/wikitext-103_2026-04-11_03-24-37/log.txt) | NaN | 768.14M | — | — | — | Kitchen sink B; NaN step 300 |
-| 61  | 2048 | 20  | 2  | 0.005| 1024 | [link](logs/wikitext-103_2026-04-11_05-30-57/log.txt) | 1.2024 | 734.56M | 23,346 MiB | 4,358 MiB | LR too low; worse than C=2048 MLP=1 |
-| 62  | 2048 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | **1.1538** | 617.05M | 14,109 MiB | 3,519 MiB | **New L=1 record! Beats L=20 C=512 baseline (1.1751)** |
+| 61  | 2048 | 20  | 2  | 0.005| 1024 | [link](logs/wikitext-103_2026-04-11_05-30-57/log.txt) | 1.2024 | 734.56M | 23,346 MiB | 4,358 MiB (PyTorch-allocated) | LR too low; worse than C=2048 MLP=1 |
+| 62  | 2048 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | **1.1538** | 617.05M | 14,109 MiB | 3,519 MiB (PyTorch-allocated) | **New L=1 record! Beats L=20 C=512 baseline (1.1751)** |
 | 63  | 2048 | 20  | 1  | 0.02 | 512  | [link](logs/wikitext-103_2026-04-11_10-04-14/log.txt) | NaN | 617.05M | — | — | — | NaN step 700 (LR=0.003); lr=0.02 too high for MLP=20 at C=2048 |
 | 64  | 4096 | 20  | 1  | 0.01 | 512  | [link](logs/wikitext-103_2026-04-11_11-34-42/log.txt) | — | 2056.18M | ~33 GB | — | — | Early-stopped; diminishing returns vs C=2048 |
 | 65  | 2048 | 20  | 2  | 0.01 | 512  | | | ~2.2B | | | | PLE, resid; full recipe at stable LR |
@@ -240,10 +240,10 @@ Wider predict/update MLPs in the lifting wavelet. Tests whether more expressive 
 
 | Run | lifting_hidden_mult | init | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|---------------------|------|--------|---------------|--------|------------|----------------|-------|
-| 62  | 1 | — | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1538 | 617.05M | 14,109 MiB | 3,519 MiB | Baseline |
+| 62  | 1 | — | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1538 | 617.05M | 14,109 MiB | 3,519 MiB (PyTorch-allocated) | Baseline |
 | 67  | 2 | zeros | [link](logs/wikitext-103_2026-04-11_14-23-32/log.txt) | — | 768.08M | — | — | Early-stopped; zero init, no improvement |
 | 68  | 2 | eye | [link](logs/wikitext-103_2026-04-11_15-39-24/log.txt) | NaN | 768.08M | — | — | — | Identity init; NaN step 1300 (LR=0.003); signal too strong |
-| 69  | 2 | normal(0.01) | [link](logs/wikitext-103_2026-04-11_17-46-16/log.txt) | 1.1557 | 768.08M | 16,989 MiB | 4,383 MiB | Stable but identical to mult=1; local expressivity not the bottleneck |
+| 69  | 2 | normal(0.01) | [link](logs/wikitext-103_2026-04-11_17-46-16/log.txt) | 1.1557 | 768.08M | 16,989 MiB | 4,383 MiB (PyTorch-allocated) | Stable but identical to mult=1; local expressivity not the bottleneck |
 
 ### Loop iterations (LoopLM): L=1, C=2048, reuse same weights T times
 
@@ -251,7 +251,7 @@ Same layer stack applied T times sequentially. Loss averaged across all iteratio
 
 | Run | C | MLP | MD | lr | T | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|------|-----|-----|------|---|--------|---------------|--------|------------|----------------|-------|
-| 62  | 2048 | 20  | 1  | 0.01 | 1 | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1538 | 617.05M | 14,109 MiB | 3,519 MiB | Baseline (no looping) |
+| 62  | 2048 | 20  | 1  | 0.01 | 1 | [link](logs/wikitext-103_2026-04-11_08-13-12/log.txt) | 1.1538 | 617.05M | 14,109 MiB | 3,519 MiB (PyTorch-allocated) | Baseline (no looping) |
 | 70  | 2048 | 20  | 1  | 0.01 | 4 | [link](logs/wikitext-103_2026-04-11_13-19-59/log.txt) | — | 617.05M | 31,538 MiB | — | Early-stopped; ~0.04 val_loss gain for 3.5x compute; not worth it |
 
 ### Optimal low-layer config: L=2, C=2048, full recipe
@@ -260,12 +260,12 @@ L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384. ~1.18B params, ~21 GB estimated.
 
 | Run | Layers | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|--------|---------------|--------|------------|----------------|-------|
-|   | 2 | 1 | [link](logs/wikitext-103_2026-04-11_21-09-05/log.txt) | **1.1126** | 1180.28M | 24,643 MiB | 6,733 MiB | **New overall best! Beats L=20 3-epoch baseline (1.1169)** |
-|   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_00-37-11/log.txt) | **1.0856** | 1180.28M | 24,643 MiB | 6,733 MiB | **New best! No dropout; best val at epoch 3; train/val gap 1.77 by epoch 5** |
-|   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_17-11-15/log.txt) | **1.0455** | 1180.28M | 24,883 MiB | 6,733 MiB | **1.0x dropout; new best! Val still improving at epoch 5; gap=1.00** |
-|   | 2 | 5 | [link](logs/wikitext-103_2026-04-13_09-51-55/log.txt) | **1.0306** | 1180.28M | 24,883 MiB | 6,733 MiB | **1.5x dropout; new best! Gap=0.81; val still improving at epoch 5** |
+|   | 2 | 1 | [link](logs/wikitext-103_2026-04-11_21-09-05/log.txt) | **1.1126** | 1180.28M | 24,643 MiB | 6,733 MiB (PyTorch-allocated) | **New overall best! Beats L=20 3-epoch baseline (1.1169)** |
+|   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_00-37-11/log.txt) | **1.0856** | 1180.28M | 24,643 MiB | 6,733 MiB (PyTorch-allocated) | **New best! No dropout; best val at epoch 3; train/val gap 1.77 by epoch 5** |
+|   | 2 | 5 | [link](logs/wikitext-103_2026-04-12_17-11-15/log.txt) | **1.0455** | 1180.28M | 24,883 MiB | 6,733 MiB (PyTorch-allocated) | **1.0x dropout; new best! Val still improving at epoch 5; gap=1.00** |
+|   | 2 | 5 | [link](logs/wikitext-103_2026-04-13_09-51-55/log.txt) | **1.0306** | 1180.28M | 24,883 MiB | 6,733 MiB (PyTorch-allocated) | **1.5x dropout; new best! Gap=0.81; val still improving at epoch 5** |
 |   | 2 | 5 | [link](logs/wikitext-103_2026-04-14_06-41-17/log.txt) | — | 1180.28M | — | — | — | 1.5x dropout + WD=1e-3; early-stopped; WD too aggressive for Adagrad, training stalled |
-|   | 2 | 5 | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | **1.0234** | 1180.28M | 24,883 MiB | 6,733 MiB | **2.0x dropout; new best! Gap=0.69; val improving all 5 epochs** |
+|   | 2 | 5 | [link](logs/wikitext-103_2026-04-14_09-07-12/log.txt) | **1.0234** | 1180.28M | 24,883 MiB | 6,733 MiB (PyTorch-allocated) | **2.0x dropout; new best! Gap=0.69; val improving all 5 epochs** |
 
 ### Grokking experiment: C=128, L=2, tiny core + massive memory
 
@@ -281,48 +281,48 @@ Apply exp() reparameterization to GatedSpectralMixer weights only. Tests whether
 
 | Run | Config | exp_param | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|-----------|--------|---------------|--------|------------|----------------|-------|
-|   | L=1, C=2048, MLP=20, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_01-46-27/log.txt) | 1.1538 | 617.05M | 14,109 MiB | 3,519 MiB | Identical to baseline ([Run 62](logs/wikitext-103_2026-04-11_08-13-12/log.txt): 1.1431); no improvement at lr=0.01 |
-|   | L=1, C=2048, MLP=20, lr=0.02 | true | [link](logs/wikitext-103_2026-04-15_03-35-54/log.txt) | **1.1424** | 617.05M | 14,109 MiB | 3,519 MiB | **Survived lr=0.02! Previously NaN'd; -0.0084 vs baseline** |
+|   | L=1, C=2048, MLP=20, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_01-46-27/log.txt) | 1.1538 | 617.05M | 14,109 MiB | 3,519 MiB (PyTorch-allocated) | Identical to baseline ([Run 62](logs/wikitext-103_2026-04-11_08-13-12/log.txt): 1.1431); no improvement at lr=0.01 |
+|   | L=1, C=2048, MLP=20, lr=0.02 | true | [link](logs/wikitext-103_2026-04-15_03-35-54/log.txt) | **1.1424** | 617.05M | 14,109 MiB | 3,519 MiB (PyTorch-allocated) | **Survived lr=0.02! Previously NaN'd; -0.0084 vs baseline** |
 |   | L=20, C=512, MD=5, lr=0.01 | true | [link](logs/wikitext-103_2026-04-15_05-24-40/log.txt) | NaN | 787.24M | — | — | — | NaN at step 3600 again; exp param doesn't fix depth instability |
 
 ### Layers > 1: C = 512, epochs = 1, optimal booleans with mlp_expansion
 
 | Run | Layers | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-| 45  | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3245 | 67.22M | 4,684 MiB | 448 MiB | 17min train; 46.6 tok/s gen |
-|   | 4  | [link](logs/wikitext-103_2026-04-15_10-53-44/log.txt) | 1.2400 | 114.49M | 6,916 MiB | 722 MiB | |
-|   | 10  | [link](logs/wikitext-103_2026-04-15_11-34-21/log.txt) | 1.1978 | 209.02M | 11,379 MiB | 1,269 MiB | |
-|   | 15  | [link](logs/wikitext-103_2026-04-15_13-01-46/log.txt) | 1.1813 | 287.80M | 15,098 MiB | 1,724 MiB | |
-|   | 18  | [link](logs/wikitext-103_2026-04-15_15-10-58/log.txt) | 1.1772 | 335.07M | 17,330 MiB | 1,998 MiB | |
-|   | 20 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline |
-|   | 30 | [link](logs/wikitext-103_2026-04-15_17-46-01/log.txt) | 1.1638 | 524.14M | 26,257 MiB | 3,091 MiB | Slight improvement over L=20; diminishing returns |
+| 45  | 1  | [link](logs/wikitext-103_2026-04-10_16-31-26/log.txt) | 1.3245 | 67.22M | 4,684 MiB | 448 MiB (PyTorch-allocated) | 17min train; 46.6 tok/s gen |
+|   | 4  | [link](logs/wikitext-103_2026-04-15_10-53-44/log.txt) | 1.2400 | 114.49M | 6,916 MiB | 722 MiB (PyTorch-allocated) | |
+|   | 10  | [link](logs/wikitext-103_2026-04-15_11-34-21/log.txt) | 1.1978 | 209.02M | 11,379 MiB | 1,269 MiB (PyTorch-allocated) | |
+|   | 15  | [link](logs/wikitext-103_2026-04-15_13-01-46/log.txt) | 1.1813 | 287.80M | 15,098 MiB | 1,724 MiB (PyTorch-allocated) | |
+|   | 18  | [link](logs/wikitext-103_2026-04-15_15-10-58/log.txt) | 1.1772 | 335.07M | 17,330 MiB | 1,998 MiB (PyTorch-allocated) | |
+|   | 20 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Baseline |
+|   | 30 | [link](logs/wikitext-103_2026-04-15_17-46-01/log.txt) | 1.1638 | 524.14M | 26,257 MiB | 3,091 MiB (PyTorch-allocated) | Slight improvement over L=20; diminishing returns |
 
 ### Levels: C = 512, epochs = 1, optimal booleans + mlp_expansion + layers, block_size = 512
 
 | Run | Levels | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|-------|
-|   | 1 | [link](logs/wikitext-103_2026-04-15_22-17-16/log.txt) | 1.2354 | 114.51M | 7,133 MiB | 738 MiB | 3.2x fewer params, only +0.061 BPB vs baseline |
-|   | 2 | [link](logs/wikitext-103_2026-04-16_04-55-49/log.txt) | 1.1994 | 146.02M | 8,594 MiB | 918 MiB | |
-|   | 3 | [link](logs/wikitext-103_2026-04-16_05-54-07/log.txt) | 1.1825 | 177.53M | 10,054 MiB | 1,098 MiB | |
-|   | 4 | [link](logs/wikitext-103_2026-04-16_07-14-10/log.txt) | 1.1728 | 209.04M | 11,515 MiB | 1,279 MiB | |
-|   | 5 | [link](logs/wikitext-103_2026-04-15_23-05-09/log.txt) | 1.1669 | 240.55M | 12,976 MiB | 1,459 MiB | Beats baseline with 34% fewer params! |
-|   | 6 | [link](logs/wikitext-103_2026-04-16_08-50-21/log.txt) | 1.1673 | 272.05M | 14,436 MiB | 1,639 MiB | |
-|   | 9 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | Baseline (Run 4; default = log2(block_size=512)) |
-|   | 11 | [link](logs/wikitext-103_2026-04-16_01-02-33/log.txt) | 1.1797 | 429.60M | 21,739 MiB | 2,541 MiB | Worse than levels=5; confirms diminishing returns past 5 |
+|   | 1 | [link](logs/wikitext-103_2026-04-15_22-17-16/log.txt) | 1.2354 | 114.51M | 7,133 MiB | 738 MiB (PyTorch-allocated) | 3.2x fewer params, only +0.061 BPB vs baseline |
+|   | 2 | [link](logs/wikitext-103_2026-04-16_04-55-49/log.txt) | 1.1994 | 146.02M | 8,594 MiB | 918 MiB (PyTorch-allocated) | |
+|   | 3 | [link](logs/wikitext-103_2026-04-16_05-54-07/log.txt) | 1.1825 | 177.53M | 10,054 MiB | 1,098 MiB (PyTorch-allocated) | |
+|   | 4 | [link](logs/wikitext-103_2026-04-16_07-14-10/log.txt) | 1.1728 | 209.04M | 11,515 MiB | 1,279 MiB (PyTorch-allocated) | |
+|   | 5 | [link](logs/wikitext-103_2026-04-15_23-05-09/log.txt) | 1.1669 | 240.55M | 12,976 MiB | 1,459 MiB (PyTorch-allocated) | Beats baseline with 34% fewer params! |
+|   | 6 | [link](logs/wikitext-103_2026-04-16_08-50-21/log.txt) | 1.1673 | 272.05M | 14,436 MiB | 1,639 MiB (PyTorch-allocated) | |
+|   | 9 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | Baseline (Run 4; default = log2(block_size=512)) |
+|   | 11 | [link](logs/wikitext-103_2026-04-16_01-02-33/log.txt) | 1.1797 | 429.60M | 21,739 MiB | 2,541 MiB (PyTorch-allocated) | Worse than levels=5; confirms diminishing returns past 5 |
 
 ### Low-rank factorization in spectral mixer
 
 | Run | low_rank | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|----------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 0  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4; full rank) |
-|   | 4  | [link](logs/wikitext-103_2026-04-16_10-43-48/log.txt) | 1.1702 | 367.40M | 18,835 MiB | 2,184 MiB | -0.0045 | Slight improvement! Worth keeping at small cost |
-|   | 16 | [link](logs/wikitext-103_2026-04-16_14-02-48/log.txt) | 1.1691 | 369.86M | 18,887 MiB | 2,196 MiB | -0.0057 | Slightly better than rank=4; small marginal gain (-0.0012) |
+|   | 0  | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | | Baseline (Run 4; full rank) |
+|   | 4  | [link](logs/wikitext-103_2026-04-16_10-43-48/log.txt) | 1.1702 | 367.40M | 18,835 MiB | 2,184 MiB (PyTorch-allocated) | -0.0045 | Slight improvement! Worth keeping at small cost |
+|   | 16 | [link](logs/wikitext-103_2026-04-16_14-02-48/log.txt) | 1.1691 | 369.86M | 18,887 MiB | 2,196 MiB (PyTorch-allocated) | -0.0057 | Slightly better than rank=4; small marginal gain (-0.0012) |
 
 ### Lifting hidden multiplier
 
 | Run | lifting_hidden_mult | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------------------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | 1 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB | | Baseline (Run 4) |
+|   | 1 | [link](logs/wikitext-103_2026-04-03_04-51-07/log.txt) | 1.1750 | 366.58M | 18,738 MiB | 2,179 MiB (PyTorch-allocated) | | Baseline (Run 4) |
 |   | 2 | [link](logs/wikitext-103_2026-04-16_17-23-50/log.txt) | NaN | 555.51M | — | — | — | NaN at step 2500 (LR=0.0057); wider lifting unstable at L=20. Future stability fixes (e.g., spectral norm on lifting predict/update, or scaled init for hidden dims) may make this viable. |
 | N/A | 4 | — | — | — | — | — | — | Cancelled; mult=2 already NaN'd. Revisit with stability fixes. |
 
@@ -347,7 +347,7 @@ The baseline used for all 1-epoch screening ablations. Combines proven wins (lev
 
 | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Time | Notes |
 |--------|---------------|--------|------------|----------------|------|-------|
-| [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1166 | 827.03M | 18,016 MiB | 12,679 MiB | 2.40h | +0.004 BPB vs old baseline (1.1133) but 30% faster and 30% smaller. `per_scale_mixer_widths` was subsequently promoted into the baseline ([logs/.../2026-04-17_14-23-49](logs/wikitext-103_2026-04-17_14-23-49/log.txt), BPB 1.1168), which is the reference used for all Part 1 ablation deltas below. |
+| [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1166 | 827.03M | 18,016 MiB | 12,679 MiB (PyTorch-allocated) | 2.40h | +0.004 BPB vs old baseline (1.1133) but 30% faster and 30% smaller. `per_scale_mixer_widths` was subsequently promoted into the baseline ([logs/.../2026-04-17_14-23-49](logs/wikitext-103_2026-04-17_14-23-49/log.txt), BPB 1.1168), which is the reference used for all Part 1 ablation deltas below. |
 
 ### New Baseline Boolean ablations part 1: C=2048, L=2, epochs=1 wide & shallow model
 
@@ -355,18 +355,18 @@ Screening wavelet/mixer and true-feedback augmentations from [`plans/wavelet_and
 
 | Run | Feature | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Delta | Notes |
 |-----|---------|--------|---------------|--------|------------|----------------|-------|-------|
-|   | New baseline probe | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1166 | 827.03M | 18,016 MiB | 12,679 MiB | **+0.0040** | 30% faster (2.40h vs 3.42h) and 30% smaller than old baseline for +0.004 BPB. lr=0.01 fallback after lr=0.02+exp_param NaN'd ([link](logs/wikitext-103_2026-04-17_00-27-55/log.txt)); defer until stab_spectral_norm is validated. |
-|   | Untied reconstruction | [link](logs/wikitext-103_2026-04-17_06-20-21/log.txt) | 1.1167 | 994.88M | 19,777 MiB | 14,440 MiB | **+0.0000** | Exact tie at +168M (+20%) and +3% time. One wavelet copy suffices. **Dropped** from best-run. |
-|   | Cross-scale gating (routing) | [link](logs/wikitext-103_2026-04-17_08-51-44/log.txt) | **1.1159** | 827.03M (+72) | 18,400 MiB | 12,679 MiB | **-0.0007** | Small consistent win; best val -0.0042. Essentially free (+72 params, +2.5% time). **Keep** for best-run. |
+|   | New baseline probe | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1166 | 827.03M | 18,016 MiB | 12,679 MiB (PyTorch-allocated) | **+0.0040** | 30% faster (2.40h vs 3.42h) and 30% smaller than old baseline for +0.004 BPB. lr=0.01 fallback after lr=0.02+exp_param NaN'd ([link](logs/wikitext-103_2026-04-17_00-27-55/log.txt)); defer until stab_spectral_norm is validated. |
+|   | Untied reconstruction | [link](logs/wikitext-103_2026-04-17_06-20-21/log.txt) | 1.1167 | 994.88M | 19,777 MiB | 14,440 MiB (PyTorch-allocated) | **+0.0000** | Exact tie at +168M (+20%) and +3% time. One wavelet copy suffices. **Dropped** from best-run. |
+|   | Cross-scale gating (routing) | [link](logs/wikitext-103_2026-04-17_08-51-44/log.txt) | **1.1159** | 827.03M (+72) | 18,400 MiB | 12,679 MiB (PyTorch-allocated) | **-0.0007** | Small consistent win; best val -0.0042. Essentially free (+72 params, +2.5% time). **Keep** for best-run. |
 |   | Multi-basis lifting (haar+random, attempt 1) | [link](logs/wikitext-103_2026-04-17_11-21-47/log.txt) | NaN | 994.88M | — | — | — | Default Kaiming random init + basis_weights[0]=5.0. **NaN at step 1800, LR=4.10e-03** (well below peak 0.01). |
 |   | Multi-basis lifting (haar+random, attempt 2) | [link](logs/wikitext-103_2026-04-17_13-25-19/log.txt) | NaN | 994.88M | — | — | — | Tightened: random init `N(0, 0.01²)` with zero bias, basis_weights[0]=10.0 (softmax ~0.99995 on haar at init). **NaN at step 3400, LR=7.75e-03** — fixes roughly doubled LR tolerance (step 1800→3400, LR 0.0041→0.0078) but didn't fully solve. Deferred until stable_parametrization validated (spectral_norm on mixer is the likely fix). |
-|   | Per-scale mixer widths [1×3, 0.5×3] | [link](logs/wikitext-103_2026-04-17_14-23-49/log.txt) | **1.1162** | ~815M | 17,847 MiB | 12,509 MiB | **-0.0005** | Tiny BPB improvement AND **23% faster** (1.85h vs 2.40h), -1% VRAM. Starving fine scales produces less overfitting — best val +0.0054 but final BPB better. **Keep** for best-run. |
-|   | Looped blocks (K=8 shared) | [link](logs/wikitext-103_2026-04-17_19-47-45/log.txt) | 1.1134 | ~360M | 29,367 MiB | 8,459 MiB | -0.0039 | **Inefficient** with 3× the training time (5.6h vs 1.85h baseline). Better to just train longer. |
-|   | Wavelet crawl (K=3) | [link](logs/wikitext-103_2026-04-18_06-19-52/log.txt) | **1.1126** | ~840M | 18,171 MiB | 12,509 MiB | **-0.0037** | Learned ±1 dilation offsets per level. Third-biggest single-feature win after PSW and CSG. Essentially free (+1.6% time, +2% VRAM). **Keep** for best-run. ⚠️ **Stability caveat:** crawl shifts the predict/update networks' input distribution away from their Haar-init regime; K=5 NaN'd entirely. K=3 was stable in this 1-epoch run, but stacked with other features and/or longer training (5+ epochs, higher LR), there's a non-zero risk the softmax drift compounds. If stacked best-run NaNs, this is a primary suspect — try `stab_spectral_norm` first, then consider stronger init bias (10.0 → 15.0). |
+|   | Per-scale mixer widths [1×3, 0.5×3] | [link](logs/wikitext-103_2026-04-17_14-23-49/log.txt) | **1.1162** | ~815M | 17,847 MiB | 12,509 MiB (PyTorch-allocated) | **-0.0005** | Tiny BPB improvement AND **23% faster** (1.85h vs 2.40h), -1% VRAM. Starving fine scales produces less overfitting — best val +0.0054 but final BPB better. **Keep** for best-run. |
+|   | Looped blocks (K=8 shared) | [link](logs/wikitext-103_2026-04-17_19-47-45/log.txt) | 1.1134 | ~360M | 29,367 MiB | 8,459 MiB (PyTorch-allocated) | -0.0039 | **Inefficient** with 3× the training time (5.6h vs 1.85h baseline). Better to just train longer. |
+|   | Wavelet crawl (K=3) | [link](logs/wikitext-103_2026-04-18_06-19-52/log.txt) | **1.1126** | ~840M | 18,171 MiB | 12,509 MiB (PyTorch-allocated) | **-0.0037** | Learned ±1 dilation offsets per level. Third-biggest single-feature win after PSW and CSG. Essentially free (+1.6% time, +2% VRAM). **Keep** for best-run. ⚠️ **Stability caveat:** crawl shifts the predict/update networks' input distribution away from their Haar-init regime; K=5 NaN'd entirely. K=3 was stable in this 1-epoch run, but stacked with other features and/or longer training (5+ epochs, higher LR), there's a non-zero risk the softmax drift compounds. If stacked best-run NaNs, this is a primary suspect — try `stab_spectral_norm` first, then consider stronger init bias (10.0 → 15.0). |
 |   | Wavelet crawl (K=5) | [link](logs/wikitext-103_2026-04-18_08-14-44/log.txt) | NaN | ~840M | — | — | — | ±2 dilation offsets. NaN'd step ~4300 (LR=9.81e-03). At higher levels (base ≥ 8), softmax spread of ±2 deviates too far from Haar init, destabilizes predict/update networks. Not rescued — K=3 captures the benefit. |
-|   | Shared lifting weights (SLW) | [link](logs/wikitext-103_2026-04-18_09-46-25/log.txt) | 1.1160 | ~770M | 16,886 MiB | 11,388 MiB | **-0.0003** | One shared lifting wavelet instead of per-layer. Essentially tied on BPB; **-5% train VRAM, -9% inference VRAM**. Free memory savings. **Keep** for best-run. |
-|   | Lifting linear-only (LLO) | [link](logs/wikitext-103_2026-04-18_11-37-14/log.txt) | 1.1309 | ~790M | 15,766 MiB | 11,388 MiB | **+0.0093** | Replaces predict/update Sequentials (Linear→GELU→Dropout→Linear) with single Linears. Significant BPB regression — the GELU nonlinearity matters. **Drop** despite -11% time / -12% train VRAM savings. |
-|   | SLW + LLO combined | [link](logs/wikitext-103_2026-04-18_13-17-47/log.txt) | 1.1266 | ~720M | 15,286 MiB | — | **+0.0061** | LLO dominates the combo. SLW partially offsets but not enough. Fastest run yet (1.59h, -14%) and smallest VRAM, but BPB regression kills it. **Drop.** |
+|   | Shared lifting weights (SLW) | [link](logs/wikitext-103_2026-04-18_09-46-25/log.txt) | 1.1160 | ~770M | 16,886 MiB | 11,388 MiB (PyTorch-allocated) | **-0.0003** | One shared lifting wavelet instead of per-layer. Essentially tied on BPB; **-5% train VRAM, -9% inference VRAM**. Free memory savings. **Keep** for best-run. |
+|   | Lifting linear-only (LLO) | [link](logs/wikitext-103_2026-04-18_11-37-14/log.txt) | 1.1309 | ~790M | 15,766 MiB | 11,388 MiB (PyTorch-allocated) | **+0.0093** | Replaces predict/update Sequentials (Linear→GELU→Dropout→Linear) with single Linears. Significant BPB regression — the GELU nonlinearity matters. **Drop** despite -11% time / -12% train VRAM savings. |
+|   | SLW + LLO combined | [link](logs/wikitext-103_2026-04-18_13-17-47/log.txt) | 1.1266 | ~720M | 15,286 MiB (PyTorch-allocated) | — | **+0.0061** | LLO dominates the combo. SLW partially offsets but not enough. Fastest run yet (1.59h, -14%) and smallest VRAM, but BPB regression kills it. **Drop.** |
 
 ### New Baseline Boolean ablations part 2: Stable parametrization — SKIPPED
 
@@ -394,10 +394,10 @@ If the master flag rescues a previously-NaN config, follow up with per-feature a
 | Run | block_size | Folder | BPB (sliding) | Params | Train VRAM | Time | Delta | Notes |
 |-----|------------|--------|---------------|--------|------------|------|-------|-------|
 | ~~64~~ | — | **Cancelled** | — | — | — | — | BS=128 came in worse than BS=256, so the floor is at 256. Not worth probing smaller. |
-|   | 128  | [link](logs/wikitext-103_2026-04-19_07-00-01/log.txt) | 1.1073 | ~840M | 16,573 MiB | 2.74h | -0.0093 | Better than baseline (-0.0093) but **worse than BS=256** (+0.0047). The "more updates" trend plateaus between 256 and 128. BS=256 stays the winner. |
-|   | **256**  | [link](logs/wikitext-103_2026-04-18_16-12-23/log.txt) | **1.1020** | ~840M | 16,680 MiB | 2.16h | **-0.0140** | **Biggest single-feature win so far.** ~2× gradient updates per epoch since dataset splits into more blocks. With levels=5 (max dilation 2^4=16), 256-token context is still ample. |
-|   | **256 + grad_accum=1** | [link](logs/wikitext-103_2026-04-19_09-46-39/log.txt) | **1.0958** | ~840M | 16,680 MiB | 2.87h | **-0.0202** | **Stacks near-linearly!** Individual wins: BS=256 (-0.0140) + GA=1 (-0.0076) = -0.0216 linear prediction; actual -0.0202 (~94% of linear). First 1-epoch result below 1.10. Critical adoption decision for 5-epoch best-run (see "Best run candidate" section). |
-|   | 512  | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1166 | ~840M | 18,016 MiB | 1.85h | | Baseline (new baseline probe) |
+|   | 128  | [link](logs/wikitext-103_2026-04-19_07-00-01/log.txt) | 1.1073 | ~840M | 16,573 MiB (PyTorch-allocated) | 2.74h | -0.0093 | Better than baseline (-0.0093) but **worse than BS=256** (+0.0047). The "more updates" trend plateaus between 256 and 128. BS=256 stays the winner. |
+|   | **256**  | [link](logs/wikitext-103_2026-04-18_16-12-23/log.txt) | **1.1020** | ~840M | 16,680 MiB (PyTorch-allocated) | 2.16h | **-0.0140** | **Biggest single-feature win so far.** ~2× gradient updates per epoch since dataset splits into more blocks. With levels=5 (max dilation 2^4=16), 256-token context is still ample. |
+|   | **256 + grad_accum=1** | [link](logs/wikitext-103_2026-04-19_09-46-39/log.txt) | **1.0958** | ~840M | 16,680 MiB (PyTorch-allocated) | 2.87h | **-0.0202** | **Stacks near-linearly!** Individual wins: BS=256 (-0.0140) + GA=1 (-0.0076) = -0.0216 linear prediction; actual -0.0202 (~94% of linear). First 1-epoch result below 1.10. Critical adoption decision for 5-epoch best-run (see "Best run candidate" section). |
+|   | 512  | [link](logs/wikitext-103_2026-04-17_03-54-03/log.txt) | 1.1166 | ~840M | 18,016 MiB (PyTorch-allocated) | 1.85h | | Baseline (new baseline probe) |
 |   | 1024 | [link](logs/wikitext-103_2026-04-18_18-23-56/log.txt) | NaN (3.5220) | ~840M | 24,091 MiB | 1.53h | — | ❌ NaN'd. Effective batch reached 8192 tokens, crossed AMP/fp16 overflow threshold. Would need MBS reduction to recover. |
 
 ### Grad accum — at new baseline
@@ -441,7 +441,7 @@ Proven wins stacked here (1-epoch deltas vs new baseline BPB 1.1168):
 
 | Run | Config | Folder | BPB (sliding) | Params | Train VRAM | Inference VRAM | Time | Notes |
 |-----|--------|--------|---------------|--------|------------|----------------|------|-------|
-|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | **1.0201** (post-fix; was 1.0219 pre-fix) | 882.51M | 18,235 MiB | 4,915 MiB | 15.79h | Non-overlapping BPB ~1.0386. Sliding-window PPL 24.21. Eval-fix correction (cross-window state disable + final-batch inclusion) shaved 0.0018 BPB. Headline run going into release. |
+|   | L=2, C=2048, MLP=20, PLE, PKM+FwPKM-16384, lr=0.01, block_size=256, grad_accum=1, levels=5, low_rank=4, **per_scale_mixer_widths**=[1,1,1,0.5,0.5,0.5], **cross_scale_gating**, **wavelet_crawl K=3**, **shared_lifting_weights**, 5ep, 2.0x dropout (emb=0.2, proj=0.1, mixer=0.1, mlp=0.1, lm=0.24) | [link](logs/wikitext-103_2026-04-19_13-16-24/log.txt) | **1.0201** (post-fix; was 1.0219 pre-fix) | 882.51M | 18,235 MiB | 5,726 MiB | 15.79h | Non-overlapping BPB ~1.0386. Sliding-window PPL 24.21. Eval-fix correction (cross-window state disable + final-batch inclusion) shaved 0.0018 BPB. Headline run going into release. |
 
 **Why the projection overshot.** The 94%-linear-stacking estimate was built from 1-epoch deltas. Several of those wins (especially `block_size=256` at -0.0140) come from "more gradient updates per epoch" — but at 5 epochs, the levels=9 baseline has also had time to converge. Short-training advantages compress as training continues; additivity at 1 epoch ≠ additivity at 5.
 
@@ -688,7 +688,7 @@ Each ablation only varies `low_rank`; all other settings match the R0 baseline.
 
 | Run | low_rank | Folder | BPB (sliding) | Params | U/V correction params | Time | Train VRAM | Delta vs R0 | Notes |
 |-----|----------|--------|---------------|--------|------------------------|------|------------|--------------|-------|
-| R0  | 4 (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 16K/scale × 8 = 128K   | ~70m | 23,411 MiB | — | Reference |
+| R0  | 4 (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 16K/scale × 8 = 128K   | ~70m | 3,162 MiB | — | Reference |
 | R1  | 16   | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) | **1.2342** | 393.21M | 256K/scale × 8 = 2.05M | 80m | — | **−0.0019** | **PASS / WINNER.** Stable; modest improvement, +0.30M params. The 1-epoch low_rank champion. |
 | R1.5 | 32  | [link](logs/wikitext-103_2026-05-05_11-23-29/log.txt) | NaN at step 2250 | 393.60M | 512K/scale × 8 = 4.10M | — | — | — | NaN at peak lr=1.00e-2 (end of warmup). Stability boundary lives between low_rank=16 and 32. |
 | R1.75 | 64 | — | — | — | — | — | — | — | **Cancelled.** R1.5 already destabilized at low_rank=32; 64 is further into the unstable region. |
@@ -707,7 +707,7 @@ Per-scale mixer width contraction sweep. Same baseline as the low_rank table abo
 
 | Run | per_scale_mixer_widths | Folder | BPB (sliding) | Params | Mixer total | Time | Train VRAM | Delta vs R0 | Notes |
 |-----|------------------------|--------|---------------|--------|-------------|------|------------|--------------|-------|
-| R0  | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 23,411 MiB | — | Reference |
+| R0  | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 3,162 MiB | — | Reference |
 | W1  | [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05] | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) | NaN | 339.53M | 5.44M | — | — | — | NaN at step 1250 (lr=5.7e-3). Extreme contraction destabilizes — proj_in's 10-20× crush from Cp=2048 to 205/102 channels likely cascades to fp16 saturation. |
 | W2  | [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25] | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) | **1.2437** | 369.80M | 35.70M | 78m | — | **+0.0076** | Marginal BPB cost vs default 1.2361. 5.9% smaller total, **39.3% smaller mixer**. Trained stably through warmup peak (lr=0.01) with no instability. Promote to default candidate; 5-epoch confirmation pending. |
 
@@ -760,7 +760,7 @@ Tests sparsifying the 102.93M token embedding via the (p, q) phantom-token strid
 
 | Run | Density | Mode | (p, q, N') | Phantom rows | Effective embedding params | % of full embedding | Folder | BPB (sliding) | Notes |
 |-----|---------|------|------------|--------------|----------------------------|---------------------|--------|---------------|-------|
-| **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | — | — | — | — | 102.93M | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | The 1-epoch baseline against which all (p, q) variants are compared. Configuration: `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]` (W2), `lifting_offdiag_structure="banded"`, `lifting_band_width=128` (BAND 128). Total 266.63M params, training VRAM 23,110 MiB. |
+| **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | — | — | — | — | 102.93M | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | The 1-epoch baseline against which all (p, q) variants are compared. Configuration: `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]` (W2), `lifting_offdiag_structure="banded"`, `lifting_band_width=128` (BAND 128). Total 266.63M params, training VRAM 2,938 MiB. |
 | PQ_EMB001 | 0.1% | structural | (1968, 32, 50272) | 15 | ~103K (0.10M) | 0.1% | | | **Stress test for the bridging hypothesis.** Below the d ≈ 0.1% floor where 2-hop bridging starts to fail by Poisson tail (E[overlap] = d²·C ≈ 0.002). Expected to fail or near-fail; result tells us where the scheme floor sits. |
 | PQ_EMB01 | 1% | structural | (168, 32, 50272) | 15 | ~1.03M | 1% | | | At this density E[overlap] ≈ 0.2 features per random pair — single-shared-feature bridging, multi-hop required for most pairs. Tests whether the model can learn the bridging structure. |
 | PQ_EMB05 | 5% | structural | (24, 16, 50272) | 15 | ~5.15M | 5% | | | E[overlap] ≈ 5 features per pair — direct bridging usually possible. Plausible production density if 10% lands within tolerance and 5% is needed for headroom. |
@@ -776,8 +776,8 @@ Tests the encoder-decoder embedding architecture (V → C_emb via embedding look
 
 | Run | C_emb | Embedding params | Decoder params | Encoder params | Total | % of dense | Folder | BPB (sliding) | Notes |
 |-----|------:|----------------:|---------------:|---------------:|------:|-----------:|--------|---------------|-------|
-| **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | C=2048 (dense) | 102.93M | — | — | 102.93M | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | Section-7 baseline. Total 266.63M params, training VRAM 23,110 MiB. The reference all encoder-decoder embedding variants compare against. |
-| ED128 | 128 | 6.43M | 0.26M | 0.26M | **6.95M** | **6.75%** | [link](logs/wikitext-103_2026-05-08_09-12-05/log.txt) | **1.4808** | +0.2222 vs C1ep. Total 170.66M, train VRAM 22,012 MiB, inference VRAM 2,200 MiB (−27% vs C1ep — embedding compression moves inference VRAM substantially via the smaller (B,T,C_emb) lookup intermediate). 16× C/C_emb ratio is too aggressive; well past the elbow. |
+| **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | C=2048 (dense) | 102.93M | — | — | 102.93M | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | Section-7 baseline. Total 266.63M params, training VRAM 2,938 MiB. The reference all encoder-decoder embedding variants compare against. |
+| ED128 | 128 | 6.43M | 0.26M | 0.26M | **6.95M** | **6.75%** | [link](logs/wikitext-103_2026-05-08_09-12-05/log.txt) | **1.4808** | +0.2222 vs C1ep. Total 170.66M, train VRAM 22,012 MiB, inference VRAM 2,198 MiB (−27% vs C1ep — embedding compression moves inference VRAM substantially via the smaller (B,T,C_emb) lookup intermediate). 16× C/C_emb ratio is too aggressive; well past the elbow. |
 | ED256 | 256 | 12.87M | 0.53M | 0.53M | **13.92M** | **13.53%** | [link](logs/wikitext-103_2026-05-08_11-54-53/log.txt) | **1.3916** | +0.1330 vs C1ep. Total 177.62M, train VRAM 22,087 MiB, inference VRAM 2,452 MiB (−19% vs C1ep). 8× C/C_emb ratio still meaningfully past the elbow. |
 | **ED512** | **512** | **25.73M** | **1.05M** | **1.05M** | **27.83M** | **27.04%** | | | **Default candidate.** 4× factor. Standard practice in the literature; minimal expected BPB cost. 73% reduction. |
 | ED1024 | 1024 | 51.46M | 2.10M | 2.10M | **55.66M** | **54.07%** | | | 46% reduction. Conservative; rank-1024 is more than sufficient for vocab structure. Useful as a "safe upper bound" on capacity headroom. |
@@ -804,7 +804,7 @@ Tests three structural variants on the MLP weight matrices W1 (C, E·C) and W2 (
 
 | Run | Structure | Variant detail | W1 effective | W1 % of dense (41.94M) | Folder | BPB (sliding) | Notes |
 |-----|-----------|----------------|-------------:|----------------------:|--------|---------------|-------|
-| **Reference (combined-reductions baseline @ 1ep, no MLP compression)** | — | — | 41.94M (uncompressed MLP) | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | Baseline against which all MLP variants are compared. Configuration: `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]` (W2), `lifting_offdiag_structure="banded"`, `lifting_band_width=128` (BAND 128). Total 266.63M params, training VRAM 23,110 MiB. |
+| **Reference (combined-reductions baseline @ 1ep, no MLP compression)** | — | — | 41.94M (uncompressed MLP) | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | Baseline against which all MLP variants are compared. Configuration: `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]` (W2), `lifting_offdiag_structure="banded"`, `lifting_band_width=128` (BAND 128). Total 266.63M params, training VRAM 2,938 MiB. |
 | **MLP_BAND25** | banded | bandwidth=256 per block, ~25% per-block density | 10.51M | 25.05% | | | High-density anchor for BAND. Should land closest to uncompressed MLP performance. |
 | **MLP_BD25** | block_diagonal | block_size=512 per block, 25% per-block density | 10.49M | 25.00% | | | High-density anchor for BD. Direct comparison with MLP_BAND25 at matched density. |
 | **MLP_PQ25** | pq_strided | (p=6, q=2) (only valid candidate at d=25%) | 10.49M | 25.00% | | | High-density anchor for (p, q). Note: at s=8 only q=2 is valid, so structural and smallest_q both pick (6, 2). |
