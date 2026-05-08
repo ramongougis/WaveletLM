@@ -312,10 +312,10 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
 #     "MON32: lifting Monarch nblocks=32 (1ep, levels=7)"
 
-run_ablation "MON64 Monarch nblocks=64" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
-    "MON64: lifting Monarch nblocks=64 (1ep, levels=7)"
+# run_ablation "MON64 Monarch nblocks=64" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
+#     "MON64: lifting Monarch nblocks=64 (1ep, levels=7)"
 
 # run_ablation "MON128 Monarch nblocks=128" \
 #     "$BASE_PATCH_1EP" \
@@ -357,7 +357,29 @@ run_ablation "MON64 Monarch nblocks=64" \
 #     "BAND128: lifting banded bandwidth=128 (1ep, L=7)"
 
 
-# ---- 7. Sparse (p, q) phantom-token embedding sweep -------------------------
+# ---- 7. Combined-reductions baseline (W2 mixer + low_rank=4 + BAND 128) -----
+# Merges the wins banked so far into a single combined-reductions baseline:
+#   - W2 per-scale mixer widths   ([0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25])
+#   - low_rank=4
+#   - BAND 128 lifting structural compression
+# Establishes the new reference BPB that subsequent compression sweeps
+# (embedding, MLP, mixer Linear, FwPKM) compare against — not the old 1.2361.
+#
+# Composability prediction (linear sum-of-individual-costs):
+#   1.2342 (R1 ref) + (1.2437 - 1.2342)  W2  + (1.2508 - 1.2342) BAND128
+#   = 1.2342 + 0.0095 + 0.0166
+#   = 1.2603 (linear-cost prediction)
+# At 70-80% composability (per SparseGPT-line literature): ~1.2540 - 1.2560.
+# Empirical ground truth from this run determines the new baseline.
+#
+# Subsequent compression sweeps use this BPB as their +Δ reference.
+run_ablation "C1ep combined-reductions baseline (W2 + low_rank=4 + BAND128)" \
+    "$BASE_PATCH_1EP" \
+    '{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128}' \
+    "C1ep: combined-reductions baseline (W2 + low_rank=4 + BAND128) (1ep, L=7)"
+
+
+# ---- 8. Sparse (p, q) phantom-token embedding sweep -------------------------
 # Tests sparsifying the 102.93M token embedding via the (p, q) striding scheme
 # from plans/new_compression_ideas.md. Token embedding is the largest non-cascade
 # block in the model; ~90% reduction at d=0.10 saves ~92.6M params, taking the
@@ -403,7 +425,7 @@ run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
 #     "PQ_EMB20_structural: sparse embedding d=0.20 mode=structural (1ep, L=7)"
 
 
-# ---- 8. MLP structural compression sweep ------------------------------------
+# ---- 9. MLP structural compression sweep ------------------------------------
 # Tests sparsifying the MLP weight matrices (W1: (E·C, C), W2: (C, E·C)) via
 # three structural variants:
 #   - banded:         tiled per-(C,C)-block bilateral band of width W
@@ -484,7 +506,7 @@ run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
     "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, levels=7)"
 
-# ---- 9. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner -------
+# ---- 10. (PLACEHOLDER) 5-epoch confirmation of the chosen top-k winner ------
 # After the 1-epoch sweep in sections 4-6 completes, the best-performing
 # configuration goes to a 5-epoch confirmation run against the L=1 / levels=7
 # 5-epoch headline (logs/wikitext-103_2026-05-03_02-13-07/log.txt, BPB 1.0974).
@@ -519,12 +541,14 @@ echo "===   4) M1..M4 magnitude-pruned off-diagonal — compare BPB delta vs 1.2
 echo "===   5) M1r..M4r random controls at matched densities — compare BPB delta vs 1.2361"
 echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
 echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
-echo "===   7) Sparse (p, q) phantom-token embedding sweep at d=0.10"
-echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs 1.2361"
-echo "===   8) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
-echo "===      12 runs (4 densities × 3 structures) — compare BPB delta vs 1.2361 alongside per-param efficiency"
-echo "===   9) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
-echo "===      (placeholder; uncomment after sections 4-8 complete and a winner is chosen)"
+echo "===   7) Combined-reductions baseline (W2 mixer + low_rank=4 + BAND128) at 1ep"
+echo "===      — establishes the new reference BPB for sections 8 and 9 onwards"
+echo "===   8) Sparse (p, q) phantom-token embedding sweep at d=0.10"
+echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs section-7 baseline"
+echo "===   9) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
+echo "===      12 runs (4 densities × 3 structures) — compare BPB delta vs section-7 baseline"
+echo "===  10) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
+echo "===      (placeholder; uncomment after sections 4-9 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
 echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"

@@ -516,10 +516,18 @@ def effective_param_count(
     module: nn.Module, *, requires_grad_only: bool = False
 ) -> int:
     """Sum the effective parameter count across `module`, accounting for
-    StructuredLinear masks (count nonzeros) and MonarchLinear (already
-    correctly sized parameters).
+    sparse modules whose stored weight is masked.
 
-    For all other module types, sums direct (non-recursive) parameter numels.
+    Special-cased modules (mask-aware counts):
+      - StructuredLinear (lifting / MLP banded / block_diagonal / etc.):
+        weight contributes `_struct_mask.sum()`, bias contributes full numel.
+      - SparsePQEmbedding (sparse token embedding via the (p, q) walk):
+        weight contributes `pq_mask.sum()`, no other params.
+
+    All other module types contribute the full `numel()` for each direct
+    (non-recursive) parameter. Shared modules (e.g., shared lifting wavelet,
+    weight-tied LM head) are deduplicated via `id(p)` so they're counted
+    exactly once across the traversal.
 
     If `requires_grad_only=True`, frozen parameters (requires_grad=False) are
     excluded -- useful for distinguishing the trainable subset of params from
@@ -528,24 +536,27 @@ def effective_param_count(
     total = 0
     seen_param_ids = set()
     for m in module.modules():
-        if isinstance(m, StructuredLinear):
-            for p in m.parameters(recurse=False):
-                if id(p) in seen_param_ids:
-                    continue
-                seen_param_ids.add(id(p))
-                if requires_grad_only and not p.requires_grad:
-                    continue
-                if p is m.weight:
-                    # Count nonzero positions in the mask instead of full numel
-                    total += int(m._struct_mask.sum().item())
-                else:
-                    total += p.numel()
-        else:
-            for p in m.parameters(recurse=False):
-                if id(p) in seen_param_ids:
-                    continue
-                seen_param_ids.add(id(p))
-                if requires_grad_only and not p.requires_grad:
-                    continue
+        for p in m.parameters(recurse=False):
+            if id(p) in seen_param_ids:
+                continue
+            seen_param_ids.add(id(p))
+            if requires_grad_only and not p.requires_grad:
+                continue
+            # Mask-aware counts: replace full numel with the count of nonzero
+            # positions in the relevant mask buffer.
+            if isinstance(m, StructuredLinear) and p is m.weight:
+                total += int(m._struct_mask.sum().item())
+            elif (
+                hasattr(m, "pq_mask")
+                and getattr(m, "weight", None) is p
+                and m.pq_mask.shape == p.shape
+            ):
+                # Duck-typed: SparsePQEmbedding-like (and MaskedTiedLinear,
+                # which shares the embedding's weight + mask). For the tied
+                # case, the weight is already in seen_param_ids by the time
+                # we reach MaskedTiedLinear, so this branch only fires once
+                # via the embedding's own visit.
+                total += int(m.pq_mask.sum().item())
+            else:
                 total += p.numel()
     return total

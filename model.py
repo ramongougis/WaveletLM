@@ -2517,9 +2517,17 @@ def parameter_breakdown(model, config, logger=None):
         layer_params = effective_param_count(model.layers)
         ln_params = sum(p.numel() for p in model.final_ln.parameters())
 
+        # When `shared_lifting_weights=True`, each layer holds a reference to
+        # the same `LiftingWaveletDecompose` module, so traversing
+        # `model.layers` via `effective_param_count` visits the shared lifting
+        # once and rolls it into `layer_params`. We also print it separately as
+        # `Shared lifting`, so the breakdown lines would visually double-count
+        # if we didn't subtract it from `layer_params` here.
+        lift_params = 0
         if model.shared_lifting_weights and hasattr(model.layers[0], 'lifting_wavelet'):
             lift_params = effective_param_count(model.layers[0].lifting_wavelet)
             out(f"  Shared lifting:  {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
+            layer_params = max(0, layer_params - lift_params)
 
         out(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")
         out(f"  Layers (total):  {layer_params:>{W},} ({layer_params/1e6:.2f}M)")

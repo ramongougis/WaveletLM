@@ -523,27 +523,28 @@ Longer training time, more regularization, and parameter compression are the sur
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent)
 9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
-10. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
-11. [MLP Structural Compression](#mlp-structural-compression)
-12. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
-13. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-14. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-15. [Dropout Sweep](#dropout-sweep)
-16. [Weight Decay Sweep](#weight-decay-sweep)
-17. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-18. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-19. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-20. [Longer PG-19 Training](#longer-pg-19-training)
-21. [Dataset Comparisons](#dataset-comparisons)
-22. [Model Comparisons](#model-comparisons)
-23. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-24. [Multi-Transform Parallelization](#multi-transform-parallelization)
-25. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-26. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-27. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-28. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-29. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-30. [Other Post-Release Plans](#other-post-release-plans)
+10. [New Testing Baseline with Mixer & Wavelet Parameter Reductions](#new-testing-baseline-with-mixer--wavelet-parameter-reductions)
+11. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
+12. [MLP Structural Compression](#mlp-structural-compression)
+13. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
+14. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+15. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+16. [Dropout Sweep](#dropout-sweep)
+17. [Weight Decay Sweep](#weight-decay-sweep)
+18. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+19. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+20. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+21. [Longer PG-19 Training](#longer-pg-19-training)
+22. [Dataset Comparisons](#dataset-comparisons)
+23. [Model Comparisons](#model-comparisons)
+24. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+25. [Multi-Transform Parallelization](#multi-transform-parallelization)
+26. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+27. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+28. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+29. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+30. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+31. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -655,7 +656,7 @@ Two findings stand out from the matrix:
 
    The original "BAND > BD by 12pp" finding from BAND256 (1.2445) vs BD256 (1.2509) is **100% a parameter-count artifact** — BAND256 had 2× the params of BD256. At matched density, BD's "no cross-block" hard ceiling and BAND's "soft" cross-channel bleeding produce statistically indistinguishable BPB on this architecture.
 
-### Production-Default Variant: BAND 128
+Production-Default Variant: BAND 128
 
 **BAND 128 (bandwidth=128, 14.33M lifting) is locked in as the production-default lifting-compression variant.** It wins on both axes that matter at the production tier:
 
@@ -676,6 +677,33 @@ BAND 128 has marginally fewer params than BD 256 (14.33M vs 14.74M, ~3% less) AN
 **Production-default landscape after lock-in:**
 
 The lifting cascade compresses from 117.50M (uncompressed) to 14.33M (BAND 128) — **an 87.8% reduction at +0.0147 BPB cost vs the uncompressed reference**. Combined with the embedding (p, q) compression and the upcoming MLP / mixer / FwPKM compression sweeps, the production-default WaveletLM lands in the 100-150M total parameter range — Hyena territory at the same architectural footprint. The full table for the 1-epoch sweep is in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
+
+### New Testing Baseline with Mixer & Wavelet Parameter Reductions
+
+The structural-variants sweep above settled **BAND 128** as the production-default lifting compression. Combined with the **W2 per-scale mixer widths** win and **low_rank=4** from earlier, the natural next step is to merge all the banked wins into a **single combined-reductions baseline** before launching the next compression target (embedding, MLP, mixer Linear, FwPKM).
+
+**Settings (the new combined baseline):**
+- `layers: 1`
+- `levels: 7`
+- `block_size: 16384` (from "(Complete) Combined Parameter Reduction and VRAM Reallocation")
+- `low_rank: 4`
+- `per_scale_mixer_widths: [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]` (W2 winner from "(Complete) Per-Scale Mixer Width Expansion")
+- `lifting_offdiag_structure: "banded"`, `lifting_band_width: 128` (BAND 128 from the structural-variants sweep)
+
+**Why a new baseline now:**
+
+Future compression sweeps (embedding, MLP structural, mixer Linear, FwPKM key pruning) need a stable reference point that already includes the wins we've banked. Comparing them against the original BPB 1.2361 reference — which doesn't include W2 mixer or BAND 128 lifting — would conflate "did the new compression work?" with "did the old win compose with this one?" Establishing the combined-reductions baseline upfront gives every downstream sweep a clean A/B comparison.
+
+**Secondary motivations:**
+- **Composability check.** Literature on combined structural compression (SparseGPT-line) suggests combined cost is 70-80% of the sum of individual costs. With this run, we'd directly measure how BAND 128 lifting and W2 mixer compose. If the combined +BPB ≈ sum of individual costs, the wins are independent. If less, they compound favorably; if more, there's a cross-interaction we'd want to understand before stacking further compression on top.
+- **Training speed-up.** Lifting goes from 117.50M → 14.33M (−88%); mixer drops further from W2's per-scale narrowing on top of low_rank=4. Total parameter footprint should drop substantially, freeing VRAM for longer block sizes / larger batch sizes / additional ablations in parallel.
+- **The "gradient explosion" angle.** The sparse-embedding run NaN'd at peak LR partly because all the gradient signal had to flow through unmodified-density downstream layers (mixer + MLP + FwPKM). With the mixer already trimmed via W2 and the lifting already compressed via BAND 128, the gradient path through the non-embedding components is much narrower — which may make sparse embedding stable that wasn't stable on the un-reduced baseline. (Empirically TBD.)
+
+**Expected runs:**
+- 1-epoch combined-reductions baseline. Compare BPB vs the existing references (R1's 1.2342 uncompressed, W2's 1.2437 mixer-only, BAND 128's 1.2508 lifting-only). The combined cost prediction is `1.2342 + (1.2437 − 1.2342) + (1.2508 − 1.2342) ≈ 1.2604` if costs sum linearly, or ~1.2540 at 70% composability. Empirical ground truth from the run.
+- 5-epoch confirmation against the headline 5-epoch reference 1.0974.
+
+**Subsequent compression sweeps will use this combined-reductions baseline as their reference, not the old 1.2361 / 1.0974 unreduced numbers.**
 
 ### Sparse Embedding with (p, q) Striding
 
