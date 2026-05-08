@@ -569,7 +569,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Result:** D + U·V^T compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting from 117.44M → 3.33M (97%) and total params 29%, but landed at 1-epoch BPB sliding 1.2860 vs reference 1.2361. Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250. [`tools/analyze_lifting.py`](tools/analyze_lifting.py) confirmed the structural picture (~75% diagonal energy, weak generic low-rank); the failure is the compression's expressive ceiling, not the analysis.
 
-**Decision:** shelved at this regime. Whether 29% parameter reduction justifies the BPB regression is an engineering call. Revisit after the optimizer sweep or PG-19 if the data-bottleneck shifts.
+**Decision:** Deprecated in favor of other off-diagonal compression schemes in these sections: [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent) and [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
 
 ### (Complete) Per-Scale Mixer Width Expansion
 
@@ -589,21 +589,15 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
 
 ### (Complete) Decompose Bypass Disablement Ablation
 
-**Result:** at L=1 / levels=7 / bs=16384 / `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) **NaN'd at step 1500, lr=6.84e-3** — earlier than R1.5's NaN at step 2250 with the flags on. Prior smaller-scale ablations projected free disablement (within ±0.0015 BPB at L=1 / E=1); the projection does not survive once `levels=7` and `low_rank=16` are stacked.
+**Result:** At L=1 / levels=7 / bs=16384 / `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) **NaN'd at step 1500, lr=6.84e-3**. Prior smaller-scale ablations projected free disablement (within ±0.0015 BPB at L=1 / E=1), but the projection does not survive once `levels=7` and `low_rank=16` are stacked.
 
-**Decision:** keep both flags `true`. The running-mean × `history_gains` machinery is doing real stability work at this scale. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw); if Muon clears the cascade-amplification issue structurally, disablement can be retested.
+**Decision:** Keep both flags `true`. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw) increases stability. If Muon clears the cascade-amplification issue structurally, disablement can be retested.
 
 ### Wavelet Off-Diagonal Masking with Top-K Percent
 
-Wavelet diagonal plus a fixed top-k percent off-diagonal mask based on an analysis of the weights for the [5-epoch winner](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze lifting script](tools/analyze_lifting.py) and weighing by precedence. 
+**Results:** Wavelet diagonal + top-k percent off-diagonal mask, ranked by magnitude on the [5-epoch reference checkpoint](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze_lifting.py script](tools/analyze_lifting.py). The top_k 10% run recovers 81.5% of the diagonal-only-vs-full gap at +0.0096 BPB with 89.9% lifting parameter reduction. **Unfortunately**, using top-k compression requires a reference checkpoint on the same architecture to compute the mask, so it's not portable to new architectures without redoing training. Structural variants below avoid this setback. Full results in [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
 
-A top-k of 1% recovers 32.0% of the 0.0518 BPB gap between the diagonal-only wavelet ([1.2860 BPB](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) and uncompressed wavelet ([1.2342 BPB](logs/wikitext-103_2026-05-05_07-07-45/log.txt)). This means 99% of the off-diagonal wavelet parameters can be dropped, and we'd still retain 32% of the total off-diagonal wavelet parameters' effects. Meanwhile, a top-k of 5% gives [1.2524 BPB](logs/wikitext-103_2026-05-06_16-10-39/log.txt), recovering 64.9% of the gap. 
-
-For all top-k runs, see [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
-
-**Portability caveat.** The `magnitude_topk` path requires a pre-trained reference checkpoint matching the *same* architecture (same `C`, `levels`, `low_rank`). The mask is computed at runtime from each lifting matrix's trained weight magnitudes in that reference .pt file. First-time training runs all need an uncompressed training done first to produce the reference, then a second compressed training run on top. The random-mask variants (`random_topk`) and the [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants) (triangular, block-diagonal, banded, Monarch) do not require a reference .pt file. If randomized variants match the top-k results, this caveat will be removed in favor of random masking.
-
-**5-epoch confirmation (planned).** Once the 1-epoch sweep completes (M1-M4 magnitude, M1r-M4r random, 8 structural variants), the best surviving configuration goes to a 5-epoch confirmation run against the [L=1 / levels=7 / 5-epoch headline](logs/wikitext-103_2026-05-03_02-13-07/log.txt) (BPB sliding **1.0974**), matching the protocol used for [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion) and [(Complete) Low Rank Ablations](#complete-low-rank-ablations). Currently leading: M4 (10% magnitude_topk) at 1-epoch BPB 1.2438 (+0.0096 vs 1-epoch reference 1.2361) at 89.9% lifting reduction. Comparison metric: 5-epoch BPB delta vs the 1.0974 headline. **Strongest result:** BPB *cleanly below* 1.0974, which would indicate compression doesn't merely preserve performance at scale but improves it — plausibly via reduced overfitting to the lifting cascade's full parameter footprint. The 5-epoch result determines whether the 1-epoch BPB advantage persists at production training scale (in which case 10% density ships as the new lifting compression default) or whether compressed lifting starts hurting more with longer training (in which case the operating point shifts to higher density, M5 at 25% being the natural next test).
+**Decision:** Not to be implemented due to duplicate training requirement above.
 
 ### Wavelet Off-Diagonal Masking with Structured Variants
 
