@@ -431,10 +431,10 @@ ED_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25,
 #     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
 #     "ED128: encoder-decoder embedding C_emb=128, 93% reduction (1ep, L=7)"
 
-run_ablation "ED256 encoder-decoder embedding C_emb=256" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
-    "ED256: encoder-decoder embedding C_emb=256, 87% reduction (1ep, L=7)"
+# run_ablation "ED256 encoder-decoder embedding C_emb=256" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
+#     "ED256: encoder-decoder embedding C_emb=256, 87% reduction (1ep, L=7)"
 
 run_ablation "ED512 encoder-decoder embedding C_emb=512" \
     "$BASE_PATCH_1EP" \
