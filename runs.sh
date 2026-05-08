@@ -307,25 +307,25 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 # # block-diagonal factors with permutations between, giving full-matrix expressivity
 # # at sublinear params. Two variants at differing block counts (sqrt(C)≈45 for C=2048;
 # # common power-of-2 choices are 32 and 64).
-run_ablation "MON32 Monarch nblocks=32" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
-    "MON32: lifting Monarch nblocks=32 (1ep, levels=7)"
+# run_ablation "MON32 Monarch nblocks=32" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
+#     "MON32: lifting Monarch nblocks=32 (1ep, levels=7)"
 
 # run_ablation "MON64 Monarch nblocks=64" \
 #     "$BASE_PATCH_1EP" \
 #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
 #     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
 
-run_ablation "MON128 Monarch nblocks=128" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=128; print(json.dumps(b))")" \
-    "MON32: lifting Monarch nblocks=128 (1ep, levels=7)"
+# run_ablation "MON128 Monarch nblocks=128" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=128; print(json.dumps(b))")" \
+#     "MON32: lifting Monarch nblocks=128 (1ep, levels=7)"
     
-run_ablation "MON256 Monarch nblocks=256" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=256; print(json.dumps(b))")" \
-    "MON32: lifting Monarch nblocks=256 (1ep, levels=7)"
+# run_ablation "MON256 Monarch nblocks=256" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=256; print(json.dumps(b))")" \
+#     "MON32: lifting Monarch nblocks=256 (1ep, levels=7)"
 
 # More runs to complete ablation matrices: BD128, BD512, BAND32, and BAND128.
 # These four fill in the matched-param-count pairs that the existing data leaves
