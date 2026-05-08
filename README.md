@@ -525,26 +525,27 @@ Longer training time, more regularization, and parameter compression are the sur
 9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
 10. [New Testing Baseline with Mixer & Wavelet Parameter Reductions](#new-testing-baseline-with-mixer--wavelet-parameter-reductions)
 11. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
-12. [MLP Structural Compression](#mlp-structural-compression)
-13. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
-14. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-15. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-16. [Dropout Sweep](#dropout-sweep)
-17. [Weight Decay Sweep](#weight-decay-sweep)
-18. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-19. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-20. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-21. [Longer PG-19 Training](#longer-pg-19-training)
-22. [Dataset Comparisons](#dataset-comparisons)
-23. [Model Comparisons](#model-comparisons)
-24. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-25. [Multi-Transform Parallelization](#multi-transform-parallelization)
-26. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-27. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-28. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-29. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-30. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-31. [Other Post-Release Plans](#other-post-release-plans)
+12. [Factored Encoder-Decoder Embedding](#factored-encoder-decoder-embedding)
+13. [MLP Structural Compression](#mlp-structural-compression)
+14. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
+15. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+16. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+17. [Dropout Sweep](#dropout-sweep)
+18. [Weight Decay Sweep](#weight-decay-sweep)
+19. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+20. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+21. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+22. [Longer PG-19 Training](#longer-pg-19-training)
+23. [Dataset Comparisons](#dataset-comparisons)
+24. [Model Comparisons](#model-comparisons)
+25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+26. [Multi-Transform Parallelization](#multi-transform-parallelization)
+27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+32. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -712,6 +713,26 @@ The structural-variant sweep above compresses the lifting cascade. The token emb
 The scheme is content-blind, deterministic, has O(1) metadata cost, and ships with a **q ≈ √C structural-mode heuristic** that aligns with the Monarch / butterfly factorization philosophy already empirically validated in the lifting compression. A planned ablation compares (p=18, q=2) vs (p=12, q=8) at d = 10% to test whether macrocell structure matters empirically, and benchmarks both against a `random_topk` content-blind control at matched density.
 
 Full scheme, requirements, selection algorithm, worked candidates for C=2048 at common densities, cognitive/linguistic framing, and the planned ablation are in [plans/new_compression_ideas.md](plans/new_compression_ideas.md).
+
+### Factored Encoder-Decoder Embedding
+
+A second compression scheme for the token embedding, parallel to the (p, q) striding above but with different structural commitments. **Forward path:** tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. **Output path:** C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
+
+The decoder and encoder are **separate learnable matrices** because the model's nonlinearities (GELU in MLP, gating in mixer, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Total params: `V·C_emb + 2·C·C_emb + C + C_emb` (vs dense `V·C`). Implementation in [tools/factored_embedding.py](tools/factored_embedding.py).
+
+| C_emb | Total params | % of dense (V·C) | Reduction |
+|---|---|---|---|
+| 128 | 6.95M | 6.75% | 93% |
+| 256 | 13.92M | 13.53% | 87% |
+| **512** | **27.83M** | **27.04%** | **73%** |
+| 1024 | 55.66M | 54.07% | 46% |
+| 2048 (= C) | 111.33M | 108.16% | none — full-rank refinement ablation |
+
+**Why this might beat (p, q) on the failure modes we hit:** The sparse-embedding (p, q) NaN'd at peak LR partly because sparse output activations (90% zeros) stress downstream LayerNorms, with variance dominated by 10% of dims and ~3× amplification of active values. The factored embedding produces **dense outputs** (the decoder mixes all `C_emb` dims into all `C` output dims), so this whole class of LayerNorm-amplification failure goes away. ALBERT-style; well-trodden.
+
+**The C_emb=2048 case** is a no-compression ablation: when `C_emb == C`, the decoder and encoder become learnable C×C matrices acting as affine refinement layers around the standard embedding. Tests whether the encoder/decoder machinery itself helps (capacity-rich) even without the parameter savings. If this one wins on 1-epoch BPB cleanly over the combined-reductions baseline, the architectural addition is justified independently of compression.
+
+**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve (likely around C_emb=256-512 based on ALBERT-line literature). Full table in [runs.md](runs.md#factored-encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
 
 ### MLP Structural Compression
 

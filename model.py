@@ -1803,7 +1803,19 @@ class WaveletLM(nn.Module):
         self.vocab_size = vocab_size
 
         # Embedding
-        if config.get('sparse_pq_embedding_enabled', False):
+        if config.get('sparse_encoder_decoder_embedding', False):
+            from tools.factored_embedding import FactoredEmbedding
+            C_emb = int(config.get('sparse_encoder_decoder_embedding_C', C))
+            self.token_embedding = FactoredEmbedding(vocab_size, C_emb, C)
+            full_dense = vocab_size * C
+            eff = self.token_embedding.effective_param_count()
+            reduction = (1 - eff / full_dense) * 100 if C_emb < C else 0.0
+            note = "(full-rank: C_emb == C)" if C_emb >= C else f"({reduction:.1f}% reduction vs dense V·C)"
+            print(
+                f"[Embedding] FactoredEmbedding: V={vocab_size}, C_emb={C_emb}, C={C} "
+                f"-- {eff:,} of dense {full_dense:,} embedding params {note}"
+            )
+        elif config.get('sparse_pq_embedding_enabled', False):
             from tools.sparse_pq_embedding import SparsePQEmbedding
             density = config.get('sparse_pq_embedding_density', 0.1)
             mode = config.get('sparse_pq_embedding_mode', 'structural')
@@ -2063,7 +2075,16 @@ class WaveletLM(nn.Module):
         # Weight tying
         if config.get("tie_embedding_to_lm_head", False):
             from tools.sparse_pq_embedding import SparsePQEmbedding, MaskedTiedLinear
-            if isinstance(self.token_embedding, SparsePQEmbedding):
+            from tools.factored_embedding import FactoredEmbedding, FactoredTiedLMHead
+            if isinstance(self.token_embedding, FactoredEmbedding):
+                # Tie the LM head to the FactoredEmbedding via factorized
+                # softmax: hidden -> encoder -> embedding.weight^T -> logits.
+                # The encoder is a separate learnable matrix from the decoder
+                # because nonlinearities in the model break the linear-inverse
+                # symmetry; see tools/factored_embedding.py.
+                self.lm_head = FactoredTiedLMHead(self.token_embedding)
+                print(f"[LM Head] Tied to FactoredEmbedding via FactoredTiedLMHead (factorized softmax through learnable encoder)")
+            elif isinstance(self.token_embedding, SparsePQEmbedding):
                 # Replace lm_head with a MaskedTiedLinear that shares the
                 # embedding's parameter AND applies its mask in forward.
                 # Required because torch.compile cannot rely on parameter
