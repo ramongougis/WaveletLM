@@ -572,18 +572,18 @@ Longer training time, more regularization, and parameter compression are the sur
 ### (Complete) Per-Scale Mixer Width Expansion
 
 **Result:** both directions tested at L=1 / levels=7 / bs=16384.
-- *Contraction* — W2 at `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) lands at 1-epoch BPB sliding **1.2437** vs default's 1.2361 = +0.0076, with **39% fewer mixer params (35.70M vs 58.82M)** and 5.9% fewer total. Aggressive contraction at `[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250 — the width floor lives between W2 and W1.
-- *Expansion* — E5_5ep at `[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) lands at 5-epoch BPB **1.1037** vs [headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = +0.0063 at +24% mixer params (no improvement).
+- *Contraction*: `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) achieves a 1-epoch sliding BPB of **1.2437** vs the default's 1.2361 = +0.0076 with 39% fewer mixer parameters (35.70M vs 58.82M). Aggressive contraction at `[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250.
+- *Expansion*: E5_5ep at `[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) lands at 5-epoch BPB **1.1037** vs [headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = +0.0063 at +24% mixer params (no improvement).
 
-Both directions consistent with the data-bottlenecked-architecture finding: width perturbations don't move BPB measurably in either direction. Contraction is free (small param savings at marginal BPB cost); expansion is wasted compute. Full detail in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
+Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** ship W2 (`[0.5×4, 0.25×4]`) as the contracted-mixer candidate when the next combined 5-epoch baseline runs; expansion shelved. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if W2's 5-epoch confirmation ships cleanly.
+**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if the above's 5-epoch confirmation ships cleanly.
 
 ### (Complete) Low Rank Ablations
 
-**Result:** 1-epoch sweep found `low_rank=16` (R1) at BPB sliding 1.2342 (-0.0019 vs reference 1.2361), upper stability boundary between 16 and 32 (R1.5 NaN at peak lr=1.00e-2). 5-epoch confirmation ([R1_5ep](logs/wikitext-103_2026-05-05_21-36-45/log.txt)) landed at **1.0971 vs headline 1.0974 = −0.0003** — within run-to-run noise. The 1-epoch advantage didn't amplify with more training, the opposite of what a real capacity gain would do; the win was likely early-training expressivity that washes out at convergence. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
+**Result:** `low_rank=16` (R1) achieves a 1-epoch sliding BPB of 1.2342 (-0.0019 vs reference 1.2361). 5-epoch confirmation ([R1_5ep](logs/wikitext-103_2026-05-05_21-36-45/log.txt)) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, so essentially unchanged. The 1-epoch advantage didn't amplify with more training; the win was likely early-training expressivity that washes out at convergence. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** keep `low_rank=4`. +1.92M params for a 5-epoch tie isn't worth promoting. **Retest conditions:** B200 scale-up (Cp=4096 reduces the U·V^T fraction of the mixer) or post-Muon (orthogonalized updates may make higher rank tractable past R1.5/R2/R3 destabilization).
+**Decision:** keep `low_rank=4`. +1.92M params for a 5-epoch tie isn't worth it.
 
 ### (Complete) Decompose Bypass Disablement Ablation
 
@@ -613,9 +613,16 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 
 **BD256 (block_size=256, 14.74M lifting) lands at BPB sliding 1.2509** ([log](logs/wikitext-103_2026-05-07_04-12-07/log.txt)) — recovers 67.8% of the gap. Recovery is meaningfully lower than I had initially projected (85-90%), because BD's "no cross-block channel interactions" structural ceiling becomes binding faster than the magnitude_topk curve does — going from BD64 (3% density) to BD256 (12.5% density) added only 20 pp of recovery, vs the M-curve's ~50 pp for similar density change.
 
-**BAND256 (bandwidth=256, 27.63M lifting) lands at BPB sliding 1.2445** ([log](logs/wikitext-103_2026-05-07_06-52-52/log.txt)) — recovers 80.1% of the gap, **essentially tying M4** (1.2445 vs M4's 1.2438) at 2.3× M4's lifting params. BAND scales better than BD at high density: doubling params (BD256 → BAND256) added +12 pp recovery, because banded doesn't have BD's hard "no cross-block" ceiling. **Currently the leading portable production-default candidate at BPB-equivalent-to-M4 level.**
+**BAND256 (bandwidth=256, 27.63M lifting) lands at BPB sliding 1.2445** ([log](logs/wikitext-103_2026-05-07_06-52-52/log.txt)) — recovers 80.1% of the gap, **essentially tying M4** (1.2445 vs M4's 1.2438) at 2.3× M4's lifting params. The "BAND scales better than BD" intuition turned out to be a param-count artifact: BAND256 vs BD256 was a 2× params comparison. At matched density across the sweep, BAND ≈ BD (see "matched density" parity finding below). For production-tier compression, **BAND 128 at the 12% density elbow is the locked-in default** — see the [Production-Default Variant](#production-default-variant-band-128) section below.
 
-**MON64 (Monarch, nblocks=64, block_size=32, 5.56M lifting) lands at BPB sliding 1.2615** ([log](logs/wikitext-103_2026-05-07_09-31-54/log.txt)) — recovers 47.3% of the gap. At 5.56M lifting params (~5% of full), the Monarch parameterization (M = R·P·L·P^T with two perfect-shuffle permutations) recovers slightly less than BD64 (47.7% at 3.73M lifting) and BAND32 (46.0% at 3.76M) at lower param counts, suggesting its two-factor structure adds parameter overhead without buying additional recovery at this density. Per-param efficiency 8.51 pp/M vs BD64's 12.79 pp/M. **MON 32, MON 128, and MON 256 are pending** to map the Monarch curve at higher param counts (where the R·P·L·P^T factor structure may unlock more cross-channel interaction relative to BD/BAND than at the 5.56M tier).
+**Monarch sweep (4 nblocks × 1 density-axis):** MON32 (5.56M, 47.5%), MON64 (5.56M, 47.3%), MON128 (8.31M, 53.3%), MON256 (15.20M, 63.1%). MON32 and MON64 share param count by Monarch param-symmetry (R·P·L·P^T param count = N·(n + N/n), symmetric around n = √N) and land within 0.2 pp of each other on recovery — confirming Monarch capacity at this density tier is bounded by total params, not block-shape choice. The interesting comparison is at matched param count vs BD/BAND:
+
+| Param tier | Monarch | BD | BAND |
+|---|---|---|---|
+| ~7-8M | MON128: 53.3% | BD128: 57.1% | BAND64: 57.3% |
+| ~14-15M | MON256: 63.1% | BD256: 67.8% | BAND128: 68.0% |
+
+**Monarch consistently underperforms BD and BAND by 4-5 pp at matched param count.** The R·P·L·P^T factorization, which was hypothesized to capture cross-channel interactions that block-diagonal misses, instead spends parameters on the factorization machinery (the inner shuffle permutations + the b·n² R blocks) without buying recovery. Per-param efficiency 6.4 pp/M (MON128) vs 7.7 pp/M (BD128) — Monarch is ~17% less efficient at this tier. **The structural hypothesis behind Monarch is rejected at all density tiers tested**; for production-portable structural compression, BD/BAND remain the better choices.
 
 **Full structural-variant comparison.** Order: reference floor (Diagonal only) → triangular → block-diagonal sweep → banded sweep → Monarch sweep → reference ceiling (Full wavelet).
 
@@ -632,10 +639,10 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 | BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% |
 | BAND 128 | 14.33M | 12.20% | 1.2508 | 68.0% |
 | BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% |
-| MON 32 (pending) | ~5.56M | ~4.73% | — | — |
+| MON 32 | 5.56M | 4.73% | 1.2614 | 47.5% |
 | MON 64 | 5.56M | 4.73% | 1.2615 | 47.3% |
-| MON 128 (pending) | ~8.27M | ~7.04% | — | — |
-| MON 256 (pending) | ~15.17M | ~12.91% | — | — |
+| MON 128 | 8.31M | 7.07% | 1.2584 | 53.3% |
+| MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% |
 | Full wavelet (R1) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
 
 Two findings stand out from the matrix:
@@ -646,18 +653,29 @@ Two findings stand out from the matrix:
    - 12% density: BAND128 (68.0%) vs BD256 (67.8%) — tied within 0.2pp
    - 25% density: BAND256 (80.1%) vs BD512 (80.3%) — BD ahead by 0.2pp
 
-   The original "BAND > BD by 12pp" finding from BAND256 (1.2445) vs BD256 (1.2509) is **100% a parameter-count artifact** — BAND256 had 2× the params of BD256. At matched density, BD's "no cross-block" hard ceiling and BAND's "soft" cross-channel bleeding produce statistically indistinguishable BPB on this architecture. **Implication for production**: the two structures are recovery-equivalent, so the choice collapses to engineering — BD has off-the-shelf block-sparse kernels, cleaner `BlockDiagonalLinear` storage, and the grouped-MLP architectural story. BD is the more practical production default.
+   The original "BAND > BD by 12pp" finding from BAND256 (1.2445) vs BD256 (1.2509) is **100% a parameter-count artifact** — BAND256 had 2× the params of BD256. At matched density, BD's "no cross-block" hard ceiling and BAND's "soft" cross-channel bleeding produce statistically indistinguishable BPB on this architecture.
 
-**Updated production-default landscape (M4 vs BD256):**
+### Production-Default Variant: BAND 128
 
-| Candidate | Lifting | BPB | vs Ref | Tolerance? | Portable? | Storage win |
-|-----------|---------|-----|--------|------------|-----------|-------------|
-| M4 (magnitude_topk @ 10%) | 11.85M | 1.2438 | +0.0096 | yes | no (needs reference) | bit-packed mask only |
-| **BD256** | **14.74M** | **1.2509** | **+0.0148** | **yes** | **YES** | **full (per-block tensors)** |
+**BAND 128 (bandwidth=128, 14.33M lifting) is locked in as the production-default lifting-compression variant.** It wins on both axes that matter at the production tier:
 
-M4 wins on absolute BPB by 0.0071 and on lifting params by 24%, but **BD256 wins on every other production-relevant axis**: portable to new architectures (no 2-stage training), checkpoint stores only the per-block tensor (drops the full `(C, C)` storage by ~87%), and inference compute is structurally faster (~8× speedup at this block_size via per-block batched matmul instead of dense). For scientific evaluation: M4. For production deployment / scale-up: BD256.
+| Candidate | Lifting | % of full | BPB sliding | Gap recovered |
+|-----------|---------|-----------|-------------|---------------|
+| **BAND 128** | **14.33M** | **12.20%** | **1.2508** | **68.0%** |
+| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% |
+| M4 (magnitude_topk @ 10%, non-portable) | 11.85M | 10.08% | 1.2438 | 81.5% |
 
-**Production storage win for block-diagonal.** A `BlockDiagonalLinear` module (storing only the per-block weight tensor of shape `(nblocks, block_size, block_size)` instead of the full `(C, C)` matrix) would give us drop-in compression at *both* training and inference, and ship a checkpoint that's 10-25% the size of the current uncompressed weights for the lifting block alone. Combined with similar compression of MLP / mixer / FwPKM (see [memory: project_module_wide_compression_followup.md](#)), the resulting WaveletLM lands in the 100-150M total parameter range — Hyena territory at the same architectural footprint, with deeper-level training feasible due to the natural stability gains of fewer parameters in the cascade. The full table for the 1-epoch sweep is in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
+BAND 128 has marginally fewer params than BD 256 (14.33M vs 14.74M, ~3% less) AND marginally better recovery (+0.2 pp). It sits at the "elbow" of the recovery-vs-density curve — past 12% density, each additional percentage point of recovery costs ~2× the params (e.g., BAND 256 at 27.63M for 80.1% recovery is +12 pp recovery for 2× the params over BAND 128).
+
+**Why BAND 128 over the alternatives:**
+- **vs BD 256**: marginal BPB win (+0.0001), marginal param win (-3%), structurally equivalent recovery → BAND has the slight edge on every dimension.
+- **vs M4 (magnitude_topk)**: M4 absolute BPB is 0.0070 better, but M4 requires a 2-stage training (uncompressed reference → compressed run) that doubles training cost and prevents direct use for new architectures. BAND 128 is portable to any architecture without bootstrapping.
+- **vs higher-density variants (BAND 256, BD 512)**: those land at ~80% recovery but at 2× the params. The "half the relative parameters → double the training throughput or half the VRAM for allocation elsewhere" tradeoff favors stopping at 12% density.
+- **vs lower-density variants (BAND 64, BD 128)**: those save another ~50% of params but lose ~10pp recovery. Past the elbow on the cheap side.
+
+**Production-default landscape after lock-in:**
+
+The lifting cascade compresses from 117.50M (uncompressed) to 14.33M (BAND 128) — **an 87.8% reduction at +0.0147 BPB cost vs the uncompressed reference**. Combined with the embedding (p, q) compression and the upcoming MLP / mixer / FwPKM compression sweeps, the production-default WaveletLM lands in the 100-150M total parameter range — Hyena territory at the same architectural footprint. The full table for the 1-epoch sweep is in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
 
 ### Sparse Embedding with (p, q) Striding
 
