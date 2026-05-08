@@ -637,6 +637,32 @@ run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
     "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, levels=7)"
 
 
+# ---- Levels retry on CB stack ------------------------------------------------
+# Previous attempts at levels=9 and levels=11 NaN'd at the L=1 / no-compression
+# baseline (the L=11 cascade-explosion cliff), and no stability fix cleared
+# them. The CB stack changes the math: BAND128 lifting (~14M lifting params,
+# 87.8% reduction) plus low_rank=4 cap the spectral norm of each cascade
+# matrix, which is exactly the property that determines whether the cascade
+# stays bounded across deeper levels. Worth retrying as a quick test before
+# the optimizer sweep — if BAND128's structural compression alone clears the
+# cliff, that confirms the cascade-bandwidth hypothesis at low cost. If they
+# still NaN, the cliff is downstream of structural compression (precision /
+# Adagrad dynamics) and the optimizer sweep is the right next move.
+#
+# Compare 1-epoch BPB against CB's 1.2586. Levels=11 with bs=16384 leaves only
+# 8 tokens at the coarsest scale — boundary effects may dominate even if it
+# trains; treat the BPB-vs-CB delta as a "did the cascade survive" signal,
+# not a "is this a better config" signal.
+run_ablation "L9 levels=9 retry on CB stack" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"levels\":9}')")" \
+    "L9: levels=9 retry on CB stack (1ep)"
+
+run_ablation "L11 levels=11 retry on CB stack" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "print('{\"levels\":11}')")" \
+    "L11: levels=11 retry on CB stack (1ep)"
+
 
 echo ""
 echo "============================================================"
@@ -657,8 +683,10 @@ echo "===   9) Sparse (p, q) phantom-token embedding sweep at d=0.10"
 echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs section-7 baseline"
 echo "===  10) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
 echo "===      12 runs (4 densities × 3 structures) — compare BPB delta vs section-7 baseline"
-echo "===  11) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
-echo "===      (placeholder; uncomment after sections 4-10 complete and a winner is chosen)"
+echo "===  11) Levels retry on CB stack: levels=9, levels=11 — does BAND128 + low_rank=4"
+echo "===      clear the cascade-explosion cliff that no stability fix did at the uncompressed baseline?"
+echo "===  12) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
+echo "===      (placeholder; uncomment after sections 4-11 complete and a winner is chosen)"
 echo "==="
 echo "=== Next: combine surviving winners into a new 5-epoch baseline."
 echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"

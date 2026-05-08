@@ -716,7 +716,7 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 | 512 | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 | [log](logs/wikitext-103_2026-05-08_13-37-26/log.txt) |
 | 1024 | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 | [log](logs/wikitext-103_2026-05-08_14-41-41/log.txt) |
 | 2048 | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 | [log](logs/wikitext-103_2026-05-08_15-47-44/log.txt) |
-| 4096 (planned) | 386.33M | ~24,315 MiB | ~3,870 MiB | pending | pessimistic ceiling ≈ −0.01 | |
+| 4096 | 386.34M | 24,317 MiB | pending | 1.2597 | +0.0011 | [log](logs/wikitext-103_2026-05-08_19-21-42/log.txt) |
 | 8192 (planned) | 608.96M | ~26,690 MiB | ~5,390 MiB | pending | pessimistic ceiling ≈ −0.03 | |
 
 **Decision: compression direction deprecated; expansion direction pursued.** The compression sweep (C_emb < C) is too BPB-costly to ship — even ED1024 (the closest to CB) is +0.024 BPB sliding, and ED512 / ED256 / ED128 give back substantial quality for inference-VRAM wins that are real but not worth the loss. The expansion direction (C_emb > C) becomes the actual opportunity here: with ED2048 landing essentially at CB, going past C_emb = C tests whether forcing the embedding through a C-dim bottleneck (many-to-few decoder) unlocks usable additional BPB. Pessimistic best-case is ~−0.03 vs CB at ED8192. The +8.39M extra params at ED2048 already learn close to identity, so any gain past C_emb = C is contingent on the bottleneck arrangement adding *new* expressiveness, not on the encoder/decoder machinery itself.
@@ -748,16 +748,6 @@ The MLP is the second-largest single component after the token embedding (83.91M
 Lifting empirical priors (BAND 80.1% > BD 67.8% at matched density on the lifting cascade) suggest BAND likely wins on MLP too — but the MLP nonlinearity in the middle changes the calculus, BD has a cleaner architectural story (grouped MLP), and (p, q) brings a third connectivity pattern (global walk vs local band vs grouped block) into the comparison.
 
 **Planned sweep:** four density points (25%, 12.5%, 6.25%, 3.125%) × three structures = 12 runs at 1-epoch, locating the recovery floor and identifying which structural prior wins on MLP. Stacked with the lifting + embedding compression, the production-default candidate stack lands in the 100-150M total-parameter range. Full table in [runs.md](runs.md#mlp-structural-compression-planned-l1-levels7-epochs1).
-
-### Gradient Checkpointing
-
-Activation memory dominates training VRAM (the `(1, 16384, 20480)` MLP hidden alone is 671 MB in fp16; per-scale wavelet intermediates contribute another ~1 GB combined). Parameter compression barely touches this, but gradient checkpointing does, by recomputing forward intermediates during backward instead of storing them.
-
-**Expected effect** at the combined-reductions baseline:
-- Training VRAM: ~23 GB → ~12 GB (−50%)
-- Training compute: ~1.5–2× per epoch (extra forward per checkpointed segment)
-
-**When to enable:** held off until a future ablation actually needs the VRAM — e.g., `block_size=32768`, `layers ≥ 2`, `mlp_expansion ≥ 20`, or `levels=11`. The `gradient_checkpointing` flag is already plumbed in `config.json`; toggle when needed. The compute cost is real (1.5–2× per ablation), so this is a reserve lever, not a default — currently the binding constraint is compute budget, not VRAM headroom.
 
 ### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
 
