@@ -527,25 +527,26 @@ Longer training time, more regularization, and parameter compression are the sur
 11. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
 12. [Encoder-Decoder Embedding](#encoder-decoder-embedding)
 13. [MLP Structural Compression](#mlp-structural-compression)
-14. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
-15. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-16. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-17. [Dropout Sweep](#dropout-sweep)
-18. [Weight Decay Sweep](#weight-decay-sweep)
-19. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-20. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-21. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-22. [Longer PG-19 Training](#longer-pg-19-training)
-23. [Dataset Comparisons](#dataset-comparisons)
-24. [Model Comparisons](#model-comparisons)
-25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-26. [Multi-Transform Parallelization](#multi-transform-parallelization)
-27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-32. [Other Post-Release Plans](#other-post-release-plans)
+14. [Gradient Checkpointing](#gradient-checkpointing)
+15. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
+16. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+17. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+18. [Dropout Sweep](#dropout-sweep)
+19. [Weight Decay Sweep](#weight-decay-sweep)
+20. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+21. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+22. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+23. [Longer PG-19 Training](#longer-pg-19-training)
+24. [Dataset Comparisons](#dataset-comparisons)
+25. [Model Comparisons](#model-comparisons)
+26. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+27. [Multi-Transform Parallelization](#multi-transform-parallelization)
+28. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+29. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+30. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+31. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+32. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+33. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -649,12 +650,14 @@ Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 liftin
 | MLP/layer | 83.91M | 83.91M | unchanged |
 | Token embedding | 102.93M | 102.93M | unchanged |
 | Training peak VRAM | 23,416 MiB | 23,110 MiB | −1.3% |
-| Inference peak VRAM | not measured (no R1 checkpoint retained) | **2,163 MiB** | — |
+| Inference peak VRAM | 2,409 MiB | **2,163 MiB** | −10.2% |
 | BPB sliding | 1.2342 | **1.2586** | +0.0244 |
 
 **Composability:** the +0.0244 BPB cost is **94% of the linear sum** of the individual costs (W2's +0.0095 + BAND 128's +0.0166 = +0.0261). Wins are essentially independent — no compounding gain, no negative interaction.
 
-**Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size** — see the inference VRAM measurement step in [runs.sh](runs.sh).
+**Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size**.
+
+**Inference VRAM also moved less than expected (−10.2% for −32% params)** because at inference the weights are only ~33% of total VRAM (786 MB / 2,409 MiB at R1) — the rest is forward-pass activations, cross-window decompose-bypass state, CUDA context, and tokenizer/runtime overhead, all of which are roughly fixed-size and don't scale with parameter count. Compressing weights from 786 → 533 MB (−32%) translated to roughly its proportional share of total inference VRAM. To see large inference VRAM wins, we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that gets recorded into each run's `generations.txt`.
 
 ### Sparse Embedding with (p, q) Striding
 
@@ -697,6 +700,16 @@ The MLP is the second-largest single component after the token embedding (83.91M
 Lifting empirical priors (BAND 80.1% > BD 67.8% at matched density on the lifting cascade) suggest BAND likely wins on MLP too — but the MLP nonlinearity in the middle changes the calculus, BD has a cleaner architectural story (grouped MLP), and (p, q) brings a third connectivity pattern (global walk vs local band vs grouped block) into the comparison.
 
 **Planned sweep:** four density points (25%, 12.5%, 6.25%, 3.125%) × three structures = 12 runs at 1-epoch, locating the recovery floor and identifying which structural prior wins on MLP. Stacked with the lifting + embedding compression, the production-default candidate stack lands in the 100-150M total-parameter range. Full table in [runs.md](runs.md#mlp-structural-compression-planned-l1-levels7-epochs1).
+
+### Gradient Checkpointing
+
+Activation memory dominates training VRAM (the `(1, 16384, 20480)` MLP hidden alone is 671 MB in fp16; per-scale wavelet intermediates contribute another ~1 GB combined). Parameter compression barely touches this, but gradient checkpointing does, by recomputing forward intermediates during backward instead of storing them.
+
+**Expected effect** at the combined-reductions baseline:
+- Training VRAM: ~23 GB → ~12 GB (−50%)
+- Training compute: ~1.5–2× per epoch (extra forward per checkpointed segment)
+
+**When to enable:** held off until a future ablation actually needs the VRAM — e.g., `block_size=32768`, `layers ≥ 2`, `mlp_expansion ≥ 20`, or `levels=11`. The `gradient_checkpointing` flag is already plumbed in `config.json`; toggle when needed. The compute cost is real (1.5–2× per ablation), so this is a reserve lever, not a default — currently the binding constraint is compute budget, not VRAM headroom.
 
 ### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
 
