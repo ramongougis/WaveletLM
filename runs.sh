@@ -373,10 +373,10 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 # Empirical ground truth from this run determines the new baseline.
 #
 # Subsequent compression sweeps use this BPB as their +Δ reference.
-run_ablation "C1ep combined-reductions baseline (W2 + low_rank=4 + BAND128)" \
-    "$BASE_PATCH_1EP" \
-    '{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128}' \
-    "C1ep: combined-reductions baseline (W2 + low_rank=4 + BAND128) (1ep, L=7)"
+# run_ablation "C1ep combined-reductions baseline (W2 + low_rank=4 + BAND128)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128}' \
+#     "C1ep: combined-reductions baseline (W2 + low_rank=4 + BAND128) (1ep, L=7)"
 
 
 # ---- 8. Factored encoder-decoder embedding sweep ----------------------------
