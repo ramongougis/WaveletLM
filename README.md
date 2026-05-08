@@ -623,24 +623,34 @@ Config options:
 
 **Results:**
 
-| Variant | Lifting params | % of full params | Sliding BPB | % gap recovered |
-|---------|---------------:|----------:|------------:|----------------:|
-| Diagonal only (M0 / A1) | 3.33M | 2.83% | 1.2860 | 0% (floor) |
-| T upper | 58.81M | 50.05% | 1.2381 | 92.5% |
-| T lower | 58.81M | 50.05% | 1.2380 | 92.7% |
-| BD 64 | 3.73M | 3.17% | 1.2613 | 47.7% |
-| BD 128 | 7.40M | 6.30% | 1.2564 | 57.1% |
-| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% |
-| BD 512 | 29.42M | 25.04% | 1.2444 | 80.3% |
-| BAND 32 | 3.76M | 3.20% | 1.2622 | 46.0% |
-| BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% |
-| BAND 128 | 14.33M | 12.20% | 1.2508 | 68.0% |
-| BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% |
-| MON 32 | 5.56M | 4.73% | 1.2614 | 47.5% |
-| MON 64 | 5.56M | 4.73% | 1.2615 | 47.3% |
-| MON 128 | 8.31M | 7.07% | 1.2584 | 53.3% |
-| MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% |
-| Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
+Structural variant types:
+
+T upper = upper triangular
+T lower = lower triangular
+BD = block-diagonal
+BAND = banded
+MON = Monarch
+
+See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the structural variants.
+
+| Variant | Lifting params | % of full params | Sliding BPB | % gap recovered | Run Log |
+|---------|---------------:|----------:|------------:|----------------:|---------|
+| Diagonal only (M0 / A1) | 3.33M | 2.83% | 1.2860 | 0% (floor) | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) |
+| T upper | 58.81M | 50.05% | 1.2381 | 92.5% | [link](logs/wikitext-103_2026-05-07_00-11-31/log.txt) |
+| T lower | 58.81M | 50.05% | 1.2380 | 92.7% | [link](logs/wikitext-103_2026-05-07_01-31-42/log.txt) |
+| BD 64 | 3.73M | 3.17% | 1.2613 | 47.7% | [link](logs/wikitext-103_2026-05-07_02-52-12/log.txt) |
+| BD 128 | 7.40M | 6.30% | 1.2564 | 57.1% | [link](logs/wikitext-103_2026-05-07_10-40-27/log.txt) |
+| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% | [link](logs/wikitext-103_2026-05-07_04-12-07/log.txt) |
+| BD 512 | 29.42M | 25.04% | 1.2444 | 80.3% | [link](logs/wikitext-103_2026-05-07_12-00-36/log.txt) |
+| BAND 32 | 3.76M | 3.20% | 1.2622 | 46.0% | [link](logs/wikitext-103_2026-05-07_13-22-09/log.txt) |
+| BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% | [link](logs/wikitext-103_2026-05-07_05-32-41/log.txt) |
+| BAND 128 | 14.33M | 12.20% | 1.2508 | 68.0% | [link](logs/wikitext-103_2026-05-07_14-42-59/log.txt) |
+| BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% | [link](logs/wikitext-103_2026-05-07_06-52-52/log.txt) |
+| MON 32 | 5.56M | 4.73% | 1.2614 | 47.5% | [link](logs/wikitext-103_2026-05-07_16-58-23/log.txt) |
+| MON 64 | 5.56M | 4.73% | 1.2615 | 47.3% | [link](logs/wikitext-103_2026-05-07_09-31-54/log.txt) |
+| MON 128 | 8.31M | 7.07% | 1.2584 | 53.3% | [link](logs/wikitext-103_2026-05-07_18-07-19/log.txt) |
+| MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% | [link](logs/wikitext-103_2026-05-07_19-18-23/log.txt) |
+| Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) |
 
 **Decision:** BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance.
 
@@ -713,7 +723,19 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 **Inference VRAM behavior under compression** (factual record, even though we're not shipping it). ED128 dropped inference VRAM by 810 MiB (−27%) for an embedding compression that saves only ~192 MB of weights at fp16. The compounding comes from the smaller embedding lookup intermediate (`(1, 16384, C_emb)` is 64 MB at C_emb=2048 vs 4 MB at C_emb=128 in fp16) plus downstream activation effects and allocator efficiency. The compression direction has the cleanest per-param inference-VRAM scaling we've measured; the BPB cost is what disqualifies it from production use, not the resource math.
 
-**Untied LM head series:** five additional ablations at the same C_emb values but with `tie_embedding_to_lm_head=false`. The encoder is still allocated (it's required regardless of tying — it bridges C → C_emb on the output path); only the V projection matrix changes. The untied case uses a *separate* learnable `output_embedding(V × C_emb)` instead of reusing the input embedding for V projection. Adds V·C_emb params per run (e.g., +25.73M at C_emb=512). Isolates the cost of weight tying at each embedding-dim setting. Full table in [runs.md](runs.md#encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
+**Untied LM head series:** seven additional ablations at the same C_emb values (128 / 256 / 512 / 1024 / 2048 / 4096 / 8192) but with `tie_embedding_to_lm_head=false`. The encoder is still allocated (it's required regardless of tying — it bridges C → C_emb on the output path); only the V projection matrix changes. The untied case uses a *separate* learnable `output_embedding(V × C_emb)` instead of reusing the input embedding for V projection. Adds V·C_emb params per run (e.g., +25.73M at C_emb=512). Isolates the cost of weight tying at each embedding-dim setting.
+
+**Initial untied results (1 of 7 runs landed):** First data point lands within noise of its tied counterpart. The hypothesis is that untying matters most at C_emb > C (where the duplicated V × C_emb gives output-side capacity that isn't blocked by an upstream encoder bottleneck); at C_emb < C, the encoder C → C_emb projection is already the binding constraint, so untying the LM head can't recover information that's been compressed out before reaching it.
+
+| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Δ vs tied | Links |
+|---|---|---|---|---|---|---|---|
+| 128 (planned) | 177.09M | ~22,063 MiB | pending | pending | pending | pending | |
+| 256 | 190.49M | 22,185 MiB | pending | 1.3933 | +0.1347 | +0.0017 | [log](logs/wikitext-103_2026-05-08_16-59-00/log.txt) |
+| 512 (planned) | 217.26M | ~22,440 MiB | pending | pending | pending | pending | |
+| 1024 (planned) | 270.83M | ~22,943 MiB | pending | pending | pending | pending | |
+| 2048 (planned) | 377.96M | ~23,947 MiB | pending | pending | pending | pending | |
+| 4096 (planned) | 592.18M | ~25,953 MiB | pending | pending | pending | pending | |
+| 8192 (planned) | 1.02 B | ~29,967 MiB | pending | pending | pending | pending | |
 
 ### MLP Structural Compression
 
