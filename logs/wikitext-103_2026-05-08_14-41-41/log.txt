@@ -1,0 +1,316 @@
+[2026-05-08 14:41:41] Starting WaveletLM Training on WIKITEXT-103
+[2026-05-08 14:41:41] Device: cuda, AMP: True (fp16)
+[2026-05-08 14:41:41] 
+[2026-05-08 14:41:41] 	dataset                             : wikitext-103
+[2026-05-08 14:41:41] 	tokenizer                           : auto
+[2026-05-08 14:41:41] 	out_dir                             : logs
+[2026-05-08 14:41:41] 	compile                             : True
+[2026-05-08 14:41:41] 	compile_mode                        : default
+[2026-05-08 14:41:41] 	seed                                : 1337
+[2026-05-08 14:41:41] 	epochs                              : 1
+[2026-05-08 14:41:41] 	micro_batch_size                    : 1
+[2026-05-08 14:41:41] 	grad_accum                          : 1
+[2026-05-08 14:41:41] 	block_size                          : 16384
+[2026-05-08 14:41:41] 	eval_interval                       : 250
+[2026-05-08 14:41:41] 	skip_warmup_saves                   : True
+[2026-05-08 14:41:41] 	C                                   : 2048
+[2026-05-08 14:41:41] 	layers                              : 1
+[2026-05-08 14:41:41] 	levels                              : 7
+[2026-05-08 14:41:41] 	low_rank                            : 4
+[2026-05-08 14:41:41] 	mlp_expansion                       : 10
+[2026-05-08 14:41:41] 	mlp_layers                          : 2
+[2026-05-08 14:41:41] 	pkm_enabled                         : False
+[2026-05-08 14:41:41] 	pkm_num_keys                        : 16384
+[2026-05-08 14:41:41] 	pkm_top_k                           : 32
+[2026-05-08 14:41:41] 	pkm_heads                           : 1
+[2026-05-08 14:41:41] 	fwpkm_enabled                       : True
+[2026-05-08 14:41:41] 	fwpkm_num_keys                      : 8281
+[2026-05-08 14:41:41] 	fwpkm_top_k                         : 32
+[2026-05-08 14:41:41] 	fwpkm_heads                         : 1
+[2026-05-08 14:41:41] 	fwpkm_inference_updates             : False
+[2026-05-08 14:41:41] 	fwpkm_update_lr                     : 0.01
+[2026-05-08 14:41:41] 	fwpkm_chunk_size                    : 64
+[2026-05-08 14:41:41] 	wavelet_mode                        : lifting
+[2026-05-08 14:41:41] 	shared_lifting_weights              : True
+[2026-05-08 14:41:41] 	untied_reconstruction               : False
+[2026-05-08 14:41:41] 	multi_basis_lifting                 : False
+[2026-05-08 14:41:41] 	multi_basis_inits                   : ['haar', 'random']
+[2026-05-08 14:41:41] 	cross_scale_gating                  : True
+[2026-05-08 14:41:41] 	per_scale_mixer_widths              : [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]
+[2026-05-08 14:41:41] 	stable_parametrization              : False
+[2026-05-08 14:41:41] 	stab_spectral_norm                  : False
+[2026-05-08 14:41:41] 	stab_ff_scaling                     : False
+[2026-05-08 14:41:41] 	stab_embed_scaling                  : False
+[2026-05-08 14:41:41] 	stab_proj_out_scaling               : False
+[2026-05-08 14:41:41] 	stab_mixer_eps_scaling              : False
+[2026-05-08 14:41:41] 	stab_lifting_level_scaling          : False
+[2026-05-08 14:41:41] 	looped_blocks                       : False
+[2026-05-08 14:41:41] 	looped_blocks_count                 : 8
+[2026-05-08 14:41:41] 	wavelet_crawl                       : False
+[2026-05-08 14:41:41] 	wavelet_crawl_k                     : 3
+[2026-05-08 14:41:41] 	lifting_linear_only                 : False
+[2026-05-08 14:41:41] 	lifting_hidden_mult                 : 1
+[2026-05-08 14:41:41] 	lifting_init                        : haar
+[2026-05-08 14:41:41] 	lifting_dropout                     : 0.0
+[2026-05-08 14:41:41] 	lifting_diaglowrank                 : False
+[2026-05-08 14:41:41] 	lifting_level_sharing               : False
+[2026-05-08 14:41:41] 	lifting_offdiag_structure           : banded
+[2026-05-08 14:41:41] 	lifting_block_size                  : 64
+[2026-05-08 14:41:41] 	lifting_band_width                  : 128
+[2026-05-08 14:41:41] 	lifting_monarch_blocks              : 32
+[2026-05-08 14:41:41] 	lifting_offdiag_density             : 0.0
+[2026-05-08 14:41:41] 	lifting_offdiag_mask_seed           : 1337
+[2026-05-08 14:41:41] 	lifting_offdiag_mask_checkpoint     : 
+[2026-05-08 14:41:41] 	mlp_offdiag_structure               : none
+[2026-05-08 14:41:41] 	mlp_block_size                      : 64
+[2026-05-08 14:41:41] 	mlp_band_width                      : 64
+[2026-05-08 14:41:41] 	mlp_pq_density                      : 0.1
+[2026-05-08 14:41:41] 	mlp_pq_mode                         : structural
+[2026-05-08 14:41:41] 	sparse_pq_embedding_enabled         : False
+[2026-05-08 14:41:41] 	sparse_pq_embedding_density         : 0.1
+[2026-05-08 14:41:41] 	sparse_pq_embedding_mode            : structural
+[2026-05-08 14:41:41] 	sparse_pq_embedding_epsilon         : 1e-06
+[2026-05-08 14:41:41] 	sparse_encoder_decoder_embedding    : True
+[2026-05-08 14:41:41] 	sparse_encoder_decoder_embedding_C  : 1024
+[2026-05-08 14:41:41] 	use_mixer_gate                      : True
+[2026-05-08 14:41:41] 	mixer_gate_activation               : silu
+[2026-05-08 14:41:41] 	mixer_depth                         : 1
+[2026-05-08 14:41:41] 	mixer_depth_stabilizers             : False
+[2026-05-08 14:41:41] 	mixer_depth_residuals               : False
+[2026-05-08 14:41:41] 	decompose_bypass                    : True
+[2026-05-08 14:41:41] 	decompose_bypass_cross_window       : True
+[2026-05-08 14:41:41] 	decompose_bypass_ema                : False
+[2026-05-08 14:41:41] 	learned_residual                    : True
+[2026-05-08 14:41:41] 	skip_proj_out                       : False
+[2026-05-08 14:41:41] 	stochastic_depth_rate               : 0.0
+[2026-05-08 14:41:41] 	dropout_embedding                   : 0.2
+[2026-05-08 14:41:41] 	dropout_projection                  : 0.1
+[2026-05-08 14:41:41] 	dropout_mixer                       : 0.1
+[2026-05-08 14:41:41] 	dropout_mlp                         : 0.1
+[2026-05-08 14:41:41] 	dropout_lm_head                     : 0.24
+[2026-05-08 14:41:41] 	optimizer                           : Adagrad
+[2026-05-08 14:41:41] 	optimizer_eps                       : 2e-13
+[2026-05-08 14:41:41] 	lr                                  : 0.01
+[2026-05-08 14:41:41] 	min_lr                              : 0.0002
+[2026-05-08 14:41:41] 	warmup_fraction                     : 0.3
+[2026-05-08 14:41:41] 	grad_clip                           : 1.0
+[2026-05-08 14:41:41] 	tie_embedding_to_lm_head            : True
+[2026-05-08 14:41:41] 	gradient_checkpointing              : False
+[2026-05-08 14:41:41] 	use_amp                             : True
+[2026-05-08 14:41:41] 	amp_dtype                           : fp16
+[2026-05-08 14:41:41] 	allow_tf32                          : True
+[2026-05-08 14:41:41] 	generation_prompt                   : The history of
+[2026-05-08 14:41:41] 	temperature                         : 1.0
+[2026-05-08 14:41:41] 	num_new_tokens                      : 512
+[2026-05-08 14:41:41] 	top_p                               : 0.95
+[2026-05-08 14:41:41] 	repetition_penalty                  : 1.1
+[2026-05-08 14:41:41] 	benchmark_only                      : False
+[2026-05-08 14:41:41] 	benchmark_run_dir                   : 
+[2026-05-08 14:41:41] 	multinodal_enabled                  : False
+[2026-05-08 14:41:41] 	multinodal_num_cells                : 2
+[2026-05-08 14:41:41] 	multinodal_cell_dim                 : 512
+[2026-05-08 14:41:41] 	multinodal_seeds                    : [42, 137]
+[2026-05-08 14:41:41] 	multinodal_combination              : average
+[2026-05-08 14:41:41] 	multinodal_cross_cell_gating        : False
+[2026-05-08 14:41:41] 	multinodal_cross_cell_gate_interval : 1
+[2026-05-08 14:41:41] 	multinodal_features_per_cell        : -1
+[2026-05-08 14:41:41] 	multinodal_bagged_eps               : 1e-06
+[2026-05-08 14:41:41] 	quantize_enabled                    : False
+[2026-05-08 14:41:41] 	quantize_mixer_coarse_bits          : 8
+[2026-05-08 14:41:41] 	quantize_mixer_mid_bits             : 4
+[2026-05-08 14:41:41] 	quantize_mixer_fine_bits            : 2
+[2026-05-08 14:41:41] 	quantize_mlp_bits                   : 4
+[2026-05-08 14:41:41] 	quantize_lifting_bits               : 16
+[2026-05-08 14:41:41] 	quantize_embedding_bits             : 8
+[2026-05-08 14:41:41] 	per_layer_embedding                 : True
+[2026-05-08 14:41:41] 	loop_iterations                     : 1
+[2026-05-08 14:41:41] 	weight_decay                        : 1e-06
+[2026-05-08 14:41:41] 
+[2026-05-08 14:41:41] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-08 14:41:41] [Dataset] Loading wikitext-103 from cache...
+[2026-05-08 14:41:43] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-08 14:41:43] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-08 14:41:43] [Dataset] Vocab size: 50257
+[2026-05-08 14:41:43] [Schedule] 7307 steps/epoch, 7307 total steps
+[2026-05-08 14:41:43] [Schedule] Warmup: 2192 steps (30%)
+[2026-05-08 14:41:45] [Run Folder] logs/wikitext-103_2026-05-08_14-41-41
+[2026-05-08 14:41:45] 
+============================================================
+[2026-05-08 14:41:45] PARAMETER BREAKDOWN
+[2026-05-08 14:41:45] ============================================================
+[2026-05-08 14:41:45] Total parameters:             219,363,916 (219.36M)
+[2026-05-08 14:41:45]   Shared lifting:              14,332,416 (14.33M)
+[2026-05-08 14:41:45]   Token embedding:             55,660,544 (55.66M)
+[2026-05-08 14:41:45]   Layers (total):             149,366,860 (149.37M)
+[2026-05-08 14:41:45]     Mixer/layer:               35,700,736 (35.70M)
+[2026-05-08 14:41:45]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-08 14:41:45]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-08 14:41:45]   LM head (shared):                     0 additional
+[2026-05-08 14:41:45]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-08 14:41:45] ============================================================
+
+[2026-05-08 14:41:45] [Model] 219.36M parameters (219.36M trainable)
+[2026-05-08 14:41:45] [Compile] torch.compile enabled (mode=default)
+[2026-05-08 14:41:46] [Optimizer] Adagrad, lr=0.01, eps=2e-13, weight_decay=1e-06
+[2026-05-08 14:41:46] 
+=== EPOCH 1/1 ===
+[2026-05-08 14:44:11] Step 250: train loss 6.2864, val loss 6.2080		lr=1.14e-03
+[2026-05-08 14:44:11] New Best Val: 6.2080 (skipping save during warmup)
+[2026-05-08 14:46:19] Step 500: train loss 5.8711, val loss 5.8339		lr=2.28e-03
+[2026-05-08 14:46:19] New Best Val: 5.8339 (skipping save during warmup)
+[2026-05-08 14:48:26] Step 750: train loss 5.7339, val loss 5.6989		lr=3.42e-03
+[2026-05-08 14:48:26] New Best Val: 5.6989 (skipping save during warmup)
+[2026-05-08 14:50:33] Step 1000: train loss 5.5221, val loss 5.4925		lr=4.56e-03
+[2026-05-08 14:50:33] New Best Val: 5.4925 (skipping save during warmup)
+[2026-05-08 14:52:42] Step 1250: train loss 5.5612, val loss 5.5597		lr=5.70e-03
+[2026-05-08 14:54:50] Step 1500: train loss 5.2483, val loss 5.2044		lr=6.84e-03
+[2026-05-08 14:54:50] New Best Val: 5.2044 (skipping save during warmup)
+[2026-05-08 14:56:57] Step 1750: train loss 5.1493, val loss 5.1002		lr=7.98e-03
+[2026-05-08 14:56:57] New Best Val: 5.1002 (skipping save during warmup)
+[2026-05-08 14:59:04] Step 2000: train loss 5.1848, val loss 5.1534		lr=9.12e-03
+[2026-05-08 15:01:11] Step 2250: train loss 4.9826, val loss 4.9475		lr=1.00e-02
+[2026-05-08 15:01:11] New Best Val: 4.9475. Saving...
+[2026-05-08 15:03:23] Step 2500: train loss 4.8887, val loss 4.8590		lr=9.91e-03
+[2026-05-08 15:03:23] New Best Val: 4.8590. Saving...
+[2026-05-08 15:05:34] Step 2750: train loss 4.8084, val loss 4.7646		lr=9.72e-03
+[2026-05-08 15:05:34] New Best Val: 4.7646. Saving...
+[2026-05-08 15:07:46] Step 3000: train loss 4.6881, val loss 4.6344		lr=9.41e-03
+[2026-05-08 15:07:46] New Best Val: 4.6344. Saving...
+[2026-05-08 15:10:00] Step 3250: train loss 4.6014, val loss 4.5946		lr=9.00e-03
+[2026-05-08 15:10:00] New Best Val: 4.5946. Saving...
+[2026-05-08 15:12:14] Step 3500: train loss 4.4617, val loss 4.4591		lr=8.50e-03
+[2026-05-08 15:12:14] New Best Val: 4.4591. Saving...
+[2026-05-08 15:14:25] Step 3750: train loss 4.4291, val loss 4.4079		lr=7.93e-03
+[2026-05-08 15:14:25] New Best Val: 4.4079. Saving...
+[2026-05-08 15:16:42] Step 4000: train loss 4.3561, val loss 4.3464		lr=7.28e-03
+[2026-05-08 15:16:42] New Best Val: 4.3464. Saving...
+[2026-05-08 15:18:54] Step 4250: train loss 4.3445, val loss 4.3064		lr=6.58e-03
+[2026-05-08 15:18:54] New Best Val: 4.3064. Saving...
+[2026-05-08 15:21:05] Step 4500: train loss 4.2851, val loss 4.2425		lr=5.85e-03
+[2026-05-08 15:21:05] New Best Val: 4.2425. Saving...
+[2026-05-08 15:23:17] Step 4750: train loss 4.2248, val loss 4.2024		lr=5.10e-03
+[2026-05-08 15:23:17] New Best Val: 4.2024. Saving...
+[2026-05-08 15:25:37] Step 5000: train loss 4.2508, val loss 4.2139		lr=4.35e-03
+[2026-05-08 15:27:44] Step 5250: train loss 4.1454, val loss 4.0929		lr=3.62e-03
+[2026-05-08 15:27:44] New Best Val: 4.0929. Saving...
+[2026-05-08 15:29:57] Step 5500: train loss 4.0894, val loss 4.0661		lr=2.92e-03
+[2026-05-08 15:29:57] New Best Val: 4.0661. Saving...
+[2026-05-08 15:32:09] Step 5750: train loss 4.0594, val loss 4.0339		lr=2.28e-03
+[2026-05-08 15:32:09] New Best Val: 4.0339. Saving...
+[2026-05-08 15:34:20] Step 6000: train loss 4.0541, val loss 4.0294		lr=1.70e-03
+[2026-05-08 15:34:20] New Best Val: 4.0294. Saving...
+[2026-05-08 15:36:33] Step 6250: train loss 4.0209, val loss 4.0257		lr=1.20e-03
+[2026-05-08 15:36:33] New Best Val: 4.0257. Saving...
+[2026-05-08 15:38:44] Step 6500: train loss 3.9737, val loss 4.0071		lr=7.91e-04
+[2026-05-08 15:38:44] New Best Val: 4.0071. Saving...
+[2026-05-08 15:40:57] Step 6750: train loss 3.9800, val loss 3.9918		lr=4.85e-04
+[2026-05-08 15:40:57] New Best Val: 3.9918. Saving...
+[2026-05-08 15:43:13] Step 7000: train loss 3.9723, val loss 3.9934		lr=2.87e-04
+[2026-05-08 15:45:20] Step 7250: train loss 3.9767, val loss 3.9907		lr=2.03e-04
+[2026-05-08 15:45:20] New Best Val: 3.9907. Saving...
+[2026-05-08 15:46:34] Epoch 1 done. Time: 3835.5s (1.07h)
+[2026-05-08 15:46:34]   Train loss: 3.9879, Val loss: 3.9818
+[2026-05-08 15:46:34]   Cumulative time: 1.08h
+[2026-05-08 15:46:34]   New Best Val Loss! Saving model...
+[2026-05-08 15:46:38] 
+=== TRAINING COMPLETE ===
+[2026-05-08 15:46:38] Best Val Loss: 3.9818 (epoch 1)
+[2026-05-08 15:46:38] Avg Epoch Time: 3835.5s
+[2026-05-08 15:46:38] Total Time: 3891.2s
+[2026-05-08 15:46:38] 
+Training Peak VRAM: 22533 MiB
+[2026-05-08 15:46:38] 
+Loading best model for benchmarks...
+[2026-05-08 15:46:41] Best model loaded.
+[2026-05-08 15:46:41] 
+[BENCHMARK] Non-overlapping: 17 windows of length 16384
+[2026-05-08 15:46:44] 
+[BENCHMARK - Non-overlapping]
+[2026-05-08 15:46:44]   Perplexity: 54.6131
+[2026-05-08 15:46:44]   BPT: 5.7712
+[2026-05-08 15:46:44]   BPB: 1.2805
+[2026-05-08 15:46:44]   Avg Loss: 4.0003
+[2026-05-08 15:46:44] 
+[SLIDING WINDOW] block_size=16384, stride=8192, min_context=8192, 34 windows
+[2026-05-08 15:46:50] 
+[BENCHMARK - Sliding Window]
+[2026-05-08 15:46:50]   Perplexity: 55.0181
+[2026-05-08 15:46:50]   BPT: 5.7818
+[2026-05-08 15:46:50]   BPB: 1.2829
+[2026-05-08 15:46:50]   Avg Loss: 4.0077
+[2026-05-08 15:46:50]   Stride: 8192, Min Context: 8192
+[2026-05-08 15:46:50] 
+=== GENERATION — Standard ===
+[2026-05-08 15:46:50] Prompt: The history of
+[2026-05-08 15:46:57] Generated:
+The history of the events , instead of auditing , in 2007 battle , led by Griesham , was only 12 years old to deal with . 
+
+
+
+
+ = = Track listing = = 
+
+
+
+
+
+
+ = = Personnel = = 
+
+
+
+
+
+
+ = = = Album = = = 
+
+
+
+
+ Five singles 
+
+
+ Credits adapted from AllMusic , 2011 
+
+
+
+
+
+
+ = Tenacious ( album ) = 
+
+
+
+
+ Cult ( Japanese ) is a dance @-@ pop song by American hip hop officer Huyba . The track is composed from jazz to Italian liner notes and is composed by Vasa , MT63 , and K @-@ 5 . Written by Yaki Preco is a country @-@ pop song , songwriting , track and ballet . Reissued on 29 March 2012 , it debuted on the BBC Radio 1 , selling 72 @,@ 000 copies in the country . The tour debuted at number two in its first week of release . In the United States , it is one of two songs for the first time in the history of the chart . 
+
+
+ In contrast , the album debuted at number nine on the Billboard Hot Dance Club Songs and Hot Latin Tracks chart before returning to the top 10 . The single eventually peaked at number 41 in the US Mega Drive and the UK Singles Chart . However , both " Bart the Umbrella Tree " and " Front Krupp " were ranked in the top twenty for the opening week of September 26 , 2007 . Three months later , the single also charted at No. 1 on the New Zealand Singles Chart . The accompanying music video was directed by Donaki Dijking who co @-@ produced with one song on their third studio album , The Lureup , they performed the song on the standard edition of the first single . " Yellow " was later relocated to North Wales in December 2001 , and has since been certified double platinum in the European territories . 
+
+
+ " When You Believe " was released as a duet with American Songwriter and illustrators Russell Getzekan . The song performs on the setlist of the album 's longest performing soundtrack album , which has since been relegated to the top 40 only . It starts with Beyoncé performing a medley of " You 're Me Down " for their performance . 
+
+
+
+
+ = = Promotion = = 
+
+
+
+
+ " Yeah ! " was commercially successful , selling over 1 million copies on the US Sony Music Group and " Barra W Music Womp " at
+
+[2026-05-08 15:46:57] === GENERATION — Strategies ===
+[2026-05-08 15:46:57] Prompt: The history of
+[2026-05-08 15:47:10] Generated:
+The history of the event was a major factor in the development of the game , and it is not possible that the player had to be able to do so . The first game for the series came from the start when it took place at the end of the season . The game 's story was later changed by the team of Chris Carter ( who had previously played in the previous three seasons ) , was inspired by the character of Frank Spotnitz . 
+
+
+ The main theme for the game was " The Big Bang " , which was originally intended as a " perfect game " for the Nintendo 64 , but was re @-@ released on November 5 , 2009 , with an additional 4K games being added to the original title . It also marked the first time he made the game more popular than the previous six games — after the release of Final Fantasy XIII @-@ 2 , the game has been described as " a bit too much " for the series , but stated that they were " very good " and " a new kind of player " . In addition , the game received positive reviews , although reviewers noted its graphics and sound design , stating that the game was " almost like the other way of creating a better experience " , adding that the game was " too easy " . 
+
+
+ GameSpot wrote that the game was " one of the most complex games ever produced . We are not aware of what we wanted , but that ’ s not quite have a problem where you can play , or how they can get in . " However , the reviewer said that the game was " definitely a bad game " . He called the game " pretty fun " . He further praised the gameplay , saying that the game " feels like a game that will make the game feel like this . " A review by IGN , however , complimented the game for having some of his best moments , citing the lack of " excellent " gameplay mechanics . GameZone awarded the game 3 out of 10 and said that it was " not only the second game since the first half of all " , while GameSpy 's Matt Stone rated the game a B + grade . He noted that the game had " great difficulty " than " the game 's " powerful and unoriginal setting " . GamePro.com gave the game an 8 out of 10 and criticized the game for its impressive controls . GameSpy felt that the game 's quality and design were repetitive , and noted that the game lacked enough depth to be too strong and that players would need to change the battle system '
+
+[2026-05-08 15:47:10] Metrics: MeanLogP=-1.3236 | MeanH=4.61 | D1=0.496 | D2=0.826 | D3=0.939 | Rep4=0.109
+[2026-05-08 15:47:10] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
+[2026-05-08 15:47:10] Training Peak VRAM: 22533 MiB
