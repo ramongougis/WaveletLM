@@ -1807,15 +1807,17 @@ class WaveletLM(nn.Module):
             from tools.sparse_pq_embedding import SparsePQEmbedding
             density = config.get('sparse_pq_embedding_density', 0.1)
             mode = config.get('sparse_pq_embedding_mode', 'structural')
+            epsilon = config.get('sparse_pq_embedding_epsilon', 0.0) or 0.0
             self.token_embedding = SparsePQEmbedding(
                 vocab_size, C, density=density, mode=mode,
-                init_std=1.0 / math.sqrt(C),
+                init_std=1.0 / math.sqrt(C), epsilon=epsilon,
             )
             print(
                 f"[Embedding] SparsePQEmbedding: p={self.token_embedding.p}, "
                 f"q={self.token_embedding.q}, N'={self.token_embedding.N_prime}, "
                 f"phantom_rows={self.token_embedding.phantom_rows}, "
-                f"density={self.token_embedding.density_actual:.4f} "
+                f"density={self.token_embedding.density_actual:.4f}, "
+                f"epsilon={self.token_embedding.epsilon:.2e} "
                 f"({self.token_embedding.effective_param_count():,} of "
                 f"{self.token_embedding.weight.numel():,} params)"
             )

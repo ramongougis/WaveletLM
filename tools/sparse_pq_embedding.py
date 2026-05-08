@@ -115,17 +115,27 @@ class SparsePQEmbedding(nn.Embedding):
     """nn.Embedding with (p, q) phantom-token sparsity enforced via init-time
     mask application + per-forward multiplication.
 
-    Forward computes `F.embedding(input, self.weight * self.pq_mask, ...)`.
-    Backward through this multiply naturally zeros gradient at non-mask
-    positions via the chain rule, so the optimizer does not accumulate
-    moment / accumulator state on non-mask positions and they stay at zero
-    throughout training. Compatible with torch.compile (forward multiply
-    is a regular tensor op that compile traces correctly).
+    Forward semantics depend on `epsilon`:
+      - epsilon == 0: forward uses `weight * mask` -> non-mask positions are
+        exactly 0 in the materialized weight tensor.
+      - epsilon > 0: forward uses `where(mask, weight, epsilon)` -> non-mask
+        positions are a small constant `epsilon` instead of exact zero. Helps
+        with fp16 kernel pathologies that exact-zero rows can trigger
+        (LayerNorm variance underflow, sparse-matmul edge cases). Note that
+        `epsilon` must be representable in the active dtype: under fp16 AMP,
+        values below ~6e-8 underflow to 0 (smallest subnormal); 1e-6 is
+        safely representable.
+
+    Backward semantics are identical in both branches: the gradient at non-
+    mask positions is exactly 0 (the chain rule through `where` gives 0 for
+    the constant branch), so the optimizer never updates those positions and
+    they stay at zero throughout training. Compatible with torch.compile.
     """
     def __init__(self, num_embeddings: int, embedding_dim: int,
                  density: float, mode: str = "structural",
                  phantom_budget: int | None = None,
-                 init_std: float | None = None):
+                 init_std: float | None = None,
+                 epsilon: float = 0.0):
         super().__init__(num_embeddings, embedding_dim)
         p, q, N_prime, phantom_rows = find_pq(
             embedding_dim, num_embeddings, density, mode, phantom_budget
@@ -138,6 +148,7 @@ class SparsePQEmbedding(nn.Embedding):
         self.phantom_rows = phantom_rows
         self.density_target = density
         self.density_actual = mask.float().mean().item()
+        self.epsilon = float(epsilon)
 
         # Re-init with the embedding's standard init, then mask once.
         if init_std is None:
@@ -146,9 +157,14 @@ class SparsePQEmbedding(nn.Embedding):
             nn.init.normal_(self.weight, mean=0.0, std=init_std)
             self.weight.mul_(mask)
 
+    def _masked_weight(self) -> torch.Tensor:
+        if self.epsilon > 0.0:
+            return torch.where(self.pq_mask, self.weight, self.epsilon)
+        return self.weight * self.pq_mask
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return F.embedding(
-            input, self.weight * self.pq_mask,
+            input, self._masked_weight(),
             self.padding_idx, self.max_norm, self.norm_type,
             self.scale_grad_by_freq, self.sparse,
         )
@@ -160,7 +176,8 @@ class SparsePQEmbedding(nn.Embedding):
         return (
             f"{self.num_embeddings}, {self.embedding_dim}, "
             f"p={self.p}, q={self.q}, N'={self.N_prime}, phantom_rows={self.phantom_rows}, "
-            f"density_target={self.density_target:.4f}, density_actual={self.density_actual:.4f}"
+            f"density_target={self.density_target:.4f}, density_actual={self.density_actual:.4f}, "
+            f"epsilon={self.epsilon:.2e}"
         )
 
 
@@ -174,6 +191,10 @@ class MaskedTiedLinear(nn.Linear):
     optimizer updates that snuck through, init noise, or numerical
     perturbations) would leak into the LM head's logits even though the
     embedding lookup itself is masked.
+
+    Inherits the embedding's `epsilon` semantics: if epsilon > 0 then the
+    LM head's forward uses `where(mask, weight, epsilon)` for consistency
+    with the embedding lookup. Otherwise uses `weight * mask`.
 
     The mask buffer is registered as a non-persistent reference to the
     embedding's buffer (same tensor object, so device moves stay in sync,
@@ -190,6 +211,13 @@ class MaskedTiedLinear(nn.Linear):
         # Share mask buffer (same tensor, no extra storage). non-persistent
         # so it isn't double-saved in the checkpoint.
         self.register_buffer("pq_mask", sparse_embedding.pq_mask, persistent=False)
+        # Inherit epsilon from the embedding so both forward sites use the
+        # same masked-weight semantics.
+        self.epsilon = sparse_embedding.epsilon
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.linear(x, self.weight * self.pq_mask, self.bias)
+        if self.epsilon > 0.0:
+            w = torch.where(self.pq_mask, self.weight, self.epsilon)
+        else:
+            w = self.weight * self.pq_mask
+        return F.linear(x, w, self.bias)

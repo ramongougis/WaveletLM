@@ -36,6 +36,7 @@ def _build_cfg(
     sparse_pq: bool = False,
     sparse_pq_density: float = 0.10,
     sparse_pq_mode: str = "structural",
+    sparse_pq_epsilon: float = 1e-6,
     mlp_struct: str = "none",
     mlp_band_width: int = 64,
     mlp_block_size: int = 64,
@@ -81,6 +82,7 @@ def _build_cfg(
         "sparse_pq_embedding_enabled": sparse_pq,
         "sparse_pq_embedding_density": sparse_pq_density,
         "sparse_pq_embedding_mode": sparse_pq_mode,
+        "sparse_pq_embedding_epsilon": sparse_pq_epsilon,
         "mlp_offdiag_structure": mlp_struct,
         "mlp_band_width": mlp_band_width,
         "mlp_block_size": mlp_block_size,
@@ -203,10 +205,11 @@ if __name__ == "__main__":
 
     overall = []
     overall.append(run_test(
-        "sparse embedding d=10% structural (was failing)",
+        "sparse embedding d=10% structural epsilon=1e-6 (was failing)",
         sparse_pq=True,
         sparse_pq_density=0.10,
         sparse_pq_mode="structural",
+        sparse_pq_epsilon=1e-6,
         compile=use_compile,
         use_amp=use_amp,
     ))
