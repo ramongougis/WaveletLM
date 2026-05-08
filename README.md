@@ -550,9 +550,19 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
-**Result:** L=1 and L=2 reach nearly identical training-loss minimums at matched compute, but L=1 has 0.15 worse val loss. See [plans/single_layer_waveletlm.md](plans/single_layer_waveletlm.md) and [plans/findings.md](plans/findings.md#single-layer-waveletlm-equal-compute-analysis) for the full analysis.
+**Result:** 
 
-**Decision:** L=1 becomes the iteration platform for upcoming ablations, capped at E=5 (val loss saturates there) due to iteration time. L=2 will be re-benchmarked once the L=1-tuned regularization recipe is applied retroactively.
+Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25h). Comparing the minimum training and validation losses observed across the entire run:
+
+| Run | Layers | Epochs | BPB sliding | PPL sliding | Params | Train time | Links |
+|-----|--------|--------|-------------|-------------|--------|------------|-------|
+| A | 1 | 1 | 1.1648 | 38.04 | 586.15M | ~1.5h | [link](logs/wikitext-103_2026-04-29_20-45-37/log.txt) |
+| B | 2 | 1 | 1.1129 | 32.35 | 882.51M | ~3h | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) |
+| C | 1 | 5 | 1.0809 | 29.28 | 586.15M | 9.74h | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) |
+| D | 2 | 5 (baseline) | **1.0140** | **23.75** | 882.51M | 16.25h | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) |
+| E | 1 | 8 (compute-equalized) | 1.0715 | 28.43 | 586.15M | 15.86h | [link](logs/wikitext-103_2026-04-30_12-20-45/log.txt) |
+
+**Decision:** L=1 becomes the iteration platform for upcoming ablations, capped at E=5 (val loss saturates there) due to iteration time. L=2 will be rebenchmarked once the L=1-tuned regularization recipe is applied retroactively.
 
 ### (Complete) Combined Parameter Reduction and VRAM Reallocation
 
@@ -584,7 +594,7 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
 
 ### (Complete) Low Rank Ablations
 
-**Result:** `low_rank=16` (R1) achieves a 1-epoch sliding BPB of 1.2342 (-0.0019 vs reference 1.2361). 5-epoch confirmation ([R1_5ep](logs/wikitext-103_2026-05-05_21-36-45/log.txt)) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, so essentially unchanged. The 1-epoch advantage didn't amplify with more training; the win was likely early-training expressivity that washes out at convergence. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
+**Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 (-0.0019 vs reference 1.2361). 5-epoch confirmation ([LR16_5ep](logs/wikitext-103_2026-05-05_21-36-45/log.txt)) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, so essentially unchanged. The 1-epoch advantage didn't amplify with more training; the win was likely early-training expressivity that washes out at convergence. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
 
 **Decision:** keep `low_rank=4`. +1.92M params for a 5-epoch tie isn't worth it.
 
@@ -630,7 +640,7 @@ Config options:
 | MON 64 | 5.56M | 4.73% | 1.2615 | 47.3% |
 | MON 128 | 8.31M | 7.07% | 1.2584 | 53.3% |
 | MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% |
-| Full wavelet (R1) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
+| Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
 
 **Decision:** BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance.
 
@@ -642,7 +652,7 @@ Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 liftin
 
 **Result vs the previous L=1 baseline ([log](logs/wikitext-103_2026-05-08_07-19-49/log.txt)):**
 
-| | R1 baseline | C1ep new baseline | Δ |
+| | LR16 (former baseline) | CB (Compressed Baseline) | Δ |
 |---|---|---|---|
 | Total params | 393.21M | **266.63M** | **−32.2%** |
 | Shared lifting | 117.50M | 14.33M | −87.8% |
@@ -657,7 +667,7 @@ Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 liftin
 
 **Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size**.
 
-**Inference VRAM also moved less than expected (−7.7% for −32% params)** because at inference the weights are only a minority of total process VRAM (786 MB out of 3,260 MiB at R1, ~24%) — the rest is the CUDA context, cuDNN/cuBLAS workspaces, the PyTorch caching allocator's reserved headroom, the torch.compile cache, forward-pass activations, and cross-window decompose-bypass state. Most of that overhead is fixed-size and doesn't scale with parameter count, so compressing weights from 786 → 533 MB (−32%) only moves the weight-share of total VRAM. To see large inference VRAM wins we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that records the user-facing number into each run's `generations.txt`.
+**Inference VRAM also moved less than expected (−7.7% for −32% params)** because at inference the weights are only a minority of total process VRAM (786 MB out of 3,260 MiB at LR16, ~24%) — the rest is the CUDA context, cuDNN/cuBLAS workspaces, the PyTorch caching allocator's reserved headroom, the torch.compile cache, forward-pass activations, and cross-window decompose-bypass state. Most of that overhead is fixed-size and doesn't scale with parameter count, so compressing weights from 786 → 533 MB (−32%) only moves the weight-share of total VRAM. To see large inference VRAM wins we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that records the user-facing number into each run's `generations.txt`.
 
 ### Sparse Embedding with (p, q) Striding
 
@@ -687,16 +697,21 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 **Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve.
 
-**Initial results (3 of 5 tied runs landed):** All three are past the elbow, but the BPB gap closes monotonically as C_emb grows — the sweep has not yet found a setting that matches C1ep.
+**Initial results (5 of 5 tied runs landed; 2 larger probes planned):** The BPB gap closes monotonically as C_emb grows, hitting +0.0022 at C_emb = C and not crossing under. The encoder/decoder pair is **essentially free** at C_emb = C — neither a help nor a cost — which means the architectural-bonus hypothesis at C_emb = C is **not confirmed**. The C_emb > C extension probes whether forcing the embedding through a C-bottleneck unlocks additional BPB; pessimistically, ~−0.03 vs CB (compressed baseline) is the realistic ceiling.
 
-| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs C1ep |
+| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs the CB |
 |---|---|---|---|---|---|
-| 128 ([log](logs/wikitext-103_2026-05-08_09-12-05/log.txt)) | 170.66M | 22,012 MiB | **2,198 MiB** (−27%) | 1.4808 | +0.2222 |
-| 256 ([log](logs/wikitext-103_2026-05-08_11-54-53/log.txt)) | 177.62M | 22,087 MiB | **2,452 MiB** (−19%) | 1.3916 | +0.1330 |
-| 512 ([log](logs/wikitext-103_2026-05-08_13-37-26/log.txt)) | 191.53M | 22,235 MiB | pending | 1.3315 | +0.0729 |
-| 1024 / 2048 | pending | | | | |
+| 128 ([log](logs/wikitext-103_2026-05-08_09-12-05/log.txt)) | 170.66M | 22,012 MiB | 2,198 MiB | 1.4808 | +0.2222 |
+| 256 ([log](logs/wikitext-103_2026-05-08_11-54-53/log.txt)) | 177.62M | 22,087 MiB | 2,452 MiB | 1.3916 | +0.1330 |
+| 512 ([log](logs/wikitext-103_2026-05-08_13-37-26/log.txt)) | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 |
+| 1024 ([log](logs/wikitext-103_2026-05-08_14-41-41/log.txt)) | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 |
+| 2048 ([log](logs/wikitext-103_2026-05-08_15-47-44/log.txt)) | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 |
+| 4096 (planned) | 386.33M | ~24,315 MiB | ~3,870 MiB | pending | pessimistic ceiling ≈ −0.01 |
+| 8192 (planned) | 608.96M | ~26,690 MiB | ~5,390 MiB | pending | pessimistic ceiling ≈ −0.03 |
 
-**Surprise: inference VRAM moves substantially.** ED128 dropped inference VRAM by 810 MiB (−27%) for an embedding compression that saves only ~192 MB of weights at fp16. The compounding comes from the smaller embedding lookup intermediate (`(1, 16384, C_emb)` is 64 MB at C_emb=2048 vs 4 MB at C_emb=128 in fp16) plus downstream activation effects and allocator efficiency. This is the first compression sweep where parameter reduction translated to substantial inference VRAM savings — bigger per-param than the lifting cascade managed.
+**Decision: compression direction deprecated; expansion direction pursued.** The compression sweep (C_emb < C) is too BPB-costly to ship — even ED1024 (the closest to CB) is +0.024 BPB sliding, and ED512 / ED256 / ED128 give back substantial quality for inference-VRAM wins that are real but not worth the loss. The expansion direction (C_emb > C) becomes the actual opportunity here: with ED2048 landing essentially at CB, going past C_emb = C tests whether forcing the embedding through a C-dim bottleneck (many-to-few decoder) unlocks usable additional BPB. Pessimistic best-case is ~−0.03 vs CB at ED8192. The +8.39M extra params at ED2048 already learn close to identity, so any gain past C_emb = C is contingent on the bottleneck arrangement adding *new* expressiveness, not on the encoder/decoder machinery itself.
+
+**Inference VRAM behavior under compression** (factual record, even though we're not shipping it). ED128 dropped inference VRAM by 810 MiB (−27%) for an embedding compression that saves only ~192 MB of weights at fp16. The compounding comes from the smaller embedding lookup intermediate (`(1, 16384, C_emb)` is 64 MB at C_emb=2048 vs 4 MB at C_emb=128 in fp16) plus downstream activation effects and allocator efficiency. The compression direction has the cleanest per-param inference-VRAM scaling we've measured; the BPB cost is what disqualifies it from production use, not the resource math.
 
 **Untied LM head series:** five additional ablations at the same C_emb values but with `tie_embedding_to_lm_head=false`. The encoder is still allocated (it's required regardless of tying — it bridges C → C_emb on the output path); only the V projection matrix changes. The untied case uses a *separate* learnable `output_embedding(V × C_emb)` instead of reusing the input embedding for V projection. Adds V·C_emb params per run (e.g., +25.73M at C_emb=512). Isolates the cost of weight tying at each embedding-dim setting. Full table in [runs.md](runs.md#encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
 
