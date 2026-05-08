@@ -546,6 +546,95 @@ def generate_best_of_n(model, enc, input_tensor, n, seed, **gen_kwargs):
 # MAIN CLI
 # ==============================================================================
 
+# ==============================================================================
+# GPU MEMORY MONITORING (nvidia-smi based, per-process)
+# ==============================================================================
+
+class GPUMemoryMonitor:
+    """Polls nvidia-smi at a fixed interval to track THIS process's GPU memory
+    usage in MiB, returning the (peak - baseline) delta as a fresh-process,
+    user-facing inference VRAM number.
+
+    Why nvidia-smi over `torch.cuda.max_memory_allocated()`: the latter only
+    counts memory PyTorch has allocated to live tensors. It excludes the CUDA
+    context, cuDNN/cuBLAS workspace, the caching allocator's reserved
+    headroom, and the torch.compile cache -- typically ~1 GB of fixed
+    overhead. Users running this script see the full process memory in
+    nvidia-smi and need to budget for it; the PyTorch number is misleading
+    for "what GPU does this fit on?" questions.
+
+    The monitor filters by PID, so other processes on the same GPU do not
+    contaminate the reading. The baseline (first reading at start, taken
+    before model load) is subtracted from the peak so any pre-existing CUDA
+    context allocations from earlier imports are excluded -- the result is
+    "what running this command added to GPU memory" from a clean baseline.
+    """
+
+    import threading as _threading
+    import subprocess as _subprocess
+    import time as _time
+
+    def __init__(self, interval_s: float = 1.0, gpu_index: int = 0):
+        self.interval_s = interval_s
+        self.gpu_index = gpu_index
+        self.my_pid = os.getpid()
+        self.baseline_mib = 0
+        self.peak_mib = 0
+        self._running = False
+        self._thread = None
+
+    def _read_once(self) -> int:
+        """Return MiB used by this PID on the target GPU, or 0 if unknown."""
+        try:
+            out = self._subprocess.run(
+                ["nvidia-smi",
+                 "--query-compute-apps=pid,used_memory",
+                 f"--id={self.gpu_index}",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=3,
+            ).stdout
+        except Exception:
+            return 0
+        for line in out.strip().splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 2 and parts[0].isdigit() and int(parts[0]) == self.my_pid:
+                try:
+                    return int(parts[1])
+                except ValueError:
+                    return 0
+        return 0
+
+    def _loop(self):
+        while self._running:
+            v = self._read_once()
+            if v > self.peak_mib:
+                self.peak_mib = v
+            self._time.sleep(self.interval_s)
+
+    def start(self):
+        """Sample the baseline (current GPU memory used by this PID), then
+        start the background polling thread."""
+        self.baseline_mib = self._read_once()
+        self.peak_mib = self.baseline_mib  # peak starts at baseline
+        self._running = True
+        self._thread = self._threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop polling. Returns (delta_mib, peak_mib, baseline_mib).
+        delta_mib = peak - baseline = "what this command added to GPU memory"."""
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=3)
+        # One final synchronous read in case the actual peak occurred just
+        # before stop() was called (between the last poll and now).
+        v = self._read_once()
+        if v > self.peak_mib:
+            self.peak_mib = v
+        delta = max(0, self.peak_mib - self.baseline_mib)
+        return delta, self.peak_mib, self.baseline_mib
+
+
 def main():
     parser = argparse.ArgumentParser("WaveletLM text generation")
     parser.add_argument("--checkpoint", required=True,
@@ -611,6 +700,16 @@ def main():
     parser.add_argument("--ptq8", action="store_true", dest="quantize8",
                         help="Alias for --quantize8: activates all quantize strategies at 8 bits across all components.")
     args = parser.parse_args()
+
+    # Start GPU memory polling immediately, BEFORE any torch CUDA initialization
+    # in this main() body. The baseline reading captures whatever pre-existing
+    # GPU memory this PID has at this moment (typically 0 if torch.cuda hasn't
+    # been touched yet beyond the import-level lazy init). Subtracting baseline
+    # from the peak gives "additional GPU memory consumed by running this
+    # command" -- the user-facing answer to "how much VRAM do I need to run
+    # generate.py on this checkpoint?"
+    gpu_monitor = GPUMemoryMonitor(interval_s=1.0)
+    gpu_monitor.start()
 
     # --strategies enables inference strategies matching WaveletLM-research defaults
     if args.strategies:
@@ -783,8 +882,18 @@ def main():
             log(f"Metrics: {format_metrics(metrics)}")
 
     if device.type == 'cuda':
-        peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
-        log(f"\nPeak GPU memory: {peak_mem:.0f} MiB")
+        # Stop the nvidia-smi monitor first (catches any peak that occurred
+        # in the final moments of generation).
+        delta_mib, peak_mib, baseline_mib = gpu_monitor.stop()
+        # PyTorch's tensor-only number for cross-config comparison.
+        torch_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        # User-facing number: process VRAM delta from baseline to peak,
+        # including CUDA context, cuDNN/cuBLAS workspaces, allocator
+        # headroom, and torch.compile cache. This is what users will see
+        # in nvidia-smi when running generate.py.
+        log(f"\nPeak GPU memory (process delta, nvidia-smi): {delta_mib} MiB"
+            f"  (peak={peak_mib} MiB, baseline={baseline_mib} MiB)")
+        log(f"Peak GPU memory (PyTorch tensor-only):      {torch_peak_mem:.0f} MiB")
 
     logger.close()
     print(f"Saved to {gen_file_path}")

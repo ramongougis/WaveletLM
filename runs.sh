@@ -469,10 +469,10 @@ run_ablation "ED2048 encoder-decoder embedding C_emb=C=2048 (full-rank refinemen
 # matrix (input ↔ output) cost us at each embedding-dim setting?
 ED_BASE_PATCH_UNTIED='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128, "sparse_encoder_decoder_embedding": true, "tie_embedding_to_lm_head": false}'
 
-run_ablation "ED128_untied encoder-decoder embedding C_emb=128 (untied LM head)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
-    "ED128_untied: encoder-decoder embedding C_emb=128 with untied LM head (1ep, L=7)"
+# run_ablation "ED128_untied encoder-decoder embedding C_emb=128 (untied LM head)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
+#     "ED128_untied: encoder-decoder embedding C_emb=128 with untied LM head (1ep, L=7)"
 
 run_ablation "ED256_untied encoder-decoder embedding C_emb=256 (untied LM head)" \
     "$BASE_PATCH_1EP" \
