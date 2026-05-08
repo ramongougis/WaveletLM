@@ -312,10 +312,10 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=32; print(json.dumps(b))")" \
 #     "MON32: lifting Monarch nblocks=32 (1ep, levels=7)"
 
-# run_ablation "MON64 Monarch nblocks=64" \
-#     "$BASE_PATCH_1EP" \
-#     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
-#     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
+run_ablation "MON64 Monarch nblocks=64" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
+    "MON64: lifting Monarch nblocks=64 (1ep, levels=7)"
 
 # run_ablation "MON128 Monarch nblocks=128" \
 #     "$BASE_PATCH_1EP" \
