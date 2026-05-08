@@ -436,20 +436,20 @@ ED_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25,
 #     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
 #     "ED256: encoder-decoder embedding C_emb=256, 87% reduction (1ep, L=7)"
 
-run_ablation "ED512 encoder-decoder embedding C_emb=512" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=512; print(json.dumps(b))")" \
-    "ED512: encoder-decoder embedding C_emb=512, 73% reduction (1ep, L=7)"
+# run_ablation "ED512 encoder-decoder embedding C_emb=512" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=512; print(json.dumps(b))")" \
+#     "ED512: encoder-decoder embedding C_emb=512, 73% reduction (1ep, L=7)"
 
-run_ablation "ED1024 encoder-decoder embedding C_emb=1024" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=1024; print(json.dumps(b))")" \
-    "ED1024: encoder-decoder embedding C_emb=1024, 46% reduction (1ep, L=7)"
+# run_ablation "ED1024 encoder-decoder embedding C_emb=1024" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=1024; print(json.dumps(b))")" \
+#     "ED1024: encoder-decoder embedding C_emb=1024, 46% reduction (1ep, L=7)"
 
-run_ablation "ED2048 encoder-decoder embedding C_emb=C=2048 (full-rank refinement)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
-    "ED2048: encoder-decoder embedding C_emb=2048 (full-rank refinement, no compression) (1ep, L=7)"
+# run_ablation "ED2048 encoder-decoder embedding C_emb=C=2048 (full-rank refinement)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
+#     "ED2048: encoder-decoder embedding C_emb=2048 (full-rank refinement, no compression) (1ep, L=7)"
 
 
 # Untied LM head series: same C_emb sweep but with tie_embedding_to_lm_head=false.
