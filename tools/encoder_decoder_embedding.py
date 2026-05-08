@@ -1,4 +1,4 @@
-"""Factored embedding with separate learnable input decoder and output encoder.
+"""Encoder-decoder embedding with separate learnable input decoder and output encoder.
 
 Architecture:
   Input path:
@@ -11,9 +11,9 @@ nonlinearities (GELU in MLP, gating in mixer, lifting cascade) make the
 output-side hidden representation a nonlinear transform of the input-side
 embedding. The optimal C → C_emb compression on the output therefore differs
 from the inverse of the input expansion, so each direction gets its own
-learnable matrix. This is parameter-cheaper than ALBERT's full H × V output
-projection while preserving the structural separation between input and
-output projections.
+learnable matrix. This is parameter-cheaper than the full H × V output
+projection ALBERT uses, while preserving the structural separation between
+input and output projections.
 
 Total parameters (with bias on both projections):
   V·C_emb              (embedding.weight, also tied as the V projection on output)
@@ -27,7 +27,7 @@ Examples for V=50257, C=2048:
                refinement layers around the standard embedding)
 
 Setting C_emb == C disables compression but keeps the encoder/decoder
-machinery active — useful as a "factored, full-rank" reference / ablation.
+machinery active — useful as a full-rank reference / ablation.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class FactoredEmbedding(nn.Module):
+class EncoderDecoderEmbedding(nn.Module):
     """Embedding with learnable input expansion (decoder) and output compression
     (encoder). The vocab projection (V dim) is shared between input lookup and
     output logits via the embedding matrix.
@@ -81,7 +81,7 @@ class FactoredEmbedding(nn.Module):
         return F.linear(compressed, self.embedding.weight)
 
     def effective_param_count(self) -> int:
-        """Total learnable parameter count of the factored embedding.
+        """Total learnable parameter count of the encoder-decoder embedding.
 
         Includes embedding, decoder (weight + bias), and encoder (weight + bias).
         """
@@ -98,33 +98,33 @@ class FactoredEmbedding(nn.Module):
         )
 
 
-class FactoredTiedLMHead(nn.Module):
-    """LM head that delegates to a FactoredEmbedding's output_logits.
+class EncoderDecoderTiedLMHead(nn.Module):
+    """LM head that delegates to an EncoderDecoderEmbedding's output_logits.
 
-    Stores the FactoredEmbedding via a non-submodule attribute (using
+    Stores the EncoderDecoderEmbedding via a non-submodule attribute (using
     `object.__setattr__` to bypass `nn.Module.__setattr__`) so the embedding's
     parameters aren't double-listed in state_dict / parameters() under both
     `token_embedding` and `lm_head` paths. The shared parameters are still
     visible to model.parameters() via the token_embedding path.
     """
-    def __init__(self, factored_embedding: FactoredEmbedding):
+    def __init__(self, ed_embedding: EncoderDecoderEmbedding):
         super().__init__()
         # Bypass nn.Module's submodule registration so this attribute does not
         # appear in self._modules. PyTorch's parameters() / state_dict() walks
-        # _modules; without registration, factored_embedding's params are NOT
+        # _modules; without registration, ed_embedding's params are NOT
         # double-listed under lm_head. They remain accessible via the original
         # token_embedding path.
-        object.__setattr__(self, "_factored_embedding", factored_embedding)
+        object.__setattr__(self, "_ed_embedding", ed_embedding)
 
     @property
-    def factored(self) -> FactoredEmbedding:
-        return self._factored_embedding
+    def ed_embedding(self) -> EncoderDecoderEmbedding:
+        return self._ed_embedding
 
     @property
     def weight(self) -> torch.Tensor:
         """For compatibility with the `lm_head.weight is token_embedding.weight`
         tied-detection check."""
-        return self._factored_embedding.embedding.weight
+        return self._ed_embedding.embedding.weight
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._factored_embedding.output_logits(x)
+        return self._ed_embedding.output_logits(x)

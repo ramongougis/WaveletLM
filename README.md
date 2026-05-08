@@ -525,7 +525,7 @@ Longer training time, more regularization, and parameter compression are the sur
 9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
 10. [New Testing Baseline with Mixer & Wavelet Parameter Reductions](#new-testing-baseline-with-mixer--wavelet-parameter-reductions)
 11. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
-12. [Factored Encoder-Decoder Embedding](#factored-encoder-decoder-embedding)
+12. [Encoder-Decoder Embedding](#encoder-decoder-embedding)
 13. [MLP Structural Compression](#mlp-structural-compression)
 14. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
 15. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
@@ -607,26 +607,16 @@ For all top-k runs, see [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-
 
 ### Wavelet Off-Diagonal Masking with Structured Variants
 
-Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathematically defined* (no reference checkpoint needed): triangular, block-diagonal, banded, or Monarch/butterfly. **Architecturally portable** — no bootstrapping dependency, masks reconstruct from O(1) metadata, no need to ship a per-position bitmap.
+Config options:
+  `"lifting_offdiag_structure"`
+  `"lifting_block_size"`
+  `"lifting_band_width"`
+  `"lifting_monarch_blocks"`
+  `"lifting_offdiag_density"`
+  `"lifting_offdiag_mask_seed"`
+  `"lifting_offdiag_mask_checkpoint"`
 
-**Headline early result: BD64 (block-diagonal, block_size=64, ~3% off-diagonal density, 3.73M lifting params) recovers 47.7% of the 0.0518 BPB gap** ([log](logs/wikitext-103_2026-05-07_02-52-12/log.txt)). At A1-equivalent param count (3.73M vs A1's 3.33M), this is approximately equal to where magnitude_topk lands at the same density (linear interpolation of M2 at 1% and M3 at 5% gives ~48.5% recovery at 3% density). **Per-parameter efficiency: 0.078M lifting params per percentage point of gap recovered** — the best of any variant tested so far. BD64's absolute BPB cost is +0.0271 vs reference 1.2361, but per-parameter recovery efficiency is the more useful comparison metric since magnitude_topk requires a 2-stage training (uncompressed reference → compressed run), which doubles training cost and prevents production use for new architectures.
-
-**T_upper / T_lower (50% off-diagonal density, 58.81M lifting):** both land at BPB sliding 1.2380-1.2381, recovering ~92.6% of gap (+0.0038-0.0039 vs reference 1.2342). **The two are essentially identical** — the model has no measurable directional preference in channel flow. Treat them as tied; "triangular" is the reference for that variant going forward.
-
-**BD256 (block_size=256, 14.74M lifting) lands at BPB sliding 1.2509** ([log](logs/wikitext-103_2026-05-07_04-12-07/log.txt)) — recovers 67.8% of the gap. Recovery is meaningfully lower than I had initially projected (85-90%), because BD's "no cross-block channel interactions" structural ceiling becomes binding faster than the magnitude_topk curve does — going from BD64 (3% density) to BD256 (12.5% density) added only 20 pp of recovery, vs the M-curve's ~50 pp for similar density change.
-
-**BAND256 (bandwidth=256, 27.63M lifting) lands at BPB sliding 1.2445** ([log](logs/wikitext-103_2026-05-07_06-52-52/log.txt)) — recovers 80.1% of the gap, **essentially tying M4** (1.2445 vs M4's 1.2438) at 2.3× M4's lifting params. The "BAND scales better than BD" intuition turned out to be a param-count artifact: BAND256 vs BD256 was a 2× params comparison. At matched density across the sweep, BAND ≈ BD (see "matched density" parity finding below). For production-tier compression, **BAND 128 at the 12% density elbow is the locked-in default** — see the [Production-Default Variant](#production-default-variant-band-128) section below.
-
-**Monarch sweep (4 nblocks × 1 density-axis):** MON32 (5.56M, 47.5%), MON64 (5.56M, 47.3%), MON128 (8.31M, 53.3%), MON256 (15.20M, 63.1%). MON32 and MON64 share param count by Monarch param-symmetry (R·P·L·P^T param count = N·(n + N/n), symmetric around n = √N) and land within 0.2 pp of each other on recovery — confirming Monarch capacity at this density tier is bounded by total params, not block-shape choice. The interesting comparison is at matched param count vs BD/BAND:
-
-| Param tier | Monarch | BD | BAND |
-|---|---|---|---|
-| ~7-8M | MON128: 53.3% | BD128: 57.1% | BAND64: 57.3% |
-| ~14-15M | MON256: 63.1% | BD256: 67.8% | BAND128: 68.0% |
-
-**Monarch consistently underperforms BD and BAND by 4-5 pp at matched param count.** The R·P·L·P^T factorization, which was hypothesized to capture cross-channel interactions that block-diagonal misses, instead spends parameters on the factorization machinery (the inner shuffle permutations + the b·n² R blocks) without buying recovery. Per-param efficiency 6.4 pp/M (MON128) vs 7.7 pp/M (BD128) — Monarch is ~17% less efficient at this tier. **The structural hypothesis behind Monarch is rejected at all density tiers tested**; for production-portable structural compression, BD/BAND remain the better choices.
-
-**Full structural-variant comparison.** Order: reference floor (Diagonal only) → triangular → block-diagonal sweep → banded sweep → Monarch sweep → reference ceiling (Full wavelet).
+**Results:**
 
 | Variant | Lifting params | % of full params | Sliding BPB | % gap recovered |
 |---------|---------------:|----------:|------------:|----------------:|
@@ -647,37 +637,7 @@ Same `W = D + (S ⊙ M)` decomposition as the top-k section, but `M` is *mathema
 | MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% |
 | Full wavelet (R1) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) |
 
-Two findings stand out from the matrix:
-1. **At matched lifting param count, triangular >> block-diagonal / banded** (T_upper 92.5% at 50% params vs BD's projected ~88% at 50% params). Triangular preserves *all* cross-channel pathways in one direction; block-diagonal severs them entirely; banded preserves them only within a bandwidth radius. The hierarchy is structural, not coincidental.
-2. **At matched per-element density, banded ≈ block-diagonal across the full sweep.** Four matched-density data points now confirm parity within ≤1.7 pp:
-   - 3% density: BAND32 (46.0%) vs BD64 (47.7%) — BD slightly ahead by 1.7pp
-   - 6% density: BAND64 (57.3%) vs BD128 (57.1%) — tied within 0.2pp
-   - 12% density: BAND128 (68.0%) vs BD256 (67.8%) — tied within 0.2pp
-   - 25% density: BAND256 (80.1%) vs BD512 (80.3%) — BD ahead by 0.2pp
-
-   The original "BAND > BD by 12pp" finding from BAND256 (1.2445) vs BD256 (1.2509) is **100% a parameter-count artifact** — BAND256 had 2× the params of BD256. At matched density, BD's "no cross-block" hard ceiling and BAND's "soft" cross-channel bleeding produce statistically indistinguishable BPB on this architecture.
-
-Production-Default Variant: BAND 128
-
-**BAND 128 (bandwidth=128, 14.33M lifting) is locked in as the production-default lifting-compression variant.** It wins on both axes that matter at the production tier:
-
-| Candidate | Lifting | % of full | BPB sliding | Gap recovered |
-|-----------|---------|-----------|-------------|---------------|
-| **BAND 128** | **14.33M** | **12.20%** | **1.2508** | **68.0%** |
-| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% |
-| M4 (magnitude_topk @ 10%, non-portable) | 11.85M | 10.08% | 1.2438 | 81.5% |
-
-BAND 128 has marginally fewer params than BD 256 (14.33M vs 14.74M, ~3% less) AND marginally better recovery (+0.2 pp). It sits at the "elbow" of the recovery-vs-density curve — past 12% density, each additional percentage point of recovery costs ~2× the params (e.g., BAND 256 at 27.63M for 80.1% recovery is +12 pp recovery for 2× the params over BAND 128).
-
-**Why BAND 128 over the alternatives:**
-- **vs BD 256**: marginal BPB win (+0.0001), marginal param win (-3%), structurally equivalent recovery → BAND has the slight edge on every dimension.
-- **vs M4 (magnitude_topk)**: M4 absolute BPB is 0.0070 better, but M4 requires a 2-stage training (uncompressed reference → compressed run) that doubles training cost and prevents direct use for new architectures. BAND 128 is portable to any architecture without bootstrapping.
-- **vs higher-density variants (BAND 256, BD 512)**: those land at ~80% recovery but at 2× the params. The "half the relative parameters → double the training throughput or half the VRAM for allocation elsewhere" tradeoff favors stopping at 12% density.
-- **vs lower-density variants (BAND 64, BD 128)**: those save another ~50% of params but lose ~10pp recovery. Past the elbow on the cheap side.
-
-**Production-default landscape after lock-in:**
-
-The lifting cascade compresses from 117.50M (uncompressed) to 14.33M (BAND 128) — **an 87.8% reduction at +0.0147 BPB cost vs the uncompressed reference**. Combined with the embedding (p, q) compression and the upcoming MLP / mixer / FwPKM compression sweeps, the production-default WaveletLM lands in the 100-150M total parameter range — Hyena territory at the same architectural footprint. The full table for the 1-epoch sweep is in [runs.md](runs.md#wavelet-off-diagonal-masking-with-structured-variants-planned-l1-levels7-epochs1).
+**Decision:** BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance.
 
 ### New Testing Baseline with Mixer & Wavelet Parameter Reductions
 
@@ -714,11 +674,11 @@ The scheme is content-blind, deterministic, has O(1) metadata cost, and ships wi
 
 Full scheme, requirements, selection algorithm, worked candidates for C=2048 at common densities, cognitive/linguistic framing, and the planned ablation are in [plans/new_compression_ideas.md](plans/new_compression_ideas.md).
 
-### Factored Encoder-Decoder Embedding
+### Encoder-Decoder Embedding
 
 A second compression scheme for the token embedding, parallel to the (p, q) striding above but with different structural commitments. **Forward path:** tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. **Output path:** C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
 
-The decoder and encoder are **separate learnable matrices** because the model's nonlinearities (GELU in MLP, gating in mixer, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Total params: `V·C_emb + 2·C·C_emb + C + C_emb` (vs dense `V·C`). Implementation in [tools/factored_embedding.py](tools/factored_embedding.py).
+The decoder and encoder are **separate learnable matrices** because the model's nonlinearities (GELU in MLP, gating in mixer, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Total params: `V·C_emb + 2·C·C_emb + C + C_emb` (vs dense `V·C`). Implementation in [tools/encoder_decoder_embedding.py](tools/encoder_decoder_embedding.py).
 
 | C_emb | Total params | % of dense (V·C) | Reduction |
 |---|---|---|---|
@@ -728,11 +688,11 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 | 1024 | 55.66M | 54.07% | 46% |
 | 2048 (= C) | 111.33M | 108.16% | none — full-rank refinement ablation |
 
-**Why this might beat (p, q) on the failure modes we hit:** The sparse-embedding (p, q) NaN'd at peak LR partly because sparse output activations (90% zeros) stress downstream LayerNorms, with variance dominated by 10% of dims and ~3× amplification of active values. The factored embedding produces **dense outputs** (the decoder mixes all `C_emb` dims into all `C` output dims), so this whole class of LayerNorm-amplification failure goes away. ALBERT-style; well-trodden.
+**Why this might beat (p, q) on the failure modes we hit:** The sparse-embedding (p, q) NaN'd at peak LR partly because sparse output activations (90% zeros) stress downstream LayerNorms, with variance dominated by 10% of dims and ~3× amplification of active values. The encoder-decoder embedding produces **dense outputs** (the decoder mixes all `C_emb` dims into all `C` output dims), so this whole class of LayerNorm-amplification failure goes away.
 
 **The C_emb=2048 case** is a no-compression ablation: when `C_emb == C`, the decoder and encoder become learnable C×C matrices acting as affine refinement layers around the standard embedding. Tests whether the encoder/decoder machinery itself helps (capacity-rich) even without the parameter savings. If this one wins on 1-epoch BPB cleanly over the combined-reductions baseline, the architectural addition is justified independently of compression.
 
-**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve (likely around C_emb=256-512 based on ALBERT-line literature). Full table in [runs.md](runs.md#factored-encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
+**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve. Full table in [runs.md](runs.md#encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
 
 ### MLP Structural Compression
 

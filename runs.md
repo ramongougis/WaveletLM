@@ -768,23 +768,23 @@ Tests sparsifying the 102.93M token embedding via the (p, q) phantom-token strid
 | PQ_EMB25 | 25% | smallest_q | (6, 2, 50258) | 1 | ~25.73M | 25% | | | At s = p+q = 8, only q=2 is valid (q=4 makes p=4 divide 2048), so structural and smallest_q converge. Conservative density; if 10% is borderline, this is the production-safe fallback at 75% embedding reduction. |
 | **PQ_EMB_winner_5ep** | TBD | TBD | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch (p, q) variant. Compare against the 5-epoch combined-reductions baseline (section 11 placeholder, will run with same W2 + low_rank=4 + BAND 128 settings as section 7 but for 5 epochs). **Strongest result:** BPB cleanly below the 5-epoch combined-reductions baseline, suggesting embedding sparsity reduces overfitting at the embedding tier in the same way lifting sparsity does at the cascade tier. |
 
-### Factored encoder-decoder embedding sweep (planned, L=1, levels=7, epochs=1)
+### Encoder-decoder embedding sweep (planned, L=1, levels=7, epochs=1)
 
-Tests the factored embedding architecture (V → C_emb via embedding lookup, C_emb → C via learnable decoder, [model interior at C], C → C_emb via learnable encoder, C_emb → V via tied embedding). The decoder and encoder are SEPARATE learnable matrices because the model's nonlinearities (GELU, gating, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Implementation in [tools/factored_embedding.py](tools/factored_embedding.py).
+Tests the encoder-decoder embedding architecture (V → C_emb via embedding lookup, C_emb → C via learnable decoder, [model interior at C], C → C_emb via learnable encoder, C_emb → V via tied embedding). The decoder and encoder are SEPARATE learnable matrices because the model's nonlinearities (GELU, gating, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Implementation in [tools/encoder_decoder_embedding.py](tools/encoder_decoder_embedding.py).
 
 **Parameter count formula** (V=50257, C=2048, biases included): `V·C_emb + 2·C·C_emb + C + C_emb`. Compare against dense `V·C = 102.93M`:
 
 | Run | C_emb | Embedding params | Decoder params | Encoder params | Total | % of dense | Folder | BPB (sliding) | Notes |
 |-----|------:|----------------:|---------------:|---------------:|------:|-----------:|--------|---------------|-------|
-| **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | C=2048 (dense) | 102.93M | — | — | 102.93M | 100% | TBD | TBD | Section-7 baseline. The reference all factored-embedding variants compare against. |
-| FE128 | 128 | 6.43M | 0.26M | 0.26M | **6.95M** | **6.75%** | | | **Most aggressive compression.** 93% reduction. C_emb=128 is highly bottlenecked relative to C=2048 (16× factor); plausible recovery hit. Worth running to map the curve floor. |
-| FE256 | 256 | 12.87M | 0.53M | 0.53M | **13.92M** | **13.53%** | | | 87% reduction. Closer to the elbow; rank-256 should capture most of the vocab structure for natural-language modeling. |
-| **FE512** | **512** | **25.73M** | **1.05M** | **1.05M** | **27.83M** | **27.04%** | | | **Default candidate.** ALBERT-style 4× factor. Standard practice in the literature; minimal expected BPB cost. 73% reduction. |
-| FE1024 | 1024 | 51.46M | 2.10M | 2.10M | **55.66M** | **54.07%** | | | 46% reduction. Conservative; rank-1024 is more than sufficient for vocab structure. Useful as a "safe upper bound" on capacity headroom. |
-| FE2048 | C=2048 | 102.93M | 4.20M | 4.20M | **111.33M** | **108.16%** | | | **No compression — full-rank refinement** ablation. C_emb == C, so the decoder and encoder are full C×C matrices that act as learnable affine projections around the standard embedding. Tests whether the encoder/decoder machinery itself helps even without compression (capacity-rich variant). |
-| **FE_winner_5ep** | TBD | TBD | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch FE variant, layered on the combined-reductions baseline. Compare against the 5-epoch combined-reductions baseline. |
+| **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | C=2048 (dense) | 102.93M | — | — | 102.93M | 100% | TBD | TBD | Section-7 baseline. The reference all encoder-decoder embedding variants compare against. |
+| ED128 | 128 | 6.43M | 0.26M | 0.26M | **6.95M** | **6.75%** | | | **Most aggressive compression.** 93% reduction. C_emb=128 is highly bottlenecked relative to C=2048 (16× factor); plausible recovery hit. Worth running to map the curve floor. |
+| ED256 | 256 | 12.87M | 0.53M | 0.53M | **13.92M** | **13.53%** | | | 87% reduction. Closer to the elbow; rank-256 should capture most of the vocab structure for natural-language modeling. |
+| **ED512** | **512** | **25.73M** | **1.05M** | **1.05M** | **27.83M** | **27.04%** | | | **Default candidate.** 4× factor. Standard practice in the literature; minimal expected BPB cost. 73% reduction. |
+| ED1024 | 1024 | 51.46M | 2.10M | 2.10M | **55.66M** | **54.07%** | | | 46% reduction. Conservative; rank-1024 is more than sufficient for vocab structure. Useful as a "safe upper bound" on capacity headroom. |
+| ED2048 | C=2048 | 102.93M | 4.20M | 4.20M | **111.33M** | **108.16%** | | | **No compression — full-rank refinement** ablation. C_emb == C, so the decoder and encoder are full C×C matrices that act as learnable affine projections around the standard embedding. Tests whether the encoder/decoder machinery itself helps even without compression (capacity-rich variant). |
+| **ED_winner_5ep** | TBD | TBD | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch ED variant, layered on the combined-reductions baseline. Compare against the 5-epoch combined-reductions baseline. |
 
-**Composability with other compression sweeps:** FactoredEmbedding can compose with the MLP structural compression sweep (section 10) — both target different parts of the model. The 5-epoch combined winner stack candidate is `(combined-reductions baseline) + FE<winner> + MLP_<winner>`, with FwPKM key pruning as the next standalone sweep after this round closes.
+**Composability with other compression sweeps:** EncoderDecoderEmbedding can compose with the MLP structural compression sweep (section 10) — both target different parts of the model. The 5-epoch combined winner stack candidate is `(combined-reductions baseline) + ED<winner> + MLP_<winner>`, with FwPKM key pruning as the next standalone sweep after this round closes.
 
 ### MLP structural compression (planned, L=1, levels=7, epochs=1)
 
