@@ -426,10 +426,10 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 # elbow on the recovery-vs-density curve identifies the production sweet spot.
 ED_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128, "sparse_encoder_decoder_embedding": true}'
 
-run_ablation "ED128 encoder-decoder embedding C_emb=128" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
-    "ED128: encoder-decoder embedding C_emb=128, 93% reduction (1ep, L=7)"
+# run_ablation "ED128 encoder-decoder embedding C_emb=128" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
+#     "ED128: encoder-decoder embedding C_emb=128, 93% reduction (1ep, L=7)"
 
 run_ablation "ED256 encoder-decoder embedding C_emb=256" \
     "$BASE_PATCH_1EP" \
