@@ -2060,8 +2060,18 @@ class WaveletLM(nn.Module):
 
         # Weight tying
         if config.get("tie_embedding_to_lm_head", False):
-            self.lm_head.weight = self.token_embedding.weight
-            print(f"[LM Head] Tied to token embedding")
+            from tools.sparse_pq_embedding import SparsePQEmbedding, MaskedTiedLinear
+            if isinstance(self.token_embedding, SparsePQEmbedding):
+                # Replace lm_head with a MaskedTiedLinear that shares the
+                # embedding's parameter AND applies its mask in forward.
+                # Required because torch.compile cannot rely on parameter
+                # gradient hooks to keep non-mask positions at zero, so we
+                # enforce the mask at every forward use site instead.
+                self.lm_head = MaskedTiedLinear(self.token_embedding, bias=False)
+                print(f"[LM Head] Tied to SparsePQEmbedding via MaskedTiedLinear (mask applied in forward)")
+            else:
+                self.lm_head.weight = self.token_embedding.weight
+                print(f"[LM Head] Tied to token embedding")
 
         # Cross-window decompose bypass
         self.decompose_bypass_cross_window = config.get("decompose_bypass_cross_window", True)

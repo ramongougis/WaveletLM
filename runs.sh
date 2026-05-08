@@ -317,12 +317,12 @@ run_ablation "MON32 Monarch nblocks=32" \
 #     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=64; print(json.dumps(b))")" \
 #     "MON64: lifting Monarch nblocks=64 (1ep, L=7)"
 
-run_ablation "MON32 Monarch nblocks=128" \
+run_ablation "MON128 Monarch nblocks=128" \
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=128; print(json.dumps(b))")" \
     "MON32: lifting Monarch nblocks=128 (1ep, levels=7)"
     
-run_ablation "MON32 Monarch nblocks=256" \
+run_ablation "MON256 Monarch nblocks=256" \
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$STRUCT_BASE'''); b['lifting_offdiag_structure']='monarch'; b['lifting_monarch_blocks']=256; print(json.dumps(b))")" \
     "MON32: lifting Monarch nblocks=256 (1ep, levels=7)"

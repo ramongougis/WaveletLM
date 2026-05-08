@@ -109,23 +109,20 @@ def make_structural_mask(
 
 
 class StructuredLinear(nn.Linear):
-    """nn.Linear with a fixed (out_features, in_features) binary mask enforced
-    via init-time multiplication + a gradient hook.
+    """nn.Linear with a fixed (out_features, in_features) binary mask applied
+    to the weight at every forward pass.
 
-    Forward computes plain y = W @ x + bias. Sparsity is preserved because:
-      1. The mask is multiplied into the weight at __init__ -> non-mask
-         positions start at zero.
-      2. A gradient hook on `self.weight` zeroes the gradient at non-mask
-         positions before each optimizer step -> the optimizer never updates
-         those positions -> they stay at zero throughout training.
-      3. The mask is also re-applied via init_structured_lifting_linear after
-         the structural Haar / random / zero re-init, so any caller that
-         re-initializes the weight ends up masked.
+    Forward computes y = (W * mask) @ x + bias. Backward correctly zeroes
+    gradient at masked positions via autograd's chain rule, so masked positions
+    never receive a gradient update -- the optimizer state at those positions
+    stays at init (zeroed by the mask-multiply at construction).
 
-    The mask is stored as a `bool` buffer (4x smaller than fp32). Multiplying
-    a float gradient by a bool tensor uses PyTorch's implicit dtype
-    promotion in the multiply kernel, so no separate fp32 copy of the mask
-    is materialized at backward time.
+    NOTE: this uses forward multiplication (NOT a parameter gradient hook),
+    because torch.compile does not reliably fire hooks registered on tensors
+    via `register_hook`. The forward multiply is a regular tensor op that
+    compile traces correctly. The mask is stored as a `bool` buffer (4x
+    smaller than fp32) and is implicitly promoted to weight.dtype during
+    `weight * mask`.
 
     Effective parameter count is reported by `effective_numel()`, which counts
     nonzero positions in the mask plus bias.
@@ -150,7 +147,7 @@ class StructuredLinear(nn.Linear):
             )
         # Persistent so loaded checkpoints retain the mask exactly. Stored as
         # bool to keep the buffer 4x smaller than the parameter; PyTorch's
-        # element-wise multiply promotes bool to grad's dtype implicitly.
+        # element-wise multiply promotes bool implicitly during forward.
         self.register_buffer(
             "_struct_mask",
             mask.to(device=self.weight.device, dtype=torch.bool),
@@ -160,15 +157,8 @@ class StructuredLinear(nn.Linear):
         with torch.no_grad():
             self.weight.mul_(self._struct_mask)
 
-        # Gradient hook: zero gradient at non-mask positions before optimizer
-        # step. Captured via closure so the hook resolves self._struct_mask at
-        # call time (after any device move).
-        def _grad_hook(grad: torch.Tensor) -> torch.Tensor:
-            return grad * self._struct_mask
-        self.weight.register_hook(_grad_hook)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.linear(x, self.weight, self.bias)
+        return F.linear(x, self.weight * self._struct_mask, self.bias)
 
     def effective_numel(self) -> int:
         n = int(self._struct_mask.sum().item())

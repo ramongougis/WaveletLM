@@ -7,13 +7,24 @@ yielding density 2 / (p + q). Phantom tokens (vocab padded to N' >= N
 to enable q | N') are a numerology device only — never allocated.
 
 Sparsity is enforced via:
-  1. Init-time mask application: weight = init * mask  (non-mask positions = 0)
-  2. Gradient hook: gradients at non-mask positions are zeroed before the
-     optimizer step, so non-mask weights stay at 0 throughout training.
+  1. Init-time mask application: weight = init * mask (non-mask positions = 0)
+  2. Forward multiply: every forward pass uses `weight * mask`, so even if
+     the optimizer would update non-mask positions, those updates are
+     zeroed back out at the next forward use. The chain rule through
+     `weight * mask` also naturally zeros gradient at non-mask positions
+     during backward, so the optimizer doesn't accumulate Adagrad/Adam
+     state on non-mask positions.
 
-Weight tying with the LM head works automatically because both modules
-read the same underlying Parameter, which is held at zero on non-mask
-positions.
+NOTE: Forward multiplication (not a parameter gradient hook) is required
+because torch.compile does not reliably fire `register_hook` callbacks on
+parameters. The forward multiply is a regular tensor op that compile
+traces correctly.
+
+For weight-tied LM heads: a separate MaskedTiedLinear class shares the
+parameter AND applies the same mask in its forward. This is necessary
+because the `nn.Linear.forward` of a vanilla tied LM head would NOT
+multiply by mask, so non-mask drift in the parameter would still affect
+the LM head's logits (even though the embedding lookup is masked).
 """
 from __future__ import annotations
 
@@ -101,13 +112,15 @@ def make_pq_mask(N: int, C: int, p: int, q: int, N_prime: int) -> torch.Tensor:
 
 
 class SparsePQEmbedding(nn.Embedding):
-    """nn.Embedding with (p, q) phantom-token sparsity enforced by gradient masking.
+    """nn.Embedding with (p, q) phantom-token sparsity enforced via init-time
+    mask application + per-forward multiplication.
 
-    The mask is applied once to the weight at construction (so non-mask positions
-    are zero from init) and a gradient hook re-zeroes gradients at non-mask
-    positions before each optimizer step, keeping the weight masked throughout
-    training. No per-forward multiplication is needed; tied LM heads see masked
-    weights automatically because both read the same Parameter.
+    Forward computes `F.embedding(input, self.weight * self.pq_mask, ...)`.
+    Backward through this multiply naturally zeros gradient at non-mask
+    positions via the chain rule, so the optimizer does not accumulate
+    moment / accumulator state on non-mask positions and they stay at zero
+    throughout training. Compatible with torch.compile (forward multiply
+    is a regular tensor op that compile traces correctly).
     """
     def __init__(self, num_embeddings: int, embedding_dim: int,
                  density: float, mode: str = "structural",
@@ -126,21 +139,19 @@ class SparsePQEmbedding(nn.Embedding):
         self.density_target = density
         self.density_actual = mask.float().mean().item()
 
-        # Re-init with the embedding's standard init, then mask.
+        # Re-init with the embedding's standard init, then mask once.
         if init_std is None:
             init_std = 1.0 / math.sqrt(embedding_dim)
         with torch.no_grad():
             nn.init.normal_(self.weight, mean=0.0, std=init_std)
             self.weight.mul_(mask)
 
-        # Gradient hook: zero gradients at non-mask positions before optimizer step.
-        # Captured via closure so the hook resolves self.pq_mask at call time
-        # (after any device move). Bool * float uses PyTorch's implicit dtype
-        # promotion in the multiply kernel, so no separate fp32 copy of the
-        # mask is materialized at backward time.
-        def _grad_hook(grad: torch.Tensor) -> torch.Tensor:
-            return grad * self.pq_mask
-        self.weight.register_hook(_grad_hook)
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.embedding(
+            input, self.weight * self.pq_mask,
+            self.padding_idx, self.max_norm, self.norm_type,
+            self.scale_grad_by_freq, self.sparse,
+        )
 
     def effective_param_count(self) -> int:
         return int(self.pq_mask.sum().item())
@@ -151,3 +162,34 @@ class SparsePQEmbedding(nn.Embedding):
             f"p={self.p}, q={self.q}, N'={self.N_prime}, phantom_rows={self.phantom_rows}, "
             f"density_target={self.density_target:.4f}, density_actual={self.density_actual:.4f}"
         )
+
+
+class MaskedTiedLinear(nn.Linear):
+    """nn.Linear whose weight is tied to a SparsePQEmbedding's parameter
+    AND applies that embedding's mask in forward.
+
+    Required for weight-tied LM heads when the embedding is sparse: a
+    vanilla `nn.Linear` with a tied weight would NOT multiply by mask in
+    forward, so any drift of the parameter at non-mask positions (from
+    optimizer updates that snuck through, init noise, or numerical
+    perturbations) would leak into the LM head's logits even though the
+    embedding lookup itself is masked.
+
+    The mask buffer is registered as a non-persistent reference to the
+    embedding's buffer (same tensor object, so device moves stay in sync,
+    and no extra checkpoint entry).
+    """
+    def __init__(self, sparse_embedding: SparsePQEmbedding, bias: bool = False):
+        super().__init__(
+            sparse_embedding.embedding_dim,
+            sparse_embedding.num_embeddings,
+            bias=bias,
+        )
+        # Tie weight to the embedding's parameter (same object).
+        self.weight = sparse_embedding.weight
+        # Share mask buffer (same tensor, no extra storage). non-persistent
+        # so it isn't double-saved in the checkpoint.
+        self.register_buffer("pq_mask", sparse_embedding.pq_mask, persistent=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.linear(x, self.weight * self.pq_mask, self.bias)
