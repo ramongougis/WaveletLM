@@ -641,30 +641,26 @@ Config options:
 
 ### New Testing Baseline with Mixer & Wavelet Parameter Reductions
 
-The structural-variants sweep above settled **BAND 128** as the production-default lifting compression. Combined with the **W2 per-scale mixer widths** win and **low_rank=4** from earlier, the natural next step is to merge all the banked wins into a **single combined-reductions baseline** before launching the next compression target (embedding, MLP, mixer Linear, FwPKM).
+Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 lifting) into a single combined-reductions baseline. All downstream compression sweeps (embedding, MLP, FwPKM) compare against this, not the old 1.2361 / 1.0974 references.
 
-**Settings (the new combined baseline):**
-- `layers: 1`
-- `levels: 7`
-- `block_size: 16384` (from "(Complete) Combined Parameter Reduction and VRAM Reallocation")
-- `low_rank: 4`
-- `per_scale_mixer_widths: [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]` (W2 winner from "(Complete) Per-Scale Mixer Width Expansion")
-- `lifting_offdiag_structure: "banded"`, `lifting_band_width: 128` (BAND 128 from the structural-variants sweep)
+**Settings:** `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]`, `lifting_offdiag_structure="banded"`, `lifting_band_width=128`.
 
-**Why a new baseline now:**
+**Result vs the previous L=1 baseline ([log](logs/wikitext-103_2026-05-08_07-19-49/log.txt)):**
 
-Future compression sweeps (embedding, MLP structural, mixer Linear, FwPKM key pruning) need a stable reference point that already includes the wins we've banked. Comparing them against the original BPB 1.2361 reference — which doesn't include W2 mixer or BAND 128 lifting — would conflate "did the new compression work?" with "did the old win compose with this one?" Establishing the combined-reductions baseline upfront gives every downstream sweep a clean A/B comparison.
+| | R1 baseline | C1ep new baseline | Δ |
+|---|---|---|---|
+| Total params | 393.21M | **266.63M** | **−32.2%** |
+| Shared lifting | 117.50M | 14.33M | −87.8% |
+| Mixer/layer | 59.11M | 35.70M | −39.6% |
+| MLP/layer | 83.91M | 83.91M | unchanged |
+| Token embedding | 102.93M | 102.93M | unchanged |
+| Training peak VRAM | 23,416 MiB | 23,110 MiB | −1.3% |
+| Inference peak VRAM | TBD | TBD | TBD |
+| BPB sliding | 1.2342 | **1.2586** | +0.0244 |
 
-**Secondary motivations:**
-- **Composability check.** Literature on combined structural compression (SparseGPT-line) suggests combined cost is 70-80% of the sum of individual costs. With this run, we'd directly measure how BAND 128 lifting and W2 mixer compose. If the combined +BPB ≈ sum of individual costs, the wins are independent. If less, they compound favorably; if more, there's a cross-interaction we'd want to understand before stacking further compression on top.
-- **Training speed-up.** Lifting goes from 117.50M → 14.33M (−88%); mixer drops further from W2's per-scale narrowing on top of low_rank=4. Total parameter footprint should drop substantially, freeing VRAM for longer block sizes / larger batch sizes / additional ablations in parallel.
-- **The "gradient explosion" angle.** The sparse-embedding run NaN'd at peak LR partly because all the gradient signal had to flow through unmodified-density downstream layers (mixer + MLP + FwPKM). With the mixer already trimmed via W2 and the lifting already compressed via BAND 128, the gradient path through the non-embedding components is much narrower — which may make sparse embedding stable that wasn't stable on the un-reduced baseline. (Empirically TBD.)
+**Composability:** the +0.0244 BPB cost is **94% of the linear sum** of the individual costs (W2's +0.0095 + BAND 128's +0.0166 = +0.0261). Wins are essentially independent — no compounding gain, no negative interaction.
 
-**Expected runs:**
-- 1-epoch combined-reductions baseline. Compare BPB vs the existing references (R1's 1.2342 uncompressed, W2's 1.2437 mixer-only, BAND 128's 1.2508 lifting-only). The combined cost prediction is `1.2342 + (1.2437 − 1.2342) + (1.2508 − 1.2342) ≈ 1.2604` if costs sum linearly, or ~1.2540 at 70% composability. Empirical ground truth from the run.
-- 5-epoch confirmation against the headline 5-epoch reference 1.0974.
-
-**Subsequent compression sweeps will use this combined-reductions baseline as their reference, not the old 1.2361 / 1.0974 unreduced numbers.**
+**Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size** — see the inference VRAM measurement step in [runs.sh](runs.sh).
 
 ### Sparse Embedding with (p, q) Striding
 
@@ -692,7 +688,9 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 **The C_emb=2048 case** is a no-compression ablation: when `C_emb == C`, the decoder and encoder become learnable C×C matrices acting as affine refinement layers around the standard embedding. Tests whether the encoder/decoder machinery itself helps (capacity-rich) even without the parameter savings. If this one wins on 1-epoch BPB cleanly over the combined-reductions baseline, the architectural addition is justified independently of compression.
 
-**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve. Full table in [runs.md](runs.md#encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
+**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve.
+
+**Untied LM head series:** five additional ablations at the same C_emb values but with `tie_embedding_to_lm_head=false`. The encoder is still allocated (it's required regardless of tying — it bridges C → C_emb on the output path); only the V projection matrix changes. The untied case uses a *separate* learnable `output_embedding(V × C_emb)` instead of reusing the input embedding for V projection. Adds V·C_emb params per run (e.g., +25.73M at C_emb=512). Isolates the cost of weight tying at each embedding-dim setting. Full table in [runs.md](runs.md#encoder-decoder-embedding-sweep-planned-l1-levels7-epochs1).
 
 ### MLP Structural Compression
 

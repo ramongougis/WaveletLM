@@ -104,6 +104,28 @@ BASE_PATCH_5EP='{
     "eval_interval": 250
 }'
 
+run_inference_vram_latest() {
+    # Locate the most recent run folder by mtime and invoke generate.py on its
+    # best checkpoint to get a fresh-process inference VRAM measurement. The
+    # peak-memory line is recorded into the run's generations.txt by
+    # generate.py itself (see the [Inference VRAM] line in train.py's tail).
+    local LATEST_RUN
+    LATEST_RUN=$(ls -td logs/wikitext-103_*/ 2>/dev/null | head -1)
+    if [ -z "$LATEST_RUN" ]; then
+        echo "[runs.sh] Skipping inference VRAM measurement (no log dir found)"
+        return
+    fi
+    LATEST_RUN="${LATEST_RUN%/}"
+    if [ ! -f "$LATEST_RUN/best_model.pt" ]; then
+        echo "[runs.sh] Skipping inference VRAM measurement (no best_model.pt at $LATEST_RUN)"
+        return
+    fi
+    echo ""
+    echo "=== Measuring inference VRAM (fresh process) for ${LATEST_RUN}"
+    python generate.py --checkpoint "$LATEST_RUN/best_model.pt" || \
+        echo "[runs.sh] generate.py exited non-zero; continuing"
+}
+
 run_ablation() {
     local LABEL="$1"
     local BASE_JSON="$2"
@@ -117,6 +139,7 @@ run_ablation() {
 
     build_run_config "$BASE_JSON" "$OVERRIDE_JSON"
     python train.py --config "$TMP_CFG"
+    run_inference_vram_latest
     git_commit_push "${COMMIT_MSG}"
 }
 
@@ -429,6 +452,49 @@ run_ablation "ED2048 encoder-decoder embedding C_emb=C=2048 (full-rank refinemen
     "ED2048: encoder-decoder embedding C_emb=2048 (full-rank refinement, no compression) (1ep, L=7)"
 
 
+# Untied LM head series: same C_emb sweep but with tie_embedding_to_lm_head=false.
+# In the untied case:
+#   - Encoder is still allocated (it bridges C → C_emb on the output path,
+#     required regardless of tying)
+#   - V projection uses a SEPARATE output_embedding matrix (V × C_emb) instead
+#     of reusing the input embedding's matrix
+# Net effect vs the tied series: adds V·C_emb params for the separate output
+# embedding (e.g., +25.73M at C_emb=512). Total stack params:
+#   C_emb=128  -> 6.43 + 0.26 + 0.26 + 6.43  ≈  13.38M  (87% reduction vs V·C)
+#   C_emb=256  -> 12.87 + 0.53 + 0.53 + 12.87 ≈  26.79M  (74% reduction)
+#   C_emb=512  -> 25.73 + 1.05 + 1.05 + 25.73 ≈  53.56M  (48% reduction)
+#   C_emb=1024 -> 51.46 + 2.10 + 2.10 + 51.46 ≈ 107.13M  (+4% over V·C)
+#   C_emb=2048 -> 102.93 + 4.20 + 4.20 + 102.93 ≈ 214.26M  (+108% over V·C)
+# This isolates the cost of weight tying: how much does sharing the V projection
+# matrix (input ↔ output) cost us at each embedding-dim setting?
+ED_BASE_PATCH_UNTIED='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128, "sparse_encoder_decoder_embedding": true, "tie_embedding_to_lm_head": false}'
+
+run_ablation "ED128_untied encoder-decoder embedding C_emb=128 (untied LM head)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
+    "ED128_untied: encoder-decoder embedding C_emb=128 with untied LM head (1ep, L=7)"
+
+run_ablation "ED256_untied encoder-decoder embedding C_emb=256 (untied LM head)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
+    "ED256_untied: encoder-decoder embedding C_emb=256 with untied LM head (1ep, L=7)"
+
+run_ablation "ED512_untied encoder-decoder embedding C_emb=512 (untied LM head)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=512; print(json.dumps(b))")" \
+    "ED512_untied: encoder-decoder embedding C_emb=512 with untied LM head (1ep, L=7)"
+
+run_ablation "ED1024_untied encoder-decoder embedding C_emb=1024 (untied LM head)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=1024; print(json.dumps(b))")" \
+    "ED1024_untied: encoder-decoder embedding C_emb=1024 with untied LM head (1ep, L=7)"
+
+run_ablation "ED2048_untied encoder-decoder embedding C_emb=C=2048 (untied LM head)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
+    "ED2048_untied: encoder-decoder embedding C_emb=2048 with untied LM head (1ep, L=7)"
+
+
 
 
 # Uncomment the below once the embedding tests are complete.
@@ -535,7 +601,8 @@ echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
 echo "===   7) Combined-reductions baseline (W2 mixer + low_rank=4 + BAND128) at 1ep"
 echo "===      — establishes the new reference BPB for sections 8 onwards"
 echo "===   8) Encoder-decoder embedding sweep: C_emb in {128, 256, 512, 1024, 2048}"
-echo "===      5 runs — compare BPB delta vs section-7 baseline; locate elbow on recovery-vs-density curve"
+echo "===      5 tied + 5 untied (10 runs) — compare BPB delta vs section-7 baseline;"
+echo "===      tied series locates the compression elbow; untied series measures the cost of weight tying"
 echo "===   9) Sparse (p, q) phantom-token embedding sweep at d=0.10"
 echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs section-7 baseline"
 echo "===  10) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"

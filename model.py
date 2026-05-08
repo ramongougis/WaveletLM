@@ -1810,10 +1810,10 @@ class WaveletLM(nn.Module):
             full_dense = vocab_size * C
             eff = self.token_embedding.effective_param_count()
             reduction = (1 - eff / full_dense) * 100 if C_emb < C else 0.0
-            note = "(full-rank: C_emb == C)" if C_emb >= C else f"({reduction:.1f}% reduction vs dense V·C)"
+            full_note = "(full-rank: C_emb == C)" if C_emb >= C else f"({reduction:.1f}% reduction vs dense V·C)"
             print(
                 f"[Embedding] EncoderDecoderEmbedding: V={vocab_size}, C_emb={C_emb}, C={C} "
-                f"-- {eff:,} of dense {full_dense:,} embedding params {note}"
+                f"-- {eff:,} of dense {full_dense:,} embedding params {full_note}"
             )
         elif config.get('sparse_pq_embedding_enabled', False):
             from tools.sparse_pq_embedding import SparsePQEmbedding
@@ -2073,17 +2073,15 @@ class WaveletLM(nn.Module):
         self.lm_head = nn.Linear(C, vocab_size, bias=False)
 
         # Weight tying
+        from tools.sparse_pq_embedding import SparsePQEmbedding, MaskedTiedLinear
+        from tools.encoder_decoder_embedding import (
+            EncoderDecoderEmbedding, EncoderDecoderTiedLMHead, EncoderDecoderUntiedLMHead,
+        )
         if config.get("tie_embedding_to_lm_head", False):
-            from tools.sparse_pq_embedding import SparsePQEmbedding, MaskedTiedLinear
-            from tools.encoder_decoder_embedding import EncoderDecoderEmbedding, EncoderDecoderTiedLMHead
             if isinstance(self.token_embedding, EncoderDecoderEmbedding):
-                # Tie the LM head to the EncoderDecoderEmbedding: hidden ->
-                # encoder -> embedding.weight^T -> logits. The encoder is a
-                # separate learnable matrix from the decoder because nonlinear
-                # ops in the model break the linear-inverse symmetry; see
-                # tools/encoder_decoder_embedding.py.
+                # Tied: hidden -> encoder -> input_embedding.weight^T -> logits.
                 self.lm_head = EncoderDecoderTiedLMHead(self.token_embedding)
-                print(f"[LM Head] Tied to EncoderDecoderEmbedding via EncoderDecoderTiedLMHead (factorized softmax through learnable encoder)")
+                print(f"[LM Head] Tied to EncoderDecoderEmbedding via EncoderDecoderTiedLMHead (V projection shares input embedding)")
             elif isinstance(self.token_embedding, SparsePQEmbedding):
                 # Replace lm_head with a MaskedTiedLinear that shares the
                 # embedding's parameter AND applies its mask in forward.
@@ -2095,6 +2093,15 @@ class WaveletLM(nn.Module):
             else:
                 self.lm_head.weight = self.token_embedding.weight
                 print(f"[LM Head] Tied to token embedding")
+        else:
+            if isinstance(self.token_embedding, EncoderDecoderEmbedding):
+                # Untied: hidden -> encoder (shared with ed_embedding) ->
+                # output_embedding.weight^T -> logits. The encoder bridges
+                # C -> C_emb on the output path; output_embedding is a
+                # separate (untied) V × C_emb matrix.
+                self.lm_head = EncoderDecoderUntiedLMHead(self.token_embedding)
+                print(f"[LM Head] Untied EncoderDecoderUntiedLMHead (encoder shared, separate V × C_emb output_embedding)")
+            # else: standard nn.Linear(C, V) lm_head from earlier in __init__ remains
 
         # Cross-window decompose bypass
         self.decompose_bypass_cross_window = config.get("decompose_bypass_cross_window", True)

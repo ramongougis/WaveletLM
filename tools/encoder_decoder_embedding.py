@@ -49,6 +49,11 @@ class EncoderDecoderEmbedding(nn.Module):
         self.C_emb = C_emb
         self.C = C
 
+        # The encoder lives on the *output* path (C → C_emb) and is required
+        # whether the LM head is tied (V projection via this embedding) or
+        # untied (V projection via a separate output_embedding owned by the
+        # untied LM head class). It bridges the C-dim model interior to the
+        # C_emb-dim space where the V projection happens.
         self.embedding = nn.Embedding(num_embeddings, C_emb)
         self.decoder = nn.Linear(C_emb, C, bias=True)
         self.encoder = nn.Linear(C, C_emb, bias=True)
@@ -77,6 +82,7 @@ class EncoderDecoderEmbedding(nn.Module):
 
     def output_logits(self, hidden: torch.Tensor) -> torch.Tensor:
         # C-dim hidden → encoder → C_emb-dim → embedding.weight^T → V logits
+        # (Tied case: V projection reuses the input embedding matrix.)
         compressed = self.encoder(hidden)
         return F.linear(compressed, self.embedding.weight)
 
@@ -128,3 +134,55 @@ class EncoderDecoderTiedLMHead(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._ed_embedding.output_logits(x)
+
+
+class EncoderDecoderUntiedLMHead(nn.Module):
+    """LM head for the untied case: shares the EncoderDecoderEmbedding's
+    encoder (the C → C_emb output bridge) but uses a *separate* learnable
+    output_embedding for the C_emb → V projection.
+
+    Architecture:
+        hidden (C) → ed_embedding.encoder (C, C_emb)        [shared with input path's output side]
+                  → output_embedding.weight^T (C_emb, V)    [SEPARATE from input embedding]
+                  → V logits
+
+    Total params owned by this class: V × C_emb (the output_embedding
+    weight). The encoder is owned by the EncoderDecoderEmbedding and counted
+    via the token_embedding path; only output_embedding is "extra" relative
+    to the tied case.
+    """
+    def __init__(self, ed_embedding: EncoderDecoderEmbedding):
+        super().__init__()
+        # Reference the EncoderDecoderEmbedding without submodule registration
+        # so its parameters aren't double-listed in state_dict / parameters().
+        object.__setattr__(self, "_ed_embedding", ed_embedding)
+        # Separate output_embedding for the V projection (untied from input
+        # embedding). Same shape as input embedding: (V, C_emb).
+        self.output_embedding = nn.Embedding(
+            ed_embedding.num_embeddings, ed_embedding.C_emb,
+        )
+        with torch.no_grad():
+            nn.init.normal_(
+                self.output_embedding.weight, mean=0.0,
+                std=1.0 / math.sqrt(ed_embedding.C_emb),
+            )
+
+    @property
+    def ed_embedding(self) -> EncoderDecoderEmbedding:
+        return self._ed_embedding
+
+    @property
+    def weight(self) -> torch.Tensor:
+        """The V projection matrix for this LM head. NOT the input embedding's
+        weight (this is the untied case), so the
+        `lm_head.weight is token_embedding.weight` tied-detection check
+        correctly returns False."""
+        return self.output_embedding.weight
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        compressed = self._ed_embedding.encoder(x)
+        return F.linear(compressed, self.output_embedding.weight)
+
+    def effective_param_count(self) -> int:
+        """Just the output_embedding (the encoder is counted via ed_embedding)."""
+        return self.output_embedding.weight.numel()
