@@ -3,7 +3,7 @@
 # baseline; canonical config.json is NEVER modified by this script.
 #
 # Settled wins so far:
-#   - low_rank=16 (R1):                BPB 1.2342, -0.0019 vs reference 1.2361
+#   - low_rank=16 (LR16):              BPB 1.2342, -0.0019 vs reference 1.2361
 #   - per_scale_mixer_widths=[0.5×4, 0.25×4] (W2):
 #                                      BPB 1.2437, +0.0076 vs default 1.2361, -39% mixer
 #   - lifting_diaglowrank=False (A1 shelved at +0.0499)
@@ -15,7 +15,7 @@
 # Queue:
 #   1. DBD     (already complete)     1ep   decompose_bypass=false + low_rank=16
 #   2. E5_5ep  (already complete)     5ep   per_scale_mixer_widths=[1.5×4, 0.5×4]
-#   3. R1_5ep  (already complete)     5ep   low_rank=16                              (winner confirmation)
+#   3. LR16_5ep  (already complete)     5ep   low_rank=16                              (winner confirmation)
 #   4. M1..M4                         1ep   off-diagonal magnitude-pruned masking sweep (0.1/1/5/10%)
 #   5. M1r..M4r                       1ep   off-diagonal random controls at matched densities
 #   6. Structural-prior alternatives  1ep   triangular / block-diagonal / banded / Monarch families
@@ -147,7 +147,7 @@ run_ablation() {
 # Validates Future Plans #7 while the 1-epoch baseline is fresh. Boolean
 # ablation at L=1/E=1 previously found both flags within ±0.0015 BPB of
 # baseline (within noise); this run confirms at L=7 / bs=16384 / 1ep with the
-# new low_rank=16 winner. Compare BPB sliding directly against R1's 1.2342.
+# new low_rank=16 winner. Compare BPB sliding directly against LR16's 1.2342.
 # run_ablation "DBD decompose_bypass=false + low_rank=16" \
 #     "$BASE_PATCH_1EP" \
 #     '{"low_rank": 16, "decompose_bypass": false, "decompose_bypass_cross_window": false}' \
@@ -163,15 +163,15 @@ run_ablation() {
 #     '{"per_scale_mixer_widths": [1.5, 1.5, 1.5, 1.5, 0.5, 0.5, 0.5, 0.5]}' \
 #     "E5_5ep: per_scale_mixer_widths=[1.5x4,0.5x4] (5ep, L=7)"
 
-# ---- 3. R1 confirmation: low_rank=16 @ 5ep ----------------------------------
-# 5-epoch confirmation of the 1-epoch R1 winner. Compared against the headline
+# ---- 3. LR16 confirmation: low_rank=16 @ 5ep --------------------------------
+# 5-epoch confirmation of the 1-epoch LR16 winner. Compared against the headline
 # 5-epoch reference of 1.0974; if it beats or ties, low_rank=16 becomes the
 # new default. Compare BPB sliding directly against the 1.0974 baseline;
 # winner is whatever lands cleanly below 1.0974.
-# run_ablation "R1_5ep low_rank=16 (5 epochs)" \
+# run_ablation "LR16_5ep low_rank=16 (5 epochs)" \
 #     "$BASE_PATCH_5EP" \
 #     '{"low_rank": 16}' \
-#     "R1_5ep: low_rank=16 (5ep, L=7)"
+#     "LR16_5ep: low_rank=16 (5ep, L=7)"
 
 # ---- 4. Wavelet off-diagonal magnitude-pruned masking sweep (1ep each) ------
 #
@@ -389,17 +389,17 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 # (embedding, MLP, mixer Linear, FwPKM) compare against — not the old 1.2361.
 #
 # Composability prediction (linear sum-of-individual-costs):
-#   1.2342 (R1 ref) + (1.2437 - 1.2342)  W2  + (1.2508 - 1.2342) BAND128
+#   1.2342 (LR16 ref) + (1.2437 - 1.2342)  W2  + (1.2508 - 1.2342) BAND128
 #   = 1.2342 + 0.0095 + 0.0166
 #   = 1.2603 (linear-cost prediction)
 # At 70-80% composability (per SparseGPT-line literature): ~1.2540 - 1.2560.
 # Empirical ground truth from this run determines the new baseline.
 #
 # Subsequent compression sweeps use this BPB as their +Δ reference.
-# run_ablation "C1ep combined-reductions baseline (W2 + low_rank=4 + BAND128)" \
+# run_ablation "CB combined-reductions baseline (W2 + low_rank=4 + BAND128)" \
 #     "$BASE_PATCH_1EP" \
 #     '{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128}' \
-#     "C1ep: combined-reductions baseline (W2 + low_rank=4 + BAND128) (1ep, L=7)"
+#     "CB: combined-reductions baseline (W2 + low_rank=4 + BAND128) (1ep, L=7)"
 
 
 # ---- 8. Encoder-decoder embedding sweep -------------------------------------
@@ -411,7 +411,7 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 # otherwise allow sharing the same matrix in both directions.
 #
 # All runs layer on top of the combined-reductions baseline (W2 + low_rank=4
-# + BAND 128), so the comparison vs C1ep isolates the embedding-compression
+# + BAND 128), so the comparison vs CB isolates the embedding-compression
 # effect.
 #
 # Param counts at C=2048, V=50257 (full embedding = 102.93M dense):
@@ -422,7 +422,7 @@ STRUCT_BASE='{"low_rank": 16, "lifting_diaglowrank": false, "lifting_offdiag_mas
 #   C_emb=2048 -> 102.93M + 4.20M + 4.20M ≈ 111.33M (no compression; full-rank
 #                  refinement around the standard embedding for capacity ablation)
 #
-# Compare 1-epoch BPB delta against C1ep (combined-reductions baseline). The
+# Compare 1-epoch BPB delta against CB (combined-reductions baseline). The
 # elbow on the recovery-vs-density curve identifies the production sweet spot.
 ED_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25], "low_rank": 4, "lifting_offdiag_structure": "banded", "lifting_band_width": 128, "sparse_encoder_decoder_embedding": true}'
 
@@ -452,6 +452,27 @@ ED_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25,
 #     "ED2048: encoder-decoder embedding C_emb=2048 (full-rank refinement, no compression) (1ep, L=7)"
 
 
+# C_emb > C expansion probes (tied). ED2048 (C_emb = C, full-rank refinement)
+# landed at +0.0022 BPB vs CB — essentially free, but the +8.39M decoder/encoder
+# params learned close to identity. Going past C_emb = C makes the decoder a
+# many-to-few bottleneck (C_emb → C), which is structurally different from the
+# square C_emb = C case. Tests whether the bottleneck arrangement unlocks any
+# additional BPB. Pessimistic ceiling: ~−0.03 vs CB at ED8192.
+#   C_emb=4096 -> 205.85M + 8.39M + 8.39M ≈ 222.63M (216% of dense V·C)
+#   C_emb=8192 -> 411.70M + 16.78M + 16.78M ≈ 445.26M (433% of dense V·C)
+# Train VRAM (extrapolated from ED tied scaling, ~0.58 MiB/unit C_emb):
+#   ED4096 ≈ 24.3 GB; ED8192 ≈ 26.7 GB — both fit comfortably on a 5090.
+run_ablation "ED4096 encoder-decoder embedding C_emb=4096 (expansion, 2x C)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=4096; print(json.dumps(b))")" \
+    "ED4096: encoder-decoder embedding C_emb=4096 (capacity probe, 2x C) (1ep, L=7)"
+
+run_ablation "ED8192 encoder-decoder embedding C_emb=8192 (expansion, 4x C)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=8192; print(json.dumps(b))")" \
+    "ED8192: encoder-decoder embedding C_emb=8192 (capacity probe, 4x C) (1ep, L=7)"
+
+
 # Untied LM head series: same C_emb sweep but with tie_embedding_to_lm_head=false.
 # In the untied case:
 #   - Encoder is still allocated (it bridges C → C_emb on the output path,
@@ -474,10 +495,10 @@ ED_BASE_PATCH_UNTIED='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25
 #     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=128; print(json.dumps(b))")" \
 #     "ED128_untied: encoder-decoder embedding C_emb=128 with untied LM head (1ep, L=7)"
 
-run_ablation "ED256_untied encoder-decoder embedding C_emb=256 (untied LM head)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
-    "ED256_untied: encoder-decoder embedding C_emb=256 with untied LM head (1ep, L=7)"
+# run_ablation "ED256_untied encoder-decoder embedding C_emb=256 (untied LM head)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
+#     "ED256_untied: encoder-decoder embedding C_emb=256 with untied LM head (1ep, L=7)"
 
 run_ablation "ED512_untied encoder-decoder embedding C_emb=512 (untied LM head)" \
     "$BASE_PATCH_1EP" \
@@ -493,6 +514,25 @@ run_ablation "ED2048_untied encoder-decoder embedding C_emb=C=2048 (untied LM he
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
     "ED2048_untied: encoder-decoder embedding C_emb=2048 with untied LM head (1ep, L=7)"
+
+# C_emb > C expansion probes (untied). Doubles the embedding table cost vs tied
+# (V × C_emb input + V × C_emb output_embedding, each with its own Adagrad
+# state), so VRAM is much tighter. Both fit on a 5090, but ED8192_untied is
+# close to the practical ceiling — if framework overhead pushes it over, fall
+# back to gradient_checkpointing or accept the tied-only datapoint at C_emb=8192.
+#   C_emb=4096 -> 205.85 + 8.39 + 8.39 + 205.85 ≈ 428.48M
+#   C_emb=8192 -> 411.70 + 16.78 + 16.78 + 411.70 ≈ 856.96M
+# Train VRAM (extrapolated, ~0.9 MiB/unit C_emb untied):
+#   ED4096_untied ≈ 25.7 GB; ED8192_untied ≈ 29.4 GB (tight).
+run_ablation "ED4096_untied encoder-decoder embedding C_emb=4096 (untied LM head, expansion)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=4096; print(json.dumps(b))")" \
+    "ED4096_untied: encoder-decoder embedding C_emb=4096 with untied LM head (1ep, L=7)"
+
+run_ablation "ED8192_untied encoder-decoder embedding C_emb=8192 (untied LM head, expansion)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=8192; print(json.dumps(b))")" \
+    "ED8192_untied: encoder-decoder embedding C_emb=8192 with untied LM head (1ep, L=7)"
 
 
 
@@ -593,7 +633,7 @@ echo "============================================================"
 echo "=== Queue complete."
 echo "===   1) DBD     (already complete)"
 echo "===   2) E5_5ep  (already complete)"
-echo "===   3) R1_5ep  (already complete)"
+echo "===   3) LR16_5ep  (already complete)"
 echo "===   4) M1..M4 magnitude-pruned off-diagonal — compare BPB delta vs 1.2361"
 echo "===   5) M1r..M4r random controls at matched densities — compare BPB delta vs 1.2361"
 echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"

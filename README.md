@@ -699,15 +699,15 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 **Initial results (5 of 5 tied runs landed; 2 larger probes planned):** The BPB gap closes monotonically as C_emb grows, hitting +0.0022 at C_emb = C and not crossing under. The encoder/decoder pair is **essentially free** at C_emb = C — neither a help nor a cost — which means the architectural-bonus hypothesis at C_emb = C is **not confirmed**. The C_emb > C extension probes whether forcing the embedding through a C-bottleneck unlocks additional BPB; pessimistically, ~−0.03 vs CB (compressed baseline) is the realistic ceiling.
 
-| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs the CB |
-|---|---|---|---|---|---|
-| 128 ([log](logs/wikitext-103_2026-05-08_09-12-05/log.txt)) | 170.66M | 22,012 MiB | 2,198 MiB | 1.4808 | +0.2222 |
-| 256 ([log](logs/wikitext-103_2026-05-08_11-54-53/log.txt)) | 177.62M | 22,087 MiB | 2,452 MiB | 1.3916 | +0.1330 |
-| 512 ([log](logs/wikitext-103_2026-05-08_13-37-26/log.txt)) | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 |
-| 1024 ([log](logs/wikitext-103_2026-05-08_14-41-41/log.txt)) | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 |
-| 2048 ([log](logs/wikitext-103_2026-05-08_15-47-44/log.txt)) | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 |
-| 4096 (planned) | 386.33M | ~24,315 MiB | ~3,870 MiB | pending | pessimistic ceiling ≈ −0.01 |
-| 8192 (planned) | 608.96M | ~26,690 MiB | ~5,390 MiB | pending | pessimistic ceiling ≈ −0.03 |
+| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs the CB | Links |
+|---|---|---|---|---|---|---|
+| 128 | 170.66M | 22,012 MiB | 2,198 MiB | 1.4808 | +0.2222 | [log](logs/wikitext-103_2026-05-08_09-12-05/log.txt) |
+| 256 | 177.62M | 22,087 MiB | 2,452 MiB | 1.3916 | +0.1330 | [log](logs/wikitext-103_2026-05-08_11-54-53/log.txt) |
+| 512 | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 | [log](logs/wikitext-103_2026-05-08_13-37-26/log.txt) |
+| 1024 | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 | [log](logs/wikitext-103_2026-05-08_14-41-41/log.txt) |
+| 2048 | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 | [log](logs/wikitext-103_2026-05-08_15-47-44/log.txt) |
+| 4096 (planned) | 386.33M | ~24,315 MiB | ~3,870 MiB | pending | pessimistic ceiling ≈ −0.01 | |
+| 8192 (planned) | 608.96M | ~26,690 MiB | ~5,390 MiB | pending | pessimistic ceiling ≈ −0.03 | |
 
 **Decision: compression direction deprecated; expansion direction pursued.** The compression sweep (C_emb < C) is too BPB-costly to ship — even ED1024 (the closest to CB) is +0.024 BPB sliding, and ED512 / ED256 / ED128 give back substantial quality for inference-VRAM wins that are real but not worth the loss. The expansion direction (C_emb > C) becomes the actual opportunity here: with ED2048 landing essentially at CB, going past C_emb = C tests whether forcing the embedding through a C-dim bottleneck (many-to-few decoder) unlocks usable additional BPB. Pessimistic best-case is ~−0.03 vs CB at ED8192. The +8.39M extra params at ED2048 already learn close to identity, so any gain past C_emb = C is contingent on the bottleneck arrangement adding *new* expressiveness, not on the encoder/decoder machinery itself.
 
