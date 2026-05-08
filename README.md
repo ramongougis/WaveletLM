@@ -687,13 +687,14 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 **Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve.
 
-**Initial results (2 of 5 tied runs landed):** Both confirm the prediction that the elbow is past 256 — both tested ratios are too aggressive.
+**Initial results (3 of 5 tied runs landed):** All three are past the elbow, but the BPB gap closes monotonically as C_emb grows — the sweep has not yet found a setting that matches C1ep.
 
 | C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs C1ep |
 |---|---|---|---|---|---|
 | 128 ([log](logs/wikitext-103_2026-05-08_09-12-05/log.txt)) | 170.66M | 22,012 MiB | **2,198 MiB** (−27%) | 1.4808 | +0.2222 |
 | 256 ([log](logs/wikitext-103_2026-05-08_11-54-53/log.txt)) | 177.62M | 22,087 MiB | **2,452 MiB** (−19%) | 1.3916 | +0.1330 |
-| 512 / 1024 / 2048 | pending | | | | |
+| 512 ([log](logs/wikitext-103_2026-05-08_13-37-26/log.txt)) | 191.53M | 22,235 MiB | pending | 1.3315 | +0.0729 |
+| 1024 / 2048 | pending | | | | |
 
 **Surprise: inference VRAM moves substantially.** ED128 dropped inference VRAM by 810 MiB (−27%) for an embedding compression that saves only ~192 MB of weights at fp16. The compounding comes from the smaller embedding lookup intermediate (`(1, 16384, C_emb)` is 64 MB at C_emb=2048 vs 4 MB at C_emb=128 in fp16) plus downstream activation effects and allocator efficiency. This is the first compression sweep where parameter reduction translated to substantial inference VRAM savings — bigger per-param than the lifting cascade managed.
 
