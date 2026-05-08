@@ -650,14 +650,14 @@ Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 liftin
 | MLP/layer | 83.91M | 83.91M | unchanged |
 | Token embedding | 102.93M | 102.93M | unchanged |
 | Training peak VRAM | 23,416 MiB | 23,110 MiB | −1.3% |
-| Inference peak VRAM | 2,409 MiB | **2,163 MiB** | −10.2% |
+| Inference peak VRAM | 3,260 MiB | **3,010 MiB** | −7.7% |
 | BPB sliding | 1.2342 | **1.2586** | +0.0244 |
 
 **Composability:** the +0.0244 BPB cost is **94% of the linear sum** of the individual costs (W2's +0.0095 + BAND 128's +0.0166 = +0.0261). Wins are essentially independent — no compounding gain, no negative interaction.
 
 **Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size**.
 
-**Inference VRAM also moved less than expected (−10.2% for −32% params)** because at inference the weights are only ~33% of total VRAM (786 MB / 2,409 MiB at R1) — the rest is forward-pass activations, cross-window decompose-bypass state, CUDA context, and tokenizer/runtime overhead, all of which are roughly fixed-size and don't scale with parameter count. Compressing weights from 786 → 533 MB (−32%) translated to roughly its proportional share of total inference VRAM. To see large inference VRAM wins, we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that gets recorded into each run's `generations.txt`.
+**Inference VRAM also moved less than expected (−7.7% for −32% params)** because at inference the weights are only a minority of total process VRAM (786 MB out of 3,260 MiB at R1, ~24%) — the rest is the CUDA context, cuDNN/cuBLAS workspaces, the PyTorch caching allocator's reserved headroom, the torch.compile cache, forward-pass activations, and cross-window decompose-bypass state. Most of that overhead is fixed-size and doesn't scale with parameter count, so compressing weights from 786 → 533 MB (−32%) only moves the weight-share of total VRAM. To see large inference VRAM wins we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that records the user-facing number into each run's `generations.txt`.
 
 ### Sparse Embedding with (p, q) Striding
 

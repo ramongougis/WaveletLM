@@ -882,18 +882,14 @@ def main():
             log(f"Metrics: {format_metrics(metrics)}")
 
     if device.type == 'cuda':
-        # Stop the nvidia-smi monitor first (catches any peak that occurred
-        # in the final moments of generation).
-        delta_mib, peak_mib, baseline_mib = gpu_monitor.stop()
-        # PyTorch's tensor-only number for cross-config comparison.
-        torch_peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 2)
-        # User-facing number: process VRAM delta from baseline to peak,
-        # including CUDA context, cuDNN/cuBLAS workspaces, allocator
-        # headroom, and torch.compile cache. This is what users will see
-        # in nvidia-smi when running generate.py.
-        log(f"\nPeak GPU memory (process delta, nvidia-smi): {delta_mib} MiB"
-            f"  (peak={peak_mib} MiB, baseline={baseline_mib} MiB)")
-        log(f"Peak GPU memory (PyTorch tensor-only):      {torch_peak_mem:.0f} MiB")
+        # User-facing number: process VRAM delta from baseline to peak via
+        # nvidia-smi polling (filtered to this PID). Captures the full process
+        # memory footprint -- CUDA context, cuDNN/cuBLAS workspaces, allocator
+        # headroom, torch.compile cache, model weights, and activations -- so
+        # this is what the user actually sees in nvidia-smi when running
+        # generate.py and what they need to budget for on their GPU.
+        delta_mib, _peak_mib, _baseline_mib = gpu_monitor.stop()
+        log(f"\nPeak GPU memory: {delta_mib} MiB")
 
     logger.close()
     print(f"Saved to {gen_file_path}")
