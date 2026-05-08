@@ -649,7 +649,7 @@ Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 liftin
 | MLP/layer | 83.91M | 83.91M | unchanged |
 | Token embedding | 102.93M | 102.93M | unchanged |
 | Training peak VRAM | 23,416 MiB | 23,110 MiB | −1.3% |
-| Inference peak VRAM | TBD | TBD | TBD |
+| Inference peak VRAM | not measured (no R1 checkpoint retained) | **2,163 MiB** | — |
 | BPB sliding | 1.2342 | **1.2586** | +0.0244 |
 
 **Composability:** the +0.0244 BPB cost is **94% of the linear sum** of the individual costs (W2's +0.0095 + BAND 128's +0.0166 = +0.0261). Wins are essentially independent — no compounding gain, no negative interaction.
