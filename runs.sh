@@ -118,9 +118,12 @@ BASE_PATCH_5EP='{
 
 run_inference_vram_latest() {
     # Locate the most recent run folder by mtime and invoke generate.py on its
-    # best checkpoint to get a fresh-process inference VRAM measurement. The
-    # peak-memory line is recorded into the run's generations.txt by
-    # generate.py itself (see the [Inference VRAM] line in train.py's tail).
+    # best checkpoint to get fresh-process inference VRAM measurements. Two
+    # passes are run: one standard (naive sampling), one with --strategies
+    # enabled. Both append to the run's generations.txt with their own
+    # Peak GPU memory line. The strategies-mode pass is also a useful canary
+    # for diagnosing strategies-only generation issues (e.g. the levels=9
+    # strategies-mode anomaly observed on the NB stack).
     local LATEST_RUN
     LATEST_RUN=$(ls -td logs/wikitext-103_*/ 2>/dev/null | head -1)
     if [ -z "$LATEST_RUN" ]; then
@@ -133,9 +136,13 @@ run_inference_vram_latest() {
         return
     fi
     echo ""
-    echo "=== Measuring inference VRAM (fresh process) for ${LATEST_RUN}"
+    echo "=== Measuring inference VRAM (fresh process, standard) for ${LATEST_RUN}"
     python generate.py --checkpoint "$LATEST_RUN/best_model.pt" || \
-        echo "[runs.sh] generate.py exited non-zero; continuing"
+        echo "[runs.sh] generate.py (standard) exited non-zero; continuing"
+    echo ""
+    echo "=== Measuring inference VRAM (fresh process, --strategies) for ${LATEST_RUN}"
+    python generate.py --checkpoint "$LATEST_RUN/best_model.pt" --strategies || \
+        echo "[runs.sh] generate.py --strategies exited non-zero; continuing"
 }
 
 run_ablation() {
@@ -726,20 +733,20 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 # boundary effects may dominate even if they train; treat the BPB-vs-NB delta
 # as a "did the cascade survive" signal, not a "is this a better config"
 # signal.
-run_ablation "levels=9 retry on NB stack" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 9, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
-    "levels=9: retry on NB stack (1ep, per_scale_mixer_widths extended to 10 entries)"
+# run_ablation "levels=9 retry on NB stack" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 9, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
+#     "levels=9: retry on NB stack (1ep, per_scale_mixer_widths extended to 10 entries)"
 
-run_ablation "levels=11 retry on NB stack" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 11, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
-    "levels=11: retry on NB stack (1ep, per_scale_mixer_widths extended to 12 entries)"
+# run_ablation "levels=11 retry on NB stack" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 11, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
+#     "levels=11: retry on NB stack (1ep, per_scale_mixer_widths extended to 12 entries)"
 
-run_ablation "levels=13 retry on NB stack" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 13, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
-    "levels=13: retry on NB stack (1ep, per_scale_mixer_widths extended to 14 entries; coarsest scale has only 2 tokens at bs=16384)"
+# run_ablation "levels=13 retry on NB stack" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 13, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
+#     "levels=13: retry on NB stack (1ep, per_scale_mixer_widths extended to 14 entries; coarsest scale has only 2 tokens at bs=16384)"
 
 
 # ---- Levels retry on R0 + T-lower (no W2) ----------------------------------
@@ -755,20 +762,20 @@ run_ablation "levels=13 retry on NB stack" \
 #     savings of going back to R0 mixer widths.
 #   - If NB trains but R0+T-lower NaNs: W2 is load-bearing; both are needed.
 #   - If neither trains: T-lower alone isn't enough; need optimizer sweep.
-run_ablation "levels=9 retry on R0+T-lower (no W2)" \
+run_ablation "levels=9 retry on R0+T-lower" \
     "$BASE_PATCH_1EP" \
     '{"levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
     "levels=9: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x5, 0.5x5], T-lower lifting from NB defaults)"
 
-run_ablation "levels=11 retry on R0+T-lower (no W2)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 11, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
-    "levels=11: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x6, 0.5x6], T-lower lifting from NB defaults)"
+# run_ablation "levels=11 retry on R0+T-lower (no W2)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 11, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
+#     "levels=11: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x6, 0.5x6], T-lower lifting from NB defaults)"
 
-run_ablation "levels=13 retry on R0+T-lower (no W2)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 13, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
-    "levels=13: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x7, 0.5x7], T-lower lifting from NB defaults; coarsest scale 2 tokens at bs=16384)"
+# run_ablation "levels=13 retry on R0+T-lower (no W2)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 13, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
+#     "levels=13: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x7, 0.5x7], T-lower lifting from NB defaults; coarsest scale 2 tokens at bs=16384)"
 
 
 # ---- W2 mixer contraction at 5 epochs on R0 baseline ------------------------
