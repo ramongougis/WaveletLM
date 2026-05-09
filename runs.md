@@ -925,6 +925,46 @@ NB = R0 + W2 mixer contraction (`per_scale_mixer_widths=[0.5×4, 0.25×4]`) + T-
 
 NB pays a +0.0117 BPB sliding cost vs R0 in exchange for 21% fewer trainable parameters and 7.8% less inference VRAM. The lifting-side count change (117.50M → 58.81M effective) is mask-driven and doesn't move .pt size or training VRAM; the real dense compression payoff comes from the W2 mixer contraction (mixer/layer 59.11M → 35.70M, a true −23.41M dense reduction across stored weights, Adagrad state, and forward/backward FLOPs).
 
+### NB + deeper levels retries
+
+Previously NaN'd at levels=9, 11, 13 on the uncompressed lifting cascade — no stability fix attempted at the time cleared them. NB's T-lower spectral-norm cap is the new candidate. Inference VRAM column reports the strategies-mode peak (the new convention going forward).
+
+| Variant | Stability | BPB sliding | ΔBPB vs NB(L=7) | Total params | Train VRAM | Inference VRAM (strategies) | Train time | Run Log |
+|---|---|---|---|---|---|---|---|---|
+| Reference NB (L=7) | trains | **1.2478** | — | 311.10M | 23,110 MiB | 2,914 MiB | 1.28h | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
+| **NB + L=9** | **trains ✓** | **1.2459** | **−0.0019** | 336.83M | 25,516 MiB | 3,700 MiB | 1.47h | [link](logs/wikitext-103_2026-05-09_14-52-27/log.txt) |
+| NB + L=11 | NaN at step 1500 (lr=6.84e-3) | — | — | — | — | — | — | [link](logs/wikitext-103_2026-05-09_16-21-56/log.txt) |
+| NB + L=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
+| R0+T-lower + L=11 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
+| R0+T-lower + L=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
+
+**Reading:** levels=9 cleared the cliff that the uncompressed cascade never could — confirming T-lower's per-matrix spectral-norm cap is real and load-bearing in this regime. The BPB win is small (−0.0019, within single-seed noise) and the cost is substantial (+25.73M params, +2,406 MiB train VRAM, +786 MiB inference VRAM strategies-mode, +15% wall-clock). Useful as evidence that the cascade is healthy at deeper levels with NB's masking, but **not yet a per-cost win** — not a production-stack candidate without further BPB justification.
+
+The levels=11 NaN at step 1500 (well before peak LR was reached) confirms the stability headroom past levels=9 requires the optimizer sweep, not just T-lower. The 2×3 factorial (NB vs R0+T-lower) × (9, 11, 13) collapsed to one informative cell once levels=11/13 were ruled out — no point running R0+T-lower at depths where NB itself fails.
+
+**Strategies-mode generation anomaly at levels=9** (informational, doesn't affect BPB): train.py's internal strategies-mode pass produced a degenerate quote-token loop (Rep4 = 0.396 vs the standard pass's normal output). Two follow-up `generate.py --strategies` runs on the same checkpoint produced normal output (Rep4 = 0.114 and 0.161), confirming the failure was a single sampling-state-specific local minimum, not a structural model issue. The dual-pass inference-VRAM logic in `runs.sh` (with separate `generate.py --strategies` invocations per run, each in a fresh process) prevents this single-point sampling artifact from masquerading as a model problem in future ablations.
+
+### NB at bs=256, MBS=8 (Test 1 throughput regime)
+
+Combines NB's stability ingredients (T-lower wavelet masking + W2 mixer contraction) with Test 1's gradient-update advantage (bs=256 + MBS=8 = ~58,500 steps/epoch vs NB's ~7,300 at matched epoch budget). Tests whether NB's BPB cost vs Test 1 shrinks or vanishes in a more-converged training regime, while preserving NB's stability properties.
+
+Drops to levels=5 since NB's levels=7 with bs=256 leaves only 256/2^7 = 2 tokens at the coarsest scale (degenerate). per_scale_mixer_widths set to [0.5×3, 0.25×3] (6 entries to match levels+1).
+
+| Variant | bs | MBS | levels | epochs | per_scale_mixer_widths | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Steps/epoch | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Test 1 (1ep) | 256 | 8 | 5 | 1 | [1.0×3, 0.5×3] | 1.1762 † | **3.6393** | **6,867 MiB** | 2,876 MiB | **~58,500** | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
+| Test 1 (5ep) | 256 | 8 | 5 | 5 | [1.0×3, 0.5×3] | 1.0796 † | 3.3341 | 6,867 MiB | — | ~58,500 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
+| NB (1ep) | 16384 | 1 | 7 | 1 | [0.5×4, 0.25×4] | 1.2478 | 3.8561 | 23,110 MiB | 2,914 MiB | ~7,300 | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
+| **NB256_L5_1ep (queued)** | 256 | 8 | 5 | 1 | [0.5×3, 0.25×3] | pending | pending | pending | pending | ~58,500 | queued |
+| **NB256_L7_1ep (queued, boundary)** ‡ | 256 | 8 | 7 | 1 | [0.5×4, 0.25×4] | pending | pending | pending | pending | ~58,500 | queued |
+| **NB256_L5_5ep (queued)** | 256 | 8 | 5 | 5 | [0.5×3, 0.25×3] | pending | pending | pending | pending | ~58,500 | queued |
+
+† BPB across runs with different `block_size` is not strictly apples-to-apples; best val is more comparable.
+
+‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question NB256_L7_1ep answers.
+
+**Decision criteria.** Best val is the headline comparison. If NB256_L5 (or L7) lands within ~0.05 of Test 1's 3.6393, the production stack candidate becomes "Test 1 throughput + NB stability ingredients" — major reframing of the production direction. If both land closer to NB's 3.8561, the bs=16384 commitment is paying for something other than just BPB number. Comparing L5 vs L7 separately disentangles whether the boundary case is a real problem at bs=256.
+
 ---
 
 ## Deprecated approaches

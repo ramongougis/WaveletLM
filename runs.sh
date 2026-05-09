@@ -767,6 +767,47 @@ run_ablation "levels=9 retry on R0+T-lower" \
     '{"levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
     "levels=9: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x5, 0.5x5], T-lower lifting from NB defaults)"
 
+
+# ---- NB256_1ep: NB stack at bs=256, MBS=8 (Test 1 throughput regime) -------
+# Tests whether NB's BPB cost (vs Test 1) shrinks at Test 1's gradient-update
+# advantage (~58,500 steps/epoch vs NB's ~7,300 at matched epoch budget). Drops
+# to levels=5 since NB's levels=7 with bs=256 would leave only 256/2^7 = 2
+# tokens at the coarsest scale (degenerate). per_scale_mixer_widths set to
+# 6 entries [0.5x3, 0.25x3] to match levels+1.
+#
+# Decision criteria: if best val lands within ~0.05 of Test 1's 3.6393, the
+# production stack candidate becomes "Test 1 throughput + NB stability
+# ingredients" — a major reframing of the production direction. If it lands
+# closer to NB's 3.8561, the bs=16384 commitment is paying for something
+# other than just BPB number.
+run_ablation "NB256_L5_1ep NB stack at bs=256, MBS=8, levels=5 (Test 1 throughput regime)" \
+    "$BASE_PATCH_1EP" \
+    '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.25, 0.25, 0.25]}' \
+    "NB256_L5_1ep: NB stack at bs=256, MBS=8, levels=5 (Test 1 throughput regime; T-lower + W2 retained from NB)"
+
+# Same as NB256_L5_1ep but with NB's full levels=7. Tests the boundary regime
+# explicitly: bs=256 / 2^7 = 2 tokens at the coarsest wavelet scale, which is
+# the degenerate edge of the cascade's expressive range. If it trains and
+# lands competitively, the boundary doesn't actually matter at bs=256 — and
+# we get to keep NB's exact decomposition depth in the throughput-friendly
+# regime. If it underperforms NB256_L5_1ep, the levels=5 choice is the right
+# one for bs=256.
+run_ablation "NB256_L7_1ep NB stack at bs=256, MBS=8, levels=7 (boundary test: 2 tokens at coarsest scale)" \
+    "$BASE_PATCH_1EP" \
+    '{"micro_batch_size": 8, "block_size": 256, "levels": 7, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]}' \
+    "NB256_L7_1ep: NB stack at bs=256, MBS=8, levels=7 (boundary case; coarsest scale has only 2 tokens at bs=256; explicit per_scale_mixer_widths=[0.5x4, 0.25x4] for 8 scales)"
+
+# 5-epoch confirmation of NB256_L5. Same config as NB256_L5_1ep but at 5 epochs
+# via BASE_PATCH_5EP — confirms whether the throughput-regime BPB win (if any
+# at 1ep) holds with full convergence. ~7.5h total wall-clock at the bs=256
+# throughput rate vs NB's ~6.4h at 5ep on bs=16384 — comparable cost, so it's
+# the matched-epoch comparison that pins down whether bs=16384 is still
+# justified at the production budget.
+run_ablation "NB256_L5_5ep NB stack at bs=256, MBS=8, levels=5 (5 epochs, Test 1 throughput regime)" \
+    "$BASE_PATCH_5EP" \
+    '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.25, 0.25, 0.25]}' \
+    "NB256_L5_5ep: NB stack at bs=256, MBS=8, levels=5 (5ep, Test 1 throughput regime; matched-epoch comparison vs NB 5ep)"
+
 # run_ablation "levels=11 retry on R0+T-lower (no W2)" \
 #     "$BASE_PATCH_1EP" \
 #     '{"levels": 11, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
