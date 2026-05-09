@@ -519,35 +519,37 @@ Longer training time, more regularization, and parameter compression are the sur
 3. [(Complete) Larger Block Size](#complete-larger-block-size)
 3. [(Complete) More Levels](#complete-more-levels)
 4. [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression)
-5. [(Complete) (Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
+5. [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
 6. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
 9. [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
 10. [(Complete) New Testing Baseline with Mixer & Wavelet Parameter Reductions](#complete-new-testing-baseline-with-mixer--wavelet-parameter-reductions)
-11. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
-12. [(Complete) Encoder-Decoder Embedding](#complete-encoder-decoder-embedding)
-13. [MLP Structural Compression](#mlp-structural-compression)
-14. [Gradient Checkpointing](#gradient-checkpointing)
-15. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
-16. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-17. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-18. [Dropout Sweep](#dropout-sweep)
-19. [Weight Decay Sweep](#weight-decay-sweep)
-20. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-21. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-22. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-23. [Longer PG-19 Training](#longer-pg-19-training)
-24. [Dataset Comparisons](#dataset-comparisons)
-25. [Model Comparisons](#model-comparisons)
-26. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-27. [Multi-Transform Parallelization](#multi-transform-parallelization)
-28. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-29. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-30. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-31. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-32. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-33. [Other Post-Release Plans](#other-post-release-plans)
+11. [Per-Scale Mixer Widths after Model Compression](#per-scale-mixer-widths-after-model-compression)
+12. [Wavelet Cross-Level Group Sharing with Compression](#wavelet-cross-level-group-sharing-with-compression)
+13. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
+14. [(Complete) Encoder-Decoder Embedding](#complete-encoder-decoder-embedding)
+15. [MLP Structural Compression](#mlp-structural-compression)
+16. [Gradient Checkpointing](#gradient-checkpointing)
+17. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
+18. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+19. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+20. [Dropout Sweep](#dropout-sweep)
+21. [Weight Decay Sweep](#weight-decay-sweep)
+22. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+23. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+24. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+25. [Longer PG-19 Training](#longer-pg-19-training)
+26. [Dataset Comparisons](#dataset-comparisons)
+27. [Model Comparisons](#model-comparisons)
+28. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+29. [Multi-Transform Parallelization](#multi-transform-parallelization)
+30. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+31. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+32. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+33. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+34. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+35. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -637,19 +639,24 @@ At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to 
 
 **Results:** 
 - `D + U·V^T` compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting wavelet parameters by 97% (from 117.44M to 3.33M) and total model parameters by 29%, but dipped to a 1-epoch sliding BPB of 1.2860 vs. the reference 1-epoch BPB of 1.2361. 
-- Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250. [`tools/analyze_lifting.py`](tools/analyze_lifting.py) confirmed the structural picture (~75% diagonal energy, weak generic low-rank), but gradient stability becomes an issue.
+- Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250. [`tools/analyze_lifting.py`](tools/analyze_lifting.py) confirmed the structural picture: around 75% diagonal energy and weak generic low-rank, but gradient stability becomes an issue.
 
 **Decision:** Deprecated in favor of other off-diagonal compression schemes in these sections: [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent) and [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
 
 ### (Complete) Per-Scale Mixer Width Contraction and Expansion
 
-**Results:** 
-- *Contraction*: `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) achieves a 1-epoch sliding BPB of 1.2437 vs. the default's 1.2361 = +0.0076 with 39% fewer mixer parameters (35.70M vs 58.82M). More aggressive contraction with `per_scale_mixer_widths=[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250.
-- *Expansion*: `per_scale_mixer_widths=[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) achieves a 5-epoch BPB of 1.1037 vs. the R0 baseline of 1.0974. The gain of +0.0063 BPB with 24% more mixer parameters is clearly unfavorable.
+**Results:** all runs on R0 baseline (no BAND128 lifting compression). Reference R0 1ep BPB sliding 1.2361; R0 5ep BPB sliding 1.0974.
+
+| Variant | per_scale_mixer_widths | Epochs | BPB sliding | ΔBPB vs R0 | Mixer params | Run Log |
+|---|---|---|---|---|---|---|
+| W2 contraction (1ep) | [0.5×4, 0.25×4] | 1 | 1.2437 | +0.0076 | 35.70M (−39%) | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) |
+| W2 contraction (5ep) | [0.5×4, 0.25×4] | 5 | pending | pending | 35.70M (−39%) | queued |
+| Aggressive contraction | [0.1×4, 0.05×4] | 1 | NaN at step 1250 | — | — | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) |
+| E5 expansion | [1.5×4, 0.5×4] | 5 | 1.1037 | +0.0063 | 73.06M (+24%) | [link](logs/wikitext-103_2026-05-05_14-00-32/log.txt) |
 
 Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05) are worth testing once stability improves and the 0.5/0.25 results are proven at 5 epochs vs. the R0 baseline. Expansion will no longer be considered.
+**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Expansion will no longer be considered. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05) — including a retry of the 0.1/0.05 setting that NaN'd here — are layered on top of the CB stack in the [Per-Scale Mixer Widths after Model Compression](#per-scale-mixer-widths-after-model-compression) section, since the BAND128 spectral-norm constraint should now make the previously-unstable tightenings tractable.
 
 ### (Complete) Mixer Low Rank
 
@@ -740,6 +747,37 @@ Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 liftin
 **Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size**.
 
 **Inference VRAM also moved less than expected (−7.7% for −32% params)** because at inference the weights are only a minority of total process VRAM (786 MB out of 3,260 MiB at LR16, ~24%) — the rest is the CUDA context, cuDNN/cuBLAS workspaces, the PyTorch caching allocator's reserved headroom, the torch.compile cache, forward-pass activations, and cross-window decompose-bypass state. Most of that overhead is fixed-size and doesn't scale with parameter count, so compressing weights from 786 → 533 MB (−32%) only moves the weight-share of total VRAM. To see large inference VRAM wins we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that records the user-facing number into each run's `generations.txt`.
+
+### Per-Scale Mixer Widths after Model Compression
+
+Retests of mixer width contractions on top of the CB stack (W2 + low_rank=4 + BAND128). The original [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion) sweep ran on the uncompressed R0 baseline; aggressive contractions like `[0.1×4, 0.05×4]` NaN'd at peak LR. CB's BAND128 spectral-norm constraint should make the previously-unstable tightenings tractable — same mechanism that cleared the PQ embedding's peak-LR NaN regime.
+
+**Sweep:** four 1-epoch contractions on top of CB. CB at 1ep is the reference (W2 setting at `[0.5×4, 0.25×4]`); the four new settings are progressively tighter.
+
+| Variant | per_scale_mixer_widths | BPB sliding | ΔBPB vs CB | Mixer params (per layer) | Run Log |
+|---|---|---|---|---|---|
+| Reference (CB, W2) | [0.5×4, 0.25×4] | 1.2586 | — | 35.70M | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
+| Mix_CB_0.4_0.2 (queued) | [0.4×4, 0.2×4] | pending | pending | ~22.85M | |
+| Mix_CB_0.3_0.15 (queued) | [0.3×4, 0.15×4] | pending | pending | ~12.85M | |
+| Mix_CB_0.25_0.125 (queued) | [0.25×4, 0.125×4] | pending | pending | ~8.93M | |
+| Mix_CB_0.1_0.05 (queued, retry) | [0.1×4, 0.05×4] | pending | pending | ~1.43M | |
+
+The 0.1/0.05 retry tests directly whether CB's compression is enough to clear the previous NaN cliff. If it trains and BPB stays within ~0.01–0.02 of CB, the mixer is over-parameterized for what the cascade actually consumes; if it NaNs, the instability is downstream of mixer-only spectral norms (likely the same dynamics affecting levels=11 — to be cleared by the optimizer sweep, not by more compression).
+
+**Decision:** TBD pending results. Production candidate: tightest setting that lands within ~0.005 BPB of CB.
+
+### Wavelet Cross-Level Group Sharing with Compression
+
+Retest of `lifting_level_sharing=true` on the CB stack. Previously NaN'd at step 2250 in the [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression) sweep on the uncompressed lifting cascade. Cross-level sharing reuses the same lifting matrices across all wavelet decomposition levels (vs. the default of independent matrices per level), which roughly halves lifting-related parameter count further but couples the cascade dynamics tightly across levels — the same general failure family as the levels=11 cliff (cross-level coupling amplifies cascade explosion).
+
+The hypothesis: BAND128's per-matrix spectral-norm cap may now make the cross-level coupling tractable, same way it stabilized the PQ embedding and (hopefully) the levels=9/11/13 retries. If it works, this is a free or near-free additional lifting compression on top of the CB stack.
+
+| Variant | lifting_level_sharing | BPB sliding | ΔBPB vs CB | Lifting params | Run Log |
+|---|---|---|---|---|---|
+| Reference (CB) | false | 1.2586 | — | 14.33M | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
+| LLS_CB (queued, retry) | true | pending | pending | ~7.17M (≈half) | |
+
+**Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of CB, cross-level sharing folds into the production stack as a near-free additional ~7M parameter saving on the lifting cascade.
 
 ### Sparse Embedding with (p, q) Striding
 

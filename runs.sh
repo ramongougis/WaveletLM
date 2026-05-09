@@ -598,10 +598,10 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 # ---- PQ_EMB25 with structural mode -----------------------------------------
 # At d=25%, only one valid (p, q) = (6, 2) — smallest_q and structural converge.
 # Mode label is cosmetic at this density. Inherits CB stack from BASE_PATCH_1EP.
-run_ablation "PQ_EMB25_structural (p=6,q=2,d=0.25,structural==smallest_q)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.25; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
-    "PQ_EMB25_structural: sparse embedding d=0.25 (modes converge at this density) (1ep, levels=7)"
+# run_ablation "PQ_EMB25_structural (p=6,q=2,d=0.25,structural==smallest_q)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.25; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+#     "PQ_EMB25_structural: sparse embedding d=0.25 (modes converge at this density) (1ep, levels=7)"
 
 
 # ---- PQ_EMB40 with structural mode -----------------------------------------
@@ -610,10 +610,10 @@ run_ablation "PQ_EMB25_structural (p=6,q=2,d=0.25,structural==smallest_q)" \
 # (constraints: q | C, p does NOT divide C, p,q > 1; densities 50%, 67%, 75%
 # have no valid candidates). PQ_EMB40 substitutes for the 50% / 67% / 75%
 # slots in the original sweep plan.
-run_ablation "PQ_EMB40_structural (p=3,q=2,d=0.40,structural==smallest_q)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.40; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
-    "PQ_EMB40_structural: sparse embedding d=0.40 (modes converge; max density for C=2048) (1ep, levels=7)"
+# run_ablation "PQ_EMB40_structural (p=3,q=2,d=0.40,structural==smallest_q)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.40; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+#     "PQ_EMB40_structural: sparse embedding d=0.40 (modes converge; max density for C=2048) (1ep, levels=7)"
 
 
 
@@ -717,6 +717,65 @@ run_ablation "levels=13 retry on CB stack" \
     "$BASE_PATCH_1EP" \
     '{"levels": 13, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
     "levels=13: retry on CB stack (1ep, per_scale_mixer_widths extended to 14 entries; coarsest scale has only 2 tokens at bs=16384)"
+
+
+# ---- W2 mixer contraction at 5 epochs on R0 baseline ------------------------
+# 5-epoch confirmation of W2 [0.5×4, 0.25×4] on the R0 baseline (the missing
+# 5ep test referenced in the (Complete) Per-Scale Mixer Width Contraction and
+# Expansion section's decision text). Goal: verify the +0.0076 BPB cost from
+# the 1-epoch test (logs/wikitext-103_2026-05-05_05-48-40, BPB 1.2437) holds
+# at 5 epochs against R0's 5ep BPB of 1.0974.
+#
+# Note: BASE_PATCH_5EP already has W2 mixer + BAND128 + low_rank=4 (CB stack).
+# The override turns OFF BAND128 to recover the R0-without-BAND128 stack,
+# leaving the W2 mixer setting in place.
+run_ablation "W2_R0_5ep W2 contraction on R0 baseline (5 epochs)" \
+    "$BASE_PATCH_5EP" \
+    '{"lifting_offdiag_structure": "none"}' \
+    "W2_R0_5ep: per_scale_mixer_widths=[0.5x4, 0.25x4] on R0 baseline (5ep, no BAND128)"
+
+
+# ---- Mixer contraction sweep on CB stack (1ep each) -------------------------
+# Tighter per_scale_mixer_widths than W2's [0.5×4, 0.25×4], applied on top of
+# the CB stack. The 0.1/0.05 contraction previously NaN'd at step 1250 on the
+# uncompressed R0 stack (logs/wikitext-103_2026-05-05_04-37-47); CB's
+# BAND128+low_rank=4 spectral-norm constraint should make tighter mixers
+# tractable now. Compare 1-epoch BPB against CB's 1.2586. Production candidate:
+# tightest setting that lands within ~0.005 BPB of CB.
+run_ablation "Mix_CB_0.4_0.2 mixer contraction [0.4x4, 0.2x4] on CB" \
+    "$BASE_PATCH_1EP" \
+    '{"per_scale_mixer_widths": [0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]}' \
+    "Mix_CB_0.4_0.2: per_scale_mixer_widths=[0.4x4, 0.2x4] on CB (1ep)"
+
+run_ablation "Mix_CB_0.3_0.15 mixer contraction [0.3x4, 0.15x4] on CB" \
+    "$BASE_PATCH_1EP" \
+    '{"per_scale_mixer_widths": [0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]}' \
+    "Mix_CB_0.3_0.15: per_scale_mixer_widths=[0.3x4, 0.15x4] on CB (1ep)"
+
+run_ablation "Mix_CB_0.25_0.125 mixer contraction [0.25x4, 0.125x4] on CB" \
+    "$BASE_PATCH_1EP" \
+    '{"per_scale_mixer_widths": [0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]}' \
+    "Mix_CB_0.25_0.125: per_scale_mixer_widths=[0.25x4, 0.125x4] on CB (1ep)"
+
+run_ablation "Mix_CB_0.1_0.05 mixer contraction [0.1x4, 0.05x4] on CB (retry of previously NaN-failed config)" \
+    "$BASE_PATCH_1EP" \
+    '{"per_scale_mixer_widths": [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05]}' \
+    "Mix_CB_0.1_0.05: per_scale_mixer_widths=[0.1x4, 0.05x4] on CB (1ep, retry of previously NaN'd config)"
+
+
+# ---- Cross-level group sharing on CB stack ----------------------------------
+# Retry of lifting_level_sharing=true on the CB stack. Previously NaN'd at
+# step 2250 on the uncompressed (Complete) Wavelet Diagonal and Low Rank
+# Compression sweep — same general failure family as the levels=11 cliff
+# (cross-level parameter sharing amplifies cascade dynamics). With BAND128
+# capping per-matrix spectral norm, the cross-level coupling may now be
+# tractable. Compare 1-epoch BPB against CB's 1.2586; if it trains and BPB is
+# within ~0.01, cross-level sharing becomes a free or near-free additional
+# parameter compression.
+run_ablation "LLS_CB lifting_level_sharing on CB stack (retry of previously NaN-failed config)" \
+    "$BASE_PATCH_1EP" \
+    '{"lifting_level_sharing": true}' \
+    "LLS_CB: lifting_level_sharing=true on CB stack (1ep, retry of previously NaN'd config)"
 
 
 echo ""
