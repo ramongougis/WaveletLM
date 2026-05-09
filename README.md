@@ -516,10 +516,10 @@ Longer training time, more regularization, and parameter compression are the sur
 
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
-3. [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size)
-4. [(Complete) Wavelet Compression](#complete-wavelet-compression)
+3. [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size)
+4. [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression)
 5. [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion)
-6. [(Complete) Low Rank Ablations](#complete-low-rank-ablations)
+6. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
 9. [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
@@ -562,7 +562,7 @@ Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25
 | D | 2 | 5 (baseline) | **1.0140** | **23.75** | 882.51M | 16.25h | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) |
 | E | 1 | 8 (compute-equalized) | 1.0715 | 28.43 | 586.15M | 15.86h | [link](logs/wikitext-103_2026-04-30_12-20-45/log.txt) |
 
-**Decision:** L=1 becomes the iteration platform for upcoming ablations, capped at E=5 (val loss saturates there) due to iteration time. L=2 will be rebenchmarked once the L=1-tuned regularization recipe is applied retroactively.
+**Decision:** `layers=1` and `epochs=1` are set for future tests to hasten iteration time. Benchmark runs will use `layers=2` and `epochs=5`, or more of each.
 
 ### (Complete) Combined Parameter Reduction and VRAM Reallocation
 
@@ -605,20 +605,16 @@ For future tests, we have changed the following hyperparameters. The result is t
 
 | Run | Recipe | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
-| Test 1 (1ep) | 1ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | pending | pending | 344.63M | ~6,867 MiB | Test 1 config at 1-epoch budget — direct apples-to-apples vs R0 (1ep) for the VRAM-reallocation comparison without epoch confound |
-| Test 1 (5ep) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6,867 MiB | Parameter-reduction winner; 5-epoch production result |
-| R0 (1ep) | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for downstream ablations |
-| R0 (5ep) | 5ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | **1.0974** | 392.91M | 23,411 MiB | 5-epoch production state going forward — cleanest apples-to-apples vs Test 1 (5ep) |
+| Test 1 (1ep) | 1ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | **1.1762** † | 344.63M | 6,867 MiB | - |
+| Test 1 (5ep) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6,867 MiB | 5-epoch production result |
+| R0 (1ep) | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
+| R0 (5ep) | 5ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | **1.0974** | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
 
-At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796),  the price of reducing micro_batch_size in order to allow for increased context and deeper scale decomposition that downstream work will likely need. A Test 1 run at 1 epoch is currently queued to give another point of comparison.
-
-Note, too, that while `levels=7` for R0, `levels=9` and `levels=11` are technically possible, but not used here due to needing more stability via optimizer changes and module-targeted parameter compression. 
-
-See the [next section](#complete-per-scale-configuration-at-longer-block-size) for more info on the block size.
+At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to reducing micro_batch_size to allow for increased context and deeper scale decomposition that downstream work will likely need. 
 
 **Decision:** Use R0's configuration at 1 epoch for future tests.
 
-### (Complete) Per-Scale Configuration at Longer Block Size
+### (Complete) More Levels with Longer Block Size
 
 **Results:** 
 - [levels=7](logs/wikitext-103_2026-05-03_02-13-07/log.txt): 5-epoch sliding BPB of 1.0974 with 392.91M params. This is the R0 run above.
@@ -627,7 +623,7 @@ See the [next section](#complete-per-scale-configuration-at-longer-block-size) f
 
 **Decision:** Proceeding with `levels=7` (no change from R0 run) and deferring `levels=9,11, and 13` for post-compression/post-optimizer changes. 
 
-### (Complete) Wavelet Compression
+### (Complete) Wavelet Diagonal and Low Rank Compression
 
 **Results:** 
 - `D + U·V^T` compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting wavelet parameters by 97% (from 117.44M to 3.33M) and total model parameters by 29%, but dipped to a 1-epoch sliding BPB of 1.2860 vs. the reference 1-epoch BPB of 1.2361. 
@@ -637,15 +633,15 @@ See the [next section](#complete-per-scale-configuration-at-longer-block-size) f
 
 ### (Complete) Per-Scale Mixer Width Expansion
 
-**Result:** both directions tested at L=1 / levels=7 / bs=16384.
-- *Contraction*: `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) achieves a 1-epoch sliding BPB of **1.2437** vs the default's 1.2361 = +0.0076 with 39% fewer mixer parameters (35.70M vs 58.82M). Aggressive contraction at `[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250.
-- *Expansion*: E5_5ep at `[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) lands at 5-epoch BPB **1.1037** vs [headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = +0.0063 at +24% mixer params (no improvement).
+**Results:** 
+- *Contraction*: `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) achieves a 1-epoch sliding BPB of 1.2437 vs. the default's 1.2361 = +0.0076 with 39% fewer mixer parameters (35.70M vs 58.82M). More aggressive contraction with `per_scale_mixer_widths=[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250.
+- *Expansion*: `per_scale_mixer_widths=[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) lands at 5-epoch BPB **1.1037** vs. [headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = +0.0063 at +24% mixer params (no improvement).
 
 Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
 **Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if the above's 5-epoch confirmation ships cleanly.
 
-### (Complete) Low Rank Ablations
+### (Complete) Mixer Low Rank
 
 **Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 (-0.0019 vs reference 1.2361). 5-epoch confirmation ([LR16_5ep](logs/wikitext-103_2026-05-05_21-36-45/log.txt)) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, so essentially unchanged. The 1-epoch advantage didn't amplify with more training; the win was likely early-training expressivity that washes out at convergence. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
 
@@ -816,7 +812,7 @@ Lifting empirical priors (BAND 80.1% > BD 67.8% at matched density on the liftin
 
 ### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
 
-The [(Complete) Per-Scale Configuration at Longer Block Size](#complete-per-scale-configuration-at-longer-block-size) sweep hit an unrecoverable NaN cliff at `levels=9` and `levels=11` under fp16 AMP — the lifting cascade was the suspected parameter-amplification source, and the unblock was deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw). The M-series unlocks an **independent, complementary** path: if magnitude_topk at 5-10% density genuinely retains BPB performance (M3 at 64.9% gap recovered, M4 in progress), the lifting at deeper level counts becomes proportionally cheaper *and* less amplification-prone — fewer effective parameters per cascade level means less mass for fp16 to saturate.
+The [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size) sweep hit an unrecoverable NaN cliff at `levels=9` and `levels=11` under fp16 AMP — the lifting cascade was the suspected parameter-amplification source, and the unblock was deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw). The M-series unlocks an **independent, complementary** path: if magnitude_topk at 5-10% density genuinely retains BPB performance (M3 at 64.9% gap recovered, M4 in progress), the lifting at deeper level counts becomes proportionally cheaper *and* less amplification-prone — fewer effective parameters per cascade level means less mass for fp16 to saturate.
 
 **Plan.** Once the M-sweep and structured-variant queue finishes and the best surviving density is identified (likely M3 or M4), rerun `levels=9` and `levels=11` at L=1 / bs=16384 with magnitude_topk lifting compression at that density. Pass criteria, in order of decreasing strictness:
 1. **Stability** — does the run complete without NaN? (Necessary; the original goal of the levels=9/11 deferral.)
