@@ -343,7 +343,7 @@ Selections from the [WikiText-103 best run's generations log](https://github.com
 > two columns , with reinforcements arriving from all sides within 
 > hours . The main
 
-**Sample F** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample F** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`), but with the spacing post-processing fix now included in naive generations:
 
 > The history of the tropical cyclone is unknown, but official records 
 > suggest it formed on May 31. It developed into a tropical storm later 
@@ -354,7 +354,7 @@ Selections from the [WikiText-103 best run's generations log](https://github.com
 > however, it reintensified slightly and later peaked with winds of 100 
 > mph (160 km/h) as it drifted through western Cuba.
 
-Note the typical failure mode with the naive generation: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model is prevented from employing a more conservative sampling regime.
+Note the typical failure mode with the naive generation: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model does not employ a more conservative sampling regime.
 
 </details>
 
