@@ -60,11 +60,15 @@ git_commit_push() {
     git push || true
 }
 
-# 1-epoch sweep base (L=1 / levels=7 / bs=16384, on top of the
-# combined-reductions baseline = W2 + low_rank=4 + BAND 128 lifting).
-# Historical pre-CB runs (DBD, M1-M4, structural variants, etc.) overrode these
-# with their own per-run patches; new runs after the MLP-compression sweep
-# inherit CB by default.
+# 1-epoch sweep base (L=1 / levels=7 / bs=16384, on top of the New Baseline
+# (NB) = R0 + W2 mixer + T-lower wavelet off-diagonal masking).
+# NB = R0 with per_scale_mixer_widths=[0.5×4, 0.25×4] (W2) and
+# lifting_offdiag_structure="lower_triangular" (T-lower). T-lower's masked
+# positions are exact zero (StructuredLinear forward applies bool mask via
+# `weight * mask`). Dense storage matches R0's 117.50M lifting (50% of weight
+# entries are zeros — kept for stability rather than parameter reduction).
+# Historical pre-NB runs (DBD, M1-M4, BAND/BD/MON sweeps, prior CB-stack runs)
+# overrode these with their own per-run patches; new runs inherit NB by default.
 BASE_PATCH_1EP='{
     "dataset": "wikitext-103",
     "layers": 1,
@@ -82,8 +86,7 @@ BASE_PATCH_1EP='{
     "lifting_diaglowrank": false,
     "lifting_level_sharing": false,
     "low_rank": 4,
-    "lifting_offdiag_structure": "banded",
-    "lifting_band_width": 128,
+    "lifting_offdiag_structure": "lower_triangular",
     "lr": 0.01,
     "min_lr": 0.0002,
     "eval_interval": 250
@@ -107,8 +110,7 @@ BASE_PATCH_5EP='{
     "lifting_diaglowrank": false,
     "lifting_level_sharing": false,
     "low_rank": 4,
-    "lifting_offdiag_structure": "banded",
-    "lifting_band_width": 128,
+    "lifting_offdiag_structure": "lower_triangular",
     "lr": 0.01,
     "min_lr": 0.0002,
     "eval_interval": 250
@@ -617,106 +619,152 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 
 
 
-MLP_BASE_1EP_PATCH='{}'  # MLP-compression flags layered per-run below
+# MLP_BASE_1EP_PATCH='{}'  # MLP-compression flags layered per-run below
+#
+# ---- DEPRECATED: MLP Structural Compression sweep --------------------------
+# The 12 MLP_BAND/BD/PQ runs below are commented out. Mask-based MLP compression
+# was deprecated in favor of dense compression directions (smaller mlp_expansion,
+# smaller C) — see the (Deprecated) MLP Structural Compression section in
+# README → runs.md for the rationale. NB lifting (T-lower) keeps mask-based
+# only on the wavelet cascade where research-insight value is high.
 
-# 25% density: BAND W=256 (per-block density 25.05%), BD b=512 (25.0%), (p,q) d=0.25 (only valid is p=6, q=2)
-run_ablation "MLP_BAND25 (W=256)" \
+# # 25% density: BAND W=256 (per-block density 25.05%), BD b=512 (25.0%), (p,q) d=0.25 (only valid is p=6, q=2)
+# run_ablation "MLP_BAND25 (W=256)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":256}')")" \
+#     "MLP_BAND25: MLP banded W=256 per (C,C) block, ~25% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_BD25 (b=512)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":512}')")" \
+#     "MLP_BD25: MLP block_diagonal b=512 per (C,C) block, ~25% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_PQ25 (d=0.25 -> p=6,q=2)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.25,\"mlp_pq_mode\":\"structural\"}')")" \
+#     "MLP_PQ25: MLP (p,q) striding at d=0.25 structural (p=6,q=2) (1ep, levels=7)"
+#
+# # 12.5% density: BAND W=128, BD b=256, (p,q) d=0.125 -> p=12, q=4
+# run_ablation "MLP_BAND125 (W=128)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":128}')")" \
+#     "MLP_BAND125: MLP banded W=128 per (C,C) block, ~12.5% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_BD125 (b=256)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":256}')")" \
+#     "MLP_BD125: MLP block_diagonal b=256 per (C,C) block, 12.5% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_PQ125 (d=0.125 -> p=12,q=4)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.125,\"mlp_pq_mode\":\"structural\"}')")" \
+#     "MLP_PQ125: MLP (p,q) striding at d=0.125 structural (p=12,q=4) (1ep, levels=7)"
+#
+# # 6.25% density: BAND W=64, BD b=128, (p,q) d=0.0625 -> p=24, q=8
+# run_ablation "MLP_BAND0625 (W=64)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":64}')")" \
+#     "MLP_BAND0625: MLP banded W=64 per (C,C) block, ~6.25% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_BD0625 (b=128)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":128}')")" \
+#     "MLP_BD0625: MLP block_diagonal b=128 per (C,C) block, 6.25% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_PQ0625 (d=0.0625 -> p=24,q=8)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.0625,\"mlp_pq_mode\":\"structural\"}')")" \
+#     "MLP_PQ0625: MLP (p,q) striding at d=0.0625 structural (p=24,q=8) (1ep, levels=7)"
+#
+# # 3.125% density: BAND W=32, BD b=64, (p,q) d=0.03125 -> p=48, q=16
+# run_ablation "MLP_BAND03125 (W=32)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":32}')")" \
+#     "MLP_BAND03125: MLP banded W=32 per (C,C) block, ~3.17% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_BD03125 (b=64)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":64}')")" \
+#     "MLP_BD03125: MLP block_diagonal b=64 per (C,C) block, 3.125% W1+W2 density (1ep, levels=7)"
+#
+# run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
+#     "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, levels=7)"
+
+
+# ---- NB verification run (1ep) ---------------------------------------------
+# Establishes the New Baseline BPB at 1 epoch. NB = R0 + W2 mixer + T-lower
+# wavelet off-diagonal masking. Replaces CB as the reference everything else
+# compares against. Empty patch — uses BASE_PATCH_1EP defaults exactly.
+run_ablation "NB_1ep New Baseline verification (1ep)" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":256}')")" \
-    "MLP_BAND25: MLP banded W=256 per (C,C) block, ~25% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_BD25 (b=512)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":512}')")" \
-    "MLP_BD25: MLP block_diagonal b=512 per (C,C) block, ~25% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_PQ25 (d=0.25 -> p=6,q=2)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.25,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ25: MLP (p,q) striding at d=0.25 structural (p=6,q=2) (1ep, levels=7)"
-
-# 12.5% density: BAND W=128, BD b=256, (p,q) d=0.125 -> p=12, q=4
-run_ablation "MLP_BAND125 (W=128)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":128}')")" \
-    "MLP_BAND125: MLP banded W=128 per (C,C) block, ~12.5% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_BD125 (b=256)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":256}')")" \
-    "MLP_BD125: MLP block_diagonal b=256 per (C,C) block, 12.5% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_PQ125 (d=0.125 -> p=12,q=4)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.125,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ125: MLP (p,q) striding at d=0.125 structural (p=12,q=4) (1ep, levels=7)"
-
-# 6.25% density: BAND W=64, BD b=128, (p,q) d=0.0625 -> p=24, q=8
-run_ablation "MLP_BAND0625 (W=64)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":64}')")" \
-    "MLP_BAND0625: MLP banded W=64 per (C,C) block, ~6.25% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_BD0625 (b=128)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":128}')")" \
-    "MLP_BD0625: MLP block_diagonal b=128 per (C,C) block, 6.25% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_PQ0625 (d=0.0625 -> p=24,q=8)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.0625,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ0625: MLP (p,q) striding at d=0.0625 structural (p=24,q=8) (1ep, levels=7)"
-
-# 3.125% density: BAND W=32, BD b=64, (p,q) d=0.03125 -> p=48, q=16
-run_ablation "MLP_BAND03125 (W=32)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"banded\",\"mlp_band_width\":32}')")" \
-    "MLP_BAND03125: MLP banded W=32 per (C,C) block, ~3.17% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_BD03125 (b=64)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"block_diagonal\",\"mlp_block_size\":64}')")" \
-    "MLP_BD03125: MLP block_diagonal b=64 per (C,C) block, 3.125% W1+W2 density (1ep, levels=7)"
-
-run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"mlp_offdiag_structure\":\"pq_strided\",\"mlp_pq_density\":0.03125,\"mlp_pq_mode\":\"structural\"}')")" \
-    "MLP_PQ03125: MLP (p,q) striding at d=0.03125 structural (p=48,q=16) (1ep, levels=7)"
+    '{}' \
+    "NB_1ep: New Baseline = R0 + W2 + T-lower (1ep, levels=7) — reference BPB for downstream ablations"
 
 
-# ---- Levels retry on CB stack ------------------------------------------------
+# ---- Levels retry on NB stack -----------------------------------------------
 # Previous attempts at levels=9 and levels=11 NaN'd at the L=1 / no-compression
 # baseline (the levels=11 cascade-explosion cliff), and no stability fix cleared
 # them. levels=13 also OOM'd without gradient_checkpointing on the uncompressed
-# stack. The CB stack changes the math: BAND128 lifting (~14M lifting params,
-# 87.8% reduction) plus low_rank=4 cap the spectral norm of each cascade
-# matrix, which is exactly the property that determines whether the cascade
-# stays bounded across deeper levels — and the lifting-param savings free
-# enough VRAM that levels=13 may now fit too. Worth retrying as a quick test
-# before the optimizer sweep — if BAND128's structural compression alone
-# clears the cliff, that confirms the cascade-bandwidth hypothesis at low
-# cost. If they still NaN, the cliff is downstream of structural compression
+# stack. The NB stack (R0 + W2 + T-lower) changes the math: T-lower lifting
+# (50% mask, exact zeros at masked positions) plus low_rank=4 cap the spectral
+# norm of each cascade matrix, which is exactly the property that determines
+# whether the cascade stays bounded across deeper levels. Worth retrying as a
+# quick test before the optimizer sweep — if T-lower's structural masking
+# alone clears the cliff, that confirms the cascade-bandwidth hypothesis at
+# low cost. If they still NaN, the cliff is downstream of structural masking
 # (precision / Adagrad dynamics) and the optimizer sweep is the right next
 # move.
 #
-# Compare 1-epoch BPB against CB's 1.2586. levels=11 with bs=16384 leaves only
-# 8 tokens at the coarsest scale; levels=13 leaves only 2 tokens — boundary
-# effects may dominate even if they train; treat the BPB-vs-CB delta as a
-# "did the cascade survive" signal, not a "is this a better config" signal.
-run_ablation "levels=9 retry on CB stack" \
+# Compare 1-epoch BPB against NB's reference. levels=11 with bs=16384 leaves
+# only 8 tokens at the coarsest scale; levels=13 leaves only 2 tokens —
+# boundary effects may dominate even if they train; treat the BPB-vs-NB delta
+# as a "did the cascade survive" signal, not a "is this a better config"
+# signal.
+run_ablation "levels=9 retry on NB stack" \
     "$BASE_PATCH_1EP" \
     '{"levels": 9, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
-    "levels=9: retry on CB stack (1ep, per_scale_mixer_widths extended to 10 entries)"
+    "levels=9: retry on NB stack (1ep, per_scale_mixer_widths extended to 10 entries)"
 
-run_ablation "levels=11 retry on CB stack" \
+run_ablation "levels=11 retry on NB stack" \
     "$BASE_PATCH_1EP" \
     '{"levels": 11, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
-    "levels=11: retry on CB stack (1ep, per_scale_mixer_widths extended to 12 entries)"
+    "levels=11: retry on NB stack (1ep, per_scale_mixer_widths extended to 12 entries)"
 
-run_ablation "levels=13 retry on CB stack" \
+run_ablation "levels=13 retry on NB stack" \
     "$BASE_PATCH_1EP" \
     '{"levels": 13, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
-    "levels=13: retry on CB stack (1ep, per_scale_mixer_widths extended to 14 entries; coarsest scale has only 2 tokens at bs=16384)"
+    "levels=13: retry on NB stack (1ep, per_scale_mixer_widths extended to 14 entries; coarsest scale has only 2 tokens at bs=16384)"
+
+
+# ---- Levels retry on R0 + T-lower (no W2) ----------------------------------
+# Disentangles which of NB's two ingredients (W2 mixer contraction vs T-lower
+# lifting masking) actually carries the stability load at deep levels. These
+# runs are the same as the NB retries above but with R0's original mixer
+# widths [1.0×4, 0.5×4] (extended to match levels) instead of W2's [0.5×4,
+# 0.25×4]. T-lower is preserved (inherited from BASE_PATCH_1EP).
+#
+# Reading guide:
+#   - If NB and R0+T-lower both train: T-lower is doing the work; W2 is
+#     decorative for stability. Could revisit dropping W2 for the modest BPB
+#     savings of going back to R0 mixer widths.
+#   - If NB trains but R0+T-lower NaNs: W2 is load-bearing; both are needed.
+#   - If neither trains: T-lower alone isn't enough; need optimizer sweep.
+run_ablation "levels=9 retry on R0+T-lower (no W2)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
+    "levels=9: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x5, 0.5x5], T-lower lifting from NB defaults)"
+
+run_ablation "levels=11 retry on R0+T-lower (no W2)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 11, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
+    "levels=11: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x6, 0.5x6], T-lower lifting from NB defaults)"
+
+run_ablation "levels=13 retry on R0+T-lower (no W2)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 13, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
+    "levels=13: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x7, 0.5x7], T-lower lifting from NB defaults; coarsest scale 2 tokens at bs=16384)"
 
 
 # ---- W2 mixer contraction at 5 epochs on R0 baseline ------------------------
@@ -726,56 +774,57 @@ run_ablation "levels=13 retry on CB stack" \
 # the 1-epoch test (logs/wikitext-103_2026-05-05_05-48-40, BPB 1.2437) holds
 # at 5 epochs against R0's 5ep BPB of 1.0974.
 #
-# Note: BASE_PATCH_5EP already has W2 mixer + BAND128 + low_rank=4 (CB stack).
-# The override turns OFF BAND128 to recover the R0-without-BAND128 stack,
-# leaving the W2 mixer setting in place.
-run_ablation "W2_R0_5ep W2 contraction on R0 baseline (5 epochs)" \
+# Note: BASE_PATCH_5EP has W2 mixer + low_rank=4 + T-lower lifting (NB stack).
+# The override turns OFF T-lower (lifting_offdiag_structure="none") to recover
+# the R0-without-lifting-mask stack, leaving the W2 mixer setting in place.
+run_ablation "Mix_R0_0.5_0.25 mixer contraction [0.5x4, 0.25x4] on R0 baseline (5 epochs)" \
     "$BASE_PATCH_5EP" \
     '{"lifting_offdiag_structure": "none"}' \
-    "W2_R0_5ep: per_scale_mixer_widths=[0.5x4, 0.25x4] on R0 baseline (5ep, no BAND128)"
+    "Mix_R0_0.5_0.25: per_scale_mixer_widths=[0.5x4, 0.25x4] on R0 baseline (5ep, no lifting mask)"
 
 
-# ---- Mixer contraction sweep on CB stack (1ep each) -------------------------
+# ---- Mixer contraction sweep on NB stack (1ep each) -------------------------
 # Tighter per_scale_mixer_widths than W2's [0.5×4, 0.25×4], applied on top of
-# the CB stack. The 0.1/0.05 contraction previously NaN'd at step 1250 on the
-# uncompressed R0 stack (logs/wikitext-103_2026-05-05_04-37-47); CB's
-# BAND128+low_rank=4 spectral-norm constraint should make tighter mixers
-# tractable now. Compare 1-epoch BPB against CB's 1.2586. Production candidate:
-# tightest setting that lands within ~0.005 BPB of CB.
-run_ablation "Mix_CB_0.4_0.2 mixer contraction [0.4x4, 0.2x4] on CB" \
+# the NB stack. The 0.1/0.05 contraction previously NaN'd at step 1250 on the
+# uncompressed R0 stack (logs/wikitext-103_2026-05-05_04-37-47); NB's
+# T-lower+low_rank=4 spectral-norm constraint should make tighter mixers
+# tractable now. Compare 1-epoch BPB against NB's reference. Production
+# candidate: tightest setting that lands within ~0.005 BPB of NB.
+run_ablation "Mix_NB_0.4_0.2 mixer contraction [0.4x4, 0.2x4] on NB" \
     "$BASE_PATCH_1EP" \
     '{"per_scale_mixer_widths": [0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]}' \
-    "Mix_CB_0.4_0.2: per_scale_mixer_widths=[0.4x4, 0.2x4] on CB (1ep)"
+    "Mix_NB_0.4_0.2: per_scale_mixer_widths=[0.4x4, 0.2x4] on NB (1ep)"
 
-run_ablation "Mix_CB_0.3_0.15 mixer contraction [0.3x4, 0.15x4] on CB" \
+run_ablation "Mix_NB_0.3_0.15 mixer contraction [0.3x4, 0.15x4] on NB" \
     "$BASE_PATCH_1EP" \
     '{"per_scale_mixer_widths": [0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]}' \
-    "Mix_CB_0.3_0.15: per_scale_mixer_widths=[0.3x4, 0.15x4] on CB (1ep)"
+    "Mix_NB_0.3_0.15: per_scale_mixer_widths=[0.3x4, 0.15x4] on NB (1ep)"
 
-run_ablation "Mix_CB_0.25_0.125 mixer contraction [0.25x4, 0.125x4] on CB" \
+run_ablation "Mix_NB_0.25_0.125 mixer contraction [0.25x4, 0.125x4] on NB" \
     "$BASE_PATCH_1EP" \
     '{"per_scale_mixer_widths": [0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]}' \
-    "Mix_CB_0.25_0.125: per_scale_mixer_widths=[0.25x4, 0.125x4] on CB (1ep)"
+    "Mix_NB_0.25_0.125: per_scale_mixer_widths=[0.25x4, 0.125x4] on NB (1ep)"
 
-run_ablation "Mix_CB_0.1_0.05 mixer contraction [0.1x4, 0.05x4] on CB (retry of previously NaN-failed config)" \
+run_ablation "Mix_NB_0.1_0.05 mixer contraction [0.1x4, 0.05x4] on NB (retry of previously NaN-failed config)" \
     "$BASE_PATCH_1EP" \
     '{"per_scale_mixer_widths": [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05]}' \
-    "Mix_CB_0.1_0.05: per_scale_mixer_widths=[0.1x4, 0.05x4] on CB (1ep, retry of previously NaN'd config)"
+    "Mix_NB_0.1_0.05: per_scale_mixer_widths=[0.1x4, 0.05x4] on NB (1ep, retry of previously NaN'd config)"
 
 
-# ---- Cross-level group sharing on CB stack ----------------------------------
-# Retry of lifting_level_sharing=true on the CB stack. Previously NaN'd at
+# ---- Cross-level group sharing on NB stack ----------------------------------
+# Retry of lifting_level_sharing=true on the NB stack. Previously NaN'd at
 # step 2250 on the uncompressed (Complete) Wavelet Diagonal and Low Rank
 # Compression sweep — same general failure family as the levels=11 cliff
-# (cross-level parameter sharing amplifies cascade dynamics). With BAND128
+# (cross-level parameter sharing amplifies cascade dynamics). With T-lower
 # capping per-matrix spectral norm, the cross-level coupling may now be
-# tractable. Compare 1-epoch BPB against CB's 1.2586; if it trains and BPB is
-# within ~0.01, cross-level sharing becomes a free or near-free additional
-# parameter compression.
-run_ablation "LLS_CB lifting_level_sharing on CB stack (retry of previously NaN-failed config)" \
+# tractable. Compare 1-epoch BPB against NB's reference; if it trains and
+# BPB is within ~0.01, cross-level sharing becomes a stability-friendly
+# addition (note: NOT a parameter reduction — masking compression has been
+# deprecated as a production direction; this is for stability research only).
+run_ablation "LLS_NB lifting_level_sharing on NB stack (retry of previously NaN-failed config)" \
     "$BASE_PATCH_1EP" \
     '{"lifting_level_sharing": true}' \
-    "LLS_CB: lifting_level_sharing=true on CB stack (1ep, retry of previously NaN'd config)"
+    "LLS_NB: lifting_level_sharing=true on NB stack (1ep, retry of previously NaN'd config)"
 
 
 echo ""

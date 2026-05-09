@@ -763,8 +763,8 @@ Tests sparsifying the 102.93M token embedding via the (p, q) phantom-token strid
 | **Reference (combined-reductions baseline @ 1ep, no embedding compression)** | — | — | — | — | 102.93M | 100% | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) | **1.2586** | The 1-epoch baseline against which all (p, q) variants are compared. Configuration: `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]` (W2), `lifting_offdiag_structure="banded"`, `lifting_band_width=128` (BAND 128). Total 266.63M params, training VRAM 2,938 MiB. |
 | **PQ_EMB10_smallest_q** | **10%** | **smallest_q** | **(18, 2, 50258)** | **1** | **10.29M** | **10%** | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) | **1.3896** | **First (p, q) embedding result on the CB stack.** Total 174.00M (−35% vs CB's 266.63M), train VRAM 23,308 MiB, inference VRAM 3,630 MiB. **+0.1310 vs CB**, but **beats ED at equivalent compression**: ED256 (87%, 13.92M) lands at 1.3916, ED128 (93%, 6.95M) at 1.4808. PQ at 90% compression slots between them on embedding params and beats both on BPB-per-embed-param. **Stability win:** previous PQ runs NaN'd at peak LR; CB stack (BAND128 + low_rank=4) clears it. The cascade's spectral-norm constraint stabilizes downstream sparse-activation amplification. (Lower-density rows for d=0.1%, d=1%, d=5% removed from this sweep — the d=10% +0.1310 BPB result made deeper compression unattractive for production.) |
 | **PQ_EMB10_structural** | **10%** | **structural** | **(12, 8, 50264)** | **7** | **10.29M** | **10%** | [link](logs/wikitext-103_2026-05-09_06-34-14/log.txt) | **1.3836** | **Macrocell hypothesis confirmed at the embedding tier.** Total 174.00M, train VRAM 23,308 MiB, inference VRAM 3,630 MiB. **+0.1250 vs CB**, **−0.0060 vs PQ_EMB10_smallest_q** at matched embedding-param count — structural's q ≈ √C clumping wins over smallest_q's spread sparsity. Beats ED256 (87% compression at 1.3916) by 0.008 BPB *while compressing more aggressively* (90%). Production-default mode for (p, q) embedding compression. |
-| PQ_EMB25_structural | 25% | structural (≡ smallest_q) | (6, 2, 50258) | 1 | ~25.73M | 25% | | | At s = p+q = 8, only q=2 is valid (q=4 makes p=4 divide 2048), so structural and smallest_q converge. Queued in runs.sh; conservative density (75% embedding reduction). |
-| PQ_EMB40_structural | 40% | structural (≡ smallest_q) | (3, 2, 50256) | TBD | ~41.17M | 40% | | | **Maximum density achievable for C=2048**: at s = p+q = 5, only (3, 2) is valid (q=1 fails q>1; (4,1) and (1,4) fail; etc.). Densities 50%, 67%, 75% have no valid (p, q) candidates. Substitute for the originally-proposed 50% / 67% slots. Queued in runs.sh; high-density anchor (60% embedding reduction). |
+| **PQ_EMB25_structural** | **25%** | **structural (≡ smallest_q)** | **(6, 2, 50258)** | **1** | **25.73M** | **25%** | [link](logs/wikitext-103_2026-05-09_09-40-26/log.txt) | **1.3151** | At s = p+q = 8, only q=2 is valid (q=4 makes p=4 divide 2048), so structural and smallest_q converge. Total 189.43M, train VRAM 23,308 MiB, inference VRAM pending. **+0.0565 vs CB; ~halves the BPB cost vs PQ_EMB10** (which was +0.1250–0.1310) for backing off compression from 90% to 75%. Steep recovery curve at this density tier. |
+| ~~PQ_EMB40_structural~~ (cancelled) | 40% | structural (≡ smallest_q) | (3, 2, 50256) | 1 | ~41.17M | 40% | | | **Cancelled** — PQ_EMB10 / PQ_EMB25 results made the (p, q) embedding direction less promising than initially hoped, and the 40% density anchor was deemed unnecessary given the trend. Was the maximum density achievable for C=2048 (at s = p+q = 5, only (3, 2) is valid). |
 | **PQ_EMB_winner_5ep** | TBD | TBD | TBD | TBD | TBD | TBD | | | 5-epoch confirmation of the best 1-epoch (p, q) variant. Compare against the 5-epoch combined-reductions baseline (section 11 placeholder, will run with same W2 + low_rank=4 + BAND 128 settings as section 7 but for 5 epochs). **Strongest result:** BPB cleanly below the 5-epoch combined-reductions baseline, suggesting embedding sparsity reduces overfitting at the embedding tier in the same way lifting sparsity does at the cascade tier. |
 
 ### Encoder-decoder embedding sweep (planned, L=1, levels=7, epochs=1)
@@ -901,3 +901,108 @@ Two training targets are planned at this scale:
 |   | WikiText-103 only | TBD (target ~10–15B) | | | ~10–15B | ≤192 GB (B200) | ~24 GB (fp16, single 4090) | Headline scale-up, direct comparison to 5090 run |
 |   | Multi-dataset mix | TBD (target ~10–15B) | | per-dataset | ~10–15B | ≤192 GB (B200) | ~24 GB (fp16, single 4090) | General-purpose LM behavior across domains |
 |   | Either + PTQ (per-scale 8/4/2-bit) | inference-only | | matches source | matches source | — | <8 GB | Enables consumer-GPU inference on either checkpoint |
+
+---
+
+## Deprecated approaches
+
+The four sections below were moved here from the README's Future Plans list when mask-based compression was deprecated as a production direction in favor of dense compression alternatives (smaller `mlp_expansion`, smaller `C`, encoder-decoder where it actually helps). Mask-based "compression" doesn't deliver real `.pt` size, training VRAM, or throughput savings under stock kernels — masked-zero positions still occupy full storage, full Adagrad accumulator, and full forward/backward FLOPs. Content is preserved here for the experiment record and for the option of revisiting if/when sparse kernels and sparse-save infrastructure are built.
+
+### (Deprecated) Combined Compressed Baseline (CB)
+
+CB merged W2 per-scale mixer widths, `low_rank=4`, and BAND 128 lifting into a single combined-reductions baseline. All downstream compression sweeps in this era (PQ embedding, ED embedding, MLP structural compression) compared against CB instead of the original LR16 1.2361 / 1.0974 references. **Deprecated** in favor of NB (R0 + W2 + T-lower), which keeps the dense-compression wins (W2 mixer, low_rank=4) but uses T-lower for stability rather than BAND128 — T-lower has better BPB at the same dense storage cost, since mask-based compression doesn't actually shrink the .pt file or Adagrad state.
+
+**Settings:** `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]`, `lifting_offdiag_structure="banded"`, `lifting_band_width=128`.
+
+**Result vs the previous L=1 baseline ([log](logs/wikitext-103_2026-05-08_07-19-49/log.txt)):**
+
+| | LR16 (former baseline) | CB (Compressed Baseline) | Δ |
+|---|---|---|---|
+| Total params | 393.21M | **266.63M** | **−32.2%** |
+| Shared lifting | 117.50M | 14.33M | −87.8% |
+| Mixer/layer | 59.11M | 35.70M | −39.6% |
+| MLP/layer | 83.91M | 83.91M | unchanged |
+| Token embedding | 102.93M | 102.93M | unchanged |
+| Training peak VRAM | 23,416 MiB | 23,110 MiB | −1.3% |
+| Inference peak VRAM | 3,260 MiB | **3,010 MiB** | −7.7% |
+| BPB sliding | 1.2342 | **1.2586** | +0.0244 |
+
+**Composability:** the +0.0244 BPB cost is **94% of the linear sum** of the individual costs (W2's +0.0095 + BAND 128's +0.0166 = +0.0261). Wins are essentially independent — no compounding gain, no negative interaction.
+
+**Why training VRAM barely moved despite −32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size** — though the .pt size benefit is also illusory under stock save logic, which serializes dense tensors regardless of mask.
+
+**Inference VRAM also moved less than expected (−7.7% for −32% params)** because at inference the weights are only a minority of total process VRAM (786 MB out of 3,260 MiB at LR16, ~24%) — the rest is the CUDA context, cuDNN/cuBLAS workspaces, the PyTorch caching allocator's reserved headroom, the torch.compile cache, forward-pass activations, and cross-window decompose-bypass state. Most of that overhead is fixed-size and doesn't scale with parameter count.
+
+### (Deprecated) Sparse Embedding with (p, q) Striding
+
+The token embedding (102.93M params, ~26% of the model — larger than MLP, mixer, or FwPKM individually) was a natural compression target. The **(p, q) phantom-token striding scheme** was a number-theoretic alternative to ALBERT-style factorization / vocab pruning / hash embeddings — it preserved the (N × C) embedding shape exactly, masked the embedding via a deterministic 1D walk over the flattened tensor with alternating step sizes p and q (density = 2/(p+q)), and used a "phantom token" trick to pad N to a value with useful divisibility properties without ever allocating the padded rows. The scheme was content-blind, deterministic, with O(1) metadata cost, and shipped a **q ≈ √C structural-mode heuristic** aligned with Monarch / butterfly factorization.
+
+**Deprecated** in favor of dense embedding alternatives. PQ runs at d = 10% / 25% landed +0.1250 / +0.0565 BPB vs CB respectively — meaningful BPB regressions for compression that doesn't actually shrink .pt files or Adagrad state under stock kernels.
+
+Full scheme, requirements, selection algorithm, and worked candidates are still in [plans/new_compression_ideas.md](plans/new_compression_ideas.md).
+
+| Density | Mode | (p, q) | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Run Log |
+|---|---|---|---|---|---|---|---|---|
+| Reference (CB) | — | — | 266.63M | 23,110 MiB | 2,938 MiB | 1.2586 | — | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
+| 10% | smallest_q | (18, 2) | 174.00M | 23,308 MiB | 3,630 MiB | 1.3896 | +0.1310 | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) |
+| 10% | structural | (12, 8) | 174.00M | 23,308 MiB | 3,630 MiB | 1.3836 | +0.1250 | [link](logs/wikitext-103_2026-05-09_06-34-14/log.txt) |
+| 25% | structural ≡ smallest_q | (6, 2) | 189.43M | 23,308 MiB | pending | 1.3151 | +0.0565 | [link](logs/wikitext-103_2026-05-09_09-40-26/log.txt) |
+| ~~40%~~ (cancelled) | structural ≡ smallest_q | (3, 2) | 204.87M | — | — | — | — | |
+
+### (Deprecated) Encoder-Decoder Embedding
+
+A second compression scheme for the token embedding, parallel to (p, q) striding but with different structural commitments. **Forward path:** tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. **Output path:** C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
+
+The decoder and encoder were **separate learnable matrices** because the model's nonlinearities (GELU in MLP, gating in mixer, lifting cascade) made the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Total params: `V·C_emb + 2·C·C_emb + C + C_emb` (vs dense `V·C`). Implementation in [tools/encoder_decoder_embedding.py](tools/encoder_decoder_embedding.py).
+
+| C_emb | Total params | % of dense (V·C) | Reduction |
+|---|---|---|---|
+| 128 | 6.95M | 6.75% | 93% |
+| 256 | 13.92M | 13.53% | 87% |
+| **512** | **27.83M** | **27.04%** | **73%** |
+| 1024 | 55.66M | 54.07% | 46% |
+| 2048 (= C) | 111.33M | 108.16% | none — full-rank refinement ablation |
+
+Unlike (p, q), ED's outputs are **dense** (the decoder mixes all `C_emb` dims into all `C` output dims), so the LayerNorm-amplification failure mode that made aggressive (p, q) compressions NaN at peak LR was absent. The C_emb=2048 case was a no-compression ablation testing whether the encoder/decoder machinery itself helps even without parameter savings.
+
+**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048} layered on the CB baseline, plus 7 untied-LM-head variants at the same C_emb values, plus expansion-direction variants at C_emb ∈ {4096, 8192}.
+
+**Final tied results (7 of 7 runs landed):** The BPB gap closed monotonically through C_emb = C, then kept closing in the expansion direction — at **C_emb = 8192 (4× C), the curve crossed under CB by 0.0072 BPB**.
+
+| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Links |
+|---|---|---|---|---|---|---|
+| 128 | 170.66M | 22,012 MiB | 2,198 MiB | 1.4808 | +0.2222 | [log](logs/wikitext-103_2026-05-08_09-12-05/log.txt) |
+| 256 | 177.62M | 22,087 MiB | 2,452 MiB | 1.3916 | +0.1330 | [log](logs/wikitext-103_2026-05-08_11-54-53/log.txt) |
+| 512 | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 | [log](logs/wikitext-103_2026-05-08_13-37-26/log.txt) |
+| 1024 | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 | [log](logs/wikitext-103_2026-05-08_14-41-41/log.txt) |
+| 2048 (= C) | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 | [log](logs/wikitext-103_2026-05-08_15-47-44/log.txt) |
+| 4096 (2× C) | 386.34M | 24,317 MiB | pending | 1.2597 | +0.0011 | [log](logs/wikitext-103_2026-05-08_19-21-42/log.txt) |
+| **8192 (4× C)** | **608.97M** | **26,696 MiB** | **5,610 MiB** | **1.2514** | **−0.0072** | [log](logs/wikitext-103_2026-05-08_20-44-08/log.txt) |
+
+**Untied results (6 of 7 runs landed; ED128_untied not queued):** Mixed picture vs tied. Untying gave small wins at C_emb=512 and C_emb=4096 but small losses at C_emb=1024 and (catastrophically) at C_emb=8192. Tied was the production-default at the production-relevant scale (C_emb=8192) — the data-efficiency of weight sharing on ~120M training tokens beat the extra capacity of 411.7M duplicated output_embedding params (which became undertrained).
+
+| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Δ vs tied | Links |
+|---|---|---|---|---|---|---|---|
+| 128 (not queued) | 177.09M | ~22,063 MiB | pending | pending | pending | pending | |
+| 256 | 190.49M | 22,185 MiB | pending | 1.3933 | +0.1347 | +0.0017 | [log](logs/wikitext-103_2026-05-08_16-59-00/log.txt) |
+| 512 | 217.27M | 22,432 MiB | 2,610 MiB | 1.3263 | +0.0677 | **−0.0052** | [log](logs/wikitext-103_2026-05-08_22-31-39/log.txt) |
+| 1024 | 270.83M | 22,926 MiB | 2,950 MiB | 1.2902 | +0.0316 | +0.0073 | [log](logs/wikitext-103_2026-05-08_23-34-22/log.txt) |
+| 2048 | 377.95M | 23,913 MiB | 3,510 MiB | 1.2611 | +0.0025 | +0.0003 | [log](logs/wikitext-103_2026-05-09_00-41-41/log.txt) |
+| **4096** | **592.19M** | **25,888 MiB** | **4,770 MiB** | **1.2568** | **−0.0018** | **−0.0029** | [log](logs/wikitext-103_2026-05-09_01-53-33/log.txt) |
+| 8192 | 1.02 B | 29,838 MiB | 7,170 MiB | 1.2687 | +0.0101 | **+0.0173** (regresses) | [log](logs/wikitext-103_2026-05-09_03-18-01/log.txt) |
+
+**Decision: deprecated.** The compression direction (C_emb < C) was too BPB-costly to ship — even ED1024 (the closest to CB) was +0.024 BPB sliding. Only C_emb = 8192 (4× C, expansion direction) crossed under CB by 0.0072 BPB, but at +119% inference VRAM and +128% total params for that small gain. **Interpretability cost** also matters: any ED variant scrambles semantic axes inside the model interior via the learned decoder rotation — shipping ED8192 means giving up inner-layer semantic readability for the 0.0072 BPB win. The trade-off is unfavorable against keeping the frozen FDA semantic embedding at C_emb = C with the encoder/decoder pair removed entirely. **Why untying breaks at C_emb=8192**: the model has 411.7M parameters in each of two independent V × C_emb tables (input embedding + output_embedding) — 823M just on the embedding pair, against ~120M tokens of training data. Each table effectively sees half the gradient signal that a single tied table would. Tied wins by 0.0173 BPB at this scale because the shared matrix gets twice the gradient updates per step.
+
+### (Deprecated) MLP Structural Compression
+
+The MLP was the second-largest single component after the token embedding (83.91M @ E=10, 167.82M @ E=20). Three structural variants were planned for the MLP weight matrices W1 (C, E·C) and W2 (E·C, C):
+
+- **Tiled banded** — view W1 as E concatenated `(C, C)` blocks left-to-right; in each block apply a bilateral band of width W. Per-block density `(2W+1)/C` matches BAND on the lifting matrices exactly.
+- **Tiled block-diagonal** — same per-block view, but with block-of-blocks pattern of size b. Per-block density `b/C`. Each output "expansion group" sees only its own input group — an architecturally clean grouped-MLP / channel-grouped feedforward interpretation.
+- **(p, q) striding** — single 1D walk over the flattened weight tensor, alternating step sizes p and q, with `q | C`. No phantom tokens needed since `gcd(C, E·C) = C`. Same `find_pq` algorithm as the embedding scheme; same `q ≈ √C` structural-mode default.
+
+Lifting empirical priors (BAND 80.1% > BD 67.8% at matched density on the lifting cascade) suggested BAND would likely win on MLP too — but the MLP nonlinearity in the middle changes the calculus, BD has a cleaner architectural story (grouped MLP), and (p, q) brings a third connectivity pattern (global walk vs local band vs grouped block) into the comparison.
+
+**Planned sweep:** four density points (25%, 12.5%, 6.25%, 3.125%) × three structures = 12 runs at 1 epoch.
+
+**Deprecated** before the sweep finished. Same rationale as the other mask-based deprecations — sparse mask × dense storage doesn't deliver real `.pt` / Adagrad / throughput savings under stock kernels. The dense alternative is reducing `mlp_expansion` (currently 10) for a true compression that saves storage, VRAM, and compute. Only one MLP run (MLP_BAND25, in progress at deprecation time) actually ran; results are not preserved here since the architecture itself is no longer being pursued.

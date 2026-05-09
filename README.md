@@ -524,32 +524,29 @@ Longer training time, more regularization, and parameter compression are the sur
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
 9. [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
-10. [(Complete) New Testing Baseline with Mixer & Wavelet Parameter Reductions](#complete-new-testing-baseline-with-mixer--wavelet-parameter-reductions)
-11. [Per-Scale Mixer Widths after Model Compression](#per-scale-mixer-widths-after-model-compression)
-12. [Wavelet Cross-Level Group Sharing with Compression](#wavelet-cross-level-group-sharing-with-compression)
-13. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
-14. [(Complete) Encoder-Decoder Embedding](#complete-encoder-decoder-embedding)
-15. [MLP Structural Compression](#mlp-structural-compression)
-16. [Gradient Checkpointing](#gradient-checkpointing)
-17. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
-18. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-19. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-20. [Dropout Sweep](#dropout-sweep)
-21. [Weight Decay Sweep](#weight-decay-sweep)
-22. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-23. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-24. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-25. [Longer PG-19 Training](#longer-pg-19-training)
-26. [Dataset Comparisons](#dataset-comparisons)
-27. [Model Comparisons](#model-comparisons)
-28. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-29. [Multi-Transform Parallelization](#multi-transform-parallelization)
-30. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-31. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-32. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-33. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-34. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-35. [Other Post-Release Plans](#other-post-release-plans)
+10. [New Testing Baseline](#new-testing-baseline)
+11. [Per-Scale Mixer Widths with New Baseline](#per-scale-mixer-widths-with-new-baseline)
+12. [Wavelet Cross-Level Group Sharing](#wavelet-cross-level-group-sharing)
+13. [Gradient Checkpointing](#gradient-checkpointing)
+14. [Levels = 9, 11, and 13 Revisited](#levels--9-11-and-13-revisited)
+15. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+16. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+17. [Dropout Sweep](#dropout-sweep)
+18. [Weight Decay Sweep](#weight-decay-sweep)
+19. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+20. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+21. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+22. [Longer PG-19 Training](#longer-pg-19-training)
+23. [Dataset Comparisons](#dataset-comparisons)
+24. [Model Comparisons](#model-comparisons)
+25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+26. [Multi-Transform Parallelization](#multi-transform-parallelization)
+27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+32. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -617,7 +614,7 @@ For future tests, we have changed the following hyperparameters. The result is t
 
 | Run | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
-| Test 1 | 1 | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | 1.1762 † | 344.63M | 6,867 MiB | - |
+| Test 1 | 1 | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | 1.1762 † | 344.63M | 6,867 MiB | Inference VRAM 2,876 MiB |
 | **R0** | 1 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
 | Test 1 | 5 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | 1.0796 | 344.63M | 6,867 MiB | 5-epoch production result |
 | **R0** | 5 | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | 1.0974 | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
@@ -645,18 +642,20 @@ At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to 
 
 ### (Complete) Per-Scale Mixer Width Contraction and Expansion
 
-**Results:** all runs on R0 baseline (no BAND128 lifting compression). Reference R0 1ep BPB sliding 1.2361; R0 5ep BPB sliding 1.0974.
+**Results:** 
 
 | Variant | per_scale_mixer_widths | Epochs | BPB sliding | ΔBPB vs R0 | Mixer params | Run Log |
 |---|---|---|---|---|---|---|
-| W2 contraction (1ep) | [0.5×4, 0.25×4] | 1 | 1.2437 | +0.0076 | 35.70M (−39%) | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) |
-| W2 contraction (5ep) | [0.5×4, 0.25×4] | 5 | pending | pending | 35.70M (−39%) | queued |
+| Baseline (R0, 1ep) | [1.0×4, 0.5×4] | 1 | 1.2361 | — | 59.11M | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) |
+| Baseline (R0, 5ep) | [1.0×4, 0.5×4] | 5 | 1.0974 | — | 59.11M | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) |
+| Mild contraction (1ep) | [0.5×4, 0.25×4] | 1 | 1.2437 | +0.0076 | 35.70M (−39%) | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) |
+| Mild contraction (5ep) | [0.5×4, 0.25×4] | 5 | pending | pending | 35.70M (−39%) | queued |
 | Aggressive contraction | [0.1×4, 0.05×4] | 1 | NaN at step 1250 | — | — | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) |
-| E5 expansion | [1.5×4, 0.5×4] | 5 | 1.1037 | +0.0063 | 73.06M (+24%) | [link](logs/wikitext-103_2026-05-05_14-00-32/log.txt) |
+| Expansion | [1.5×4, 0.5×4] | 5 | 1.1037 | +0.0063 | 73.06M (+24%) | [link](logs/wikitext-103_2026-05-05_14-00-32/log.txt) |
 
 Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Expansion will no longer be considered. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05) — including a retry of the 0.1/0.05 setting that NaN'd here — are layered on top of the CB stack in the [Per-Scale Mixer Widths after Model Compression](#per-scale-mixer-widths-after-model-compression) section, since the BAND128 spectral-norm constraint should now make the previously-unstable tightenings tractable.
+**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Expansion will no longer be considered. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05), including a retry of the 0.1/0.05 setting that NaN'd here, are layered on top of the NB stack in the [Per-Scale Mixer Widths with New Baseline](#per-scale-mixer-widths-with-new-baseline) section, since the T-lower spectral-norm constraint should now make the previously-unstable tightenings tractable.
 
 ### (Complete) Mixer Low Rank
 
@@ -723,164 +722,59 @@ See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the 
 - The "T lower" lower triangular variant is likely best long-term due to reducing wavelet parameters by 50.05%, but recovering 92.7% of the BPB gap between full diagonal and uncompressed (-0.0038 BPB).
 - Moving forward with BAND 128, but considering swapping with T lower when accuracy is required.
 
-### (Complete) New Testing Baseline with Mixer & Wavelet Parameter Reductions
+### New Testing Baseline
 
-Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 lifting) into a single combined-reductions baseline. All downstream compression sweeps (embedding, MLP, FwPKM) compare against this, not the old 1.2361 / 1.0974 references.
+The new baseline (**NB**) is R0 with the new per-scale mixer width [0.5x4,0.25x4] and T-lower wavelet off-diagonal masking. NB uses lower-triangular wavelets (50% lifting reduction at +0.0038 BPB), which is retained purely for Adagrad stability (higher levels, etc.), not parameter reduction. The mixer width contraction offers parameter reduction and improved stability, but at a moderate BPB cost (-39% mixer params, +0.0076 BPB). It is also retained for improved stability.
 
-**Settings:** `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]`, `lifting_offdiag_structure="banded"`, `lifting_band_width=128`.
+**Settings:** `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]`, `lifting_offdiag_structure="lower_triangular"`.
 
-**Result vs the previous L=1 baseline ([log](logs/wikitext-103_2026-05-08_07-19-49/log.txt)):**
+**Masked-position behavior:** T-lower's masked positions are zero in every forward pass. `StructuredLinear` performs `F.linear(x, weight * mask, bias)` with a bool mask, so masked positions become hard zeros. The dense weight tensor still occupies its full shape in storage and optimizer state.
 
-| | LR16 (former baseline) | CB (Compressed Baseline) | Δ |
-|---|---|---|---|
-| Total params | 393.21M | **266.63M** | **−32.2%** |
-| Shared lifting | 117.50M | 14.33M | −87.8% |
-| Mixer/layer | 59.11M | 35.70M | −39.6% |
-| MLP/layer | 83.91M | 83.91M | unchanged |
-| Token embedding | 102.93M | 102.93M | unchanged |
-| Training peak VRAM | 23,416 MiB | 23,110 MiB | −1.3% |
-| Inference peak VRAM | 3,260 MiB | **3,010 MiB** | −7.7% |
-| BPB sliding | 1.2342 | **1.2586** | +0.0244 |
+NB is queued in [runs.sh](runs.sh) as `NB_1ep` to establish the reference BPB at 1 epoch. All downstream tests in subsequent sections compare against this number until otherwise specified.
 
-**Composability:** the +0.0244 BPB cost is **94% of the linear sum** of the individual costs (W2's +0.0095 + BAND 128's +0.0166 = +0.0261). Wins are essentially independent — no compounding gain, no negative interaction.
+### Per-Scale Mixer Widths with New Baseline
 
-**Why training VRAM barely moved despite -32% params:** training VRAM is dominated by activation memory (forward intermediates saved for backward), not weights. Parameter compression saves the Adagrad accumulator and checkpoint storage but barely touches activation totals — the MLP hidden activation alone (`1 × 16384 × 20480` = 671 MB in fp16) plus per-scale wavelet intermediates dwarf the weights. The actual compression payoff lives in **inference VRAM** (no backward, no optimizer state, no saved activations) and **checkpoint size**.
+The original [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion) sweep ran on the uncompressed R0 baseline. Aggressive contractions like `[0.1×4, 0.05×4]` NaN'd at peak LR with Adagrad. NB's T-lower wavelet + mixer low_rank=4 should make the previously-unstable tightenings tractable to lower total parameter count and iteration time further.
 
-**Inference VRAM also moved less than expected (−7.7% for −32% params)** because at inference the weights are only a minority of total process VRAM (786 MB out of 3,260 MiB at LR16, ~24%) — the rest is the CUDA context, cuDNN/cuBLAS workspaces, the PyTorch caching allocator's reserved headroom, the torch.compile cache, forward-pass activations, and cross-window decompose-bypass state. Most of that overhead is fixed-size and doesn't scale with parameter count, so compressing weights from 786 → 533 MB (−32%) only moves the weight-share of total VRAM. To see large inference VRAM wins we'd need to also reduce activation costs (smaller `block_size`, smaller `mlp_expansion`, smaller `C`) — see [runs.sh](runs.sh) for the inference-VRAM-measurement step that records the user-facing number into each run's `generations.txt`.
+**Sweep:** Four 1-epoch `per_scale_mixer_width` contractions using the new baseline otherwise.
 
-### Per-Scale Mixer Widths after Model Compression
-
-Retests of mixer width contractions on top of the CB stack (W2 + low_rank=4 + BAND128). The original [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion) sweep ran on the uncompressed R0 baseline; aggressive contractions like `[0.1×4, 0.05×4]` NaN'd at peak LR. CB's BAND128 spectral-norm constraint should make the previously-unstable tightenings tractable — same mechanism that cleared the PQ embedding's peak-LR NaN regime.
-
-**Sweep:** four 1-epoch contractions on top of CB. CB at 1ep is the reference (W2 setting at `[0.5×4, 0.25×4]`); the four new settings are progressively tighter.
-
-| Variant | per_scale_mixer_widths | BPB sliding | ΔBPB vs CB | Mixer params (per layer) | Run Log |
+| Variant | per_scale_mixer_widths | BPB sliding | ΔBPB vs NB | Mixer params (per layer) | Run Log |
 |---|---|---|---|---|---|
-| Reference (CB, W2) | [0.5×4, 0.25×4] | 1.2586 | — | 35.70M | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
-| Mix_CB_0.4_0.2 (queued) | [0.4×4, 0.2×4] | pending | pending | ~22.85M | |
-| Mix_CB_0.3_0.15 (queued) | [0.3×4, 0.15×4] | pending | pending | ~12.85M | |
-| Mix_CB_0.25_0.125 (queued) | [0.25×4, 0.125×4] | pending | pending | ~8.93M | |
-| Mix_CB_0.1_0.05 (queued, retry) | [0.1×4, 0.05×4] | pending | pending | ~1.43M | |
+| Reference (NB, W2) | [0.5×4, 0.25×4] | pending | — | 35.70M | queued (NB_1ep) |
+| Mix_NB_0.4_0.2 (queued) | [0.4×4, 0.2×4] | pending | pending | ~22.85M | |
+| Mix_NB_0.3_0.15 (queued) | [0.3×4, 0.15×4] | pending | pending | ~12.85M | |
+| Mix_NB_0.25_0.125 (queued) | [0.25×4, 0.125×4] | pending | pending | ~8.93M | |
+| Mix_NB_0.1_0.05 (queued, retry) | [0.1×4, 0.05×4] | pending | pending | ~1.43M | |
 
-The 0.1/0.05 retry tests directly whether CB's compression is enough to clear the previous NaN cliff. If it trains and BPB stays within ~0.01–0.02 of CB, the mixer is over-parameterized for what the cascade actually consumes; if it NaNs, the instability is downstream of mixer-only spectral norms (likely the same dynamics affecting levels=11 — to be cleared by the optimizer sweep, not by more compression).
+The 0.1/0.05 retry tests directly whether NB's structural masking is enough to clear the previous NaN cliff. If it trains and BPB stays within ~0.01–0.02 of NB, the mixer is over-parameterized for what the cascade actually consumes; if it NaNs, the instability is downstream of mixer-only spectral norms (likely the same dynamics affecting levels=11 — to be cleared by the optimizer sweep, not by more masking).
 
-**Decision:** TBD pending results. Production candidate: tightest setting that lands within ~0.005 BPB of CB.
+**Decision:** TBD pending results. Production candidate: tightest setting that lands within ~0.005 BPB of NB.
 
-### Wavelet Cross-Level Group Sharing with Compression
+### Wavelet Cross-Level Group Sharing
 
-Retest of `lifting_level_sharing=true` on the CB stack. Previously NaN'd at step 2250 in the [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression) sweep on the uncompressed lifting cascade. Cross-level sharing reuses the same lifting matrices across all wavelet decomposition levels (vs. the default of independent matrices per level), which roughly halves lifting-related parameter count further but couples the cascade dynamics tightly across levels — the same general failure family as the levels=11 cliff (cross-level coupling amplifies cascade explosion).
+Retest of `lifting_level_sharing=true` on the NB stack. Previously NaN'd at step 2250 in the [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression) sweep on the uncompressed lifting cascade. Cross-level sharing reuses the same lifting matrices across all wavelet decomposition levels (vs. the default of independent matrices per level), which couples the cascade dynamics tightly across levels — the same general failure family as the levels=11 cliff (cross-level coupling amplifies cascade explosion).
 
-The hypothesis: BAND128's per-matrix spectral-norm cap may now make the cross-level coupling tractable, same way it stabilized the PQ embedding and (hopefully) the levels=9/11/13 retries. If it works, this is a free or near-free additional lifting compression on top of the CB stack.
+The hypothesis: T-lower's per-matrix spectral-norm cap may now make the cross-level coupling tractable, same way it should stabilize the levels=9/11/13 retries. Note: this is a **stability research probe**, not a parameter compression — mask-based approaches (including any savings from lifting_level_sharing) don't deliver real storage/throughput savings under stock kernels.
 
-| Variant | lifting_level_sharing | BPB sliding | ΔBPB vs CB | Lifting params | Run Log |
-|---|---|---|---|---|---|
-| Reference (CB) | false | 1.2586 | — | 14.33M | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
-| LLS_CB (queued, retry) | true | pending | pending | ~7.17M (≈half) | |
+| Variant | lifting_level_sharing | BPB sliding | ΔBPB vs NB | Run Log |
+|---|---|---|---|---|
+| Reference (NB) | false | pending | — | queued (NB_1ep) |
+| LLS_NB (queued, retry) | true | pending | pending | |
 
-**Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of CB, cross-level sharing folds into the production stack as a near-free additional ~7M parameter saving on the lifting cascade.
+**Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of NB, cross-level sharing is at least architecturally tractable on the new stack — useful for the deeper levels (9/11/13) tests where independent per-level matrices may be the binding cost.
 
-### Sparse Embedding with (p, q) Striding
+### Levels = 9, 11, and 13 Revisited
 
-The structural-variant sweep above compresses the lifting cascade. The token embedding (102.93M params, ~26% of the model — larger than MLP, mixer, or FwPKM individually) is the next natural compression target. Standard approaches exist (ALBERT-style factorization, vocab pruning, hash embeddings); the **(p, q) phantom-token striding scheme** is a number-theoretic alternative that preserves the (N × C) embedding shape exactly, masks the embedding via a deterministic 1D walk over the flattened tensor with alternating step sizes p and q (density = 2/(p+q)), and uses a "phantom token" trick to pad N to a value with useful divisibility properties without ever allocating the padded rows.
+The [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size) sweep hit an unrecoverable NaN cliff at `levels=9` and `levels=11` under fp16 AMP, and `levels=13` OOM'd without gradient checkpointing — the lifting cascade was the suspected parameter-amplification source, and the unblock was originally deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw). The NB stack provides an **independent, complementary** path: T-lower's per-matrix spectral-norm cap (50% mask, exact zeros at masked positions) is exactly the property that should bound the cascade across deeper levels.
 
-The scheme is content-blind, deterministic, has O(1) metadata cost, and ships with a **q ≈ √C structural-mode heuristic** that aligns with the Monarch / butterfly factorization philosophy already empirically validated in the lifting compression. A planned ablation compares (p=18, q=2) vs (p=12, q=8) at d = 10% to test whether macrocell structure matters empirically, and benchmarks both against a `random_topk` content-blind control at matched density.
+**Plan.** Retest `levels=9`, `levels=11`, and `levels=13` on top of NB at L=1 / bs=16384 (queued in runs.sh). Pass criteria, in order of decreasing strictness:
+1. **Stability** — does the run complete without NaN / OOM? (Necessary; the original goal of the deferral.)
+2. **BPB sliding close to the levels=7 NB reference**, where deeper decomposition gains offset whatever cost.
+3. **BPB sliding cleanly below the NB reference** — the strongest result, indicating deeper cascades outperform shallower ones once stabilized by NB's masking.
 
-Full scheme, requirements, selection algorithm, worked candidates for C=2048 at common densities, cognitive/linguistic framing, and the planned ablation are in [plans/new_compression_ideas.md](plans/new_compression_ideas.md).
+**Boundary caveat at deep levels:** `levels=11` with bs=16384 leaves only 8 tokens at the coarsest scale; `levels=13` leaves only 2 tokens. Boundary effects on the coarse-summary signal may dominate even if the cascade trains stably. Treat the BPB-vs-NB delta as a "did the cascade survive?" signal first, "is this a better config?" signal second.
 
-**Results so far (1 of 6 runs landed):** PQ_EMB10_smallest_q is the first (p, q) embedding result on the CB stack and clears the previous peak-LR NaN regime — confirming that the cascade's structural compression (BAND128 + low_rank=4) was the binding stability constraint. At d = 10%, PQ beats both bracketing ED variants on BPB-per-embedding-param: ED256 (87% reduction) lands at +0.1330 vs CB; ED128 (93% reduction) at +0.2222; PQ_EMB10_smallest_q (90% reduction) at +0.1310 — so PQ ties ED256 on BPB while compressing more aggressively.
-
-| Density | Mode | (p, q) | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Run Log |
-|---|---|---|---|---|---|---|---|---|
-| Reference (CB) | — | — | 266.63M | 23,110 MiB | 2,938 MiB | 1.2586 | — | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
-| 10% | smallest_q | (18, 2) | 174.00M | 23,308 MiB | 3,630 MiB | 1.3896 | +0.1310 | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) |
-| 10% | structural | (12, 8) | 174.00M | 23,308 MiB | 3,630 MiB | 1.3836 | +0.1250 | [link](logs/wikitext-103_2026-05-09_06-34-14/log.txt) |
-| 25% (queued) | structural ≡ smallest_q | (6, 2) | 189.43M | pending | pending | pending | pending | |
-| 40% (queued) | structural ≡ smallest_q | (3, 2) | 204.87M | pending | pending | pending | pending | |
-
-### (Complete) Encoder-Decoder Embedding
-
-A second compression scheme for the token embedding, parallel to the (p, q) striding above but with different structural commitments. Forward path: tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. Output path: C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
-
-The decoder and encoder are **separate learnable matrices** because the model's nonlinearities (GELU in MLP, gating in mixer, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Total params: `V·C_emb + 2·C·C_emb + C + C_emb` (vs dense `V·C`). Implementation in [tools/encoder_decoder_embedding.py](tools/encoder_decoder_embedding.py).
-
-| C_emb | Total params | % of dense (V·C) | Reduction |
-|---|---|---|---|
-| 128 | 6.95M | 6.75% | 93% |
-| 256 | 13.92M | 13.53% | 87% |
-| **512** | **27.83M** | **27.04%** | **73%** |
-| 1024 | 55.66M | 54.07% | 46% |
-| 2048 (= C) | 111.33M | 108.16% | none — full-rank refinement ablation |
-
-**Why this might beat (p, q) on the failure modes we hit:** The sparse-embedding (p, q) NaN'd at peak LR partly because sparse output activations (90% zeros) stress downstream LayerNorms, with variance dominated by 10% of dims and ~3× amplification of active values. The encoder-decoder embedding produces **dense outputs** (the decoder mixes all `C_emb` dims into all `C` output dims), so this whole class of LayerNorm-amplification failure goes away.
-
-**The C_emb=2048 case** is a no-compression ablation: when `C_emb == C`, the decoder and encoder become learnable C×C matrices acting as affine refinement layers around the standard embedding. Tests whether the encoder/decoder machinery itself helps (capacity-rich) even without the parameter savings. If this one wins on 1-epoch BPB cleanly over the combined-reductions baseline, the architectural addition is justified independently of compression.
-
-**Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve.
-
-**Final tied results (7 of 7 runs landed):** The BPB gap closes monotonically through C_emb = C, then keeps closing in the expansion direction — and at **C_emb = 8192 (4× C), the curve crosses under CB by 0.0072 BPB**. The compression direction (C_emb < C) is too BPB-costly to ship, but the expansion direction past ED4096 is a real BPB lever, paid for in inference VRAM and total parameter count.
-
-| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs the CB | Links |
-|---|---|---|---|---|---|---|
-| 128 | 170.66M | 22,012 MiB | 2,198 MiB | 1.4808 | +0.2222 | [log](logs/wikitext-103_2026-05-08_09-12-05/log.txt) |
-| 256 | 177.62M | 22,087 MiB | 2,452 MiB | 1.3916 | +0.1330 | [log](logs/wikitext-103_2026-05-08_11-54-53/log.txt) |
-| 512 | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 | [log](logs/wikitext-103_2026-05-08_13-37-26/log.txt) |
-| 1024 | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 | [log](logs/wikitext-103_2026-05-08_14-41-41/log.txt) |
-| 2048 (= C) | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 | [log](logs/wikitext-103_2026-05-08_15-47-44/log.txt) |
-| 4096 (2× C) | 386.34M | 24,317 MiB | pending | 1.2597 | +0.0011 | [log](logs/wikitext-103_2026-05-08_19-21-42/log.txt) |
-| **8192 (4× C)** | **608.97M** | **26,696 MiB** | **5,610 MiB** | **1.2514** | **−0.0072** | [log](logs/wikitext-103_2026-05-08_20-44-08/log.txt) |
-
-**Decision: compression direction deprecated; expansion past 4× C is the production candidate.** The compression sweep (C_emb < C) is too BPB-costly to ship — even ED1024 (the closest to CB) is +0.024 BPB sliding. The expansion direction at C_emb = C and 2× C are roughly neutral (ED2048 +0.0022, ED4096 +0.0011), but at **C_emb = 8192 (4× C) the curve crosses under CB by 0.0072 BPB at 1ep**. The bottleneck-through-C arrangement only starts paying off once the embedding side is wide enough relative to the C-dim interior to encode structure that wouldn't fit in the dense V × C baseline. Per-param efficiency is poor (+342M total params over CB for −0.0072 BPB), but the BPB drop is real. Trade-off vs CB: +119% inference VRAM, +128% total params, but −0.0072 BPB. **Interpretability cost:** any ED variant scrambles semantic axes inside the model interior via the learned decoder rotation (see the interpretability section above) — shipping ED8192 means giving up inner-layer semantic readability for the 0.0072 BPB win. That trade-off is worth weighing against keeping the frozen FDA semantic embedding at C_emb = C with the encoder/decoder pair removed entirely.
-
-**Inference VRAM behavior under compression** (factual record, even though we're not shipping it). ED128 dropped inference VRAM by 810 MiB (−27%) for an embedding compression that saves only ~192 MB of weights at fp16. The compounding comes from the smaller embedding lookup intermediate (`(1, 16384, C_emb)` is 64 MB at C_emb=2048 vs 4 MB at C_emb=128 in fp16) plus downstream activation effects and allocator efficiency. The compression direction has the cleanest per-param inference-VRAM scaling we've measured; the BPB cost is what disqualifies it from production use, not the resource math.
-
-**Untied LM head series:** seven additional ablations at the same C_emb values (128 / 256 / 512 / 1024 / 2048 / 4096 / 8192) but with `tie_embedding_to_lm_head=false`. The encoder is still allocated (it's required regardless of tying — it bridges C → C_emb on the output path); only the V projection matrix changes. The untied case uses a *separate* learnable `output_embedding(V × C_emb)` instead of reusing the input embedding for V projection. Adds V·C_emb params per run (e.g., +25.73M at C_emb=512). Isolates the cost of weight tying at each embedding-dim setting.
-
-**Untied results (6 of 7 runs landed; ED128_untied not queued):** Mixed picture vs tied. Untying gives small wins at C_emb=512 and C_emb=4096 but small losses at C_emb=1024 and (catastrophically) at C_emb=8192. The bottom-line read is **tied is the production-default at the production-relevant scale** (C_emb=8192): the data-efficiency of weight sharing on ~120M training tokens beats the extra capacity of 411.7M duplicated output_embedding params, which become undertrained.
-
-| C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Δ vs tied | Links |
-|---|---|---|---|---|---|---|---|
-| 128 (not queued) | 177.09M | ~22,063 MiB | pending | pending | pending | pending | |
-| 256 | 190.49M | 22,185 MiB | pending | 1.3933 | +0.1347 | +0.0017 | [log](logs/wikitext-103_2026-05-08_16-59-00/log.txt) |
-| 512 | 217.27M | 22,432 MiB | 2,610 MiB | 1.3263 | +0.0677 | **−0.0052** | [log](logs/wikitext-103_2026-05-08_22-31-39/log.txt) |
-| 1024 | 270.83M | 22,926 MiB | 2,950 MiB | 1.2902 | +0.0316 | +0.0073 | [log](logs/wikitext-103_2026-05-08_23-34-22/log.txt) |
-| 2048 | 377.95M | 23,913 MiB | 3,510 MiB | 1.2611 | +0.0025 | +0.0003 | [log](logs/wikitext-103_2026-05-09_00-41-41/log.txt) |
-| **4096** | **592.19M** | **25,888 MiB** | **4,770 MiB** | **1.2568** | **−0.0018** | **−0.0029** | [log](logs/wikitext-103_2026-05-09_01-53-33/log.txt) |
-| 8192 | 1.02 B | 29,838 MiB | 7,170 MiB | 1.2687 | +0.0101 | **+0.0173** (regresses) | [log](logs/wikitext-103_2026-05-09_03-18-01/log.txt) |
-
-**Why untying breaks at C_emb=8192.** The model has 411.7M parameters in each of two independent V × C_emb tables (input embedding + output_embedding) — 823M just on the embedding pair, against ~120M tokens of training data. Each table effectively sees half the gradient signal that a single tied table would. Tied wins by 0.0173 BPB at this scale because the shared matrix gets twice the gradient updates per step. Untying becomes architecturally important to *avoid* past ~C_emb = 4096 — the data-efficiency cost of weight duplication outpaces the capacity gain.
-
-### MLP Structural Compression
-
-The MLP is the second-largest single component after the token embedding (83.91M @ E=10, 167.82M @ E=20). Three structural variants apply to the MLP weight matrices W1 (C, E·C) and W2 (E·C, C):
-
-- **Tiled banded** — view W1 as E concatenated `(C, C)` blocks left-to-right; in each block apply a bilateral band of width W. Per-block density `(2W+1)/C` matches BAND on the lifting matrices exactly.
-- **Tiled block-diagonal** — same per-block view, but with block-of-blocks pattern of size b. Per-block density `b/C`. Each output "expansion group" sees only its own input group — an architecturally clean grouped-MLP / channel-grouped feedforward interpretation.
-- **(p, q) striding** — single 1D walk over the flattened weight tensor, alternating step sizes p and q, with `q | C`. No phantom tokens needed since `gcd(C, E·C) = C`. Same `find_pq` algorithm as the embedding scheme; same `q ≈ √C` structural-mode default.
-
-Lifting empirical priors (BAND 80.1% > BD 67.8% at matched density on the lifting cascade) suggest BAND likely wins on MLP too — but the MLP nonlinearity in the middle changes the calculus, BD has a cleaner architectural story (grouped MLP), and (p, q) brings a third connectivity pattern (global walk vs local band vs grouped block) into the comparison.
-
-**Planned sweep:** four density points (25%, 12.5%, 6.25%, 3.125%) × three structures = 12 runs at 1-epoch, locating the recovery floor and identifying which structural prior wins on MLP. Stacked with the lifting + embedding compression, the production-default candidate stack lands in the 100-150M total-parameter range. Full table in [runs.md](runs.md#mlp-structural-compression-planned-l1-levels7-epochs1).
-
-### Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)
-
-The [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size) sweep hit an unrecoverable NaN cliff at `levels=9` and `levels=11` under fp16 AMP — the lifting cascade was the suspected parameter-amplification source, and the unblock was deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw). The M-series unlocks an **independent, complementary** path: if magnitude_topk at 5-10% density genuinely retains BPB performance (M3 at 64.9% gap recovered, M4 in progress), the lifting at deeper level counts becomes proportionally cheaper *and* less amplification-prone — fewer effective parameters per cascade level means less mass for fp16 to saturate.
-
-**Plan.** Once the M-sweep and structured-variant queue finishes and the best surviving density is identified (likely M3 or M4), rerun `levels=9` and `levels=11` at L=1 / bs=16384 with magnitude_topk lifting compression at that density. Pass criteria, in order of decreasing strictness:
-1. **Stability** — does the run complete without NaN? (Necessary; the original goal of the levels=9/11 deferral.)
-2. **BPB sliding close to the levels=7 5-epoch headline 1.0974**, where deeper decomposition gains offset the compression cost.
-3. **BPB sliding cleanly below 1.0974** — the strongest result, indicating compressed deeper cascades *outperform* uncompressed shorter ones at matched footprint.
-
-**Approximate parameter math at M3-equivalent (94.9% lifting reduction):**
-
-| Config | Lifting (full) | Lifting (M3-compressed) | Total model |
-|--------|---------------|-------------------------|-------------|
-| L=7 (current) | 117.5M | 5.98M | 393M / 282M (compressed) |
-| L=9 | 151M | 7.7M | ~415M / ~283M |
-| L=11 | 184M | 9.4M | ~437M / ~285M |
-
-A compressed L=11 model lands at **~285M total params — smaller than the current uncompressed L=7 baseline (393M)** — while accessing four additional decomposition levels (effective context reach 2¹¹ = 2048× the fine token resolution, vs 2⁷ = 128×). If the cliff clears under compression alone, the M-sweep finding compounds from "lifting compression" into "depth unlock" — a structural regime change for the architecture.
-
-**Complementary to the [Optimizer Sweep](#optimizer-sweep-muon--adamw)**, not redundant: Muon tests whether orthogonalized updates handle the cascade amplification *structurally*; lifting compression tests whether reducing the cascade's parameter mass *directly* is sufficient. If both clear independently, they may compose constructively (Muon + compressed lifting + deep levels = the deepest stable regime). If only one works, that path stands alone. If neither works individually, the combination is the natural last resort before declaring `levels ≥ 9` infeasible at fp16.
+**Complementary to the [Optimizer Sweep](#optimizer-sweep-muon--adamw)**, not redundant: Muon tests whether orthogonalized updates handle cascade amplification *structurally*; T-lower masking tests whether bounding per-matrix spectral norm is sufficient. If both clear independently, they may compose constructively. If neither works individually, the combination is the natural last resort before declaring `levels ≥ 9` infeasible at fp16.
 
 ### Optimizer Sweep (Muon → AdamW)
 
