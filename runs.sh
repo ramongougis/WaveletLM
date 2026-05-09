@@ -762,10 +762,10 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 #     savings of going back to R0 mixer widths.
 #   - If NB trains but R0+T-lower NaNs: W2 is load-bearing; both are needed.
 #   - If neither trains: T-lower alone isn't enough; need optimizer sweep.
-run_ablation "levels=9 retry on R0+T-lower" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
-    "levels=9: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x5, 0.5x5], T-lower lifting from NB defaults)"
+# run_ablation "levels=9 retry on R0+T-lower" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5]}' \
+#     "levels=9: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x5, 0.5x5], T-lower lifting from NB defaults)"
 
 
 # ---- NB256_1ep: NB stack at bs=256, MBS=8 (Test 1 throughput regime) -------
