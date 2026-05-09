@@ -744,7 +744,7 @@ Full scheme, requirements, selection algorithm, worked candidates for C=2048 at 
 | 1% (planned) | structural | (168, 32) | 164.73M | pending | pending | pending | pending | |
 | 5% (planned) | structural | (24, 16) | 168.85M | pending | pending | pending | pending | |
 | **10%** | **smallest_q** | **(18, 2)** | **174.00M** | **23,308 MiB** | **3,630 MiB** | **1.3896** | **+0.1310** | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) |
-| 10% (planned) | structural | (12, 8) | 174.00M | pending | pending | pending | pending | |
+| **10%** | **structural** | **(12, 8)** | **174.00M** | **23,308 MiB** | **3,630 MiB** | **1.3836** | **+0.1250** | [link](logs/wikitext-103_2026-05-09_06-34-14/log.txt) |
 | 25% (queued) | structural ≡ smallest_q | (6, 2) | 189.43M | pending | pending | pending | pending | |
 | 40% (queued) | structural ≡ smallest_q | (3, 2) | 204.87M | pending | pending | pending | pending | |
 

@@ -592,6 +592,9 @@ run_ablation "Test1_1ep parameter-reduction config at 1 epoch" \
     "Test1_1ep: parameter-reduction config (Test 1) at 1 epoch (bs=256, levels=5, wavelet_crawl=True, no BAND128)"
 
 
+PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding_density": 0.1}'
+
+
 # ---- PQ_EMB25 with structural mode -----------------------------------------
 # At d=25%, only one valid (p, q) = (6, 2) — smallest_q and structural converge.
 # Mode label is cosmetic at this density. Inherits CB stack from BASE_PATCH_1EP.
@@ -611,9 +614,6 @@ run_ablation "PQ_EMB40_structural (p=3,q=2,d=0.40,structural==smallest_q)" \
     "$BASE_PATCH_1EP" \
     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.40; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
     "PQ_EMB40_structural: sparse embedding d=0.40 (modes converge; max density for C=2048) (1ep, levels=7)"
-
-
-PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding_density": 0.1}'
 
 
 
