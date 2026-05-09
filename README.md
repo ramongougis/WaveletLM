@@ -740,7 +740,7 @@ The original [(Complete) Per-Scale Mixer Width Contraction and Expansion](#compl
 
 | Variant | per_scale_mixer_widths | BPB sliding | ΔBPB vs NB | Mixer params (per layer) | Run Log |
 |---|---|---|---|---|---|
-| Reference (NB, W2) | [0.5×4, 0.25×4] | pending | — | 35.70M | queued (NB_1ep) |
+| Reference (NB with per_scale_mixer_width [0.5x4,0.25x4]) | [0.5×4, 0.25×4] | pending | — | 35.70M | queued (NB_1ep) |
 | Mix_NB_0.4_0.2 (queued) | [0.4×4, 0.2×4] | pending | pending | ~22.85M | |
 | Mix_NB_0.3_0.15 (queued) | [0.3×4, 0.15×4] | pending | pending | ~12.85M | |
 | Mix_NB_0.25_0.125 (queued) | [0.25×4, 0.125×4] | pending | pending | ~8.93M | |
