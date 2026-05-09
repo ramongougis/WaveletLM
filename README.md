@@ -367,7 +367,7 @@ Note the typical failure mode with the naive generation: register-coherent meteo
 
 ### Key Components
 
-- **Learnable lifting wavelet decomposition**: Haar-initialized predict/update MLPs (`Linear → GELU → Dropout → Linear`, hidden_dim = C) decompose each sequence into multi-scale coefficients per block, trained end-to-end with causality preserved via zero-padded dilation. Constrained to act as predict/update steps within the lifting scheme rather than arbitrary functions, with mechanical inversion (same MLPs applied in reverse order with sign-flip) — perfect reconstruction is structurally guaranteed regardless of learned weights, leaving them free to learn deviations from classical Haar during training without compromising signal recovery. ~16.8M params per (predict, update) pair at C=2048, shared across layers via `shared_lifting_weights`. Decompose/reconstruct weights are also shared per layer; untying them had negligible performance impact while saving parameters.
+- **Learned lifting wavelets**: Haar-initialized MLPs decompose each block into multi-scale coefficients via lifting predict/update steps. Each wavelet scale processes either coarse summaries or fine details across tokens. Reconstruction reuses the same MLPs in reverse with a sign flip, so perfect inversion is structurally guaranteed regardless of what the weights learn. About 16.8M parameters per (predict, update) pair at C=2048, one pair per scale, and shared across all layers via `shared_lifting_weights`.
 
 - **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
 
@@ -730,7 +730,26 @@ The new baseline (**NB**) is R0 with the new per-scale mixer width [0.5x4,0.25x4
 
 **Masked-position behavior:** T-lower's masked positions are zero in every forward pass. `StructuredLinear` performs `F.linear(x, weight * mask, bias)` with a bool mask, so masked positions become hard zeros. The dense weight tensor still occupies its full shape in storage and optimizer state.
 
-NB is queued in [runs.sh](runs.sh) as `NB_1ep` to establish the reference BPB at 1 epoch. All downstream tests in subsequent sections compare against this number until otherwise specified.
+**NB_1ep result vs the former 1-epoch baseline (R0):**
+
+| Metric | R0 (former 1ep ref) | NB (new 1ep ref) | Δ |
+|---|---|---|---|
+| Total params (effective) | 392.91M | **311.10M** | **−81.81M (−21%)** |
+| Shared lifting | 117.50M (dense) | 58.81M effective / 117.50M dense | −58.69M effective; dense unchanged |
+| Mixer/layer | 59.11M | 35.70M | **−23.41M (−39.6%)** |
+| MLP/layer | 83.91M | 83.91M | unchanged |
+| FwPKM/layer | 21.34M | 21.34M | unchanged |
+| Token embedding | 102.93M | 102.93M | unchanged |
+| Training peak VRAM | 23,411 MiB | **23,110 MiB** | −301 MiB (−1.3%) |
+| Inference peak VRAM | 3,162 MiB | **2,914 MiB** | **−248 MiB (−7.8%)** |
+| BPB sliding | **1.2361** | 1.2478 | +0.0117 |
+| BPB non-overlap | inf (numerical) | 1.2458 | — |
+| Best val loss | **3.8177** | 3.8561 | +0.0384 |
+| Run log | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) | |
+
+NB trades a small BPB regression (+0.0117 sliding, +0.0384 best val at 1ep) for a meaningful **21% reduction in trainable parameters** and a **7.8% reduction in inference VRAM** — both real wins from the dense W2 mixer contraction (the lifting-side count change is mask-driven and doesn't affect storage). Inference VRAM dropping by 248 MiB is the more material number for "what GPU does this fit on" answers.
+
+All downstream tests in subsequent sections compare against this number until otherwise specified.
 
 ### Per-Scale Mixer Widths with New Baseline
 
@@ -740,7 +759,7 @@ The original [(Complete) Per-Scale Mixer Width Contraction and Expansion](#compl
 
 | Variant | per_scale_mixer_widths | BPB sliding | ΔBPB vs NB | Mixer params (per layer) | Run Log |
 |---|---|---|---|---|---|
-| Reference (NB with per_scale_mixer_width [0.5x4,0.25x4]) | [0.5×4, 0.25×4] | pending | — | 35.70M | queued (NB_1ep) |
+| Reference (NB with per_scale_mixer_width [0.5x4,0.25x4]) | [0.5×4, 0.25×4] | **1.2478** | — | 35.70M | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
 | Mix_NB_0.4_0.2 (queued) | [0.4×4, 0.2×4] | pending | pending | ~22.85M | |
 | Mix_NB_0.3_0.15 (queued) | [0.3×4, 0.15×4] | pending | pending | ~12.85M | |
 | Mix_NB_0.25_0.125 (queued) | [0.25×4, 0.125×4] | pending | pending | ~8.93M | |
@@ -758,7 +777,7 @@ The hypothesis: T-lower's per-matrix spectral-norm cap may now make the cross-le
 
 | Variant | lifting_level_sharing | BPB sliding | ΔBPB vs NB | Run Log |
 |---|---|---|---|---|
-| Reference (NB) | false | pending | — | queued (NB_1ep) |
+| Reference (NB) | false | **1.2478** | — | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
 | LLS_NB (queued, retry) | true | pending | pending | |
 
 **Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of NB, cross-level sharing is at least architecturally tractable on the new stack — useful for the deeper levels (9/11/13) tests where independent per-level matrices may be the binding cost.

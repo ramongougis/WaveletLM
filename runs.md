@@ -904,6 +904,29 @@ Two training targets are planned at this scale:
 
 ---
 
+## New Baseline (NB) establishment
+
+NB = R0 + W2 mixer contraction (`per_scale_mixer_widths=[0.5×4, 0.25×4]`) + T-lower wavelet off-diagonal masking. Replaces R0 as the 1-epoch ablation reference for all downstream sweeps. T-lower's 50% lifting mask is retained for stability (lets deeper levels and tighter mixer contractions train without NaN at peak LR), not parameter reduction — masked-zero positions still occupy full storage and Adagrad accumulator.
+
+| Metric | R0 (former 1ep ref) | NB (new 1ep ref) | Δ |
+|---|---|---|---|
+| Total params (effective) | 392.91M | **311.10M** | **−81.81M (−21%)** |
+| Shared lifting | 117.50M (dense) | 58.81M effective / 117.50M dense | −58.69M effective; dense unchanged |
+| Mixer/layer | 59.11M | 35.70M | **−23.41M (−39.6%)** |
+| MLP/layer | 83.91M | 83.91M | unchanged |
+| FwPKM/layer | 21.34M | 21.34M | unchanged |
+| Token embedding | 102.93M | 102.93M | unchanged |
+| Training peak VRAM | 23,411 MiB | **23,110 MiB** | −301 MiB (−1.3%) |
+| Inference peak VRAM | 3,162 MiB | **2,914 MiB** | **−248 MiB (−7.8%)** |
+| BPB sliding | **1.2361** | 1.2478 | +0.0117 |
+| BPB non-overlap | inf (numerical) | 1.2458 | — |
+| Best val loss | **3.8177** | 3.8561 | +0.0384 |
+| Run log | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) | |
+
+NB pays a +0.0117 BPB sliding cost vs R0 in exchange for 21% fewer trainable parameters and 7.8% less inference VRAM. The lifting-side count change (117.50M → 58.81M effective) is mask-driven and doesn't move .pt size or training VRAM; the real dense compression payoff comes from the W2 mixer contraction (mixer/layer 59.11M → 35.70M, a true −23.41M dense reduction across stored weights, Adagrad state, and forward/backward FLOPs).
+
+---
+
 ## Deprecated approaches
 
 The four sections below were moved here from the README's Future Plans list when mask-based compression was deprecated as a production direction in favor of dense compression alternatives (smaller `mlp_expansion`, smaller `C`, encoder-decoder where it actually helps). Mask-based "compression" doesn't deliver real `.pt` size, training VRAM, or throughput savings under stock kernels — masked-zero positions still occupy full storage, full Adagrad accumulator, and full forward/backward FLOPs. Content is preserved here for the experiment record and for the option of revisiting if/when sparse kernels and sparse-save infrastructure are built.
