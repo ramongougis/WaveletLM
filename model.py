@@ -1917,8 +1917,8 @@ class WaveletLM(nn.Module):
                 lifting_offdiag_mask_seed=lifting_offdiag_mask_seed,
                 lifting_reference_weights=lifting_reference_weights,
             )
-            lifting_params = effective_param_count(shared_lifting)
-            print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params (effective)")
+            lifting_params = sum(p.numel() for p in shared_lifting.parameters())
+            print(f"[Lifting] Shared across all layers: {lifting_params/1e6:.2f}M params (dense)")
 
         if config.get("untied_reconstruction", False):
             print(f"[Lifting] Untied reconstruction: per-layer separate decompose/reconstruct weights")
@@ -2512,13 +2512,14 @@ def parameter_breakdown(model, config, logger=None):
 
     # Use effective_param_count so StructuredLinear masks are counted as their
     # nonzero entries (not full numel) and MonarchLinear factors are counted
-    # natively. Total / Trainable / Shared lifting / Layers all reflect the
-    # structural prior if one is active; otherwise behavior is identical to
-    # sum(p.numel()). Trainable uses the same effective semantics so it never
-    # exceeds Total -- masked positions have structurally zero gradient and
-    # are not "trainable" in any meaningful sense.
-    total = effective_param_count(model)
-    trainable = effective_param_count(model, requires_grad_only=True)
+    # Counts use sum(p.numel()) -- the dense / true storage count. Mask-based
+    # structural priors (T-lower / BAND / BD / Monarch / PQ) zero out specific
+    # weight positions but do NOT shrink the underlying tensor: the .pt file,
+    # Adagrad accumulator, gradient buffer, and forward/backward FLOPs all
+    # operate on the full dense shape. Reporting the dense count keeps the
+    # breakdown honest about what the model actually weighs and costs to ship.
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     W = 22  # alignment width for values
 
@@ -2537,24 +2538,23 @@ def parameter_breakdown(model, config, logger=None):
             gate_params = sum(p.numel() for p in model.cross_cell_gates.parameters())
             out(f"  Cross-cell gates: {gate_params:>{W},} ({gate_params/1e6:.2f}M)")
     elif isinstance(model, WaveletLM):
-        if hasattr(model.token_embedding, 'effective_param_count'):
-            emb_params = model.token_embedding.effective_param_count()
-        else:
-            emb_params = model.token_embedding.weight.numel()
+        emb_params = model.token_embedding.weight.numel()
         lm_params = sum(p.numel() for p in model.lm_head.parameters())
-        layer_params = effective_param_count(model.layers)
+        layer_params = sum(p.numel() for p in model.layers.parameters())
         ln_params = sum(p.numel() for p in model.final_ln.parameters())
 
         # When `shared_lifting_weights=True`, each layer holds a reference to
         # the same `LiftingWaveletDecompose` module, so traversing
-        # `model.layers` via `effective_param_count` visits the shared lifting
-        # once and rolls it into `layer_params`. We also print it separately as
-        # `Shared lifting`, so the breakdown lines would visually double-count
-        # if we didn't subtract it from `layer_params` here.
+        # `model.layers` visits the shared lifting once and rolls it into
+        # `layer_params`. We also print it separately as `Wavelets`, so the
+        # breakdown lines would visually double-count if we didn't subtract
+        # it from `layer_params` here. Lifting / wavelet count is dense
+        # storage (sum of numel) — masked entries (e.g. T-lower's 50%
+        # zeros) are stored as real bytes and counted accordingly.
         lift_params = 0
         if model.shared_lifting_weights and hasattr(model.layers[0], 'lifting_wavelet'):
-            lift_params = effective_param_count(model.layers[0].lifting_wavelet)
-            out(f"  Shared lifting:  {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
+            lift_params = sum(p.numel() for p in model.layers[0].lifting_wavelet.parameters())
+            out(f"  Wavelets:        {lift_params:>{W},} ({lift_params/1e6:.2f}M)")
             layer_params = max(0, layer_params - lift_params)
 
         out(f"  Token embedding: {emb_params:>{W},} ({emb_params/1e6:.2f}M)")

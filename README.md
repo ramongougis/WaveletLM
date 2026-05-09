@@ -809,8 +809,8 @@ The levels=11 NaN at step 1500 (well before peak LR) confirms the stability head
 | Test 1 (1ep) | 256 | 5 | 1 | [1.0×3, 0.5×3] | 1.1762 † | **3.6393** | **6,867 MiB** | 2,876 MiB | **~58,500** | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
 | Test 1 (5ep) | 256 | 5 | 5 | [1.0×3, 0.5×3] | 1.0796 † | 3.3341 | 6,867 MiB | — | ~58,500 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
 | NB (1ep) | 16384 | 7 | 1 | [0.5×4, 0.25×4] | 1.2478 | 3.8561 | 23,110 MiB | 2,914 MiB | ~7,300 | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| **B3_1ep (queued)** | 256 | 5 | 1 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
-| **B3_L7_1ep (queued, boundary)** ‡ | 256 | 7 | 1 | [1.0×4, 0.5×4] | pending | pending | pending | pending | ~58,500 | queued |
+| **B3_1ep** | 256 | 5 | 1 | [1.0×3, 0.5×3] | **1.2024** | **3.7198** | 6,947 MiB | 2,874 MiB | ~58,500 | [link](logs/wikitext-103_2026-05-09_19-28-31/log.txt) |
+| **B3_L7_1ep (in progress)** ‡ | 256 | 7 | 1 | [1.0×4, 0.5×4] | running | running | pending | pending | ~58,500 | [link](logs/wikitext-103_2026-05-09_21-06-17/log.txt) |
 | **B3_5ep (queued)** | 256 | 5 | 5 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
 
 † BPB across runs with different `block_size` is not strictly apples-to-apples (each run benchmarks at its own training `block_size`); best val is the more comparable metric.
