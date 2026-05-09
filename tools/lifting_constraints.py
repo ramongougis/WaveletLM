@@ -459,19 +459,19 @@ def make_mlp_mask(
         )
         return block_mask.repeat(E_out, E_in)
 
-    elif structure == "pq_strided":
-        from tools.sparse_pq_embedding import find_pq, make_pq_mask
-        # find_pq with C=tile_C, N=outer_dim ensures the resulting (p, q) is
-        # valid for *every* MLP matrix that has both dims as multiples of
-        # tile_C and outer_dim as the largest dim (so q | tile_C => q | dim,
-        # and the p ∤ outer_dim check covers the largest dim's row-stride).
-        p, q, _N_prime, _phantom = find_pq(
-            tile_C, outer_dim, pq_density, mode=pq_mode
-        )
-        # Direct walk over (out_features, in_features); no phantom rows needed
-        # since out_features is already a multiple of q (q | tile_C | out_features).
-        mask = make_pq_mask(out_features, in_features, p, q, N_prime=out_features)
-        return mask.to(device=device, dtype=dtype)
+    # elif structure == "pq_strided":
+    #     from tools.sparse_pq_embedding import find_pq, make_pq_mask
+    #     # find_pq with C=tile_C, N=outer_dim ensures the resulting (p, q) is
+    #     # valid for *every* MLP matrix that has both dims as multiples of
+    #     # tile_C and outer_dim as the largest dim (so q | tile_C => q | dim,
+    #     # and the p ∤ outer_dim check covers the largest dim's row-stride).
+    #     p, q, _N_prime, _phantom = find_pq(
+    #         tile_C, outer_dim, pq_density, mode=pq_mode
+    #     )
+    #     # Direct walk over (out_features, in_features); no phantom rows needed
+    #     # since out_features is already a multiple of q (q | tile_C | out_features).
+    #     mask = make_pq_mask(out_features, in_features, p, q, N_prime=out_features)
+    #     return mask.to(device=device, dtype=dtype)
 
     else:
         raise ValueError(

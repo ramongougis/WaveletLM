@@ -517,41 +517,34 @@ Longer training time, more regularization, and parameter compression are the sur
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
 2. [(Complete) Parameter Reduction](#complete-parameter-reduction)
 3. [(Complete) Larger Block Size](#complete-larger-block-size)
-4. [(Complete) More Levels](#complete-more-levels)
-5. [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression)
-6. [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
-7. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
-8. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
-9. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
-10. [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
-11. [(Complete) New Testing Baseline](#complete-new-testing-baseline)
-12. [Levels = 9, 11, and 13 Revisited](#levels--9-11-and-13-revisited)
-13. [Another Baseline Test: B3 (Test 1 + T-lower − wavelet_crawl)](#another-baseline-test-b3-test-1--t-lower--wavelet_crawl)
-14. [Wavelet Cross-Level Group Sharing](#wavelet-cross-level-group-sharing)
-15. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-16. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-17. [Dropout Sweep](#dropout-sweep)
-18. [Weight Decay Sweep](#weight-decay-sweep)
-19. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-20. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-21. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-22. [Longer PG-19 Training](#longer-pg-19-training)
-23. [Dataset Comparisons](#dataset-comparisons)
-24. [Model Comparisons](#model-comparisons)
-25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-26. [Multi-Transform Parallelization](#multi-transform-parallelization)
-27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-32. [Other Post-Release Plans](#other-post-release-plans)
+4. [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
+5. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
+6. [T1 Baseline Without Wavelet Crawl](#t1-baseline-without-wavelet-crawl)
+7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-no-wavelet-crawl)
+8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+9. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+10. [Dropout Sweep](#dropout-sweep)
+11. [Weight Decay Sweep](#weight-decay-sweep)
+12. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+13. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+14. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+15. [Longer PG-19 Training](#longer-pg-19-training)
+16. [Dataset Comparisons](#dataset-comparisons)
+17. [Model Comparisons](#model-comparisons)
+18. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+19. [Multi-Transform Parallelization](#multi-transform-parallelization)
+20. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+21. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+22. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+23. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+24. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+25. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
 **Result:** 
 
-Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were also trained at near-equal wall-clock by extending the 1-layer result to 8 epochs (`layers=1` and `epochs=8` took 15.86h, while `layers=2` and `epochs=5` took 16.25h). Comparing the minimum training and validation losses observed across the entire run:
+Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were also trained at near-equal wall-clock by extending the 1-layer result to 8 epochs (`layers=1` and `epochs=8` took 15.86h, while `layers=2` and `epochs=5` took 16.25h). 
 
 | Run | Layers | Epochs | BPB sliding | PPL sliding | Params | Train time | Links |
 |-----|--------|--------|-------------|-------------|--------|------------|-------|
@@ -645,84 +638,19 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
 
 **Decision:** Keep T1 with `low_rank=4`.
 
-### (Complete) Decompose Bypass Disablement Ablation
-
-**Result:** When tested with R0 and `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) NaN'd at step 1500. Prior ablations projected nearly free disablement (within ±0.0015 BPB at layers=1 & epochs=1), but the projection does not survive once `levels=7` and `low_rank=16` are stacked with a larger block size.
-
-**Decision:** Keep both flags `true`. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw) increases stability. If Muon clears the cascade-amplification issue structurally, disablement can be retested. Also not essential due to low performance boost or parameter loss with their absence (based on previous ablations).
-
-### (Complete) Wavelet Off-Diagonal Masking with Top-K Percent
-
-**Results:** Wavelet diagonal + top-k percent off-diagonal mask, ranked by magnitude on the [5-epoch reference checkpoint](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze_lifting.py script](tools/analyze_lifting.py). The top_k 10% run recovers 81.5% of the diagonal-only-vs-full gap at +0.0096 BPB with 89.9% lifting parameter reduction. 
-
-Unfortunately, using top-k compression requires a reference checkpoint on the same architecture to compute the mask, essentially doubling training time by requiring two trainings. Full results in [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
-
-**Decision:** Not to be implemented due to duplicate training requirement above. Masking also does not remove parameters: they still get stored as dense tensors and take up VRAM.
-
-### (Complete) Wavelet Off-Diagonal Masking with Structured Variants
-
-Config options:
-  `"lifting_offdiag_structure"`
-  `"lifting_block_size"`
-  `"lifting_band_width"`
-  `"lifting_monarch_blocks"`
-  `"lifting_offdiag_density"`
-  `"lifting_offdiag_mask_seed"`
-  `"lifting_offdiag_mask_checkpoint"`
-
-**Results:**
-
-Structural variant types:
-
-T upper = upper triangular
-T lower = lower triangular
-BD = block-diagonal
-BAND = banded
-MON = Monarch
-
-See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the structural variants.
-
-| Variant | Lifting params | % of full params | Sliding BPB | % gap recovered | Run Log |
-|---------|---------------:|----------:|------------:|----------------:|---------|
-| Diagonal only (M0 / A1) | 3.33M | 2.83% | 1.2860 | 0% (floor) | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) |
-| T upper | 58.81M | 50.05% | 1.2381 | 92.5% | [link](logs/wikitext-103_2026-05-07_00-11-31/log.txt) |
-| T lower | 58.81M | 50.05% | 1.2380 | 92.7% | [link](logs/wikitext-103_2026-05-07_01-31-42/log.txt) |
-| BD 64 | 3.73M | 3.17% | 1.2613 | 47.7% | [link](logs/wikitext-103_2026-05-07_02-52-12/log.txt) |
-| BD 128 | 7.40M | 6.30% | 1.2564 | 57.1% | [link](logs/wikitext-103_2026-05-07_10-40-27/log.txt) |
-| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% | [link](logs/wikitext-103_2026-05-07_04-12-07/log.txt) |
-| BD 512 | 29.42M | 25.04% | 1.2444 | 80.3% | [link](logs/wikitext-103_2026-05-07_12-00-36/log.txt) |
-| BAND 32 | 3.76M | 3.20% | 1.2622 | 46.0% | [link](logs/wikitext-103_2026-05-07_13-22-09/log.txt) |
-| BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% | [link](logs/wikitext-103_2026-05-07_05-32-41/log.txt) |
-| BAND 128 | 14.33M | 12.20% | 1.2508 | 68.0% | [link](logs/wikitext-103_2026-05-07_14-42-59/log.txt) |
-| BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% | [link](logs/wikitext-103_2026-05-07_06-52-52/log.txt) |
-| MON 32 | 5.56M | 4.73% | 1.2614 | 47.5% | [link](logs/wikitext-103_2026-05-07_16-58-23/log.txt) |
-| MON 64 | 5.56M | 4.73% | 1.2615 | 47.3% | [link](logs/wikitext-103_2026-05-07_09-31-54/log.txt) |
-| MON 128 | 8.31M | 7.07% | 1.2584 | 53.3% | [link](logs/wikitext-103_2026-05-07_18-07-19/log.txt) |
-| MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% | [link](logs/wikitext-103_2026-05-07_19-18-23/log.txt) |
-| Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) |
-
-**Decision:** 
-- These don't actually decrease parameter counts, VRAM needed for training or inference, or model complexity.
-- They just set some entries to 0.
-- Not using this.
-
 ### T1 Baseline Without Wavelet Crawl
 
 Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (very small: only 15 parameters with levels=5) convolution operation in the model. Performance impact negligible.
 
 (insert table here with 1 baseline T1 row with wavelet crawl, and one other T1 without wavelet crawl run row underneath).
 
-### New Baseline T2 with Levels = 7, more Per-Scale Mixer Weights, and no Wavelet Crawl
+### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl
 
 Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 0.25]. It shall be named T2.
 
 Run it for 1 epoch and 5 epochs.
 
 (insert table here with 3 baseline rows consisting of T1 for 1 epoch, T1 for 5 epochs, T1 without wavelet crawl for 1 epoch; and with 2 T2 rows for 1 and 5 epochs each).
-
-### Wavelet Cross-Level Group Sharing
-
-Retest of `lifting_level_sharing=true` on T2 (new baseline above).
 
 ### Optimizer Sweep (Muon → AdamW)
 

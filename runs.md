@@ -1201,3 +1201,70 @@ Moved here from the README on 2026-05-10. This was the original B3 definition (T
 ‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question B3_L7_1ep answers. If L7 trains and lands competitively with L5, the boundary doesn't bind at this regime; if it underperforms L5, the levels=5 choice is correct for bs=256.
 
 **Decision criteria.** Best val is the headline comparison. If B3_1ep lands within ~0.05 of Test 1's 3.6393 (or B3_5ep within ~0.05 of Test 1 5ep's 3.3341), B3 becomes the production stack — a major reframing of the project's direction toward the throughput-friendly regime. If best val instead lands closer to NB's 3.8561, the bs=16384 commitment is paying for something beyond just BPB. B3_5ep is the matched-budget production-decision datapoint; B3_L7_1ep separately probes whether the bs=256 + L=7 boundary case is a real problem.
+
+### (Deprecated) Decompose Bypass Disablement Ablation
+
+Moved here from the README on 2026-05-10. Decision is to keep both `decompose_bypass` flags `true` permanently — disablement is unsafe at the production stack and the projected savings were within noise to begin with. The flags continue to work in `model.py`; this section is just moved out of "live decisions."
+
+**Result:** When tested with R0 and `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) NaN'd at step 1500. Prior ablations projected nearly free disablement (within ±0.0015 BPB at layers=1 & epochs=1), but the projection does not survive once `levels=7` and `low_rank=16` are stacked with a larger block size.
+
+**Decision:** Keep both flags `true`. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw) increases stability. If Muon clears the cascade-amplification issue structurally, disablement can be retested. Also not essential due to low performance boost or parameter loss with their absence (based on previous ablations).
+
+### (Deprecated) Wavelet Off-Diagonal Masking with Top-K Percent
+
+Moved here from the README on 2026-05-10. Two reasons: (1) the magnitude-topk path requires a same-architecture reference checkpoint to compute the mask — doubling effective training cost — and (2) under the broader mask-based-compression deprecation, the masked-zero positions still occupy full `.pt` / VRAM / Adagrad state. Tooling: `tools/analyze_lifting.py` (one-shot mask computation) is moved to `OLD/` alongside this section.
+
+**Results:** Wavelet diagonal + top-k percent off-diagonal mask, ranked by magnitude on the [5-epoch reference checkpoint](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze_lifting.py script](tools/analyze_lifting.py). The top_k 10% run recovers 81.5% of the diagonal-only-vs-full gap at +0.0096 BPB with 89.9% lifting parameter reduction.
+
+Unfortunately, using top-k compression requires a reference checkpoint on the same architecture to compute the mask, essentially doubling training time by requiring two trainings. Full results in [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
+
+**Decision:** Not to be implemented due to duplicate training requirement above. Masking also does not remove parameters: they still get stored as dense tensors and take up VRAM.
+
+### (Deprecated) Wavelet Off-Diagonal Masking with Structured Variants
+
+Moved here from the README on 2026-05-10. Same rationale as the rest of the mask-based-compression deprecation graveyard — masked positions are stored and processed as zeros under stock kernels, so none of the structural variants below deliver real `.pt` / VRAM / FLOPs savings. T-lower's role as a stability tool (NaN remediation only, opt-in) is preserved separately; the mask still exists in `model.py` for that use case. Tooling: `tools/lifting_constraints.py` is *imported by `model.py:39`*, so it cannot be moved to `OLD/` without code surgery — see the post-move cleanup notes in chat.
+
+Config options:
+  `"lifting_offdiag_structure"`
+  `"lifting_block_size"`
+  `"lifting_band_width"`
+  `"lifting_monarch_blocks"`
+  `"lifting_offdiag_density"`
+  `"lifting_offdiag_mask_seed"`
+  `"lifting_offdiag_mask_checkpoint"`
+
+**Results:**
+
+Structural variant types:
+
+T upper = upper triangular
+T lower = lower triangular
+BD = block-diagonal
+BAND = banded
+MON = Monarch
+
+See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the structural variants.
+
+| Variant | Lifting params | % of full params | Sliding BPB | % gap recovered | Run Log |
+|---------|---------------:|----------:|------------:|----------------:|---------|
+| Diagonal only (M0 / A1) | 3.33M | 2.83% | 1.2860 | 0% (floor) | [link](logs/wikitext-103_2026-05-04_16-22-02/log.txt) |
+| T upper | 58.81M | 50.05% | 1.2381 | 92.5% | [link](logs/wikitext-103_2026-05-07_00-11-31/log.txt) |
+| T lower | 58.81M | 50.05% | 1.2380 | 92.7% | [link](logs/wikitext-103_2026-05-07_01-31-42/log.txt) |
+| BD 64 | 3.73M | 3.17% | 1.2613 | 47.7% | [link](logs/wikitext-103_2026-05-07_02-52-12/log.txt) |
+| BD 128 | 7.40M | 6.30% | 1.2564 | 57.1% | [link](logs/wikitext-103_2026-05-07_10-40-27/log.txt) |
+| BD 256 | 14.74M | 12.55% | 1.2509 | 67.8% | [link](logs/wikitext-103_2026-05-07_04-12-07/log.txt) |
+| BD 512 | 29.42M | 25.04% | 1.2444 | 80.3% | [link](logs/wikitext-103_2026-05-07_12-00-36/log.txt) |
+| BAND 32 | 3.76M | 3.20% | 1.2622 | 46.0% | [link](logs/wikitext-103_2026-05-07_13-22-09/log.txt) |
+| BAND 64 | 7.34M | 6.25% | 1.2563 | 57.3% | [link](logs/wikitext-103_2026-05-07_05-32-41/log.txt) |
+| BAND 128 | 14.33M | 12.20% | 1.2508 | 68.0% | [link](logs/wikitext-103_2026-05-07_14-42-59/log.txt) |
+| BAND 256 | 27.63M | 23.51% | 1.2445 | 80.1% | [link](logs/wikitext-103_2026-05-07_06-52-52/log.txt) |
+| MON 32 | 5.56M | 4.73% | 1.2614 | 47.5% | [link](logs/wikitext-103_2026-05-07_16-58-23/log.txt) |
+| MON 64 | 5.56M | 4.73% | 1.2615 | 47.3% | [link](logs/wikitext-103_2026-05-07_09-31-54/log.txt) |
+| MON 128 | 8.31M | 7.07% | 1.2584 | 53.3% | [link](logs/wikitext-103_2026-05-07_18-07-19/log.txt) |
+| MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% | [link](logs/wikitext-103_2026-05-07_19-18-23/log.txt) |
+| Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) |
+
+**Decision:**
+- These don't actually decrease parameter counts, VRAM needed for training or inference, or model complexity.
+- They just set some entries to 0.
+- Not using this.
