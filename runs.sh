@@ -559,15 +559,62 @@ ED_BASE_PATCH_UNTIED='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25
 
 PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding_density": 0.1}'
 
-run_ablation "PQ_EMB10_smallest_q (p=18,q=2,d=0.10,smallest_q)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='smallest_q'; print(json.dumps(b))")" \
-    "PQ_EMB10_smallest_q: sparse embedding d=0.10 mode=smallest_q (1ep, levels=7)"
+# run_ablation "PQ_EMB10_smallest_q (p=18,q=2,d=0.10,smallest_q)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='smallest_q'; print(json.dumps(b))")" \
+#     "PQ_EMB10_smallest_q: sparse embedding d=0.10 mode=smallest_q (1ep, levels=7)"
 
-run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
+# run_ablation "PQ_EMB10_structural (p=12,q=8,d=0.10,structural)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+#     "PQ_EMB10_structural: sparse embedding d=0.10 mode=structural (1ep, levels=7)"
+
+
+
+# ---- Test 1 at 1 epoch ------------------------------------------------------
+# Test 1 config from the (Complete) Combined Parameter Reduction section, run
+# at 1 epoch instead of 5. Gives the apples-to-apples 1-epoch pairing against
+# R0 (1ep) for the VRAM-reallocation comparison, isolating the architectural
+# delta from the epoch-budget delta. Note: R0 at 5 epochs is NOT queued here —
+# it already exists at logs/wikitext-103_2026-05-03_02-13-07/log.txt
+# (1.0974 sliding BPB, 392.91M params, 23.4 GiB train VRAM).
+#
+# Test 1 config (from logs/wikitext-103_2026-05-01_06-33-48/log.txt):
+#   epochs=5 -> 1, micro_batch_size=8, block_size=256, levels=5,
+#   per_scale_mixer_widths=[1.0×3, 0.5×3] (6 entries for levels=5),
+#   wavelet_crawl=True, lifting_offdiag_structure="none" (no BAND128).
+#   The four reductions (mlp_expansion=10, pkm_enabled=False,
+#   fwpkm_num_keys=8281, tie_embedding_to_lm_head=True) come from
+#   BASE_PATCH_1EP / config.json defaults.
+run_ablation "Test1_1ep parameter-reduction config at 1 epoch" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
-    "PQ_EMB10_structural: sparse embedding d=0.10 mode=structural (1ep, levels=7)"
+    '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lifting_offdiag_structure": "none"}' \
+    "Test1_1ep: parameter-reduction config (Test 1) at 1 epoch (bs=256, levels=5, wavelet_crawl=True, no BAND128)"
+
+
+# ---- PQ_EMB25 with structural mode -----------------------------------------
+# At d=25%, only one valid (p, q) = (6, 2) — smallest_q and structural converge.
+# Mode label is cosmetic at this density. Inherits CB stack from BASE_PATCH_1EP.
+run_ablation "PQ_EMB25_structural (p=6,q=2,d=0.25,structural==smallest_q)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.25; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+    "PQ_EMB25_structural: sparse embedding d=0.25 (modes converge at this density) (1ep, levels=7)"
+
+
+# ---- PQ_EMB40 with structural mode -----------------------------------------
+# At d=40%, only one valid (p, q) = (3, 2) — smallest_q and structural converge.
+# d=40% is the maximum density the (p, q) scheme can achieve for C=2048
+# (constraints: q | C, p does NOT divide C, p,q > 1; densities 50%, 67%, 75%
+# have no valid candidates). PQ_EMB40 substitutes for the 50% / 67% / 75%
+# slots in the original sweep plan.
+run_ablation "PQ_EMB40_structural (p=3,q=2,d=0.40,structural==smallest_q)" \
+    "$BASE_PATCH_1EP" \
+    "$(python -c "import json; b=json.loads('''$PQEMB_BASE_1EP_PATCH'''); b['sparse_pq_embedding_density']=0.40; b['sparse_pq_embedding_mode']='structural'; print(json.dumps(b))")" \
+    "PQ_EMB40_structural: sparse embedding d=0.40 (modes converge; max density for C=2048) (1ep, levels=7)"
+
+
+PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding_density": 0.1}'
+
 
 
 MLP_BASE_1EP_PATCH='{}'  # MLP-compression flags layered per-run below

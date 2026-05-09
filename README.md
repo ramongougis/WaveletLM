@@ -605,16 +605,18 @@ For future tests, we have changed the following hyperparameters. The result is t
 
 | Run | Recipe | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
-| Test 1 (parameter reductions only) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6.9 GiB | Parameter-reduction winner; 5-epoch production result |
-| R0 | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 3,162 MiB | New 1-epoch reference for downstream ablations |
+| Test 1 (1ep) | 1ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | pending | pending | 344.63M | ~6.9 GiB | Test 1 config at 1-epoch budget — direct apples-to-apples vs R0 (1ep) for the VRAM-reallocation comparison without epoch confound |
+| Test 1 (5ep) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6.9 GiB | Parameter-reduction winner; 5-epoch production result |
+| R0 (1ep) | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 3,162 MiB | 1-epoch reference for downstream ablations |
+| R0 (5ep) | 5ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | **1.0974** | 392.91M | 23,411 MiB | 5-epoch production state going forward — cleanest apples-to-apples vs Test 1 (5ep) |
 
-The +0.156 BPB gap between Test 1 and R0 is dominated by the 5ep → 1ep change, not by the VRAM reallocation itself. With 5 epochs, R0 achieves 1.0974 sliding BPB vs. Test 1's 1.0796 BPB, a +0.0178 BPB regression. The tradeoff is the longer context and deeper decomposition that downstream work will likely need. 
+At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796),  the price of reducing micro_batch_size in order to allow for increased context and deeper scale decomposition that downstream work will likely need. A Test 1 run at 1 epoch is currently queued to give another point of comparison.
 
 Note, too, that while `levels=7` for R0, `levels=9` and `levels=11` are technically possible, but not used here due to needing more stability via optimizer changes and module-targeted parameter compression. 
 
 See the [next section](#complete-per-scale-configuration-at-longer-block-size) for more info on the block size.
 
-**Decision:** Use R0's configuration for future tests.
+**Decision:** Use R0's configuration at 1 epoch for future tests.
 
 ### (Complete) Per-Scale Configuration at Longer Block Size
 
@@ -732,6 +734,19 @@ The structural-variant sweep above compresses the lifting cascade. The token emb
 The scheme is content-blind, deterministic, has O(1) metadata cost, and ships with a **q ≈ √C structural-mode heuristic** that aligns with the Monarch / butterfly factorization philosophy already empirically validated in the lifting compression. A planned ablation compares (p=18, q=2) vs (p=12, q=8) at d = 10% to test whether macrocell structure matters empirically, and benchmarks both against a `random_topk` content-blind control at matched density.
 
 Full scheme, requirements, selection algorithm, worked candidates for C=2048 at common densities, cognitive/linguistic framing, and the planned ablation are in [plans/new_compression_ideas.md](plans/new_compression_ideas.md).
+
+**Results so far (1 of 6 runs landed):** PQ_EMB10_smallest_q is the first (p, q) embedding result on the CB stack and clears the previous peak-LR NaN regime — confirming that the cascade's structural compression (BAND128 + low_rank=4) was the binding stability constraint. At d = 10%, PQ beats both bracketing ED variants on BPB-per-embedding-param: ED256 (87% reduction) lands at +0.1330 vs CB; ED128 (93% reduction) at +0.2222; PQ_EMB10_smallest_q (90% reduction) at +0.1310 — so PQ ties ED256 on BPB while compressing more aggressively.
+
+| Density | Mode | (p, q) | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Run Log |
+|---|---|---|---|---|---|---|---|---|
+| Reference (CB) | — | — | 266.63M | 23,110 MiB | 2,938 MiB | 1.2586 | — | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
+| 0.1% (planned) | structural | (1968, 32) | 163.80M | pending | pending | pending | pending | |
+| 1% (planned) | structural | (168, 32) | 164.73M | pending | pending | pending | pending | |
+| 5% (planned) | structural | (24, 16) | 168.85M | pending | pending | pending | pending | |
+| **10%** | **smallest_q** | **(18, 2)** | **174.00M** | **23,308 MiB** | **3,630 MiB** | **1.3896** | **+0.1310** | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) |
+| 10% (planned) | structural | (12, 8) | 174.00M | pending | pending | pending | pending | |
+| 25% (queued) | structural ≡ smallest_q | (6, 2) | 189.43M | pending | pending | pending | pending | |
+| 40% (queued) | structural ≡ smallest_q | (3, 2) | 204.87M | pending | pending | pending | pending | |
 
 ### Encoder-Decoder Embedding
 
