@@ -515,8 +515,9 @@ Longer training time, more regularization, and parameter compression are the sur
 ## Future Plans
 
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
-2. [(Complete) Parameter Reduction and Larger Block Sze](#complete-parameter-reduction-and-larger-block-size)
-3. [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size)
+2. [(Complete) Parameter Reduction](#complete-parameter-reduction)
+3. [(Complete) Larger Block Size](#complete-larger-block-size)
+3. [(Complete) More Levels](#complete-more-levels)
 4. [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression)
 5. [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion)
 6. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
@@ -552,7 +553,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 **Result:** 
 
-Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25h). Comparing the minimum training and validation losses observed across the entire run:
+Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were also trained at near-equal wall-clock by extending the 1-layer result to 8 epochs (`layers=1` and `epochs=8` took 15.86h, while `layers=2` and `epochs=5` took 16.25h). Comparing the minimum training and validation losses observed across the entire run:
 
 | Run | Layers | Epochs | BPB sliding | PPL sliding | Params | Train time | Links |
 |-----|--------|--------|-------------|-------------|--------|------------|-------|
@@ -562,9 +563,12 @@ Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25
 | D | 2 | 5 (baseline) | **1.0140** | **23.75** | 882.51M | 16.25h | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) |
 | E | 1 | 8 (compute-equalized) | 1.0715 | 28.43 | 586.15M | 15.86h | [link](logs/wikitext-103_2026-04-30_12-20-45/log.txt) |
 
-**Decision:** `layers=1` and `epochs=1` are set for future tests to hasten iteration time. Benchmark runs will use `layers=2` and `epochs=5`, or more of each.
+**Conclusions:** 
+- `layers=1` and `epochs=1` are set for future tests to hasten iteration time.
+- Benchmark runs will use `layers=2` and `epochs=5`, or more of each.
+- Training `layers=1` and `layers=2` for approximately equal wall-clock time does not compensate for the lack of layers.
 
-### (Complete) Parameter Reduction and Larger Block Size
+### (Complete) Parameter Reduction
 
 **Parameter reduction changes:**
 
@@ -591,17 +595,23 @@ More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduct
 | Reduced (Test 1, four reductions) | MBS=8, eval=250 (4 reductions) | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | **0.369** | **344.63M** | 7.69h | 6.9 GiB |
 | Δ Reduced vs Baseline | — | — | **−0.0013** | −0.13 | +0.007 | +0.136 | **−26%** | **−41%** | **−21%** | — |
 
-**New testing baseline (R0) changes:** 
+**Conclusions:** Keep the parameter reductions listed here in all circumstances going forward.
 
-For future tests, we have changed the following hyperparameters. The result is the R0 baseline build in the table below:
+### (Complete) Larger Block Size
 
-- All four parameter reduction changes above
+**Larger block size changes:** 
+
+For future tests, we have changed the following hyperparameters. The result is the **R0 baseline** build in the table below:
+
+- All four [parameter reduction](#complete-parameter-reduction) changes above from the "Test 1" build
 - `block_size: 256 → 16384` for more context and direct comparison with other models
 - `levels: 5 → 7` to process the higher context
 - `per_scale_mixer_widths` extended to 8 entries to match levels + 1 scales
 - `micro_batch_size: 8 → 1` to accommodate the larger block size
 - `wavelet_crawl: True → False` to remove the only (very small) convolutional component, and because it showed no performance benefit
 - `epochs: 5 → 1` for faster test iteration times unless where more epochs would be warranted
+
+**Results:**
 
 | Run | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
@@ -612,9 +622,9 @@ For future tests, we have changed the following hyperparameters. The result is t
 
 At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to reducing micro_batch_size to allow for increased context and deeper scale decomposition that downstream work will likely need. 
 
-**Decision:** Use R0's configuration at 1 epoch for future tests.
+**Decision:** Use R0's configuration at 1 epoch for future tests. If the increased VRAM cost and performance end up being suboptimal, revert to Test 1 and incorporate any other Future Plans sections' improvements.
 
-### (Complete) More Levels with Longer Block Size
+### (Complete) More Levels
 
 **Results:** 
 - [levels=7](logs/wikitext-103_2026-05-03_02-13-07/log.txt): 5-epoch sliding BPB of 1.0974 with 392.91M params. This is the R0 run above.
