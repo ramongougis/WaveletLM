@@ -515,7 +515,7 @@ Longer training time, more regularization, and parameter compression are the sur
 ## Future Plans
 
 1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
-2. [(Complete) Combined Parameter Reduction and VRAM Reallocation](#complete-combined-parameter-reduction-and-vram-reallocation)
+2. [(Complete) Parameter Reduction and Larger Block Sze](#complete-parameter-reduction-and-larger-block-size)
 3. [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size)
 4. [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression)
 5. [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion)
@@ -564,17 +564,7 @@ Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25
 
 **Decision:** `layers=1` and `epochs=1` are set for future tests to hasten iteration time. Benchmark runs will use `layers=2` and `epochs=5`, or more of each.
 
-### (Complete) Combined Parameter Reduction and VRAM Reallocation
-
-**Results:** 
-- 41% fewer parameters
-- 21% less training time
-- minimal BPB decrease (Δ = −0.0013)
-- 26% smaller train/val loss gap (implicit regularization)
-
-The result of these reductions is the "Test 1" configuration in the table below. Note that this is *not* the baseline R0 used for future tests, but was incorporated into it as a baseline.
-
-More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduction).
+### (Complete) Parameter Reduction and Larger Block Size
 
 **Parameter reduction changes:**
 
@@ -582,6 +572,16 @@ More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduct
 - `pkm_enabled: true → false`
 - `fwpkm_num_keys: 16384 → 8281`
 - `tie_embedding_to_lm_head: false → true`
+
+**Results:** 
+- 41% fewer parameters
+- 21% less training time
+- minimal BPB decrease (Δ = −0.0013)
+- 26% smaller train/val loss gap (implicit regularization)
+
+The "Test 1" configuration in the table below incorporates these reductions. Note that this is *not* the baseline R0 used for future tests, but its changes were also incorporated into R0.
+
+More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduction).
 
 **Run comparison:**
 
@@ -593,7 +593,7 @@ More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduct
 
 **New testing baseline (R0) changes:** 
 
-For future tests, we have changed the following hyperparameters. The result is the R0 reference state in the table below:
+For future tests, we have changed the following hyperparameters. The result is the R0 baseline build in the table below:
 
 - All four parameter reduction changes above
 - `block_size: 256 → 16384` for more context and direct comparison with other models
@@ -603,12 +603,12 @@ For future tests, we have changed the following hyperparameters. The result is t
 - `wavelet_crawl: True → False` to remove the only (very small) convolutional component, and because it showed no performance benefit
 - `epochs: 5 → 1` for faster test iteration times unless where more epochs would be warranted
 
-| Run | Recipe | Folder | BPB (sliding) | Params | Train VRAM | Notes |
+| Run | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
-| Test 1 (1ep) | 1ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | **1.1762** † | 344.63M | 6,867 MiB | - |
-| Test 1 (5ep) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6,867 MiB | 5-epoch production result |
-| R0 (1ep) | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
-| R0 (5ep) | 5ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | **1.0974** | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
+| Test 1 | 1 | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | 1.1762 † | 344.63M | 6,867 MiB | - |
+| R0 | 1 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
+| Test 1 | 5 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | 1.0796 | 344.63M | 6,867 MiB | 5-epoch production result |
+| R0 | 5 | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | 1.0974 | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
 
 At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to reducing micro_batch_size to allow for increased context and deeper scale decomposition that downstream work will likely need. 
 
