@@ -472,15 +472,15 @@ ED_BASE_PATCH='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25,
 #   C_emb=8192 -> 411.70M + 16.78M + 16.78M ≈ 445.26M (433% of dense V·C)
 # Train VRAM (extrapolated from ED tied scaling, ~0.58 MiB/unit C_emb):
 #   ED4096 ≈ 24.3 GB; ED8192 ≈ 26.7 GB — both fit comfortably on a 5090.
-run_ablation "ED4096 encoder-decoder embedding C_emb=4096 (expansion, 2x C)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=4096; print(json.dumps(b))")" \
-    "ED4096: encoder-decoder embedding C_emb=4096 (capacity probe, 2x C) (1ep, L=7)"
+# run_ablation "ED4096 encoder-decoder embedding C_emb=4096 (expansion, 2x C)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=4096; print(json.dumps(b))")" \
+#     "ED4096: encoder-decoder embedding C_emb=4096 (capacity probe, 2x C) (1ep, L=7)"
 
-run_ablation "ED8192 encoder-decoder embedding C_emb=8192 (expansion, 4x C)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=8192; print(json.dumps(b))")" \
-    "ED8192: encoder-decoder embedding C_emb=8192 (capacity probe, 4x C) (1ep, L=7)"
+# run_ablation "ED8192 encoder-decoder embedding C_emb=8192 (expansion, 4x C)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH'''); b['sparse_encoder_decoder_embedding_C']=8192; print(json.dumps(b))")" \
+#     "ED8192: encoder-decoder embedding C_emb=8192 (capacity probe, 4x C) (1ep, L=7)"
 
 
 # Untied LM head series: same C_emb sweep but with tie_embedding_to_lm_head=false.
@@ -510,20 +510,20 @@ ED_BASE_PATCH_UNTIED='{"per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25
 #     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=256; print(json.dumps(b))")" \
 #     "ED256_untied: encoder-decoder embedding C_emb=256 with untied LM head (1ep, L=7)"
 
-run_ablation "ED512_untied encoder-decoder embedding C_emb=512 (untied LM head)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=512; print(json.dumps(b))")" \
-    "ED512_untied: encoder-decoder embedding C_emb=512 with untied LM head (1ep, L=7)"
+# run_ablation "ED512_untied encoder-decoder embedding C_emb=512 (untied LM head)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=512; print(json.dumps(b))")" \
+#     "ED512_untied: encoder-decoder embedding C_emb=512 with untied LM head (1ep, L=7)"
 
-run_ablation "ED1024_untied encoder-decoder embedding C_emb=1024 (untied LM head)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=1024; print(json.dumps(b))")" \
-    "ED1024_untied: encoder-decoder embedding C_emb=1024 with untied LM head (1ep, L=7)"
+# run_ablation "ED1024_untied encoder-decoder embedding C_emb=1024 (untied LM head)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=1024; print(json.dumps(b))")" \
+#     "ED1024_untied: encoder-decoder embedding C_emb=1024 with untied LM head (1ep, L=7)"
 
-run_ablation "ED2048_untied encoder-decoder embedding C_emb=C=2048 (untied LM head)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
-    "ED2048_untied: encoder-decoder embedding C_emb=2048 with untied LM head (1ep, L=7)"
+# run_ablation "ED2048_untied encoder-decoder embedding C_emb=C=2048 (untied LM head)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=2048; print(json.dumps(b))")" \
+#     "ED2048_untied: encoder-decoder embedding C_emb=2048 with untied LM head (1ep, L=7)"
 
 # C_emb > C expansion probes (untied). Doubles the embedding table cost vs tied
 # (V × C_emb input + V × C_emb output_embedding, each with its own Adagrad
@@ -534,15 +534,15 @@ run_ablation "ED2048_untied encoder-decoder embedding C_emb=C=2048 (untied LM he
 #   C_emb=8192 -> 411.70 + 16.78 + 16.78 + 411.70 ≈ 856.96M
 # Train VRAM (extrapolated, ~0.9 MiB/unit C_emb untied):
 #   ED4096_untied ≈ 25.7 GB; ED8192_untied ≈ 29.4 GB (tight).
-run_ablation "ED4096_untied encoder-decoder embedding C_emb=4096 (untied LM head, expansion)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=4096; print(json.dumps(b))")" \
-    "ED4096_untied: encoder-decoder embedding C_emb=4096 with untied LM head (1ep, L=7)"
+# run_ablation "ED4096_untied encoder-decoder embedding C_emb=4096 (untied LM head, expansion)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=4096; print(json.dumps(b))")" \
+#     "ED4096_untied: encoder-decoder embedding C_emb=4096 with untied LM head (1ep, L=7)"
 
-run_ablation "ED8192_untied encoder-decoder embedding C_emb=8192 (untied LM head, expansion)" \
-    "$BASE_PATCH_1EP" \
-    "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=8192; print(json.dumps(b))")" \
-    "ED8192_untied: encoder-decoder embedding C_emb=8192 with untied LM head (1ep, L=7)"
+# run_ablation "ED8192_untied encoder-decoder embedding C_emb=8192 (untied LM head, expansion)" \
+#     "$BASE_PATCH_1EP" \
+#     "$(python -c "import json; b=json.loads('''$ED_BASE_PATCH_UNTIED'''); b['sparse_encoder_decoder_embedding_C']=8192; print(json.dumps(b))")" \
+#     "ED8192_untied: encoder-decoder embedding C_emb=8192 with untied LM head (1ep, L=7)"
 
 
 

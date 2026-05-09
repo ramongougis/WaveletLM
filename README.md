@@ -566,9 +566,55 @@ Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25
 
 ### (Complete) Combined Parameter Reduction and VRAM Reallocation
 
-**Result:** Parameters reduced by ~42% at minimal BPB cost. Made context longer with freed VRAM (bs=16384: stable training, -34% VRAM usage, modest val regression attributable to `levels=5` leaving 9 of 14 possible decomposition levels unused). See [plans/findings.md](plans/findings.md#combined-parameter-reduction-at-least-equivalent-bpb-at-l1-ebs-scaling-hurts), [plans/other_post_release_plans.md §8](plans/other_post_release_plans.md#8-combined-parameter-reduction-and-vram-reallocation), and [`runs.md`](runs.md) for the full analysis and per-test numbers.
+**Results:** 
+- 41% fewer parameters
+- 21% less per-epoch training time
+- minimal BPB decrease (Δ = −0.0013)
+- 26% smaller train/val loss gap (implicit regularization)
 
-**Decision:** Reduce parameters, use `block_size=16384`, and test increasing levels next.
+The result of these reductions is the "Test 1" configuration in the table below. Note that this is *not* the baseline R0 used for future tests, but was incorporated into it as a baseline.
+
+More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduction).
+
+**Parameter reduction changes:**
+
+- `mlp_expansion: 20 → 10`
+- `pkm_enabled: true → false`
+- `fwpkm_num_keys: 16384 → 8281`
+- `tie_embedding_to_lm_head: false → true`
+
+**Run comparison:**
+
+| Run | Recipe | Folder | BPB sliding | PPL sliding | Best val | Min train | Train/val gap | Params | Train time | VRAM |
+|-----|--------|--------|-------------|-------------|----------|-----------|---------------|--------|------------|------|
+| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 3.3275 | 2.8292 | 0.498 | 586.15M | 9.74h | — |
+| Reduced (Test 1, four reductions) | MBS=8, eval=250 (4 reductions) | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | **0.369** | **344.63M** | 7.69h | 6.9 GiB |
+| Δ Reduced vs Baseline | — | — | **−0.0013** | −0.13 | +0.007 | +0.136 | **−26%** | **−41%** | **−21%** | — |
+
+**New testing baseline (R0) changes:** 
+
+For future tests, we have changed the following hyperparameters. The result is the R0 reference state in the table below:
+
+- All four parameter reduction changes above
+- `block_size=256 → 16384` for more context and direct comparison with other models
+- `levels=5 → 7` to process the higher context
+- `per_scale_mixer_widths` extended to 8 entries to match levels + 1 scales
+- `micro_batch_size: 8 → 1` to accommodate the larger block size
+- `wavelet_crawl: True → False` to remove the only (very small) convolutional component, and because it showed no performance benefit
+- `epochs: 5 → 1` for faster test iteration times unless where more epochs would be warranted
+
+| Run | Recipe | Folder | BPB (sliding) | Params | Train VRAM | Notes |
+|-----|--------|--------|---------------|--------|------------|-------|
+| Test 1 (parameter reductions only) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6.9 GiB | Parameter-reduction winner; 5-epoch production result |
+| R0 | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 3,162 MiB | New 1-epoch reference for downstream ablations |
+
+The +0.156 BPB gap between Test 1 and R0 is dominated by the 5ep → 1ep change, not by the VRAM reallocation itself. With 5 epochs, R0 achieves 1.0974 sliding BPB vs. Test 1's 1.0796 BPB, a +0.0178 BPB regression. The tradeoff is the longer context and deeper decomposition that downstream work will likely need. 
+
+Note, too, that while `levels=7` for R0, `levels=9` and `levels=11` are technically possible, but not used here due to needing more stability via optimizer changes and module-targeted parameter compression. 
+
+See the [next section](#complete-per-scale-configuration-at-longer-block-size) for more  info on the block size
+
+**Decision:** Use R0's configuration for future tests.
 
 ### (Complete) Per-Scale Configuration at Longer Block Size
 
@@ -707,7 +753,7 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 
 **Sweep:** five 1-epoch ablations at C_emb ∈ {128, 256, 512, 1024, 2048}, layered on the new combined-reductions baseline. Locate the elbow on the recovery-vs-density curve.
 
-**Initial results (5 of 5 tied runs landed; 2 larger probes planned):** The BPB gap closes monotonically as C_emb grows, hitting +0.0022 at C_emb = C and not crossing under. The encoder/decoder pair is **essentially free** at C_emb = C — neither a help nor a cost — which means the architectural-bonus hypothesis at C_emb = C is **not confirmed**. The C_emb > C extension probes whether forcing the embedding through a C-bottleneck unlocks additional BPB; pessimistically, ~−0.03 vs CB (compressed baseline) is the realistic ceiling.
+**Final tied results (7 of 7 runs landed):** The BPB gap closes monotonically through C_emb = C, then keeps closing in the expansion direction — and at **C_emb = 8192 (4× C), the curve crosses under CB by 0.0072 BPB**. The compression direction (C_emb < C) is too BPB-costly to ship, but the expansion direction past ED4096 is a real BPB lever, paid for in inference VRAM and total parameter count.
 
 | C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs the CB | Links |
 |---|---|---|---|---|---|---|
@@ -715,27 +761,29 @@ The decoder and encoder are **separate learnable matrices** because the model's 
 | 256 | 177.62M | 22,087 MiB | 2,452 MiB | 1.3916 | +0.1330 | [log](logs/wikitext-103_2026-05-08_11-54-53/log.txt) |
 | 512 | 191.53M | 22,235 MiB | 2,550 MiB | 1.3315 | +0.0729 | [log](logs/wikitext-103_2026-05-08_13-37-26/log.txt) |
 | 1024 | 219.36M | 22,533 MiB | 2,750 MiB | 1.2829 | +0.0243 | [log](logs/wikitext-103_2026-05-08_14-41-41/log.txt) |
-| 2048 | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 | [log](logs/wikitext-103_2026-05-08_15-47-44/log.txt) |
-| 4096 | 386.34M | 24,317 MiB | pending | 1.2597 | +0.0011 | [log](logs/wikitext-103_2026-05-08_19-21-42/log.txt) |
-| 8192 (planned) | 608.96M | ~26,690 MiB | ~5,390 MiB | pending | pessimistic ceiling ≈ −0.03 | |
+| 2048 (= C) | 275.02M | 23,128 MiB | 3,110 MiB | 1.2608 | +0.0022 | [log](logs/wikitext-103_2026-05-08_15-47-44/log.txt) |
+| 4096 (2× C) | 386.34M | 24,317 MiB | pending | 1.2597 | +0.0011 | [log](logs/wikitext-103_2026-05-08_19-21-42/log.txt) |
+| **8192 (4× C)** | **608.97M** | **26,696 MiB** | **5,610 MiB** | **1.2514** | **−0.0072** | [log](logs/wikitext-103_2026-05-08_20-44-08/log.txt) |
 
-**Decision: compression direction deprecated; expansion direction pursued.** The compression sweep (C_emb < C) is too BPB-costly to ship — even ED1024 (the closest to CB) is +0.024 BPB sliding, and ED512 / ED256 / ED128 give back substantial quality for inference-VRAM wins that are real but not worth the loss. The expansion direction (C_emb > C) becomes the actual opportunity here: with ED2048 landing essentially at CB, going past C_emb = C tests whether forcing the embedding through a C-dim bottleneck (many-to-few decoder) unlocks usable additional BPB. Pessimistic best-case is ~−0.03 vs CB at ED8192. The +8.39M extra params at ED2048 already learn close to identity, so any gain past C_emb = C is contingent on the bottleneck arrangement adding *new* expressiveness, not on the encoder/decoder machinery itself.
+**Decision: compression direction deprecated; expansion past 4× C is the production candidate.** The compression sweep (C_emb < C) is too BPB-costly to ship — even ED1024 (the closest to CB) is +0.024 BPB sliding. The expansion direction at C_emb = C and 2× C are roughly neutral (ED2048 +0.0022, ED4096 +0.0011), but at **C_emb = 8192 (4× C) the curve crosses under CB by 0.0072 BPB at 1ep**. The bottleneck-through-C arrangement only starts paying off once the embedding side is wide enough relative to the C-dim interior to encode structure that wouldn't fit in the dense V × C baseline. Per-param efficiency is poor (+342M total params over CB for −0.0072 BPB), but the BPB drop is real. Trade-off vs CB: +119% inference VRAM, +128% total params, but −0.0072 BPB. **Interpretability cost:** any ED variant scrambles semantic axes inside the model interior via the learned decoder rotation (see the interpretability section above) — shipping ED8192 means giving up inner-layer semantic readability for the 0.0072 BPB win. That trade-off is worth weighing against keeping the frozen FDA semantic embedding at C_emb = C with the encoder/decoder pair removed entirely.
 
 **Inference VRAM behavior under compression** (factual record, even though we're not shipping it). ED128 dropped inference VRAM by 810 MiB (−27%) for an embedding compression that saves only ~192 MB of weights at fp16. The compounding comes from the smaller embedding lookup intermediate (`(1, 16384, C_emb)` is 64 MB at C_emb=2048 vs 4 MB at C_emb=128 in fp16) plus downstream activation effects and allocator efficiency. The compression direction has the cleanest per-param inference-VRAM scaling we've measured; the BPB cost is what disqualifies it from production use, not the resource math.
 
 **Untied LM head series:** seven additional ablations at the same C_emb values (128 / 256 / 512 / 1024 / 2048 / 4096 / 8192) but with `tie_embedding_to_lm_head=false`. The encoder is still allocated (it's required regardless of tying — it bridges C → C_emb on the output path); only the V projection matrix changes. The untied case uses a *separate* learnable `output_embedding(V × C_emb)` instead of reusing the input embedding for V projection. Adds V·C_emb params per run (e.g., +25.73M at C_emb=512). Isolates the cost of weight tying at each embedding-dim setting.
 
-**Initial untied results (1 of 7 runs landed):** First data point lands within noise of its tied counterpart. The hypothesis is that untying matters most at C_emb > C (where the duplicated V × C_emb gives output-side capacity that isn't blocked by an upstream encoder bottleneck); at C_emb < C, the encoder C → C_emb projection is already the binding constraint, so untying the LM head can't recover information that's been compressed out before reaching it.
+**Untied results (6 of 7 runs landed; ED128_untied not queued):** Mixed picture vs tied. Untying gives small wins at C_emb=512 and C_emb=4096 but small losses at C_emb=1024 and (catastrophically) at C_emb=8192. The bottom-line read is **tied is the production-default at the production-relevant scale** (C_emb=8192): the data-efficiency of weight sharing on ~120M training tokens beats the extra capacity of 411.7M duplicated output_embedding params, which become undertrained.
 
 | C_emb | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Δ vs tied | Links |
 |---|---|---|---|---|---|---|---|
-| 128 (planned) | 177.09M | ~22,063 MiB | pending | pending | pending | pending | |
+| 128 (not queued) | 177.09M | ~22,063 MiB | pending | pending | pending | pending | |
 | 256 | 190.49M | 22,185 MiB | pending | 1.3933 | +0.1347 | +0.0017 | [log](logs/wikitext-103_2026-05-08_16-59-00/log.txt) |
-| 512 (planned) | 217.26M | ~22,440 MiB | pending | pending | pending | pending | |
-| 1024 (planned) | 270.83M | ~22,943 MiB | pending | pending | pending | pending | |
-| 2048 (planned) | 377.96M | ~23,947 MiB | pending | pending | pending | pending | |
-| 4096 (planned) | 592.18M | ~25,953 MiB | pending | pending | pending | pending | |
-| 8192 (planned) | 1.02 B | ~29,967 MiB | pending | pending | pending | pending | |
+| 512 | 217.27M | 22,432 MiB | 2,610 MiB | 1.3263 | +0.0677 | **−0.0052** | [log](logs/wikitext-103_2026-05-08_22-31-39/log.txt) |
+| 1024 | 270.83M | 22,926 MiB | 2,950 MiB | 1.2902 | +0.0316 | +0.0073 | [log](logs/wikitext-103_2026-05-08_23-34-22/log.txt) |
+| 2048 | 377.95M | 23,913 MiB | 3,510 MiB | 1.2611 | +0.0025 | +0.0003 | [log](logs/wikitext-103_2026-05-09_00-41-41/log.txt) |
+| **4096** | **592.19M** | **25,888 MiB** | **4,770 MiB** | **1.2568** | **−0.0018** | **−0.0029** | [log](logs/wikitext-103_2026-05-09_01-53-33/log.txt) |
+| 8192 | 1.02 B | 29,838 MiB | 7,170 MiB | 1.2687 | +0.0101 | **+0.0173** (regresses) | [log](logs/wikitext-103_2026-05-09_03-18-01/log.txt) |
+
+**Why untying breaks at C_emb=8192.** The model has 411.7M parameters in each of two independent V × C_emb tables (input embedding + output_embedding) — 823M just on the embedding pair, against ~120M tokens of training data. Each table effectively sees half the gradient signal that a single tied table would. Tied wins by 0.0173 BPB at this scale because the shared matrix gets twice the gradient updates per step. Untying becomes architecturally important to *avoid* past ~C_emb = 4096 — the data-efficiency cost of weight duplication outpaces the capacity gain.
 
 ### MLP Structural Compression
 
