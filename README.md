@@ -551,7 +551,7 @@ Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were 
 | A | 1 | 1 | 1.1648 | 38.04 | 586.15M | ~1.5h | [link](logs/wikitext-103_2026-04-29_20-45-37/log.txt) |
 | B | 2 | 1 | 1.1129 | 32.35 | 882.51M | ~3h | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) |
 | C | 1 | 5 | 1.0809 | 29.28 | 586.15M | 9.74h | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) |
-| D | 2 | 5 (baseline) | **1.0140** | **23.75** | 882.51M | 16.25h | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) |
+| D | 2 | 5 (headline) | **1.0140** | **23.75** | 882.51M | 16.25h | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) |
 | E | 1 | 8 (compute-equalized) | 1.0715 | 28.43 | 586.15M | 15.86h | [link](logs/wikitext-103_2026-04-30_12-20-45/log.txt) |
 
 **Conclusions:** 
@@ -561,7 +561,7 @@ Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were 
 
 ### (Complete) Parameter Reduction
 
-**Parameter reduction changes:**
+Starting with the best WikiText-103 config, we made the following changes to reduce parameters:
 
 - `mlp_expansion: 20 → 10`
 - `pkm_enabled: true → false`
@@ -571,18 +571,18 @@ Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were 
 **Results:** 
 - 41% fewer parameters
 - 21% less training time
-- minimal BPB decrease (Δ = −0.0013)
-- 26% smaller train/val loss gap (implicit regularization)
+- minimal performance impact (−0.0013 BPB)
+- 26% smaller train/val loss gap (implicit regularization via less params)
 
 The "Test 1", aka **T1**, configuration in the table below incorporates these reductions. 
 
 | Run | Recipe | Folder | BPB sliding | PPL sliding | Best val | Min train | Train/val gap | Params | Train time | Training VRAM |
 |-----|--------|--------|-------------|-------------|----------|-----------|---------------|--------|------------|------|
-| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 3.3275 | 2.8292 | 0.498 | 586.15M | 9.74h | 11,537 MiB |
-| **T1/Test 1** | Baseline with above reductions | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | **0.369** | **344.63M** | 7.69h | 6,867 MiB |
-| Δ (T1 - Baseline) | — | — | −0.0013 | −0.13 | +0.007 | +0.136 | −26% | −41% | −21% | — |
+| Best run with layers=1 | Best run with layers=1 | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 3.3275 | 2.8292 | 0.498 | 586.15M | 9.74h | 11,537 MiB |
+| **T1/Test 1** | Best run with layers=1 and parameter reductions | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | **0.369** | **344.63M** | 7.69h | 6,867 MiB |
+| Δ | — | — | −0.0013 | −0.13 | +0.007 | +0.136 | −26% | −41% | −21% | — |
 
-**Conclusions:** Keep the parameter reductions listed here and use T1 as the new baseline
+**Conclusion:** Keep the parameter reductions listed here and use T1 as the baseline for tests (until it's changed to the [T2 baseline](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-no-wavelet-crawl)).
 
 ### (Complete) Larger Block Size
 
@@ -646,7 +646,7 @@ Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (v
 
 ### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl
 
-Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 0.25]. It shall be named T2.
+Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. It shall be named T2.
 
 Run it for 1 epoch and 5 epochs.
 

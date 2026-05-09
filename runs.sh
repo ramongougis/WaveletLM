@@ -1,43 +1,5 @@
 #!/bin/bash
-# Active queue (post-low_rank-sweep). All runs use the L=1 / levels=7 / bs=16384
-# baseline; canonical config.json is NEVER modified by this script.
-#
-# Settled wins so far:
-#   - low_rank=16 (LR16):              BPB 1.2342, -0.0019 vs reference 1.2361
-#   - per_scale_mixer_widths=[0.5×4, 0.25×4] (W2):
-#                                      BPB 1.2437, +0.0076 vs default 1.2361, -39% mixer
-#   - lifting_diaglowrank=False (A1 shelved at +0.0499)
-#
-# Cancelled:
-#   - low_rank=32 (R1.5):  NaN at step 2250, peak lr=1.00e-2
-#   - low_rank=64 (R1.75): cancelled (further into unstable region)
-#
-# Queue:
-#   1. DBD     (already complete)     1ep   decompose_bypass=false + low_rank=16
-#   2. E5_5ep  (already complete)     5ep   per_scale_mixer_widths=[1.5×4, 0.5×4]
-#   3. LR16_5ep  (already complete)     5ep   low_rank=16                              (winner confirmation)
-#   4. M1..M4                         1ep   off-diagonal magnitude-pruned masking sweep (0.1/1/5/10%)
-#   5. M1r..M4r                       1ep   off-diagonal random controls at matched densities
-#   6. Structural-prior alternatives  1ep   triangular / block-diagonal / banded / Monarch families
-#                                           (different KIND of structured sparsity than magnitude pruning)
-#
-# Option B: all off-diagonal sweeps (sections 4, 5, 6) use the unified
-# `lifting_offdiag_structure` flag. Legacy `lifting_offdiag_mask` family is
-# deprecated. Each run requires `model.py` to support `lifting_offdiag_structure`
-# plus its per-structure parameters; verify by inspecting the "Shared lifting"
-# line in the param breakdown before reading BPB.
-#
-# After everything completes, a new combined 5-epoch run will fold the surviving
-# winners into a new post-parameter-reduction relative baseline.
 
-# `set -uo pipefail` (without `-e`) — we want strict undefined-variable and
-# pipeline-failure detection, but NOT auto-exit on non-zero return. The
-# previous `set -e` was killing the script after train.py exits, even with
-# `|| echo "..."` guards in place — likely because torch.compile's atexit
-# subprocess cleanup is sending a signal that bash interprets unusually.
-# Removing `-e` lets the queue continue past any single-run failure; we still
-# get a script-wide stop on truly fatal issues (unset variables, broken
-# pipelines, etc.).
 set -uo pipefail
 
 # Temp config file used for all train.py --config invocations. Auto-deleted
@@ -221,34 +183,35 @@ run_ablation() {
 #     "B3_5ep: Baseline 3 at 5 epochs (bs=256, MBS=8, levels=5, R0 mixer widths, no T-lower; production-decision datapoint vs Test 1 5ep)"
 
 
+# ---- T1 baseline without wavelet_crawl (1 epoch) ----------------------------
+# Confirms the negligible-impact hypothesis: wavelet_crawl is only 15 floats
+# at levels=5, so removing it should land within noise of T1. Inherits T1's
+# config from BASE_PATCH_1EP (which already has wavelet_crawl=False).
+run_ablation "T1_NoWC_1ep T1 baseline without wavelet_crawl (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{}' \
+    "T1_NoWC_1ep: T1 baseline without wavelet_crawl (1ep, bs=256, MBS=8, levels=5, [1.0x3, 0.5x3] mixer widths)"
+
+# ---- T2: T1 + levels=7 + 8-entry R0 mixer + no wavelet_crawl ----------------
+# T2 = T1 architecture extended to levels=7 with R0 mixer pattern at depth 7
+# ([1.0x4, 0.5x4]). Tests whether deeper wavelet decomposition is worth the
+# coarsest-scale boundary cost: bs=256 / 2^7 = 2 tokens at the coarsest
+# scale (the same boundary case explored in the deprecated B3_L7).
+run_ablation "T2_1ep New baseline T2 (levels=7, [1.0x4, 0.5x4] mixer widths, no wavelet_crawl) at 1 epoch" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
+    "T2_1ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + no wavelet_crawl (1ep, bs=256, MBS=8)"
+
+run_ablation "T2_5ep New baseline T2 at 5 epochs" \
+    "$BASE_PATCH_5EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
+    "T2_5ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + no wavelet_crawl (5ep, bs=256, MBS=8)"
+
 
 echo ""
 echo "============================================================"
 echo "=== Queue complete."
-echo "===   1) DBD     (already complete)"
-echo "===   2) E5_5ep  (already complete)"
-echo "===   3) LR16_5ep  (already complete)"
-echo "===   4) M1..M4 magnitude-pruned off-diagonal — compare BPB delta vs 1.2361"
-echo "===   5) M1r..M4r random controls at matched densities — compare BPB delta vs 1.2361"
-echo "===   6) Structural priors: T_upper/lower, BD64/256, BAND64/256, MON32/64"
-echo "===      — compare BPB delta vs 1.2361 alongside per-param efficiency"
-echo "===   7) Combined-reductions baseline (W2 mixer + low_rank=4 + BAND128) at 1ep"
-echo "===      — establishes the new reference BPB for sections 8 onwards"
-echo "===   8) Encoder-decoder embedding sweep: C_emb in {128, 256, 512, 1024, 2048}"
-echo "===      5 tied + 5 untied (10 runs) — compare BPB delta vs section-7 baseline;"
-echo "===      tied series locates the compression elbow; untied series measures the cost of weight tying"
-echo "===   9) Sparse (p, q) phantom-token embedding sweep at d=0.10"
-echo "===      smallest_q (p=18,q=2) and structural (p=12,q=8) — compare BPB delta vs section-7 baseline"
-echo "===  10) MLP structural compression: BAND/BD/PQ at densities 25%, 12.5%, 6.25%, 3.125%"
-echo "===      12 runs (4 densities × 3 structures) — compare BPB delta vs section-7 baseline"
-echo "===  11) Levels retry on CB stack: levels=9, levels=11 — does BAND128 + low_rank=4"
-echo "===      clear the cascade-explosion cliff that no stability fix did at the uncompressed baseline?"
-echo "===  12) 5-epoch confirmation of chosen winner — compare BPB delta vs 1.0974"
-echo "===      (placeholder; uncomment after sections 4-11 complete and a winner is chosen)"
-echo "==="
-echo "=== Next: combine surviving winners into a new 5-epoch baseline."
-echo "=== Implementation gating: sections 4, 5, and 6 all require model.py to"
-echo "===   support the unified lifting_offdiag_structure flag (Option B) and"
-echo "===   its per-structure parameters. Verify each variant's 'Shared lifting'"
-echo "===   line moves in the expected direction before reading BPB."
+echo "===   1) T1_NoWC_1ep — T1 baseline without wavelet_crawl (1 epoch)"
+echo "===   2) T2_1ep      — T1 + levels=7 + [1.0x4, 0.5x4] mixer + no wavelet_crawl (1 epoch)"
+echo "===   3) T2_5ep      — same as T2_1ep but 5 epochs"
 echo "============================================================"
