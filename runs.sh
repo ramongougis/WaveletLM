@@ -69,7 +69,16 @@ git_commit_push() {
 }
 
 # 1-epoch sweep base — Baseline 3 (B3) defaults.
-# B3 = Test 1 + T-lower lifting − wavelet_crawl. Architecturally:
+# B3 = Test 1 + wavelet_crawl=False. Architecturally minimal change from
+# Test 1: drop the deprecated wavelet_crawl convolutional component, keep
+# everything else. T-lower is intentionally NOT included — it provided no
+# real storage/VRAM savings (mask buffer overhead actually slightly INCREASED
+# train VRAM, +80 MiB), and Test 1's matched-budget BPB / best val won
+# decisively over the bs=16384 NB stack. Mask-based "compression" is no
+# longer a production direction; T-lower remains an opt-in stability tool
+# (NaN remediation only).
+#
+# Architecturally:
 #   - Test 1 throughput regime: bs=256, MBS=8 (~58,500 steps/epoch vs the
 #     bs=16384 stack's ~7,300 at matched epoch budget)
 #   - Test 1 structural choices: levels=5, low_rank=4, R0 mixer pattern
@@ -77,12 +86,13 @@ git_commit_push() {
 #     finding that W2 costs ~0.0100 BPB at depth)
 #   - Test 1 reductions: mlp_expansion=10, pkm_enabled=False,
 #     fwpkm_num_keys=8281, tie_embedding_to_lm_head=True
-#   - NB stability ingredient: lifting_offdiag_structure="lower_triangular"
-#     (T-lower; per-matrix spectral-norm cap, exact-zero masked positions)
+#   - Lifting: lifting_offdiag_structure="none" (dense, unmasked — Test 1
+#     default)
 #   - Cleanup: wavelet_crawl=False (deprecated convolutional component)
 # Historical pre-B3 runs (DBD, M1-M4, BAND/BD/MON sweeps, prior CB/NB-stack
-# runs, NB at bs=16384) overrode these with their own per-run patches; new
-# runs inherit B3 by default.
+# runs, NB at bs=16384, the earlier T-lower-flavored B3 runs from
+# 2026-05-09 19:28 / 21:06) overrode these with their own per-run patches;
+# new runs inherit the redefined B3 by default.
 BASE_PATCH_1EP='{
     "dataset": "wikitext-103",
     "layers": 1,
@@ -100,7 +110,7 @@ BASE_PATCH_1EP='{
     "lifting_diaglowrank": false,
     "lifting_level_sharing": false,
     "low_rank": 4,
-    "lifting_offdiag_structure": "lower_triangular",
+    "lifting_offdiag_structure": "none",
     "lr": 0.01,
     "min_lr": 0.0002,
     "eval_interval": 250
@@ -124,7 +134,7 @@ BASE_PATCH_5EP='{
     "lifting_diaglowrank": false,
     "lifting_level_sharing": false,
     "low_rank": 4,
-    "lifting_offdiag_structure": "lower_triangular",
+    "lifting_offdiag_structure": "none",
     "lr": 0.01,
     "min_lr": 0.0002,
     "eval_interval": 250
@@ -797,10 +807,15 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 # + T-lower stability." If best val lands closer to the prior bs=16384
 # stack's number (3.8561 at NB 1ep, etc.), the bs=16384 commitment is
 # paying for something other than BPB.
-run_ablation "B3_1ep Baseline 3 verification (1ep)" \
+# B3 redefined: B3 = Test 1 + wavelet_crawl=False (no T-lower). Architecturally
+# minimal change from Test 1 — the prior T-lower-flavored B3 runs at 2026-05-09
+# 19:28 (B3_1ep, BPB 1.2024 / 3.7198 / 6,947 MiB) and 21:06 (B3_L7_1ep,
+# 393.03M dense) are preserved in the historical record but the runs below
+# re-establish B3 on its new architecture.
+run_ablation "B3_1ep Baseline 3 verification (1ep, redefined: Test 1 + wavelet_crawl=False)" \
     "$BASE_PATCH_1EP" \
     '{}' \
-    "B3_1ep: Baseline 3 = Test 1 + T-lower lifting − wavelet_crawl (1ep, bs=256, MBS=8, levels=5, R0 mixer widths)"
+    "B3_1ep: Baseline 3 redefined = Test 1 + wavelet_crawl=False (1ep, bs=256, MBS=8, levels=5, R0 mixer widths; no T-lower)"
 
 # B3_L7_1ep — same as B3_1ep but at levels=7 with R0 mixer pattern at depth 7
 # ([1.0×4, 0.5×4]). Tests the boundary regime explicitly: bs=256 / 2^7 = 2
@@ -811,7 +826,7 @@ run_ablation "B3_1ep Baseline 3 verification (1ep)" \
 run_ablation "B3_L7_1ep Baseline 3 at levels=7 (boundary test: 2 tokens at coarsest scale)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
-    "B3_L7_1ep: Baseline 3 at levels=7 (1ep, bs=256, MBS=8, R0 mixer widths [1.0x4, 0.5x4]; boundary case — coarsest scale has only 2 tokens at bs=256)"
+    "B3_L7_1ep: Baseline 3 at levels=7 (1ep, bs=256, MBS=8, R0 mixer widths [1.0x4, 0.5x4], no T-lower; boundary case — coarsest scale has only 2 tokens at bs=256)"
 
 # 5-epoch confirmation of B3 — uses BASE_PATCH_5EP unchanged (B3 is the
 # default). The matched-budget production-decision datapoint vs Test 1 5ep
@@ -819,7 +834,7 @@ run_ablation "B3_L7_1ep Baseline 3 at levels=7 (boundary test: 2 tokens at coars
 run_ablation "B3_5ep Baseline 3 at 5 epochs" \
     "$BASE_PATCH_5EP" \
     '{}' \
-    "B3_5ep: Baseline 3 at 5 epochs (bs=256, MBS=8, levels=5, R0 mixer widths; production-decision datapoint vs Test 1 5ep)"
+    "B3_5ep: Baseline 3 at 5 epochs (bs=256, MBS=8, levels=5, R0 mixer widths, no T-lower; production-decision datapoint vs Test 1 5ep)"
 
 # run_ablation "levels=11 retry on R0+T-lower (no W2)" \
 #     "$BASE_PATCH_1EP" \
@@ -876,22 +891,22 @@ run_ablation "B3_5ep Baseline 3 at 5 epochs" \
 #     "Mix_NB_0.1_0.05: per_scale_mixer_widths=[0.1x4, 0.05x4] on NB (1ep, retry of previously NaN'd config)"
 
 
-# ---- Cross-level group sharing on B3 stack ----------------------------------
-# Retry of lifting_level_sharing=true on the B3 stack. Previously NaN'd at
-# step 2250 on the uncompressed (Complete) Wavelet Diagonal and Low Rank
-# Compression sweep — same general failure family as the levels=11 cliff
-# (cross-level parameter sharing amplifies cascade dynamics). With T-lower
-# capping per-matrix spectral norm, the cross-level coupling may now be
-# tractable. Compare 1-epoch BPB against B3's reference; if it trains and
-# BPB is within ~0.01, cross-level sharing becomes a stability-friendly
-# addition (note: NOT a parameter reduction — masking compression has been
-# deprecated as a production direction; this is for stability research only).
-# Inherits B3 defaults from BASE_PATCH_1EP — only override is
-# lifting_level_sharing=true.
-run_ablation "LLS_B3 lifting_level_sharing on B3 stack (retry of previously NaN-failed config)" \
-    "$BASE_PATCH_1EP" \
-    '{"lifting_level_sharing": true}' \
-    "LLS_B3: lifting_level_sharing=true on B3 stack (1ep, retry of previously NaN'd config)"
+# ---- Cross-level group sharing on B3 stack (DEFERRED) -----------------------
+# Original premise: retry lifting_level_sharing=true on the T-lower-flavored
+# B3 — T-lower's per-matrix spectral-norm cap was the proposed safety net
+# that might tame the cross-level coupling that NaN'd this config previously.
+#
+# B3 has been redefined to drop T-lower (no production parameter savings; mask
+# overhead actually slightly increased train VRAM). Without T-lower in the
+# default stack, the original premise no longer holds — running
+# lifting_level_sharing=true on the unguarded B3 would just reproduce the
+# prior NaN failure. Defer until either (a) T-lower is reintroduced as a
+# stability tool for a specific run, or (b) a different stability mechanism
+# (e.g. Muon-orthogonalized updates from the optimizer sweep) is in place.
+# run_ablation "LLS_B3 lifting_level_sharing on B3 stack (retry of previously NaN-failed config)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"lifting_level_sharing": true, "lifting_offdiag_structure": "lower_triangular"}' \
+#     "LLS_B3: lifting_level_sharing=true on B3+T-lower stack (1ep, retry of previously NaN'd config; T-lower re-added as stability scaffold for this run only)"
 
 
 echo ""

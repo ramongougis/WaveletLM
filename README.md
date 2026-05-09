@@ -581,63 +581,46 @@ Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were 
 - minimal BPB decrease (Δ = −0.0013)
 - 26% smaller train/val loss gap (implicit regularization)
 
-The "Test 1" configuration in the table below incorporates these reductions. Note that this is *not* the baseline R0 used for future tests, but its changes were also incorporated into R0.
+The "Test 1", aka **T1**, configuration in the table below incorporates these reductions. 
 
-More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduction).
-
-**Run comparison:**
-
-| Run | Recipe | Folder | BPB sliding | PPL sliding | Best val | Min train | Train/val gap | Params | Train time | VRAM |
+| Run | Recipe | Folder | BPB sliding | PPL sliding | Best val | Min train | Train/val gap | Params | Train time | Training VRAM |
 |-----|--------|--------|-------------|-------------|----------|-----------|---------------|--------|------------|------|
-| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 3.3275 | 2.8292 | 0.498 | 586.15M | 9.74h | — |
-| Reduced (Test 1, four reductions) | MBS=8, eval=250 (4 reductions) | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | **0.369** | **344.63M** | 7.69h | 6.9 GiB |
-| Δ Reduced vs Baseline | — | — | **−0.0013** | −0.13 | +0.007 | +0.136 | **−26%** | **−41%** | **−21%** | — |
+| Baseline (Run C, unreduced L=1 / E=5) | Default L=1 stack | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) | 1.0809 | 29.28 | 3.3275 | 2.8292 | 0.498 | 586.15M | 9.74h | 11,537 MiB |
+| **T1/Test 1** | Baseline with above reductions | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | **29.15** | 3.3341 | 2.9649 | **0.369** | **344.63M** | 7.69h | 6,867 MiB |
+| Δ (T1 - Baseline) | — | — | −0.0013 | −0.13 | +0.007 | +0.136 | −26% | −41% | −21% | — |
 
-**Conclusions:** Keep the parameter reductions listed here in all circumstances going forward.
+**Conclusions:** Keep the parameter reductions listed here and use T1 as the new baseline
 
 ### (Complete) Larger Block Size
 
-**Larger block size changes:** 
+In this section, we tested the new T1 baseline with `block_size=16384`, which required various adjustments to fit it into VRAM. With these changes, it was temporarily named the **R0** run and used as a new test baseline, but later deprecated as the baseline.
 
-For future tests, we have changed the following hyperparameters. The result is the **R0 baseline** build in the table below:
+Changes required:
 
-- All four [parameter reduction](#complete-parameter-reduction) changes above from the "Test 1" build
+- All four [parameter reduction](#complete-parameter-reduction) changes above from the T1 (reduced parameter) build
 - `block_size: 256 → 16384` for more context and direct comparison with other models
 - `levels: 5 → 7` to process the higher context
 - `per_scale_mixer_widths` extended to 8 entries to match levels + 1 scales
-- `micro_batch_size: 8 → 1` to accommodate the larger block size
-- `wavelet_crawl: True → False` to remove the only (very small) convolutional component, and because it showed no performance benefit
-- `epochs: 5 → 1` for faster test iteration times unless where more epochs would be warranted
+- `micro_batch_size: 8 → 1` to accommodate the larger block size in VRAM
+- `wavelet_crawl: True → False` to remove the only (very small) convolutional component, which also showed no performance benefit in earlier ablations
+- `epochs: 5 → 1` for faster test time
 
 **Results:**
 
 | Run | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
 | Test 1 | 1 | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | 1.1762 † | 344.63M | 6,867 MiB | Inference VRAM 2,876 MiB |
-| **R0** | 1 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
+| **R0** (T1 with changes above) | 1 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
 | Test 1 | 5 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | 1.0796 | 344.63M | 6,867 MiB | 5-epoch production result |
-| **R0** | 5 | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | 1.0974 | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
+| **R0** (T1 with changes above) | 5 | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | 1.0974 | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
 
-At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to reducing micro_batch_size to allow for increased context and deeper scale decomposition that downstream work will likely need. 
+At 5 epochs, R0 is +0.0178 BPB higher than T1 (1.0974 vs 1.0796). 
 
-**Decision:** Use R0's configuration at 1 epoch for future tests. If the increased VRAM cost ends up being suboptimal, or the performance does not improve relative to lower block size after other plans are tested, revert to Test 1's config and incorporate any other Future Plans sections' improvements into it.
+**Decision:** 
 
-### (Complete) More Levels
+Keep T1. 
 
-**Results:** 
-- [levels=7](logs/wikitext-103_2026-05-03_02-13-07/log.txt): 5-epoch sliding BPB of 1.0974 with 392.91M params. This is the R0 run above.
-- `levels=9` and `levels=11`: NaN in fp16 AMP under every stability fix attempted at this time.
-- `levels=13` OOMs without `gradient_checkpointing`; likely would NaN otherwise. 
-
-**Decision:** Proceeding with `levels=7` (no change from R0 run) and deferring `levels=9,11, and 13` for post-compression/post-optimizer changes. 
-
-### (Complete) Wavelet Diagonal and Low Rank Compression
-
-**Results:** 
-- `D + U·V^T` compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting wavelet parameters by 97% (from 117.44M to 3.33M) and total model parameters by 29%, but dipped to a 1-epoch sliding BPB of 1.2860 vs. the reference 1-epoch BPB of 1.2361. 
-- Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250. [`tools/analyze_lifting.py`](tools/analyze_lifting.py) confirmed the structural picture: around 75% diagonal energy and weak generic low-rank, but gradient stability becomes an issue.
-
-**Decision:** Deprecated in favor of other off-diagonal compression schemes in these sections: [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent) and [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
+We used  R0's larger block size as the baseline for some later tests in anticipation of higher performance which didn't materialize. This was later reverted back to T1, and those sections moved to the [runs.md](runs.md) doc's Deprecated section near the bottom. 
 
 ### (Complete) Per-Scale Mixer Width Contraction and Expansion
 
@@ -654,25 +637,27 @@ At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to 
 
 Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Expansion will no longer be considered. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05), including a retry of the 0.1/0.05 setting that NaN'd here, are layered on top of the NB stack in the [Per-Scale Mixer Widths with New Baseline](#per-scale-mixer-widths-with-new-baseline) section, since the T-lower spectral-norm constraint should now make the previously-unstable tightenings tractable.
+**Decision:** Minor parameter savings for too much performance cost. Keeping T1's `per_scale_mixer_width=[1.0x4, 0.5x4]`.
 
 ### (Complete) Mixer Low Rank
 
-**Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 vs. the reference BPB of 1.2361. A [5-epoch test](logs/wikitext-103_2026-05-05_21-36-45/log.txt) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, a negligible difference. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
+**Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 vs. the reference BPB of 1.2361. A longer [5-epoch test](logs/wikitext-103_2026-05-05_21-36-45/log.txt) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, a negligible difference. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** Keep `low_rank=4`.
+**Decision:** Keep T1 with `low_rank=4`.
 
 ### (Complete) Decompose Bypass Disablement Ablation
 
-**Result:** At L=1 / levels=7 / bs=16384 / `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) **NaN'd at step 1500, lr=6.84e-3**. Prior smaller-scale ablations projected free disablement (within ±0.0015 BPB at L=1 / E=1), but the projection does not survive once `levels=7` and `low_rank=16` are stacked.
+**Result:** When tested with R0 and `low_rank=16`, disabling both `decompose_bypass` and `decompose_bypass_cross_window` ([logs/wikitext-103_2026-05-05_12-47-12](logs/wikitext-103_2026-05-05_12-47-12/log.txt)) NaN'd at step 1500. Prior ablations projected nearly free disablement (within ±0.0015 BPB at layers=1 & epochs=1), but the projection does not survive once `levels=7` and `low_rank=16` are stacked with a larger block size.
 
-**Decision:** Keep both flags `true`. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw) increases stability. If Muon clears the cascade-amplification issue structurally, disablement can be retested.
+**Decision:** Keep both flags `true`. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw) increases stability. If Muon clears the cascade-amplification issue structurally, disablement can be retested. Also not essential due to low performance boost or parameter loss with their absence (based on previous ablations).
 
 ### (Complete) Wavelet Off-Diagonal Masking with Top-K Percent
 
-**Results:** Wavelet diagonal + top-k percent off-diagonal mask, ranked by magnitude on the [5-epoch reference checkpoint](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze_lifting.py script](tools/analyze_lifting.py). The top_k 10% run recovers 81.5% of the diagonal-only-vs-full gap at +0.0096 BPB with 89.9% lifting parameter reduction. **Unfortunately**, using top-k compression requires a reference checkpoint on the same architecture to compute the mask, so it's not portable to new architectures without redoing training. Structural variants below avoid this setback. Full results in [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
+**Results:** Wavelet diagonal + top-k percent off-diagonal mask, ranked by magnitude on the [5-epoch reference checkpoint](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze_lifting.py script](tools/analyze_lifting.py). The top_k 10% run recovers 81.5% of the diagonal-only-vs-full gap at +0.0096 BPB with 89.9% lifting parameter reduction. 
 
-**Decision:** Not to be implemented due to duplicate training requirement above.
+Unfortunately, using top-k compression requires a reference checkpoint on the same architecture to compute the mask, essentially doubling training time by requiring two trainings. Full results in [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
+
+**Decision:** Not to be implemented due to duplicate training requirement above. Masking also does not remove parameters: they still get stored as dense tensors and take up VRAM.
 
 ### (Complete) Wavelet Off-Diagonal Masking with Structured Variants
 
@@ -717,122 +702,27 @@ See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the 
 | Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) |
 
 **Decision:** 
-- BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance. 
-- The "T lower" lower triangular variant is likely best long-term due to reducing wavelet parameters by 50.05%, but recovering 92.7% of the BPB gap between full diagonal and uncompressed (-0.0038 BPB).
-- Moving forward with BAND 128, but considering swapping with T lower when accuracy is required.
+- These don't actually decrease parameter counts, VRAM needed for training or inference, or model complexity.
+- They just set some entries to 0.
+- Not using this.
 
-### (Complete) New Testing Baseline
+### T1 Baseline Without Wavelet Crawl
 
-The new baseline (**NB**) is R0 with the new per-scale mixer width [0.5x4,0.25x4] and T-lower wavelet off-diagonal masking. NB uses lower-triangular wavelets (50% lifting reduction at +0.0038 BPB), which is retained purely for Adagrad stability (higher levels, etc.), not parameter reduction. The mixer width contraction offers parameter reduction and improved stability, but at a moderate BPB cost (-39% mixer params, +0.0076 BPB). It is also retained for improved stability.
+Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (very small: only 15 parameters with levels=5) convolution operation in the model. Performance impact negligible.
 
-**Settings:** `layers=1`, `levels=7`, `block_size=16384`, `low_rank=4`, `per_scale_mixer_widths=[0.5×4, 0.25×4]`, `lifting_offdiag_structure="lower_triangular"`.
+(insert table here with 1 baseline T1 row with wavelet crawl, and one other T1 without wavelet crawl run row underneath).
 
-**Masked-position behavior:** T-lower's masked positions are zero in every forward pass. `StructuredLinear` performs `F.linear(x, weight * mask, bias)` with a bool mask, so masked positions become hard zeros. The dense weight tensor still occupies its full shape in storage and optimizer state.
+### New Baseline T2 with Levels = 7, more Per-Scale Mixer Weights, and no Wavelet Crawl
 
-**NB_1ep result vs the former 1-epoch baseline (R0):**
+Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 0.25]. It shall be named T2.
 
-| Metric | R0 (former 1ep ref) | NB (new 1ep ref) | Δ |
-|---|---|---|---|
-| Total params (effective) | 392.91M | **311.10M** | **−81.81M (−21%)** |
-| Shared lifting | 117.50M (dense) | 58.81M effective / 117.50M dense | −58.69M effective; dense unchanged |
-| Mixer/layer | 59.11M | 35.70M | **−23.41M (−39.6%)** |
-| MLP/layer | 83.91M | 83.91M | unchanged |
-| FwPKM/layer | 21.34M | 21.34M | unchanged |
-| Token embedding | 102.93M | 102.93M | unchanged |
-| Training peak VRAM | 23,411 MiB | **23,110 MiB** | −301 MiB (−1.3%) |
-| Inference peak VRAM | 3,162 MiB | **2,914 MiB** | **−248 MiB (−7.8%)** |
-| BPB sliding | **1.2361** | 1.2478 | +0.0117 |
-| BPB non-overlap | inf (numerical) | 1.2458 | — |
-| Best val loss | **3.8177** | 3.8561 | +0.0384 |
-| Run log | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) | |
+Run it for 1 epoch and 5 epochs.
 
-NB trades a small BPB regression (+0.0117 sliding, +0.0384 best val at 1ep) for a meaningful **21% reduction in trainable parameters** and a **7.8% reduction in inference VRAM** — both real wins from the dense W2 mixer contraction (the lifting-side count change is mask-driven and doesn't affect storage). Inference VRAM dropping by 248 MiB is the more material number for "what GPU does this fit on" answers.
-
-All downstream tests in subsequent sections compare against this number until otherwise specified.
-
-### Levels = 9, 11, and 13 Revisited
-
-The [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-longer-block-size) sweep hit an unrecoverable NaN cliff at `levels=9` and `levels=11` under fp16 AMP, and `levels=13` OOM'd without gradient checkpointing — the lifting cascade was the suspected parameter-amplification source, and the unblock was originally deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw). The NB stack provides an **independent, complementary** path: T-lower's per-matrix spectral-norm cap (50% mask, exact zeros at masked positions) is exactly the property that should bound the cascade across deeper levels.
-
-**Plan.** Retest `levels=9`, `levels=11`, and `levels=13` on top of NB at L=1 / bs=16384 (queued in runs.sh). Pass criteria, in order of decreasing strictness:
-1. **Stability** — does the run complete without NaN / OOM? (Necessary; the original goal of the deferral.)
-2. **BPB sliding close to the levels=7 NB reference**, where deeper decomposition gains offset whatever cost.
-3. **BPB sliding cleanly below the NB reference** — the strongest result, indicating deeper cascades outperform shallower ones once stabilized by NB's masking.
-
-**Boundary caveat at deep levels:** `levels=11` with bs=16384 leaves only 8 tokens at the coarsest scale; `levels=13` leaves only 2 tokens. Boundary effects on the coarse-summary signal may dominate even if the cascade trains stably. Treat the BPB-vs-NB delta as a "did the cascade survive?" signal first, "is this a better config?" signal second.
-
-**Results so far:**
-
-| Variant | Stability | BPB sliding | ΔBPB vs NB | Total params | Train VRAM | Inference VRAM (strategies) | Train time | Run Log |
-|---|---|---|---|---|---|---|---|---|
-| Reference (NB, levels=7) | trains | **1.2478** | — | 311.10M | 23,110 MiB | 2,914 MiB | 1.28h | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| **NB + levels=9** | **trains ✓** | **1.2459** | **−0.0019** | 336.83M | 25,516 MiB | 3,700 MiB | 1.47h | [link](logs/wikitext-103_2026-05-09_14-52-27/log.txt) |
-| NB + levels=11 | NaN at step 1500 (lr=6.84e-3) | — | — | — | — | — | — | [link](logs/wikitext-103_2026-05-09_16-21-56/log.txt) |
-| NB + levels=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
-| **R0+T-lower + levels=9** | **trains ✓** | **1.2359** | **−0.0119** | 365.73M | 26,031 MiB | pending | 1.52h | [link](logs/wikitext-103_2026-05-09_17-06-51/log.txt) |
-| R0+T-lower + levels=11 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
-| R0+T-lower + levels=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
-
-**Reading:** levels=9 cleared the cascade-explosion cliff that no stability fix on the uncompressed cascade could ever clear — confirming T-lower's per-matrix spectral-norm cap is real and load-bearing in this regime. The BPB win at levels=9 is small (−0.0019, within noise of single-seed variance), and the cost is substantial: +25.73M params (+8%), +2,406 MiB train VRAM (+10%), +786 MiB inference VRAM (+27% on strategies-mode), and +15% wall-clock per epoch. **Not a per-cost win** — useful as evidence that the cascade is healthy at deeper levels with NB's masking, but not yet a production-stack candidate.
-
-The levels=11 NaN at step 1500 (well before peak LR) confirms the stability headroom past levels=9 requires the optimizer sweep, not just T-lower. levels=13 was cancelled on the same expectation.
-
-**R0+T-lower disambiguation result.** R0+T-lower at L=9 trains cleanly AND beats NB+L=9 by 0.0100 BPB sliding (and beats NB at L=7 by 0.0119 BPB). This is a significant finding: T-lower carries the stability load alone, AND **W2 mixer contraction appears to actively cost BPB at deeper levels** (the deeper wavelet scales need more mixer capacity to be useful, and contracting them limits what the cascade can deliver). The +28.90M params from un-contracting the mixer (mostly the depth-9 mixer expansion: 73.52M vs NB+L=9's 35.70M) are paying for themselves on BPB. This re-opens the question of whether W2 belongs in the production stack at all — see also the [Another Baseline Test](#another-baseline-test-nb-with-block_size256-and-micro_batch_size8) section testing W2's BPB cost in the bs=256 throughput regime.
-
-**Aside on the levels=9 strategies-mode generation**: train.py's internal strategies-mode pass at this checkpoint produced a degenerate quote-token loop (Rep4 = 0.396 vs the standard pass's normal output). Two follow-up `generate.py --strategies` invocations on the same checkpoint produced normal output (Rep4 = 0.114, 0.161), confirming the failure was a single sampling-state-specific local minimum, not a structural model issue. The `--strategies` pass is now wired into `runs.sh` separately (with a fresh process / fresh RNG state) so this failure mode won't recur as a false positive in future ablations.
-
-**Complementary to the [Optimizer Sweep](#optimizer-sweep-muon--adamw)**, not redundant: Muon tests whether orthogonalized updates handle cascade amplification *structurally*; T-lower masking tests whether bounding per-matrix spectral norm is sufficient. If both clear independently, they may compose constructively. If neither works individually, the combination is the natural last resort before declaring `levels ≥ 9` infeasible at fp16.
-
-### Another Baseline Test: B3 (Test 1 + T-lower − wavelet_crawl)
-
-**Baseline 3 (B3)** is the candidate replacement for NB. Architecturally: **Test 1 + T-lower lifting − wavelet_crawl** — Test 1's throughput regime and structural choices, with NB's T-lower stability ingredient layered in and the deprecated `wavelet_crawl` convolutional component removed. It is now the default for `BASE_PATCH_1EP` / `BASE_PATCH_5EP` in `runs.sh`; all subsequent runs inherit B3 unless they override.
-
-**Key parameters:**
-
-- `bs=256` (Test 1 throughput regime)
-- `MBS=8` (Test 1 throughput regime)
-- `levels=5` (Test 1 decomposition depth)
-- `per_scale_mixer_widths=[1.0×3, 0.5×3]` (R0 mixer pattern at depth 5; W2 contraction dropped after the [Levels = 9, 11, and 13 Revisited](#levels--9-11-and-13-revisited) result showed W2 costs ~0.0100 BPB at depth)
-- `low_rank=4` (Test 1 / NB)
-- `mlp_expansion=10`, `pkm_enabled=False`, `fwpkm_num_keys=8281`, `tie_embedding_to_lm_head=True` (Test 1's four reductions)
-- `lifting_offdiag_structure="lower_triangular"` (T-lower from NB; per-matrix spectral-norm cap, exact-zero masked positions, dense storage unchanged)
-- `wavelet_crawl=False` (the deprecated convolutional component, removed)
-
-**Motivation.** Best val at NB (3.8561) is 0.22 nats higher than Test 1 (3.6393) at matched 1-epoch budget — a substantial gap mostly explained by Test 1 seeing 8× more gradient updates per epoch (~58,500 vs ~7,300). A reasonable hypothesis is that NB's "BPB regression vs Test 1" is partly a convergence artifact: with 8× more updates, the model has time to recover whatever small BPB cost T-lower lifting introduces. If so, B3 is a strong production candidate that beats NB on best val while matching Test 1 on training cost. The L=9 R0+T-lower disambiguation result also showed that **W2 mixer contraction is not free at depth** — actively costing 0.0100 BPB at L=9 — strengthening the case to use R0 mixer widths even at shallow depth.
-
-**Constraint.** bs=256 with `levels=7` would leave only 256/2^7 = 2 tokens at the coarsest scale (degenerate boundary). The default B3 uses `levels=5`. The boundary-test variant (B3_L7) probes whether `levels=7` even trains in this regime; per-width contractions are now off the table everywhere, so even the boundary test uses R0 widths `[1.0×4, 0.5×4]`.
-
-**Comparison table:**
-
-| Variant | bs | levels | epochs | per_scale_mixer_widths | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Steps/epoch | Run Log |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Test 1 (1ep) | 256 | 5 | 1 | [1.0×3, 0.5×3] | 1.1762 † | **3.6393** | **6,867 MiB** | 2,876 MiB | **~58,500** | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
-| Test 1 (5ep) | 256 | 5 | 5 | [1.0×3, 0.5×3] | 1.0796 † | 3.3341 | 6,867 MiB | — | ~58,500 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
-| NB (1ep) | 16384 | 7 | 1 | [0.5×4, 0.25×4] | 1.2478 | 3.8561 | 23,110 MiB | 2,914 MiB | ~7,300 | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| **B3_1ep** | 256 | 5 | 1 | [1.0×3, 0.5×3] | **1.2024** | **3.7198** | 6,947 MiB | 2,874 MiB | ~58,500 | [link](logs/wikitext-103_2026-05-09_19-28-31/log.txt) |
-| **B3_L7_1ep (in progress)** ‡ | 256 | 7 | 1 | [1.0×4, 0.5×4] | running | running | pending | pending | ~58,500 | [link](logs/wikitext-103_2026-05-09_21-06-17/log.txt) |
-| **B3_5ep (queued)** | 256 | 5 | 5 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
-
-† BPB across runs with different `block_size` is not strictly apples-to-apples (each run benchmarks at its own training `block_size`); best val is the more comparable metric.
-
-‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question B3_L7_1ep answers. If L7 trains and lands competitively with L5, the boundary doesn't bind at this regime; if it underperforms L5, the levels=5 choice is correct for bs=256.
-
-**Decision criteria.** Best val is the headline comparison. If B3_1ep lands within ~0.05 of Test 1's 3.6393 (or B3_5ep within ~0.05 of Test 1 5ep's 3.3341), B3 becomes the production stack — a major reframing of the project's direction toward the throughput-friendly regime. If best val instead lands closer to NB's 3.8561, the bs=16384 commitment is paying for something beyond just BPB. B3_5ep is the matched-budget production-decision datapoint; B3_L7_1ep separately probes whether the bs=256 + L=7 boundary case is a real problem.
+(insert table here with 3 baseline rows consisting of T1 for 1 epoch, T1 for 5 epochs, T1 without wavelet crawl for 1 epoch; and with 2 T2 rows for 1 and 5 epochs each).
 
 ### Wavelet Cross-Level Group Sharing
 
-Retest of `lifting_level_sharing=true` on the B3 stack. Previously NaN'd at step 2250 in the [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression) sweep on the uncompressed lifting cascade. Cross-level sharing reuses the same lifting matrices across all wavelet decomposition levels (vs. the default of independent matrices per level), which couples the cascade dynamics tightly across levels — the same general failure family as the levels=11 cliff (cross-level coupling amplifies cascade explosion).
-
-The hypothesis: T-lower's per-matrix spectral-norm cap may now make the cross-level coupling tractable. Note: this is a **stability research probe**, not a parameter compression — mask-based approaches (including any savings from lifting_level_sharing) don't deliver real storage/throughput savings under stock kernels.
-
-**Settings:** inherits B3 defaults from `BASE_PATCH_1EP` (bs=256, MBS=8, levels=5, R0 mixer widths [1.0×3, 0.5×3], T-lower lifting, low_rank=4, Test 1's four reductions, wavelet_crawl=False) — the only override is `lifting_level_sharing=true`.
-
-| Variant | lifting_level_sharing | BPB sliding | ΔBPB vs B3 | Run Log |
-|---|---|---|---|---|
-| Reference (B3) | false | pending | — | queued (B3_1ep) |
-| LLS_B3 (queued, retry) | true | pending | pending | |
-
-**Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of B3, cross-level sharing is at least architecturally tractable on the new stack — useful for the deeper-levels tests on the bs=16384 stack where independent per-level matrices may be the binding cost.
+Retest of `lifting_level_sharing=true` on T2 (new baseline above).
 
 ### Optimizer Sweep (Muon → AdamW)
 
