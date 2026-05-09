@@ -526,27 +526,26 @@ Longer training time, more regularization, and parameter compression are the sur
 10. [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
 11. [(Complete) New Testing Baseline](#complete-new-testing-baseline)
 12. [Levels = 9, 11, and 13 Revisited](#levels--9-11-and-13-revisited)
-13. [Another Baseline Test: NB with block_size=256 and micro_batch_size=8](#another-baseline-test-nb-with-block_size256-and-micro_batch_size8)
-14. [Per-Scale Mixer Widths with New Baseline](#per-scale-mixer-widths-with-new-baseline)
-15. [Wavelet Cross-Level Group Sharing](#wavelet-cross-level-group-sharing)
-16. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-17. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-18. [Dropout Sweep](#dropout-sweep)
-19. [Weight Decay Sweep](#weight-decay-sweep)
-20. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-21. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-22. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-23. [Longer PG-19 Training](#longer-pg-19-training)
-24. [Dataset Comparisons](#dataset-comparisons)
-25. [Model Comparisons](#model-comparisons)
-26. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-27. [Multi-Transform Parallelization](#multi-transform-parallelization)
-28. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-29. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-30. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-31. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-32. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-33. [Other Post-Release Plans](#other-post-release-plans)
+13. [Another Baseline Test: B3 (Test 1 + T-lower − wavelet_crawl)](#another-baseline-test-b3-test-1--t-lower--wavelet_crawl)
+14. [Wavelet Cross-Level Group Sharing](#wavelet-cross-level-group-sharing)
+15. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
+16. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
+17. [Dropout Sweep](#dropout-sweep)
+18. [Weight Decay Sweep](#weight-decay-sweep)
+19. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+20. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+21. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+22. [Longer PG-19 Training](#longer-pg-19-training)
+23. [Dataset Comparisons](#dataset-comparisons)
+24. [Model Comparisons](#model-comparisons)
+25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+26. [Multi-Transform Parallelization](#multi-transform-parallelization)
+27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+32. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -770,77 +769,70 @@ The [(Complete) More Levels with Longer Block Size](#complete-more-levels-with-l
 | **NB + levels=9** | **trains ✓** | **1.2459** | **−0.0019** | 336.83M | 25,516 MiB | 3,700 MiB | 1.47h | [link](logs/wikitext-103_2026-05-09_14-52-27/log.txt) |
 | NB + levels=11 | NaN at step 1500 (lr=6.84e-3) | — | — | — | — | — | — | [link](logs/wikitext-103_2026-05-09_16-21-56/log.txt) |
 | NB + levels=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
-| R0+T-lower + levels=9 (queued) | pending | pending | pending | pending | pending | pending | pending | |
+| **R0+T-lower + levels=9** | **trains ✓** | **1.2359** | **−0.0119** | 365.73M | 26,031 MiB | pending | 1.52h | [link](logs/wikitext-103_2026-05-09_17-06-51/log.txt) |
 | R0+T-lower + levels=11 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
 | R0+T-lower + levels=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
 
 **Reading:** levels=9 cleared the cascade-explosion cliff that no stability fix on the uncompressed cascade could ever clear — confirming T-lower's per-matrix spectral-norm cap is real and load-bearing in this regime. The BPB win at levels=9 is small (−0.0019, within noise of single-seed variance), and the cost is substantial: +25.73M params (+8%), +2,406 MiB train VRAM (+10%), +786 MiB inference VRAM (+27% on strategies-mode), and +15% wall-clock per epoch. **Not a per-cost win** — useful as evidence that the cascade is healthy at deeper levels with NB's masking, but not yet a production-stack candidate.
 
-The levels=11 NaN at step 1500 (well before peak LR) confirms the stability headroom past levels=9 requires the optimizer sweep, not just T-lower. levels=13 was cancelled on the same expectation. The R0+T-lower variant at levels=9 is still queued to disambiguate whether T-lower alone (without W2 mixer contraction) is sufficient for the levels=9 stability win — if it trains, W2 is decorative on the stability axis; if it NaNs, both NB ingredients are load-bearing.
+The levels=11 NaN at step 1500 (well before peak LR) confirms the stability headroom past levels=9 requires the optimizer sweep, not just T-lower. levels=13 was cancelled on the same expectation.
+
+**R0+T-lower disambiguation result.** R0+T-lower at L=9 trains cleanly AND beats NB+L=9 by 0.0100 BPB sliding (and beats NB at L=7 by 0.0119 BPB). This is a significant finding: T-lower carries the stability load alone, AND **W2 mixer contraction appears to actively cost BPB at deeper levels** (the deeper wavelet scales need more mixer capacity to be useful, and contracting them limits what the cascade can deliver). The +28.90M params from un-contracting the mixer (mostly the depth-9 mixer expansion: 73.52M vs NB+L=9's 35.70M) are paying for themselves on BPB. This re-opens the question of whether W2 belongs in the production stack at all — see also the [Another Baseline Test](#another-baseline-test-nb-with-block_size256-and-micro_batch_size8) section testing W2's BPB cost in the bs=256 throughput regime.
 
 **Aside on the levels=9 strategies-mode generation**: train.py's internal strategies-mode pass at this checkpoint produced a degenerate quote-token loop (Rep4 = 0.396 vs the standard pass's normal output). Two follow-up `generate.py --strategies` invocations on the same checkpoint produced normal output (Rep4 = 0.114, 0.161), confirming the failure was a single sampling-state-specific local minimum, not a structural model issue. The `--strategies` pass is now wired into `runs.sh` separately (with a fresh process / fresh RNG state) so this failure mode won't recur as a false positive in future ablations.
 
 **Complementary to the [Optimizer Sweep](#optimizer-sweep-muon--adamw)**, not redundant: Muon tests whether orthogonalized updates handle cascade amplification *structurally*; T-lower masking tests whether bounding per-matrix spectral norm is sufficient. If both clear independently, they may compose constructively. If neither works individually, the combination is the natural last resort before declaring `levels ≥ 9` infeasible at fp16.
 
-### Another Baseline Test: NB with block_size=256 and micro_batch_size=8
+### Another Baseline Test: B3 (Test 1 + T-lower − wavelet_crawl)
 
-Combines NB's stability ingredients (T-lower wavelet masking + W2 mixer contraction) with Test 1's gradient-update advantage (bs=256 + MBS=8 = ~58,500 steps/epoch vs NB's ~7,300 at matched epoch budget). Tests whether NB's BPB cost (vs Test 1) shrinks or vanishes in a more-converged training regime, while preserving NB's stability properties.
+**Baseline 3 (B3)** is the candidate replacement for NB. Architecturally: **Test 1 + T-lower lifting − wavelet_crawl** — Test 1's throughput regime and structural choices, with NB's T-lower stability ingredient layered in and the deprecated `wavelet_crawl` convolutional component removed. It is now the default for `BASE_PATCH_1EP` / `BASE_PATCH_5EP` in `runs.sh`; all subsequent runs inherit B3 unless they override.
 
-**Motivation.** Best val at NB (3.8561) is **0.22 nats higher than Test 1** (3.6393) at matched 1-epoch budget — a substantial gap mostly explained by Test 1 seeing 8× more gradient updates per epoch. A reasonable hypothesis is that NB's "BPB regression vs Test 1" is partly a convergence artifact: with 8× more updates, the model has time to recover whatever small BPB cost W2 mixer contraction and T-lower lifting introduce. If so, "Test 1 throughput + NB compressions" is a strong production candidate that beats NB on best val while matching Test 1 on training cost.
+**Key parameters:**
 
-**Constraint.** bs=256 with NB's `levels=7` leaves only 256/2^7 = 2 tokens at the coarsest scale — a degenerate boundary case. The new test drops to **`levels=5`** (gives 256/2^5 = 8 tokens at the coarsest scale, matching Test 1's structural decomposition depth) with `per_scale_mixer_widths=[0.5×3, 0.25×3]` (6 entries to match `levels + 1`).
+- `bs=256` (Test 1 throughput regime)
+- `MBS=8` (Test 1 throughput regime)
+- `levels=5` (Test 1 decomposition depth)
+- `per_scale_mixer_widths=[1.0×3, 0.5×3]` (R0 mixer pattern at depth 5; W2 contraction dropped after the [Levels = 9, 11, and 13 Revisited](#levels--9-11-and-13-revisited) result showed W2 costs ~0.0100 BPB at depth)
+- `low_rank=4` (Test 1 / NB)
+- `mlp_expansion=10`, `pkm_enabled=False`, `fwpkm_num_keys=8281`, `tie_embedding_to_lm_head=True` (Test 1's four reductions)
+- `lifting_offdiag_structure="lower_triangular"` (T-lower from NB; per-matrix spectral-norm cap, exact-zero masked positions, dense storage unchanged)
+- `wavelet_crawl=False` (the deprecated convolutional component, removed)
 
-**Configuration:** `bs=256`, `MBS=8`, `lifting_offdiag_structure="lower_triangular"`, `low_rank=4`, `wavelet_crawl=False`, plus per-variant settings:
-- **NB256_L5_1ep** — `levels=5`, `per_scale_mixer_widths=[0.5×3, 0.25×3]` (6 entries)
-- **NB256_L7_1ep** — `levels=7`, `per_scale_mixer_widths=[0.5×4, 0.25×4]` (8 entries; matches NB defaults)
+**Motivation.** Best val at NB (3.8561) is 0.22 nats higher than Test 1 (3.6393) at matched 1-epoch budget — a substantial gap mostly explained by Test 1 seeing 8× more gradient updates per epoch (~58,500 vs ~7,300). A reasonable hypothesis is that NB's "BPB regression vs Test 1" is partly a convergence artifact: with 8× more updates, the model has time to recover whatever small BPB cost T-lower lifting introduces. If so, B3 is a strong production candidate that beats NB on best val while matching Test 1 on training cost. The L=9 R0+T-lower disambiguation result also showed that **W2 mixer contraction is not free at depth** — actively costing 0.0100 BPB at L=9 — strengthening the case to use R0 mixer widths even at shallow depth.
 
-Other settings inherited from NB defaults.
+**Constraint.** bs=256 with `levels=7` would leave only 256/2^7 = 2 tokens at the coarsest scale (degenerate boundary). The default B3 uses `levels=5`. The boundary-test variant (B3_L7) probes whether `levels=7` even trains in this regime; per-width contractions are now off the table everywhere, so even the boundary test uses R0 widths `[1.0×4, 0.5×4]`.
 
-| Variant | bs | levels | epochs | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Steps/epoch | Run Log |
-|---|---|---|---|---|---|---|---|---|---|
-| Test 1 (1ep) | 256 | 5 | 1 | 1.1762 † | **3.6393** | **6,867 MiB** | 2,876 MiB | **~58,500** | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
-| Test 1 (5ep) | 256 | 5 | 5 | 1.0796 † | 3.3341 | 6,867 MiB | — | ~58,500 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
-| NB (1ep) | 16384 | 7 | 1 | 1.2478 | 3.8561 | 23,110 MiB | 2,914 MiB | ~7,300 | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| **NB256_L5_1ep (queued)** | 256 | 5 | 1 | pending | pending | pending | pending | ~58,500 | queued |
-| **NB256_L7_1ep (queued, boundary)** ‡ | 256 | 7 | 1 | pending | pending | pending | pending | ~58,500 | queued |
-| **NB256_L5_5ep (queued)** | 256 | 5 | 5 | pending | pending | pending | pending | ~58,500 | queued |
+**Comparison table:**
+
+| Variant | bs | levels | epochs | per_scale_mixer_widths | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Steps/epoch | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Test 1 (1ep) | 256 | 5 | 1 | [1.0×3, 0.5×3] | 1.1762 † | **3.6393** | **6,867 MiB** | 2,876 MiB | **~58,500** | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
+| Test 1 (5ep) | 256 | 5 | 5 | [1.0×3, 0.5×3] | 1.0796 † | 3.3341 | 6,867 MiB | — | ~58,500 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
+| NB (1ep) | 16384 | 7 | 1 | [0.5×4, 0.25×4] | 1.2478 | 3.8561 | 23,110 MiB | 2,914 MiB | ~7,300 | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
+| **B3_1ep (queued)** | 256 | 5 | 1 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
+| **B3_L7_1ep (queued, boundary)** ‡ | 256 | 7 | 1 | [1.0×4, 0.5×4] | pending | pending | pending | pending | ~58,500 | queued |
+| **B3_5ep (queued)** | 256 | 5 | 5 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
 
 † BPB across runs with different `block_size` is not strictly apples-to-apples (each run benchmarks at its own training `block_size`); best val is the more comparable metric.
 
-‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question NB256_L7_1ep answers. If L7 trains and lands competitively with L5, the boundary doesn't bind at this regime; if it underperforms L5, the levels=5 choice is the right one for bs=256.
+‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question B3_L7_1ep answers. If L7 trains and lands competitively with L5, the boundary doesn't bind at this regime; if it underperforms L5, the levels=5 choice is correct for bs=256.
 
-**Decision criteria.** Best val is the headline comparison. If NB256_L5 (or L7) lands within ~0.05 of Test 1's 3.6393, the production stack candidate becomes "Test 1 throughput + NB stability ingredients" — a major reframing of the production direction. If both land closer to NB's 3.8561, the bs=16384 commitment is paying for something other than just the BPB number, and NB stays. Comparing L5 vs L7 separately disentangles whether the levels=7 boundary case is actually a problem at bs=256.
-
-### Per-Scale Mixer Widths with New Baseline
-
-The original [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion) sweep ran on the uncompressed R0 baseline. Aggressive contractions like `[0.1×4, 0.05×4]` NaN'd at peak LR with Adagrad. NB's T-lower wavelet + mixer low_rank=4 should make the previously-unstable tightenings tractable to lower total parameter count and iteration time further.
-
-**Sweep:** Four 1-epoch `per_scale_mixer_width` contractions using the new baseline otherwise.
-
-| Variant | per_scale_mixer_widths | BPB sliding | ΔBPB vs NB | Mixer params (per layer) | Run Log |
-|---|---|---|---|---|---|
-| Reference (NB with per_scale_mixer_width [0.5x4,0.25x4]) | [0.5×4, 0.25×4] | **1.2478** | — | 35.70M | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| Mix_NB_0.4_0.2 (queued) | [0.4×4, 0.2×4] | pending | pending | ~22.85M | |
-| Mix_NB_0.3_0.15 (queued) | [0.3×4, 0.15×4] | pending | pending | ~12.85M | |
-| Mix_NB_0.25_0.125 (queued) | [0.25×4, 0.125×4] | pending | pending | ~8.93M | |
-| Mix_NB_0.1_0.05 (queued, retry) | [0.1×4, 0.05×4] | pending | pending | ~1.43M | |
-
-The 0.1/0.05 retry tests directly whether NB's structural masking is enough to clear the previous NaN cliff. If it trains and BPB stays within ~0.01–0.02 of NB, the mixer is over-parameterized for what the cascade actually consumes; if it NaNs, the instability is downstream of mixer-only spectral norms (likely the same dynamics affecting levels=11 — to be cleared by the optimizer sweep, not by more masking).
-
-**Decision:** TBD pending results. Production candidate: tightest setting that lands within ~0.005 BPB of NB.
+**Decision criteria.** Best val is the headline comparison. If B3_1ep lands within ~0.05 of Test 1's 3.6393 (or B3_5ep within ~0.05 of Test 1 5ep's 3.3341), B3 becomes the production stack — a major reframing of the project's direction toward the throughput-friendly regime. If best val instead lands closer to NB's 3.8561, the bs=16384 commitment is paying for something beyond just BPB. B3_5ep is the matched-budget production-decision datapoint; B3_L7_1ep separately probes whether the bs=256 + L=7 boundary case is a real problem.
 
 ### Wavelet Cross-Level Group Sharing
 
-Retest of `lifting_level_sharing=true` on the NB stack. Previously NaN'd at step 2250 in the [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression) sweep on the uncompressed lifting cascade. Cross-level sharing reuses the same lifting matrices across all wavelet decomposition levels (vs. the default of independent matrices per level), which couples the cascade dynamics tightly across levels — the same general failure family as the levels=11 cliff (cross-level coupling amplifies cascade explosion).
+Retest of `lifting_level_sharing=true` on the B3 stack. Previously NaN'd at step 2250 in the [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression) sweep on the uncompressed lifting cascade. Cross-level sharing reuses the same lifting matrices across all wavelet decomposition levels (vs. the default of independent matrices per level), which couples the cascade dynamics tightly across levels — the same general failure family as the levels=11 cliff (cross-level coupling amplifies cascade explosion).
 
-The hypothesis: T-lower's per-matrix spectral-norm cap may now make the cross-level coupling tractable, same way it should stabilize the levels=9/11/13 retries. Note: this is a **stability research probe**, not a parameter compression — mask-based approaches (including any savings from lifting_level_sharing) don't deliver real storage/throughput savings under stock kernels.
+The hypothesis: T-lower's per-matrix spectral-norm cap may now make the cross-level coupling tractable. Note: this is a **stability research probe**, not a parameter compression — mask-based approaches (including any savings from lifting_level_sharing) don't deliver real storage/throughput savings under stock kernels.
 
-| Variant | lifting_level_sharing | BPB sliding | ΔBPB vs NB | Run Log |
+**Settings:** inherits B3 defaults from `BASE_PATCH_1EP` (bs=256, MBS=8, levels=5, R0 mixer widths [1.0×3, 0.5×3], T-lower lifting, low_rank=4, Test 1's four reductions, wavelet_crawl=False) — the only override is `lifting_level_sharing=true`.
+
+| Variant | lifting_level_sharing | BPB sliding | ΔBPB vs B3 | Run Log |
 |---|---|---|---|---|
-| Reference (NB) | false | **1.2478** | — | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| LLS_NB (queued, retry) | true | pending | pending | |
+| Reference (B3) | false | pending | — | queued (B3_1ep) |
+| LLS_B3 (queued, retry) | true | pending | pending | |
 
-**Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of NB, cross-level sharing is at least architecturally tractable on the new stack — useful for the deeper levels (9/11/13) tests where independent per-level matrices may be the binding cost.
+**Decision:** TBD pending results. If it trains and lands within ~0.01 BPB of B3, cross-level sharing is at least architecturally tractable on the new stack — useful for the deeper-levels tests on the bs=16384 stack where independent per-level matrices may be the binding cost.
 
 ### Optimizer Sweep (Muon → AdamW)
 

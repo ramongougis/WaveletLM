@@ -932,7 +932,8 @@ Previously NaN'd at levels=9, 11, 13 on the uncompressed lifting cascade — no 
 | Variant | Stability | BPB sliding | ΔBPB vs NB(L=7) | Total params | Train VRAM | Inference VRAM (strategies) | Train time | Run Log |
 |---|---|---|---|---|---|---|---|---|
 | Reference NB (L=7) | trains | **1.2478** | — | 311.10M | 23,110 MiB | 2,914 MiB | 1.28h | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| **NB + L=9** | **trains ✓** | **1.2459** | **−0.0019** | 336.83M | 25,516 MiB | 3,700 MiB | 1.47h | [link](logs/wikitext-103_2026-05-09_14-52-27/log.txt) |
+| NB + L=9 | trains ✓ | 1.2459 | −0.0019 | 336.83M | 25,516 MiB | 3,700 MiB | 1.47h | [link](logs/wikitext-103_2026-05-09_14-52-27/log.txt) |
+| **R0+T-lower + L=9** | **trains ✓** | **1.2359** | **−0.0119** | 365.73M | 26,031 MiB | pending | 1.52h | [link](logs/wikitext-103_2026-05-09_17-06-51/log.txt) |
 | NB + L=11 | NaN at step 1500 (lr=6.84e-3) | — | — | — | — | — | — | [link](logs/wikitext-103_2026-05-09_16-21-56/log.txt) |
 | NB + L=13 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
 | R0+T-lower + L=11 | (cancelled, expected to NaN) | — | — | — | — | — | — | |
@@ -944,26 +945,26 @@ The levels=11 NaN at step 1500 (well before peak LR was reached) confirms the st
 
 **Strategies-mode generation anomaly at levels=9** (informational, doesn't affect BPB): train.py's internal strategies-mode pass produced a degenerate quote-token loop (Rep4 = 0.396 vs the standard pass's normal output). Two follow-up `generate.py --strategies` runs on the same checkpoint produced normal output (Rep4 = 0.114 and 0.161), confirming the failure was a single sampling-state-specific local minimum, not a structural model issue. The dual-pass inference-VRAM logic in `runs.sh` (with separate `generate.py --strategies` invocations per run, each in a fresh process) prevents this single-point sampling artifact from masquerading as a model problem in future ablations.
 
-### NB at bs=256, MBS=8 (Test 1 throughput regime)
+### Baseline 3 (B3): Test 1 + T-lower − wavelet_crawl
 
-Combines NB's stability ingredients (T-lower wavelet masking + W2 mixer contraction) with Test 1's gradient-update advantage (bs=256 + MBS=8 = ~58,500 steps/epoch vs NB's ~7,300 at matched epoch budget). Tests whether NB's BPB cost vs Test 1 shrinks or vanishes in a more-converged training regime, while preserving NB's stability properties.
+**B3** is the candidate replacement for NB. Architecturally: **Test 1 + T-lower lifting − wavelet_crawl** — Test 1's throughput regime (bs=256, MBS=8, ~58,500 steps/epoch) and structural choices, with NB's T-lower stability ingredient layered in and the deprecated `wavelet_crawl` removed. It is now the default in `BASE_PATCH_1EP` / `BASE_PATCH_5EP`; subsequent runs inherit B3 unless they override.
 
-Drops to levels=5 since NB's levels=7 with bs=256 leaves only 256/2^7 = 2 tokens at the coarsest scale (degenerate). per_scale_mixer_widths set to [0.5×3, 0.25×3] (6 entries to match levels+1).
+**Key parameters:** `bs=256`, `MBS=8`, `levels=5`, `per_scale_mixer_widths=[1.0×3, 0.5×3]` (R0 mixer pattern; W2 dropped per L=9 R0+T-lower BPB cost), `low_rank=4`, `mlp_expansion=10`, `pkm_enabled=False`, `fwpkm_num_keys=8281`, `tie_embedding_to_lm_head=True`, `lifting_offdiag_structure="lower_triangular"` (T-lower), `wavelet_crawl=False`.
 
 | Variant | bs | MBS | levels | epochs | per_scale_mixer_widths | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Steps/epoch | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Test 1 (1ep) | 256 | 8 | 5 | 1 | [1.0×3, 0.5×3] | 1.1762 † | **3.6393** | **6,867 MiB** | 2,876 MiB | **~58,500** | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
 | Test 1 (5ep) | 256 | 8 | 5 | 5 | [1.0×3, 0.5×3] | 1.0796 † | 3.3341 | 6,867 MiB | — | ~58,500 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
 | NB (1ep) | 16384 | 1 | 7 | 1 | [0.5×4, 0.25×4] | 1.2478 | 3.8561 | 23,110 MiB | 2,914 MiB | ~7,300 | [link](logs/wikitext-103_2026-05-09_13-09-10/log.txt) |
-| **NB256_L5_1ep (queued)** | 256 | 8 | 5 | 1 | [0.5×3, 0.25×3] | pending | pending | pending | pending | ~58,500 | queued |
-| **NB256_L7_1ep (queued, boundary)** ‡ | 256 | 8 | 7 | 1 | [0.5×4, 0.25×4] | pending | pending | pending | pending | ~58,500 | queued |
-| **NB256_L5_5ep (queued)** | 256 | 8 | 5 | 5 | [0.5×3, 0.25×3] | pending | pending | pending | pending | ~58,500 | queued |
+| **B3_1ep (queued)** | 256 | 8 | 5 | 1 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
+| **B3_L7_1ep (queued, boundary)** ‡ | 256 | 8 | 7 | 1 | [1.0×4, 0.5×4] | pending | pending | pending | pending | ~58,500 | queued |
+| **B3_5ep (queued)** | 256 | 8 | 5 | 5 | [1.0×3, 0.5×3] | pending | pending | pending | pending | ~58,500 | queued |
 
 † BPB across runs with different `block_size` is not strictly apples-to-apples; best val is more comparable.
 
-‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question NB256_L7_1ep answers.
+‡ Boundary case: at bs=256 with levels=7, the coarsest wavelet scale has only 256/2^7 = 2 tokens. Whether this matters in practice is itself the question B3_L7_1ep answers. Per-width contractions are now off the table everywhere, so even the boundary test uses R0 widths.
 
-**Decision criteria.** Best val is the headline comparison. If NB256_L5 (or L7) lands within ~0.05 of Test 1's 3.6393, the production stack candidate becomes "Test 1 throughput + NB stability ingredients" — major reframing of the production direction. If both land closer to NB's 3.8561, the bs=16384 commitment is paying for something other than just BPB number. Comparing L5 vs L7 separately disentangles whether the boundary case is a real problem at bs=256.
+**Decision criteria.** Best val is the headline comparison. If B3_1ep lands within ~0.05 of Test 1's 3.6393 (or B3_5ep within ~0.05 of Test 1 5ep's 3.3341), B3 becomes the production stack — major reframing of the project's direction. If best val instead lands closer to NB's 3.8561, the bs=16384 commitment is paying for something beyond just BPB. B3_5ep is the matched-budget production-decision datapoint; B3_L7_1ep separately probes whether the bs=256 + L=7 boundary case is a real problem.
 
 ---
 

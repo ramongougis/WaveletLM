@@ -30,7 +30,15 @@
 # After everything completes, a new combined 5-epoch run will fold the surviving
 # winners into a new post-parameter-reduction relative baseline.
 
-set -euo pipefail
+# `set -uo pipefail` (without `-e`) — we want strict undefined-variable and
+# pipeline-failure detection, but NOT auto-exit on non-zero return. The
+# previous `set -e` was killing the script after train.py exits, even with
+# `|| echo "..."` guards in place — likely because torch.compile's atexit
+# subprocess cleanup is sending a signal that bash interprets unusually.
+# Removing `-e` lets the queue continue past any single-run failure; we still
+# get a script-wide stop on truly fatal issues (unset variables, broken
+# pipelines, etc.).
+set -uo pipefail
 
 # Temp config file used for all train.py --config invocations. Auto-deleted
 # on any exit path. Canonical config.json is NEVER modified by this script.
@@ -60,15 +68,21 @@ git_commit_push() {
     git push || true
 }
 
-# 1-epoch sweep base (L=1 / levels=7 / bs=16384, on top of the New Baseline
-# (NB) = R0 + W2 mixer + T-lower wavelet off-diagonal masking).
-# NB = R0 with per_scale_mixer_widths=[0.5×4, 0.25×4] (W2) and
-# lifting_offdiag_structure="lower_triangular" (T-lower). T-lower's masked
-# positions are exact zero (StructuredLinear forward applies bool mask via
-# `weight * mask`). Dense storage matches R0's 117.50M lifting (50% of weight
-# entries are zeros — kept for stability rather than parameter reduction).
-# Historical pre-NB runs (DBD, M1-M4, BAND/BD/MON sweeps, prior CB-stack runs)
-# overrode these with their own per-run patches; new runs inherit NB by default.
+# 1-epoch sweep base — Baseline 3 (B3) defaults.
+# B3 = Test 1 + T-lower lifting − wavelet_crawl. Architecturally:
+#   - Test 1 throughput regime: bs=256, MBS=8 (~58,500 steps/epoch vs the
+#     bs=16384 stack's ~7,300 at matched epoch budget)
+#   - Test 1 structural choices: levels=5, low_rank=4, R0 mixer pattern
+#     [1.0×3, 0.5×3] (W2 mixer contraction dropped — per L=9 R0+T-lower
+#     finding that W2 costs ~0.0100 BPB at depth)
+#   - Test 1 reductions: mlp_expansion=10, pkm_enabled=False,
+#     fwpkm_num_keys=8281, tie_embedding_to_lm_head=True
+#   - NB stability ingredient: lifting_offdiag_structure="lower_triangular"
+#     (T-lower; per-matrix spectral-norm cap, exact-zero masked positions)
+#   - Cleanup: wavelet_crawl=False (deprecated convolutional component)
+# Historical pre-B3 runs (DBD, M1-M4, BAND/BD/MON sweeps, prior CB/NB-stack
+# runs, NB at bs=16384) overrode these with their own per-run patches; new
+# runs inherit B3 by default.
 BASE_PATCH_1EP='{
     "dataset": "wikitext-103",
     "layers": 1,
@@ -77,11 +91,11 @@ BASE_PATCH_1EP='{
     "pkm_enabled": false,
     "fwpkm_num_keys": 8281,
     "tie_embedding_to_lm_head": true,
-    "micro_batch_size": 1,
+    "micro_batch_size": 8,
     "grad_accum": 1,
-    "block_size": 16384,
-    "levels": 7,
-    "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25],
+    "block_size": 256,
+    "levels": 5,
+    "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5],
     "wavelet_crawl": false,
     "lifting_diaglowrank": false,
     "lifting_level_sharing": false,
@@ -101,11 +115,11 @@ BASE_PATCH_5EP='{
     "pkm_enabled": false,
     "fwpkm_num_keys": 8281,
     "tie_embedding_to_lm_head": true,
-    "micro_batch_size": 1,
+    "micro_batch_size": 8,
     "grad_accum": 1,
-    "block_size": 16384,
-    "levels": 7,
-    "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25],
+    "block_size": 256,
+    "levels": 5,
+    "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5],
     "wavelet_crawl": false,
     "lifting_diaglowrank": false,
     "lifting_level_sharing": false,
@@ -157,11 +171,15 @@ run_ablation() {
     echo "============================================================"
 
     build_run_config "$BASE_JSON" "$OVERRIDE_JSON"
-    # Guard `train.py` against non-zero exit (e.g. PyTorch / torch.compile
-    # cleanup warnings, AMP shutdown quirks) — without this, `set -e` halts
-    # the entire queue mid-sweep even after a clean training run.
-    python train.py --config "$TMP_CFG" || \
-        echo "[runs.sh] train.py exited non-zero; continuing to next ablation"
+    # Diagnostic: capture train.py's actual exit code so we can SEE what's
+    # happening when the queue halts unexpectedly. With `set -e` removed at
+    # script top, a non-zero exit no longer halts the queue, but we still
+    # want it visible in the log.
+    python train.py --config "$TMP_CFG"
+    local TRAIN_EXIT=$?
+    if [ "$TRAIN_EXIT" -ne 0 ]; then
+        echo "[runs.sh] train.py exited with code $TRAIN_EXIT; continuing to next ablation"
+    fi
     run_inference_vram_latest
     git_commit_push "${COMMIT_MSG}"
 }
@@ -768,45 +786,40 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 #     "levels=9: retry on R0+T-lower stack (1ep, per_scale_mixer_widths=[1.0x5, 0.5x5], T-lower lifting from NB defaults)"
 
 
-# ---- NB256_1ep: NB stack at bs=256, MBS=8 (Test 1 throughput regime) -------
+# ---- B3_1ep: Baseline 3 verification (1ep) ---------------------------------
 # Tests whether NB's BPB cost (vs Test 1) shrinks at Test 1's gradient-update
 # advantage (~58,500 steps/epoch vs NB's ~7,300 at matched epoch budget). Drops
 # to levels=5 since NB's levels=7 with bs=256 would leave only 256/2^7 = 2
-# tokens at the coarsest scale (degenerate). per_scale_mixer_widths set to
-# 6 entries [0.5x3, 0.25x3] to match levels+1.
-#
-# Decision criteria: if best val lands within ~0.05 of Test 1's 3.6393, the
-# production stack candidate becomes "Test 1 throughput + NB stability
-# ingredients" — a major reframing of the production direction. If it lands
-# closer to NB's 3.8561, the bs=16384 commitment is paying for something
-# other than just BPB number.
-run_ablation "NB256_L5_1ep NB stack at bs=256, MBS=8, levels=5 (Test 1 throughput regime)" \
+# B3 = Test 1 + T-lower lifting − wavelet_crawl. The 1ep verification run
+# uses BASE_PATCH_1EP unchanged (B3 is the default). Decision criteria:
+# if best val lands within ~0.05 of Test 1 (1ep: 3.6393, 5ep: 3.3341), B3
+# becomes the production stack — major reframing toward "Test 1 throughput
+# + T-lower stability." If best val lands closer to the prior bs=16384
+# stack's number (3.8561 at NB 1ep, etc.), the bs=16384 commitment is
+# paying for something other than BPB.
+run_ablation "B3_1ep Baseline 3 verification (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.25, 0.25, 0.25]}' \
-    "NB256_L5_1ep: NB stack at bs=256, MBS=8, levels=5 (Test 1 throughput regime; T-lower + W2 retained from NB)"
+    '{}' \
+    "B3_1ep: Baseline 3 = Test 1 + T-lower lifting − wavelet_crawl (1ep, bs=256, MBS=8, levels=5, R0 mixer widths)"
 
-# Same as NB256_L5_1ep but with NB's full levels=7. Tests the boundary regime
-# explicitly: bs=256 / 2^7 = 2 tokens at the coarsest wavelet scale, which is
-# the degenerate edge of the cascade's expressive range. If it trains and
-# lands competitively, the boundary doesn't actually matter at bs=256 — and
-# we get to keep NB's exact decomposition depth in the throughput-friendly
-# regime. If it underperforms NB256_L5_1ep, the levels=5 choice is the right
-# one for bs=256.
-run_ablation "NB256_L7_1ep NB stack at bs=256, MBS=8, levels=7 (boundary test: 2 tokens at coarsest scale)" \
+# B3_L7_1ep — same as B3_1ep but at levels=7 with R0 mixer pattern at depth 7
+# ([1.0×4, 0.5×4]). Tests the boundary regime explicitly: bs=256 / 2^7 = 2
+# tokens at the coarsest wavelet scale. If it trains and lands competitively
+# vs B3_1ep (levels=5), the boundary doesn't bind at this regime. If it
+# underperforms, levels=5 is the right choice for the bs=256 throughput
+# regime. Per-width contractions (W2) deprecated — uses R0 mixer widths.
+run_ablation "B3_L7_1ep Baseline 3 at levels=7 (boundary test: 2 tokens at coarsest scale)" \
     "$BASE_PATCH_1EP" \
-    '{"micro_batch_size": 8, "block_size": 256, "levels": 7, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25]}' \
-    "NB256_L7_1ep: NB stack at bs=256, MBS=8, levels=7 (boundary case; coarsest scale has only 2 tokens at bs=256; explicit per_scale_mixer_widths=[0.5x4, 0.25x4] for 8 scales)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
+    "B3_L7_1ep: Baseline 3 at levels=7 (1ep, bs=256, MBS=8, R0 mixer widths [1.0x4, 0.5x4]; boundary case — coarsest scale has only 2 tokens at bs=256)"
 
-# 5-epoch confirmation of NB256_L5. Same config as NB256_L5_1ep but at 5 epochs
-# via BASE_PATCH_5EP — confirms whether the throughput-regime BPB win (if any
-# at 1ep) holds with full convergence. ~7.5h total wall-clock at the bs=256
-# throughput rate vs NB's ~6.4h at 5ep on bs=16384 — comparable cost, so it's
-# the matched-epoch comparison that pins down whether bs=16384 is still
-# justified at the production budget.
-run_ablation "NB256_L5_5ep NB stack at bs=256, MBS=8, levels=5 (5 epochs, Test 1 throughput regime)" \
+# 5-epoch confirmation of B3 — uses BASE_PATCH_5EP unchanged (B3 is the
+# default). The matched-budget production-decision datapoint vs Test 1 5ep
+# (3.3341 best val).
+run_ablation "B3_5ep Baseline 3 at 5 epochs" \
     "$BASE_PATCH_5EP" \
-    '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.25, 0.25, 0.25]}' \
-    "NB256_L5_5ep: NB stack at bs=256, MBS=8, levels=5 (5ep, Test 1 throughput regime; matched-epoch comparison vs NB 5ep)"
+    '{}' \
+    "B3_5ep: Baseline 3 at 5 epochs (bs=256, MBS=8, levels=5, R0 mixer widths; production-decision datapoint vs Test 1 5ep)"
 
 # run_ablation "levels=11 retry on R0+T-lower (no W2)" \
 #     "$BASE_PATCH_1EP" \
@@ -829,10 +842,10 @@ run_ablation "NB256_L5_5ep NB stack at bs=256, MBS=8, levels=5 (5 epochs, Test 1
 # Note: BASE_PATCH_5EP has W2 mixer + low_rank=4 + T-lower lifting (NB stack).
 # The override turns OFF T-lower (lifting_offdiag_structure="none") to recover
 # the R0-without-lifting-mask stack, leaving the W2 mixer setting in place.
-run_ablation "Mix_R0_0.5_0.25 mixer contraction [0.5x4, 0.25x4] on R0 baseline (5 epochs)" \
-    "$BASE_PATCH_5EP" \
-    '{"lifting_offdiag_structure": "none"}' \
-    "Mix_R0_0.5_0.25: per_scale_mixer_widths=[0.5x4, 0.25x4] on R0 baseline (5ep, no lifting mask)"
+# run_ablation "Mix_R0_0.5_0.25 mixer contraction [0.5x4, 0.25x4] on R0 baseline (5 epochs)" \
+#     "$BASE_PATCH_5EP" \
+#     '{"lifting_offdiag_structure": "none"}' \
+#     "Mix_R0_0.5_0.25: per_scale_mixer_widths=[0.5x4, 0.25x4] on R0 baseline (5ep, no lifting mask)"
 
 
 # ---- Mixer contraction sweep on NB stack (1ep each) -------------------------
@@ -842,41 +855,43 @@ run_ablation "Mix_R0_0.5_0.25 mixer contraction [0.5x4, 0.25x4] on R0 baseline (
 # T-lower+low_rank=4 spectral-norm constraint should make tighter mixers
 # tractable now. Compare 1-epoch BPB against NB's reference. Production
 # candidate: tightest setting that lands within ~0.005 BPB of NB.
-run_ablation "Mix_NB_0.4_0.2 mixer contraction [0.4x4, 0.2x4] on NB" \
-    "$BASE_PATCH_1EP" \
-    '{"per_scale_mixer_widths": [0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]}' \
-    "Mix_NB_0.4_0.2: per_scale_mixer_widths=[0.4x4, 0.2x4] on NB (1ep)"
+# run_ablation "Mix_NB_0.4_0.2 mixer contraction [0.4x4, 0.2x4] on NB" \
+#     "$BASE_PATCH_1EP" \
+#     '{"per_scale_mixer_widths": [0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]}' \
+#     "Mix_NB_0.4_0.2: per_scale_mixer_widths=[0.4x4, 0.2x4] on NB (1ep)"
 
-run_ablation "Mix_NB_0.3_0.15 mixer contraction [0.3x4, 0.15x4] on NB" \
-    "$BASE_PATCH_1EP" \
-    '{"per_scale_mixer_widths": [0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]}' \
-    "Mix_NB_0.3_0.15: per_scale_mixer_widths=[0.3x4, 0.15x4] on NB (1ep)"
+# run_ablation "Mix_NB_0.3_0.15 mixer contraction [0.3x4, 0.15x4] on NB" \
+#     "$BASE_PATCH_1EP" \
+#     '{"per_scale_mixer_widths": [0.3, 0.3, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15]}' \
+#     "Mix_NB_0.3_0.15: per_scale_mixer_widths=[0.3x4, 0.15x4] on NB (1ep)"
 
-run_ablation "Mix_NB_0.25_0.125 mixer contraction [0.25x4, 0.125x4] on NB" \
-    "$BASE_PATCH_1EP" \
-    '{"per_scale_mixer_widths": [0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]}' \
-    "Mix_NB_0.25_0.125: per_scale_mixer_widths=[0.25x4, 0.125x4] on NB (1ep)"
+# run_ablation "Mix_NB_0.25_0.125 mixer contraction [0.25x4, 0.125x4] on NB" \
+#     "$BASE_PATCH_1EP" \
+#     '{"per_scale_mixer_widths": [0.25, 0.25, 0.25, 0.25, 0.125, 0.125, 0.125, 0.125]}' \
+#     "Mix_NB_0.25_0.125: per_scale_mixer_widths=[0.25x4, 0.125x4] on NB (1ep)"
 
-run_ablation "Mix_NB_0.1_0.05 mixer contraction [0.1x4, 0.05x4] on NB (retry of previously NaN-failed config)" \
-    "$BASE_PATCH_1EP" \
-    '{"per_scale_mixer_widths": [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05]}' \
-    "Mix_NB_0.1_0.05: per_scale_mixer_widths=[0.1x4, 0.05x4] on NB (1ep, retry of previously NaN'd config)"
+# run_ablation "Mix_NB_0.1_0.05 mixer contraction [0.1x4, 0.05x4] on NB (retry of previously NaN-failed config)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"per_scale_mixer_widths": [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05]}' \
+#     "Mix_NB_0.1_0.05: per_scale_mixer_widths=[0.1x4, 0.05x4] on NB (1ep, retry of previously NaN'd config)"
 
 
-# ---- Cross-level group sharing on NB stack ----------------------------------
-# Retry of lifting_level_sharing=true on the NB stack. Previously NaN'd at
+# ---- Cross-level group sharing on B3 stack ----------------------------------
+# Retry of lifting_level_sharing=true on the B3 stack. Previously NaN'd at
 # step 2250 on the uncompressed (Complete) Wavelet Diagonal and Low Rank
 # Compression sweep — same general failure family as the levels=11 cliff
 # (cross-level parameter sharing amplifies cascade dynamics). With T-lower
 # capping per-matrix spectral norm, the cross-level coupling may now be
-# tractable. Compare 1-epoch BPB against NB's reference; if it trains and
+# tractable. Compare 1-epoch BPB against B3's reference; if it trains and
 # BPB is within ~0.01, cross-level sharing becomes a stability-friendly
 # addition (note: NOT a parameter reduction — masking compression has been
 # deprecated as a production direction; this is for stability research only).
-run_ablation "LLS_NB lifting_level_sharing on NB stack (retry of previously NaN-failed config)" \
+# Inherits B3 defaults from BASE_PATCH_1EP — only override is
+# lifting_level_sharing=true.
+run_ablation "LLS_B3 lifting_level_sharing on B3 stack (retry of previously NaN-failed config)" \
     "$BASE_PATCH_1EP" \
     '{"lifting_level_sharing": true}' \
-    "LLS_NB: lifting_level_sharing=true on NB stack (1ep, retry of previously NaN'd config)"
+    "LLS_B3: lifting_level_sharing=true on B3 stack (1ep, retry of previously NaN'd config)"
 
 
 echo ""
