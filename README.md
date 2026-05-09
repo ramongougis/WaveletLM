@@ -354,7 +354,7 @@ Selections from the [WikiText-103 best run's generations log](https://github.com
 > however, it reintensified slightly and later peaked with winds of 100 
 > mph (160 km/h) as it drifted through western Cuba.
 
-Note the typical failure mode with the naive generation: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model is prevented from employing a more conservative sampling regime.
+Note the typical failure mode with the naive generation: register-coherent meteorological prose, but the model freely interleaves the names of multiple unrelated real storms (Huron, Humberto, Ione) within a single passage. Without `--strategies`, the model does not employ a more conservative sampling regime.
 
 </details>
 
