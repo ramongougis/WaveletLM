@@ -519,7 +519,7 @@ Longer training time, more regularization, and parameter compression are the sur
 3. [(Complete) Larger Block Size](#complete-larger-block-size)
 3. [(Complete) More Levels](#complete-more-levels)
 4. [(Complete) Wavelet Diagonal and Low Rank Compression](#complete-wavelet-diagonal-and-low-rank-compression)
-5. [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion)
+5. [(Complete) (Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
 6. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
 8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
@@ -616,13 +616,13 @@ For future tests, we have changed the following hyperparameters. The result is t
 | Run | Epochs | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
 | Test 1 | 1 | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) | 1.1762 † | 344.63M | 6,867 MiB | - |
-| R0 | 1 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
+| **R0** | 1 | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for future tests |
 | Test 1 | 5 | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | 1.0796 | 344.63M | 6,867 MiB | 5-epoch production result |
-| R0 | 5 | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | 1.0974 | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
+| **R0** | 5 | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | 1.0974 | 392.91M | 23,411 MiB | 5-epoch comparison to Test 1 |
 
 At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to reducing micro_batch_size to allow for increased context and deeper scale decomposition that downstream work will likely need. 
 
-**Decision:** Use R0's configuration at 1 epoch for future tests. If the increased VRAM cost and performance end up being suboptimal, revert to Test 1 and incorporate any other Future Plans sections' improvements.
+**Decision:** Use R0's configuration at 1 epoch for future tests. If the increased VRAM cost ends up being suboptimal, or the performance does not improve relative to lower block size after other plans are tested, revert to Test 1's config and incorporate any other Future Plans sections' improvements into it.
 
 ### (Complete) More Levels
 
@@ -641,21 +641,21 @@ At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to 
 
 **Decision:** Deprecated in favor of other off-diagonal compression schemes in these sections: [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent) and [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
 
-### (Complete) Per-Scale Mixer Width Expansion
+### (Complete) Per-Scale Mixer Width Contraction and Expansion
 
 **Results:** 
 - *Contraction*: `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) achieves a 1-epoch sliding BPB of 1.2437 vs. the default's 1.2361 = +0.0076 with 39% fewer mixer parameters (35.70M vs 58.82M). More aggressive contraction with `per_scale_mixer_widths=[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250.
-- *Expansion*: `per_scale_mixer_widths=[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) lands at 5-epoch BPB **1.1037** vs. [headline 1.0974](logs/wikitext-103_2026-05-03_02-13-07/log.txt) = +0.0063 at +24% mixer params (no improvement).
+- *Expansion*: `per_scale_mixer_widths=[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) achieves a 5-epoch BPB of 1.1037 vs. the R0 baseline of 1.0974]. Change is +0.0063 BPB at +24% mixer params and clearly unfavorable.
 
 Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125) worth testing if the above's 5-epoch confirmation ships cleanly.
+**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05) are worth testing once stability improves and the 0.5/0.25 results are proven at 5 epochs vs. the R0 baseline.
 
 ### (Complete) Mixer Low Rank
 
-**Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 (-0.0019 vs reference 1.2361). 5-epoch confirmation ([LR16_5ep](logs/wikitext-103_2026-05-05_21-36-45/log.txt)) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, so essentially unchanged. The 1-epoch advantage didn't amplify with more training; the win was likely early-training expressivity that washes out at convergence. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
+**Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 vs. the reference BPB of 1.2361. A [5-epoch test](logs/wikitext-103_2026-05-05_21-36-45/log.txt) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, a negligible difference. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** keep `low_rank=4`. +1.92M params for a 5-epoch tie isn't worth it.
+**Decision:** Keep `low_rank=4`.
 
 ### (Complete) Decompose Bypass Disablement Ablation
 
@@ -711,7 +711,10 @@ See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the 
 | MON 256 | 15.20M | 12.94% | 1.2533 | 63.1% | [link](logs/wikitext-103_2026-05-07_19-18-23/log.txt) |
 | Full wavelet (LR16) | 117.50M | 100.00% | 1.2342 | 100% (ceiling) | [link](logs/wikitext-103_2026-05-05_07-07-45/log.txt) |
 
-**Decision:** BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance.
+**Decision:** 
+- BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance. 
+- The "T lower" lower triangular variant is likely best long-term due to reducing wavelet parameters by 50.05%, but recovering 92.7% of the BPB gap between full diagonal and uncompressed (-0.0038 BPB).
+- Moving forward with BAND 128, but considering swapping with T lower when accuracy is required.
 
 ### (Complete) New Testing Baseline with Mixer & Wavelet Parameter Reductions
 

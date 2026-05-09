@@ -686,29 +686,37 @@ run_ablation "MLP_PQ03125 (d=0.03125 -> p=48,q=16)" \
 
 # ---- Levels retry on CB stack ------------------------------------------------
 # Previous attempts at levels=9 and levels=11 NaN'd at the L=1 / no-compression
-# baseline (the L=11 cascade-explosion cliff), and no stability fix cleared
-# them. The CB stack changes the math: BAND128 lifting (~14M lifting params,
+# baseline (the levels=11 cascade-explosion cliff), and no stability fix cleared
+# them. levels=13 also OOM'd without gradient_checkpointing on the uncompressed
+# stack. The CB stack changes the math: BAND128 lifting (~14M lifting params,
 # 87.8% reduction) plus low_rank=4 cap the spectral norm of each cascade
 # matrix, which is exactly the property that determines whether the cascade
-# stays bounded across deeper levels. Worth retrying as a quick test before
-# the optimizer sweep — if BAND128's structural compression alone clears the
-# cliff, that confirms the cascade-bandwidth hypothesis at low cost. If they
-# still NaN, the cliff is downstream of structural compression (precision /
-# Adagrad dynamics) and the optimizer sweep is the right next move.
+# stays bounded across deeper levels — and the lifting-param savings free
+# enough VRAM that levels=13 may now fit too. Worth retrying as a quick test
+# before the optimizer sweep — if BAND128's structural compression alone
+# clears the cliff, that confirms the cascade-bandwidth hypothesis at low
+# cost. If they still NaN, the cliff is downstream of structural compression
+# (precision / Adagrad dynamics) and the optimizer sweep is the right next
+# move.
 #
-# Compare 1-epoch BPB against CB's 1.2586. Levels=11 with bs=16384 leaves only
-# 8 tokens at the coarsest scale — boundary effects may dominate even if it
-# trains; treat the BPB-vs-CB delta as a "did the cascade survive" signal,
-# not a "is this a better config" signal.
-run_ablation "L9 levels=9 retry on CB stack" \
+# Compare 1-epoch BPB against CB's 1.2586. levels=11 with bs=16384 leaves only
+# 8 tokens at the coarsest scale; levels=13 leaves only 2 tokens — boundary
+# effects may dominate even if they train; treat the BPB-vs-CB delta as a
+# "did the cascade survive" signal, not a "is this a better config" signal.
+run_ablation "levels=9 retry on CB stack" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"levels\":9}')")" \
-    "L9: levels=9 retry on CB stack (1ep)"
+    '{"levels": 9, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
+    "levels=9: retry on CB stack (1ep, per_scale_mixer_widths extended to 10 entries)"
 
-run_ablation "L11 levels=11 retry on CB stack" \
+run_ablation "levels=11 retry on CB stack" \
     "$BASE_PATCH_1EP" \
-    "$(python -c "print('{\"levels\":11}')")" \
-    "L11: levels=11 retry on CB stack (1ep)"
+    '{"levels": 11, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
+    "levels=11: retry on CB stack (1ep, per_scale_mixer_widths extended to 12 entries)"
+
+run_ablation "levels=13 retry on CB stack" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 13, "per_scale_mixer_widths": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]}' \
+    "levels=13: retry on CB stack (1ep, per_scale_mixer_widths extended to 14 entries; coarsest scale has only 2 tokens at bs=16384)"
 
 
 echo ""
