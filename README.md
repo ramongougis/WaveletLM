@@ -226,7 +226,7 @@ Since PG-19 contains data from 1919 and earlier, this prompt is out of distribut
 
 A second out-of-distribution prompt. The model has no training data on spaceships or interstellar travel, so it routes these to the closest pre-1919 register: a Victorian mechanical-engineering treatise with a figure caption.
 
-**Sample E** with prompt "The soldiers marched" - naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample E** with prompt "The soldiers marched" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
 
 > The soldiers marched in uniform. Ten minutes later, Mr. Farrell 
 > approached Mr. Talbot and the captain of police. He had been told that 
@@ -241,7 +241,7 @@ A second out-of-distribution prompt. The model has no training data on spaceship
 
 One-shot naive sample (without `--strategies`). Naive samples retain more of the model's raw distribution and tend to mix domains more loosely.
 
-**Sample F** with prompt "The history of" - naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample F** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
 
 > The history of her interest in the modern world during this quarter, 
 > has been given to the journal in which she appeared during her stay; 
