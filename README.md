@@ -548,8 +548,8 @@ Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were 
 
 | Run | Layers | Epochs | BPB sliding | PPL sliding | Params | Train time | Links |
 |-----|--------|--------|-------------|-------------|--------|------------|-------|
-| A | 1 | 1 | 1.1648 | 38.04 | 586.15M | ~1.5h | [link](logs/wikitext-103_2026-04-29_20-45-37/log.txt) |
-| B | 2 | 1 | 1.1129 | 32.35 | 882.51M | ~3h | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) |
+| A | 1 | 1 | 1.1648 | 38.04 | 586.15M | 2.09h | [link](logs/wikitext-103_2026-04-29_20-45-37/log.txt) |
+| B | 2 | 1 | 1.1129 | 32.35 | 882.51M | 3.43h | [link](logs/wikitext-103_2026-04-29_22-52-28/log.txt) |
 | C | 1 | 5 | 1.0809 | 29.28 | 586.15M | 9.74h | [link](logs/wikitext-103_2026-04-30_02-20-35/log.txt) |
 | D | 2 | 5 (headline) | **1.0140** | **23.75** | 882.51M | 16.25h | [link](logs/wikitext-103_2026-04-22_01-36-47/log.txt) |
 | E | 1 | 8 (compute-equalized) | 1.0715 | 28.43 | 586.15M | 15.86h | [link](logs/wikitext-103_2026-04-30_12-20-45/log.txt) |
