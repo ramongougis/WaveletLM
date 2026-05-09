@@ -568,7 +568,7 @@ Both runs were trained at near-equal wall-clock (L=1 E=8: 15.86h; L=2 E=5: 16.25
 
 **Results:** 
 - 41% fewer parameters
-- 21% less per-epoch training time
+- 21% less training time
 - minimal BPB decrease (Δ = −0.0013)
 - 26% smaller train/val loss gap (implicit regularization)
 
@@ -596,8 +596,8 @@ More info: [runs.md](runs.md#combined-parameter-reduction-test-1-baseline-reduct
 For future tests, we have changed the following hyperparameters. The result is the R0 reference state in the table below:
 
 - All four parameter reduction changes above
-- `block_size=256 → 16384` for more context and direct comparison with other models
-- `levels=5 → 7` to process the higher context
+- `block_size: 256 → 16384` for more context and direct comparison with other models
+- `levels: 5 → 7` to process the higher context
 - `per_scale_mixer_widths` extended to 8 entries to match levels + 1 scales
 - `micro_batch_size: 8 → 1` to accommodate the larger block size
 - `wavelet_crawl: True → False` to remove the only (very small) convolutional component, and because it showed no performance benefit
@@ -612,7 +612,7 @@ The +0.156 BPB gap between Test 1 and R0 is dominated by the 5ep → 1ep change,
 
 Note, too, that while `levels=7` for R0, `levels=9` and `levels=11` are technically possible, but not used here due to needing more stability via optimizer changes and module-targeted parameter compression. 
 
-See the [next section](#complete-per-scale-configuration-at-longer-block-size) for more  info on the block size
+See the [next section](#complete-per-scale-configuration-at-longer-block-size) for more info on the block size.
 
 **Decision:** Use R0's configuration for future tests.
 
