@@ -645,11 +645,11 @@ At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796). This is due to 
 
 **Results:** 
 - *Contraction*: `per_scale_mixer_widths=[0.5×4, 0.25×4]` ([logs/wikitext-103_2026-05-05_05-48-40](logs/wikitext-103_2026-05-05_05-48-40/log.txt)) achieves a 1-epoch sliding BPB of 1.2437 vs. the default's 1.2361 = +0.0076 with 39% fewer mixer parameters (35.70M vs 58.82M). More aggressive contraction with `per_scale_mixer_widths=[0.1×4, 0.05×4]` ([logs/wikitext-103_2026-05-05_04-37-47](logs/wikitext-103_2026-05-05_04-37-47/log.txt)) NaN'd at step 1250.
-- *Expansion*: `per_scale_mixer_widths=[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) achieves a 5-epoch BPB of 1.1037 vs. the R0 baseline of 1.0974]. Change is +0.0063 BPB at +24% mixer params and clearly unfavorable.
+- *Expansion*: `per_scale_mixer_widths=[1.5×4, 0.5×4]` ([logs/wikitext-103_2026-05-05_14-00-32](logs/wikitext-103_2026-05-05_14-00-32/log.txt)) achieves a 5-epoch BPB of 1.1037 vs. the R0 baseline of 1.0974. The gain of +0.0063 BPB with 24% more mixer parameters is clearly unfavorable.
 
 Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contractions-post-combined-reduction-baseline-l1-levels7-epochs1).
 
-**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05) are worth testing once stability improves and the 0.5/0.25 results are proven at 5 epochs vs. the R0 baseline.
+**Decision:** `per_scale_mixer_widths=[0.5×4, 0.25×4]` contraction is best. Follow-up tightenings (0.4/0.2, 0.3/0.15, 0.25/0.125, and 0.1/0.05) are worth testing once stability improves and the 0.5/0.25 results are proven at 5 epochs vs. the R0 baseline. Expansion will no longer be considered.
 
 ### (Complete) Mixer Low Rank
 
