@@ -343,7 +343,7 @@ Selections from the [WikiText-103 best run's generations log](https://github.com
 > two columns , with reinforcements arriving from all sides within 
 > hours . The main
 
-**Sample F** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`):
+**Sample F** with prompt "The history of" and naive sampling (no `--strategies`, default `temp=1.0`, and `top_p=0.95`), but with the spacing fix included in naive generations:
 
 > The history of the tropical cyclone is unknown, but official records 
 > suggest it formed on May 31. It developed into a tropical storm later 
