@@ -586,10 +586,10 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 #   The four reductions (mlp_expansion=10, pkm_enabled=False,
 #   fwpkm_num_keys=8281, tie_embedding_to_lm_head=True) come from
 #   BASE_PATCH_1EP / config.json defaults.
-run_ablation "Test1_1ep parameter-reduction config at 1 epoch" \
-    "$BASE_PATCH_1EP" \
-    '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lifting_offdiag_structure": "none"}' \
-    "Test1_1ep: parameter-reduction config (Test 1) at 1 epoch (bs=256, levels=5, wavelet_crawl=True, no BAND128)"
+# run_ablation "Test1_1ep parameter-reduction config at 1 epoch" \
+#     "$BASE_PATCH_1EP" \
+#     '{"micro_batch_size": 8, "block_size": 256, "levels": 5, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lifting_offdiag_structure": "none"}' \
+#     "Test1_1ep: parameter-reduction config (Test 1) at 1 epoch (bs=256, levels=5, wavelet_crawl=True, no BAND128)"
 
 
 PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding_density": 0.1}'

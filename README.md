@@ -521,11 +521,11 @@ Longer training time, more regularization, and parameter compression are the sur
 5. [(Complete) Per-Scale Mixer Width Expansion](#complete-per-scale-mixer-width-expansion)
 6. [(Complete) Low Rank Ablations](#complete-low-rank-ablations)
 7. [(Complete) Decompose Bypass Disablement Ablation](#complete-decompose-bypass-disablement-ablation)
-8. [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent)
-9. [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
-10. [New Testing Baseline with Mixer & Wavelet Parameter Reductions](#new-testing-baseline-with-mixer--wavelet-parameter-reductions)
+8. [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent)
+9. [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
+10. [(Complete) New Testing Baseline with Mixer & Wavelet Parameter Reductions](#complete-new-testing-baseline-with-mixer--wavelet-parameter-reductions)
 11. [Sparse Embedding with (p, q) Striding](#sparse-embedding-with-p-q-striding)
-12. [Encoder-Decoder Embedding](#encoder-decoder-embedding)
+12. [(Complete) Encoder-Decoder Embedding](#complete-encoder-decoder-embedding)
 13. [MLP Structural Compression](#mlp-structural-compression)
 14. [Gradient Checkpointing](#gradient-checkpointing)
 15. [Levels = 9 and 11 Revisited (Conditional on M-Sweep Survivors)](#levels--9-and-11-revisited-conditional-on-m-sweep-survivors)
@@ -605,9 +605,9 @@ For future tests, we have changed the following hyperparameters. The result is t
 
 | Run | Recipe | Folder | BPB (sliding) | Params | Train VRAM | Notes |
 |-----|--------|--------|---------------|--------|------------|-------|
-| Test 1 (1ep) | 1ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | pending | pending | 344.63M | ~6.9 GiB | Test 1 config at 1-epoch budget — direct apples-to-apples vs R0 (1ep) for the VRAM-reallocation comparison without epoch confound |
-| Test 1 (5ep) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6.9 GiB | Parameter-reduction winner; 5-epoch production result |
-| R0 (1ep) | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 3,162 MiB | 1-epoch reference for downstream ablations |
+| Test 1 (1ep) | 1ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | pending | pending | 344.63M | ~6,867 MiB | Test 1 config at 1-epoch budget — direct apples-to-apples vs R0 (1ep) for the VRAM-reallocation comparison without epoch confound |
+| Test 1 (5ep) | 5ep, MBS=8, bs=256, levels=5, wavelet_crawl=True | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) | **1.0796** | 344.63M | 6,867 MiB | Parameter-reduction winner; 5-epoch production result |
+| R0 (1ep) | 1ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 23,411 MiB | 1-epoch reference for downstream ablations |
 | R0 (5ep) | 5ep, MBS=1, bs=16384, levels=7, wavelet_crawl=False | [link](logs/wikitext-103_2026-05-03_02-13-07/log.txt) | **1.0974** | 392.91M | 23,411 MiB | 5-epoch production state going forward — cleanest apples-to-apples vs Test 1 (5ep) |
 
 At 5 epochs, R0 costs +0.0178 BPB vs. Test 1 (1.0974 vs 1.0796),  the price of reducing micro_batch_size in order to allow for increased context and deeper scale decomposition that downstream work will likely need. A Test 1 run at 1 epoch is currently queued to give another point of comparison.
@@ -620,15 +620,20 @@ See the [next section](#complete-per-scale-configuration-at-longer-block-size) f
 
 ### (Complete) Per-Scale Configuration at Longer Block Size
 
-**Result:** [levels=7](logs/wikitext-103_2026-05-03_02-13-07/log.txt) wins the L=1 / bs=16384 / `wavelet_crawl=false` sweep at 5-epoch BPB sliding **1.0974** (392.91M params, 23.4 GiB train VRAM). `levels=11` and `levels=9` NaN in fp16 AMP under every stability fix attempted; `levels=13` OOMs without `gradient_checkpointing`. The FWHT is orthogonal, so the runaway is upstream: likely the lifting cascade or Adagrad's sparse-gradient amplification. The two unblockers are lower peak LR (rejected on performance) and a different optimizer (deferred to the [Optimizer Sweep](#optimizer-sweep-muon--adamw)).
+**Results:** 
+- [levels=7](logs/wikitext-103_2026-05-03_02-13-07/log.txt): 5-epoch sliding BPB of 1.0974 with 392.91M params. This is the R0 run above.
+- `levels=9` and `levels=11`: NaN in fp16 AMP under every stability fix attempted at this time.
+- `levels=13` OOMs without `gradient_checkpointing`; likely would NaN otherwise. 
 
-**Decision:** ship `levels=7`; `levels ≥ 9` deferred until the optimizer sweep clears the cascade picture.
+**Decision:** Proceeding with `levels=7` (no change from R0 run) and deferring `levels=9,11, and 13` for post-compression/post-optimizer changes. 
 
 ### (Complete) Wavelet Compression
 
-**Result:** D + U·V^T compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting from 117.44M → 3.33M (97%) and total params 29%, but landed at 1-epoch BPB sliding 1.2860 vs reference 1.2361. Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250. [`tools/analyze_lifting.py`](tools/analyze_lifting.py) confirmed the structural picture (~75% diagonal energy, weak generic low-rank); the failure is the compression's expressive ceiling, not the analysis.
+**Results:** 
+- `D + U·V^T` compression at r=16 (lifting_diaglowrank, [A1](logs/wikitext-103_2026-05-04_16-22-02/log.txt)) reduced lifting wavelet parameters by 97% (from 117.44M to 3.33M) and total model parameters by 29%, but dipped to a 1-epoch sliding BPB of 1.2860 vs. the reference 1-epoch BPB of 1.2361. 
+- Cross-level group sharing (lifting_level_sharing) NaN'd at step 2250. [`tools/analyze_lifting.py`](tools/analyze_lifting.py) confirmed the structural picture (~75% diagonal energy, weak generic low-rank), but gradient stability becomes an issue.
 
-**Decision:** Deprecated in favor of other off-diagonal compression schemes in these sections: [Wavelet Off-Diagonal Masking with Top-K Percent](#wavelet-off-diagonal-masking-with-top-k-percent) and [Wavelet Off-Diagonal Masking with Structured Variants](#wavelet-off-diagonal-masking-with-structured-variants)
+**Decision:** Deprecated in favor of other off-diagonal compression schemes in these sections: [(Complete) Wavelet Off-Diagonal Masking with Top-K Percent](#complete-wavelet-off-diagonal-masking-with-top-k-percent) and [(Complete) Wavelet Off-Diagonal Masking with Structured Variants](#complete-wavelet-off-diagonal-masking-with-structured-variants)
 
 ### (Complete) Per-Scale Mixer Width Expansion
 
@@ -652,13 +657,13 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
 
 **Decision:** Keep both flags `true`. Removal is off the table until the [Optimizer Sweep](#optimizer-sweep-muon--adamw) increases stability. If Muon clears the cascade-amplification issue structurally, disablement can be retested.
 
-### Wavelet Off-Diagonal Masking with Top-K Percent
+### (Complete) Wavelet Off-Diagonal Masking with Top-K Percent
 
 **Results:** Wavelet diagonal + top-k percent off-diagonal mask, ranked by magnitude on the [5-epoch reference checkpoint](logs/wikitext-103_2026-05-03_02-13-07/log.txt) using the [analyze_lifting.py script](tools/analyze_lifting.py). The top_k 10% run recovers 81.5% of the diagonal-only-vs-full gap at +0.0096 BPB with 89.9% lifting parameter reduction. **Unfortunately**, using top-k compression requires a reference checkpoint on the same architecture to compute the mask, so it's not portable to new architectures without redoing training. Structural variants below avoid this setback. Full results in [runs.md](runs.md#wavelet-off-diagonal-masking-with-top-k-percent-in-progress-l1-levels7-epochs1).
 
 **Decision:** Not to be implemented due to duplicate training requirement above.
 
-### Wavelet Off-Diagonal Masking with Structured Variants
+### (Complete) Wavelet Off-Diagonal Masking with Structured Variants
 
 Config options:
   `"lifting_offdiag_structure"`
@@ -702,7 +707,7 @@ See [lifting_constraints.py](tools\lifting_constraints.py) for more info on the 
 
 **Decision:** BAND 128 achieves an 87.8% lifting wavelet parameter reduction at +0.0147 BPB cost vs. the uncompressed reference, striking a comfortable balance between efficiency and performance.
 
-### New Testing Baseline with Mixer & Wavelet Parameter Reductions
+### (Complete) New Testing Baseline with Mixer & Wavelet Parameter Reductions
 
 Merges the banked wins (W2 per-scale mixer widths, `low_rank=4`, BAND 128 lifting) into a single combined-reductions baseline. All downstream compression sweeps (embedding, MLP, FwPKM) compare against this, not the old 1.2361 / 1.0974 references.
 
@@ -745,7 +750,7 @@ Full scheme, requirements, selection algorithm, worked candidates for C=2048 at 
 | 25% (queued) | structural ≡ smallest_q | (6, 2) | 189.43M | pending | pending | pending | pending | |
 | 40% (queued) | structural ≡ smallest_q | (3, 2) | 204.87M | pending | pending | pending | pending | |
 
-### Encoder-Decoder Embedding
+### (Complete) Encoder-Decoder Embedding
 
 A second compression scheme for the token embedding, parallel to the (p, q) striding above but with different structural commitments. Forward path: tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. Output path: C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
 
