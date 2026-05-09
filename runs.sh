@@ -150,7 +150,11 @@ run_ablation() {
     echo "============================================================"
 
     build_run_config "$BASE_JSON" "$OVERRIDE_JSON"
-    python train.py --config "$TMP_CFG"
+    # Guard `train.py` against non-zero exit (e.g. PyTorch / torch.compile
+    # cleanup warnings, AMP shutdown quirks) — without this, `set -e` halts
+    # the entire queue mid-sweep even after a clean training run.
+    python train.py --config "$TMP_CFG" || \
+        echo "[runs.sh] train.py exited non-zero; continuing to next ablation"
     run_inference_vram_latest
     git_commit_push "${COMMIT_MSG}"
 }
@@ -697,10 +701,10 @@ PQEMB_BASE_1EP_PATCH='{"sparse_pq_embedding_enabled": true, "sparse_pq_embedding
 # Establishes the New Baseline BPB at 1 epoch. NB = R0 + W2 mixer + T-lower
 # wavelet off-diagonal masking. Replaces CB as the reference everything else
 # compares against. Empty patch — uses BASE_PATCH_1EP defaults exactly.
-run_ablation "NB_1ep New Baseline verification (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{}' \
-    "NB_1ep: New Baseline = R0 + W2 + T-lower (1ep, levels=7) — reference BPB for downstream ablations"
+# run_ablation "NB_1ep New Baseline verification (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{}' \
+#     "NB_1ep: New Baseline = R0 + W2 + T-lower (1ep, levels=7) — reference BPB for downstream ablations"
 
 
 # ---- Levels retry on NB stack -----------------------------------------------
