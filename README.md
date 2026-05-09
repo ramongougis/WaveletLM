@@ -740,17 +740,14 @@ Full scheme, requirements, selection algorithm, worked candidates for C=2048 at 
 | Density | Mode | (p, q) | Total params | Train VRAM | Inference VRAM | BPB sliding | ΔBPB vs CB | Run Log |
 |---|---|---|---|---|---|---|---|---|
 | Reference (CB) | — | — | 266.63M | 23,110 MiB | 2,938 MiB | 1.2586 | — | [link](logs/wikitext-103_2026-05-08_07-19-49/log.txt) |
-| 0.1% (planned) | structural | (1968, 32) | 163.80M | pending | pending | pending | pending | |
-| 1% (planned) | structural | (168, 32) | 164.73M | pending | pending | pending | pending | |
-| 5% (planned) | structural | (24, 16) | 168.85M | pending | pending | pending | pending | |
-| **10%** | **smallest_q** | **(18, 2)** | **174.00M** | **23,308 MiB** | **3,630 MiB** | **1.3896** | **+0.1310** | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) |
-| **10%** | **structural** | **(12, 8)** | **174.00M** | **23,308 MiB** | **3,630 MiB** | **1.3836** | **+0.1250** | [link](logs/wikitext-103_2026-05-09_06-34-14/log.txt) |
+| 10% | smallest_q | (18, 2) | 174.00M | 23,308 MiB | 3,630 MiB | 1.3896 | +0.1310 | [link](logs/wikitext-103_2026-05-09_05-22-03/log.txt) |
+| 10% | structural | (12, 8) | 174.00M | 23,308 MiB | 3,630 MiB | 1.3836 | +0.1250 | [link](logs/wikitext-103_2026-05-09_06-34-14/log.txt) |
 | 25% (queued) | structural ≡ smallest_q | (6, 2) | 189.43M | pending | pending | pending | pending | |
 | 40% (queued) | structural ≡ smallest_q | (3, 2) | 204.87M | pending | pending | pending | pending | |
 
 ### Encoder-Decoder Embedding
 
-A second compression scheme for the token embedding, parallel to the (p, q) striding above but with different structural commitments. **Forward path:** tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. **Output path:** C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
+A second compression scheme for the token embedding, parallel to the (p, q) striding above but with different structural commitments. Forward path: tokens → `embedding(V × C_emb)` → learnable decoder `(C_emb, C, bias=True)` → C-dim model interior. Output path: C-dim hidden → learnable encoder `(C, C_emb, bias=True)` → tied vocab projection via `embedding.weight^T` → V logits.
 
 The decoder and encoder are **separate learnable matrices** because the model's nonlinearities (GELU in MLP, gating in mixer, lifting cascade) make the output-side hidden a nonlinear transform of the input-side embedding — sharing the same matrix in transposed form would force a sub-optimal output compression. Total params: `V·C_emb + 2·C·C_emb + C + C_emb` (vs dense `V·C`). Implementation in [tools/encoder_decoder_embedding.py](tools/encoder_decoder_embedding.py).
 
