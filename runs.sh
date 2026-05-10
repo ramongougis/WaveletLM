@@ -219,44 +219,92 @@ run_ablation() {
 #     "T2_WC_5ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (5ep, bs=256, MBS=8)"
 
 
-# ---- Muon optimizer sweep on T2 (1 epoch each) ------------------------------
+# ---- Muon optimizer sweep on T2 (Path B: lr in Keller's regime) ------------
 # Hybrid Muon + AdamW: Muon on 2D non-embedding hidden weights (Linear matrices
 # in lifting/mixer/MLP), AdamW on biases/norms/embeddings/LM head. Per
 # torch.optim.Muon docs, Muon is for 2D parameters of hidden layers only.
 #
-# Defaults applied: weight_decay=0.1 (paper default; vs Adagrad's 1e-6),
-# momentum=0.95, nesterov=True, ns_coefficients=(3.4445, -4.775, 2.0315),
-# eps=1e-7, ns_steps=5, adjust_lr_fn=None (= "original"). The eps difference
-# is intentional — Muon's 1e-7 vs Adagrad's 2e-13. AdamW group inherits Muon's
-# lr and weight_decay by default (overridable via muon_adamw_lr,
-# muon_adamw_weight_decay).
+# IMPORTANT — LR scaling rationale:
+# torch.optim.Muon's default `adjust_lr_fn=None` (= "original" / Keller's
+# scaling) scales LR by max(1, sqrt(A/B)) per matrix. For square matrices
+# (2048x2048 mixer/lifting), this is 1.0 — no LR amplification. The doc's
+# default lr=0.001 is calibrated for "match_rms_adamw" semantics (which would
+# scale by ~9-29x for our matrices); under "original" scaling with lr=0.001
+# you're effectively running at 10-50x lower LR than Muon's reference recipes
+# (Keller, DeepSeek-V4) intend. Empirically confirmed by the partial run at
+# logs/wikitext-103_2026-05-10_15-49-10/log.txt — trains, but slowly.
 #
-# All three runs use the T2 architecture (levels=7, per_scale_mixer_widths
-# =[1.0x4, 0.5x4], wavelet_crawl=True) — the new production stack.
+# Path B (this sweep): keep `adjust_lr_fn=None` (the API default) and lift
+# LR into Keller's published range (0.01-0.05) and beyond, to find Muon's
+# native operating point on our T2 stack.
+#
+# Defaults retained: weight_decay=0.1, momentum=0.95, nesterov=True,
+# ns_coefficients=(3.4445, -4.775, 2.0315), eps=1e-7, ns_steps=5. AdamW group
+# inherits Muon's lr and weight_decay by default. min_lr scaled at the same
+# 1/50 floor as the existing Adagrad config.
+#
+# Decision criterion: Muon must clear T2 (Adagrad)'s end-of-epoch best val
+# (3.5881 at 1ep) by enough margin to compensate its ~2x wall-clock cost —
+# i.e., at least half the epochs for matched performance, or strictly better
+# end-of-epoch numbers at matched epochs. Otherwise Adagrad stays.
+#
+# All four runs use the T2 architecture (levels=7, per_scale_mixer_widths
+# =[1.0x4, 0.5x4], wavelet_crawl=True).
+#
+# DEFUNCT / suboptimal — historical record of the Path A LR misfire:
+# # Run 1 (PARTIAL — cancelled): Muon defaults (lr=0.001)
+# # logs/wikitext-103_2026-05-10_15-49-10/log.txt — under-LR'd per the analysis above.
+# run_ablation "T2_Muon_default_1ep T2 + Muon defaults (lr=0.001, 1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.001, "min_lr": 0.00002, "weight_decay": 0.1}' \
+#     "T2_Muon_default_1ep: T2 + Muon defaults (1ep, lr=0.001, wd=0.1, momentum=0.95, eps=1e-7, ns_steps=5)"
+#
+# # Run 2: Muon at lr=0.002 — also under-LR'd, never queued.
+# run_ablation "T2_Muon_lr2e-3_1ep T2 + Muon lr=0.002 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.002, "min_lr": 0.00004, "weight_decay": 0.1}' \
+#     "T2_Muon_lr2e-3_1ep: T2 + Muon lr=0.002 (1ep, otherwise default)"
+#
+# # Run 3: Muon at lr=0.0005 — also under-LR'd, never queued.
+# run_ablation "T2_Muon_lr5e-4_1ep T2 + Muon lr=0.0005 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.0005, "min_lr": 0.00001, "weight_decay": 0.1}' \
+#     "T2_Muon_lr5e-4_1ep: T2 + Muon lr=0.0005 (1ep, otherwise default)"
 
-# Run 1: Muon defaults (lr=0.001).
-run_ablation "T2_Muon_default_1ep T2 + Muon defaults (lr=0.001, 1ep)" \
+# Run B1: Muon at lr=0.01 (low end of Keller's published range).
+run_ablation "T2_Muon_lr1e-2_1ep T2 + Muon lr=0.01 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.001, "min_lr": 0.00002, "weight_decay": 0.1}' \
-    "T2_Muon_default_1ep: T2 + Muon defaults (1ep, lr=0.001, wd=0.1, momentum=0.95, eps=1e-7, ns_steps=5)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.01, "min_lr": 0.0002, "weight_decay": 0.1}' \
+    "T2_Muon_lr1e-2_1ep: T2 + Muon lr=0.01 (1ep, adjust_lr_fn=None, wd=0.1, momentum=0.95, eps=1e-7, ns_steps=5)"
 
-# Run 2: Muon at 2x default lr (lr=0.002).
-run_ablation "T2_Muon_lr2e-3_1ep T2 + Muon lr=0.002 (1ep)" \
+# Run B2: Muon at lr=0.05 (high end of Keller's published range, near DeepSeek-V4).
+run_ablation "T2_Muon_lr5e-2_1ep T2 + Muon lr=0.05 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.002, "min_lr": 0.00004, "weight_decay": 0.1}' \
-    "T2_Muon_lr2e-3_1ep: T2 + Muon lr=0.002 (1ep, otherwise default)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.05, "min_lr": 0.001, "weight_decay": 0.1}' \
+    "T2_Muon_lr5e-2_1ep: T2 + Muon lr=0.05 (1ep, otherwise as B1)"
 
-# Run 3: Muon at half default lr (lr=0.0005).
-run_ablation "T2_Muon_lr5e-4_1ep T2 + Muon lr=0.0005 (1ep)" \
+# Run B3: Muon at lr=0.1 (above Keller's published range — exploratory).
+run_ablation "T2_Muon_lr1e-1_1ep T2 + Muon lr=0.1 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.0005, "min_lr": 0.00001, "weight_decay": 0.1}' \
-    "T2_Muon_lr5e-4_1ep: T2 + Muon lr=0.0005 (1ep, otherwise default)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.1, "min_lr": 0.002, "weight_decay": 0.1}' \
+    "T2_Muon_lr1e-1_1ep: T2 + Muon lr=0.1 (1ep, otherwise as B1)"
+
+# Run B4: Muon at lr=0.2 (well above published range — stress test for Muon's
+# orthogonalization-bounded update at high LR).
+run_ablation "T2_Muon_lr2e-1_1ep T2 + Muon lr=0.2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.2, "min_lr": 0.004, "weight_decay": 0.1}' \
+    "T2_Muon_lr2e-1_1ep: T2 + Muon lr=0.2 (1ep, stress test — well above Keller's published range)"
 
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete."
-echo "===   1) T2_Muon_default_1ep — Muon defaults (lr=0.001) on T2"
-echo "===   2) T2_Muon_lr2e-3_1ep   — Muon at 2x default LR (lr=0.002)"
-echo "===   3) T2_Muon_lr5e-4_1ep   — Muon at 0.5x default LR (lr=0.0005)"
+echo "=== Queue complete (Path B Muon LR sweep on T2)."
+echo "===   1) T2_Muon_lr1e-2_1ep — lr=0.01 (Keller low end)"
+echo "===   2) T2_Muon_lr5e-2_1ep — lr=0.05 (Keller high end / DeepSeek-V4)"
+echo "===   3) T2_Muon_lr1e-1_1ep — lr=0.10 (above published range)"
+echo "===   4) T2_Muon_lr2e-1_1ep — lr=0.20 (stress test)"
+echo "==="
+echo "=== Decision criterion: Muon must clear T2 (Adagrad) 1ep best val 3.5881"
+echo "===   by enough margin to compensate ~2x wall-clock cost. Otherwise Adagrad stays."
 echo "============================================================"

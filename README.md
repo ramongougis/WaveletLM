@@ -709,9 +709,15 @@ The new baseline shall be named **T2**.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Adagrad (T2 ref, 1ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 1 | 1.1541 | 36.7905 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
 | Adagrad (T2 ref, 5ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 5 | 1.0485 | 26.4564 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
-| Muon (default, queued) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
-| Muon (queued) | 0.002 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
-| Muon (queued) | 0.0005 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (defunct ※) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled at step 27,500 / 47%) | — | — | val=4.1243 vs T2 Adagrad's val=3.9342 at the same step (Δ = +0.1901) | partial (~1.62h to step 27,500, projected ~3.05h for 1ep) | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_15-49-10/log.txt) |
+| Muon (queued) | 0.01 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (queued) | 0.05 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (queued) | 0.10 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (queued) | 0.20 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+
+※ **Defunct — LR under-scaled.** With `adjust_lr_fn=None` (= "original" / Keller's scaling, the API default), `torch.optim.Muon` scales LR by `max(1, sqrt(A/B))` per matrix — for square 2048×2048 matrices that's 1.0, *no amplification*. The doc's `lr=0.001` default is calibrated for `match_rms_adamw` semantics, which would scale by ~9× for 2048×2048 and ~29× for our (2048, 20480) MLP weights. Under "original" scaling with lr=0.001, the effective LR is 10–50× below what Muon's reference implementations (Keller, DeepSeek-V4) intend. The partial run confirms this: trains, but ~0.19 nats behind T2 (Adagrad) at matched step. The lr=0.002 / lr=0.0005 sweep variants (originally queued) are also in the under-scaled regime and were not run; subsequent runs jump to lr ∈ {0.01, 0.05, 0.10, 0.20} to test Muon under "original" scaling at LRs in / above Keller's published 0.01–0.05 range.
+
+**Compute-justified-only criterion.** Muon's per-step cost is ~2× Adagrad's on this stack (5 NS iterations across 77 2D matrices). To justify keeping Muon over Adagrad, it must clear T2 (Adagrad)'s 1ep best val (3.5881) by enough margin that *matched-compute* favors it — i.e., reach equal best val in ≤ half the epochs, or strictly beat Adagrad's end-of-epoch numbers at matched epochs. Otherwise Adagrad stays as the production optimizer.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

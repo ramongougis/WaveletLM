@@ -1011,6 +1011,39 @@ T2 = T1_NoWC architecture extended to `levels=7` with the R0 mixer pattern at de
 
 ---
 
+## Optimizer sweep — Muon on T2
+
+First post-T2 sweep. Tests `torch.optim.Muon` (Jordan et al., 2025; used in DeepSeek-V4) as a candidate replacement for Adagrad. Hybrid implementation per the official docs: 2D non-embedding hidden weights → Muon (Linear matrices in lifting/mixer/MLP), biases / norms / embeddings / LM head → AdamW. Param-count split on T2: 77 tensors via Muon, 46 tensors via AdamW.
+
+### Path A misfire (LR under-scaling) — defunct
+
+Initial sweep used Muon's documented `lr=0.001` default with `adjust_lr_fn=None` (= "original" / Keller's scaling, the API default). Cancelled at step 27,500 of 58,457 (47%) after observing the run trailing T2 (Adagrad) by 0.19 nats at matched step:
+
+| Variant | Step | Val loss | T2 (Adagrad) val at same step | Δ |
+|---|---|---|---|---|
+| T2 Muon (lr=0.001) | 27,500 | 4.1243 | 3.9342 | **+0.1901** |
+| T2 Muon (lr=0.001) | 27,250 | 4.0958 | 3.9075 | +0.1883 |
+| T2 Muon (lr=0.001) | 27,750 | 4.0818 | 3.9000 | +0.1818 |
+
+Run log: [logs/wikitext-103_2026-05-10_15-49-10/log.txt](logs/wikitext-103_2026-05-10_15-49-10/log.txt). Wall-clock to step 27,500: ~1.62h, projected full epoch: ~3.05h (~1.66× T2 Adagrad's 1.83h).
+
+**Diagnosis.** With `adjust_lr_fn=None` ("original"), `torch.optim.Muon` scales LR by `max(1, sqrt(A/B))` per matrix. For our 2048×2048 mixer/lifting matrices that's 1.0 — no amplification. The doc's default `lr=0.001` is calibrated for `match_rms_adamw` semantics, which would scale by ~9× for 2048×2048 and ~29× for our (2048, 20480) MLP weights. Under "original" scaling, lr=0.001 is effectively 10–50× below what Muon's reference implementations (Keller, DeepSeek-V4) intend. The originally-queued lr=0.002 / lr=0.0005 variants are also in the under-scaled regime and were not run.
+
+### Path B — LR sweep at Keller's regime (queued)
+
+Keep `adjust_lr_fn=None` as the API default (avoids changing the optimizer's effective semantics for downstream comparisons; just adjusting LR achieves the same goal). Sweep LR in / above Keller's published 0.01–0.05 range to find Muon's native operating point on T2. All other Muon hyperparameters at PyTorch defaults: weight_decay=0.1, momentum=0.95, nesterov=True, ns_coefficients=(3.4445, -4.775, 2.0315), eps=1e-7, ns_steps=5. AdamW group inherits Muon's lr and weight_decay.
+
+| LR | Notes | Status |
+|---|---|---|
+| 0.01 | Low end of Keller's published range | queued |
+| 0.05 | High end of Keller / DeepSeek-V4 territory | queued |
+| 0.10 | Above published range — exploratory | queued |
+| 0.20 | Stress test — well above published range | queued |
+
+**Compute-justified-only criterion.** Muon's per-step cost is ~2× Adagrad's on T2 (5 NS iterations × 77 matrices × 2-3 matmuls each). To justify keeping Muon over Adagrad, it must clear T2 (Adagrad)'s 1ep best val of 3.5881 by enough margin that *matched-compute* favors Muon — i.e., reach equal best val in ≤ half the epochs, or strictly beat Adagrad's end-of-epoch numbers at matched epochs. Otherwise Adagrad stays as the production optimizer.
+
+---
+
 ## Deprecated approaches
 
 The four sections below were moved here from the README's Future Plans list when mask-based compression was deprecated as a production direction in favor of dense compression alternatives (smaller `mlp_expansion`, smaller `C`, encoder-decoder where it actually helps). Mask-based "compression" doesn't deliver real `.pt` size, training VRAM, or throughput savings under stock kernels — masked-zero positions still occupy full storage, full Adagrad accumulator, and full forward/backward FLOPs. Content is preserved here for the experiment record and for the option of revisiting if/when sparse kernels and sparse-save infrastructure are built.
