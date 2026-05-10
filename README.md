@@ -541,6 +541,10 @@ Longer training time, more regularization, and parameter compression are the sur
 25. [Scaled-Up Model (B200)](#scaled-up-model-b200)
 26. [Other Post-Release Plans](#other-post-release-plans)
 
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
 **Result:** 
