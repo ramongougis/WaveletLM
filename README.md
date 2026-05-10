@@ -522,23 +522,24 @@ Longer training time, more regularization, and parameter compression are the sur
 6. [T1 Baseline Without Wavelet Crawl](#t1-baseline-without-wavelet-crawl)
 7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-no-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-9. [Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)](#bisected-block-context-extension-deepseek-v4-hca-inspired)
-10. [Dropout Sweep](#dropout-sweep)
-11. [Weight Decay Sweep](#weight-decay-sweep)
-12. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-13. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
-14. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-15. [Longer PG-19 Training](#longer-pg-19-training)
-16. [Dataset Comparisons](#dataset-comparisons)
-17. [Model Comparisons](#model-comparisons)
-18. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-19. [Multi-Transform Parallelization](#multi-transform-parallelization)
-20. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-21. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-22. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-23. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-24. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-25. [Other Post-Release Plans](#other-post-release-plans)
+9. [Bisected Block Context Extension](#bisected-block-context-extension)
+10. [Recurrence](#recurrence)
+11. [Dropout Sweep](#dropout-sweep)
+12. [Weight Decay Sweep](#weight-decay-sweep)
+13. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
+14. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+15. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+16. [Longer PG-19 Training](#longer-pg-19-training)
+17. [Dataset Comparisons](#dataset-comparisons)
+18. [Model Comparisons](#model-comparisons)
+19. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+20. [Multi-Transform Parallelization](#multi-transform-parallelization)
+21. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+22. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+23. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+24. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+25. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+26. [Other Post-Release Plans](#other-post-release-plans)
 
 ### (Complete) Single-Layer WaveletLM with Current Best Config
 
@@ -660,9 +661,13 @@ Adagrad (lr=0.01, eps=2e-13) sits in the failure path for our two recurring NaN 
 
 **Procedure.** 1-epoch peak-LR screening at L=1 / levels=7 / bs=16384 against Adagrad reference 1.2361, 5-epoch confirmation against headline 1.0974, then retest at `levels=9 / 11` — orthogonalized updates may clear the deferred L=11 cliff. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
 
-### Bisected-Block Context Extension (DeepSeek-V4 HCA-Inspired)
+### Bisected Block Context Extension
 
-**Source: [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections/deepseek-ai/deepseek-v4).** HCA-style summarized history as a data-loader transformation: bisect the input — recent `block_size/2` tokens uncompressed (the only loss-bearing positions), past `block_size/2` slots each holding the mean of `g = ceil((block_size_compressed − block_size/2) / (block_size/2))` consecutive corpus tokens. For `block_size=16384`, `block_size_compressed=1,000,000` → `g=122`, ~1.007M-token span; 4M context → `g=488`. Because the seam sits at a power of 2, the bisection is preserved at every wavelet level (seam moves inward, two regimes never mix within a single coarse coefficient), with O(log block_size) total seam-bridging predict/update operations. Sweep `block_size_compressed` ∈ {65K, 262K, 1M, 4M} at L=1 / levels=7 / bs=16384 against headline 1.0974, comparing BPB deltas directly; promote best to 5 epochs. Earlier tiered/recall variants archived in [plans/old_compression_ideas.md](plans/old_compression_ideas.md).
+Inspired by [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections/deepseek-ai/deepseek-v4). HCA-style summarized history as a data-loader transformation: bisect the input — recent `block_size/2` tokens uncompressed (the only loss-bearing positions), past `block_size/2` slots each holding the mean of `g = ceil((block_size_compressed − block_size/2) / (block_size/2))` consecutive corpus tokens. For `block_size=16384`, `block_size_compressed=1,000,000` → `g=122`, ~1.007M-token span; 4M context → `g=488`. Because the seam sits at a power of 2, the bisection is preserved at every wavelet level (seam moves inward, two regimes never mix within a single coarse coefficient), with O(log block_size) total seam-bridging predict/update operations. Sweep `block_size_compressed` ∈ {65K, 262K, 1M, 4M} at L=1 / levels=7 / bs=16384 against headline 1.0974, comparing BPB deltas directly; promote best to 5 epochs. Earlier tiered/recall variants archived in [plans/old_compression_ideas.md](plans/old_compression_ideas.md).
+
+### Recurrence
+
+TBD.
 
 ### Dropout Sweep
 
