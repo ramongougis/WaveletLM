@@ -667,7 +667,11 @@ Inspired by [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections
 
 ### Recurrence
 
-TBD.
+Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
+
+`x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
+
+
 
 ### Dropout Sweep
 
