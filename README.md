@@ -524,10 +524,10 @@ Longer training time, more regularization, and parameter compression are the sur
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 9. [Bisected Block Context Extension](#bisected-block-context-extension)
 10. [Recurrence (Mixer Only)](#recurrence-mixer-only)
-11. [Dropout Sweep](#dropout-sweep)
-12. [Weight Decay Sweep](#weight-decay-sweep)
-13. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
-14. [Step-Time Speedup Quick Wins](#step-time-speedup-quick-wins)
+11. [Dropout](#dropout)
+12. [Weight Decay](#weight-decay)
+13. [Mixer Transform Ablation](#mixer-transform-ablation)
+14. [Step-Time Speedups](#step-time-speedups)
 15. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
 16. [Longer PG-19 Training](#longer-pg-19-training)
 17. [Dataset Comparisons](#dataset-comparisons)
@@ -697,21 +697,21 @@ This could be by either repeating the same mixer N times (most likely), or havin
 
 Other recurrence approaches likely exist, but this section will only test the mixer.
 
-### Dropout Sweep
+### Dropout
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
 
 Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regularization signal). The resulting optimal values will then be retroactively applied to L=2 (and any other higher-layer formulations) for performance measurement and benchmarking to verify whether L=2's (or higher level's) val loss also improves under the L=1-tuned regularization recipe. Headline numbers accordingly.
 
-### Weight Decay Sweep
+### Weight Decay
 
 Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. More values must to be attempted (likely slightly higher is best).
 
-### Per-scale Mixer Transform Ablation
+### Mixer Transform Ablation
 
 Test the contribution of the FWHT slot in the per-scale mixer versus having no transform, having a Hartley transform, using a DCT-II/III pair, or employing a butterfly-parametrized learned orthogonal mixer. Measures whether FWHT specifically is necessary, or whether any orthogonal mixer of similar structure (or none at all, with the learned embedding in place) achieves equivalent performance. See [plans/other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation) for the full design and proposed test.
 
-### Step-Time Speedup Quick Wins
+### Step-Time Speedups
 
 Throughput per token of context flattens past `bs≈1024` despite linear-in-N theoretical scaling — a memory-bandwidth wall, not algorithmic. Use [`profile_step.py`](profile_step.py) to attribute step time across architectural components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever crosses 25% at `bs=16384`. Candidate quick wins: fused SwiGLU kernel (Liger / Unsloth / xformers — drop-in for the MLP block), `torch.compile(mode='reduce-overhead')` for CUDA Graphs capture, fused Adagrad, and (architectural) low-rank lifting predict/update networks. See [plans/other_post_release_plans.md §12](plans/other_post_release_plans.md#12-step-time-speedup-quick-wins-informed-by-profiler) for the full menu and decision rule.
 
