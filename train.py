@@ -841,9 +841,10 @@ def train():
             wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
             logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
         elif optimizer_name == 'Muon':
-            # Hybrid Muon + AdamW. Per torch.optim.Muon docs, Muon is for 2D
-            # hidden-layer weights only; biases / norms / embeddings / LM head
-            # should use AdamW. Split params accordingly.
+            # Hybrid Muon + AdamW. Per torch.optim.Muon docs, Muon strictly
+            # requires 2D parameters; biases / norms / embeddings / LM head /
+            # 3D+ tensors (e.g. FwPKM product-key sub-keys of shape
+            # [1, num_subkeys, C/2]) should use AdamW. Split params accordingly.
             muon_params, adamw_params = [], []
             muon_names, adamw_names = [], []
             for name, p in model.named_parameters():
@@ -851,7 +852,7 @@ def train():
                     continue
                 lname = name.lower()
                 is_embedding = 'embedding' in lname or 'lm_head' in lname
-                if p.ndim >= 2 and not is_embedding:
+                if p.ndim == 2 and not is_embedding:
                     muon_params.append(p)
                     muon_names.append(name)
                 else:
