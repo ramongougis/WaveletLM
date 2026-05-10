@@ -707,9 +707,9 @@ Per-scale mixer width contraction sweep. Same baseline as the low_rank table abo
 
 | Run | per_scale_mixer_widths | Folder | BPB (sliding) | Params | Mixer total | Time | Train VRAM | Delta vs R0 | Notes |
 |-----|------------------------|--------|---------------|--------|-------------|------|------------|--------------|-------|
-| R0  | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 3,162 MiB | — | Reference |
-| W1  | [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05] | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) | NaN | 339.53M | 5.44M | — | — | — | NaN at step 1250 (lr=5.7e-3). Extreme contraction destabilizes — proj_in's 10-20× crush from Cp=2048 to 205/102 channels likely cascades to fp16 saturation. |
-| W2  | [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25] | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) | **1.2437** | 369.80M | 35.70M | 78m | — | **+0.0076** | Marginal BPB cost vs default 1.2361. 5.9% smaller total, **39.3% smaller mixer**. Trained stably through warmup peak (lr=0.01) with no instability. Promote to default candidate; 5-epoch confirmation pending. |
+| R0 | [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] (baseline) | [link](logs/wikitext-103_2026-05-02_21-43-22/log.txt) | 1.2361 | 392.91M | 58.82M | ~70m | 3,162 MiB | — | Reference |
+| W1 | [0.1, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.05] | [link](logs/wikitext-103_2026-05-05_04-37-47/log.txt) | NaN | 339.53M | 5.44M | — | — | — | NaN at step 1250 (lr=5.7e-3). Extreme contraction destabilizes — proj_in's 10-20× crush from Cp=2048 to 205/102 channels likely cascades to fp16 saturation. |
+| W2 | [0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25] | [link](logs/wikitext-103_2026-05-05_05-48-40/log.txt) | **1.2437** | 369.80M | 35.70M | 78m | — | **+0.0076** | Marginal BPB cost vs default 1.2361. 5.9% smaller total, **39.3% smaller mixer**. Trained stably through warmup peak (lr=0.01) with no instability. Promote to default candidate; 5-epoch confirmation pending. |
 
 **Width-floor finding:** the boundary between stable contraction and NaN lives somewhere between W2's coarse=0.5 / fine=0.25 and W1's coarse=0.1 / fine=0.05. Follow-up tightenings worth testing if W2 ships at 5 epochs:
 - `[0.4, 0.4, 0.4, 0.4, 0.2, 0.2, 0.2, 0.2]` — 80% of W2
