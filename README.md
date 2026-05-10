@@ -701,11 +701,7 @@ The new baseline shall be named **T2**.
 
 ### Optimizer Sweep (Muon → AdamW)
 
-Adagrad (lr=0.01, eps=2e-13) sits in the failure path for our two recurring NaN modes — the L=11 cascade explosion at bs=16384 and high-`low_rank` blowups (R1.5 / R2 / R3) — and is the highest-priority unblocker before regularization sweeps, which won't transfer cleanly across optimizers.
-
 **Phase 1: Muon** ([Jordan et al., 2025](https://arxiv.org/abs/2502.16982); used in DeepSeek-V4). Newton-Schulz orthogonalization bounds every update's spectral norm — structurally the same property mHC uses to scale residual depth, applied to our matrix-heavy MLP / mixer / lifting `Linear(C, C)`. Start from DeepSeek-V4's hybrid recipe (8 iterations at (3.4445, -4.7750, 2.0315) + 2 at (2, -1.5, 0.5)); embedding / LM head / RMSNorm stay on AdamW. **Phase 2: AdamW** as fallback baseline.
-
-**Procedure.** 1-epoch peak-LR screening at L=1 / levels=7 / bs=16384 against Adagrad reference 1.2361, 5-epoch confirmation against headline 1.0974, then retest at `levels=9 / 11` — orthogonalized updates may clear the deferred L=11 cliff. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
 
 **Sweep table.** All runs use the T2 architecture (`levels=7`, `per_scale_mixer_widths=[1.0×4, 0.5×4]`, `wavelet_crawl=true`, `bs=256`, `MBS=8`). Muon hybrid splits params: 2D non-embedding hidden weights → Muon, biases / norms / embeddings / LM head → AdamW (per [torch.optim.Muon](https://docs.pytorch.org/docs/stable/generated/torch.optim.Muon.html) docs). For Adagrad the rows for momentum / NS steps / NS coefficients / adjust LR fn are not applicable.
 
@@ -716,8 +712,6 @@ Adagrad (lr=0.01, eps=2e-13) sits in the failure path for our two recurring NaN 
 | Muon (default, queued) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
 | Muon (queued) | 0.002 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
 | Muon (queued) | 0.0005 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
-
-LR is the headline knob for the first sweep — once a winner is identified, subsequent sweeps will fix LR and vary one of `weight_decay`, `momentum`, `ns_steps`, `ns_coefficients`, or `adjust_lr_fn` at a time. AdamW phase will be added as additional rows below the Muon block once those runs are queued.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
