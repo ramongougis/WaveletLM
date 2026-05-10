@@ -671,7 +671,7 @@ Due to wavelet decomposition and reconstruction being inverses of each other, an
 
 `x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
 
-
+This could be by either repeating the same mixer N times, or having N differnet mixers. If it's stable, the same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#complete-per-scale-mixer-width-contraction-and-expansion). Otherwise, different mixers could operate in a chain and save parameters. On the other hand, different mixers naturally adds more parameters and may result in more stable training.
 
 ### Dropout Sweep
 
