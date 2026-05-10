@@ -652,17 +652,20 @@ Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (v
 
 ### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl
 
-Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. It shall be named T2.
+Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. 
 
-Run it for 1 epoch and 5 epochs.
+If these settings improve performance, the new baseline shall be named T2.
 
 | Variant | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
 |---|---|---|---|---|---|---|
 | T1 (1ep) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
-| T1 (5ep) | 344.63M | 1.0796 | 3.3341 | 6,867 MiB | — | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
+| T1 (5ep) | 344.63M | 1.0796 | 3.3341 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
 | T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
-| T2 (1ep, queued) | ~369.91M | queued | queued | queued | queued | queued |
-| T2 (5ep, queued) | ~369.91M | queued | queued | queued | queued | queued |
+| T2 (1ep, no WC) | 392.91M | 1.1616 | 3.6094 | 7,788 MiB | 3,186 MiB | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
+| T2 (1ep, with WC, queued) | 392.91M | queued | queued | queued | queued | queued |
+| T2 (5ep, with WC, queued) | 392.91M | queued | queued | queued | queued | queued |
+
+**Conclusions:** Keep wavelet crawl on. T2 now includes wavelet crawl and the other choices (levels = 7 and per_scale_mixer_weights = [1.0x4, 0.5x4]).
 
 ### Optimizer Sweep (Muon → AdamW)
 

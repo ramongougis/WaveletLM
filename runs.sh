@@ -187,31 +187,41 @@ run_ablation() {
 # Confirms the negligible-impact hypothesis: wavelet_crawl is only 15 floats
 # at levels=5, so removing it should land within noise of T1. Inherits T1's
 # config from BASE_PATCH_1EP (which already has wavelet_crawl=False).
-run_ablation "T1_NoWC_1ep T1 baseline without wavelet_crawl (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{}' \
-    "T1_NoWC_1ep: T1 baseline without wavelet_crawl (1ep, bs=256, MBS=8, levels=5, [1.0x3, 0.5x3] mixer widths)"
+# run_ablation "T1_NoWC_1ep T1 baseline without wavelet_crawl (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{}' \
+#     "T1_NoWC_1ep: T1 baseline without wavelet_crawl (1ep, bs=256, MBS=8, levels=5, [1.0x3, 0.5x3] mixer widths)"
 
-# ---- T2: T1 + levels=7 + 8-entry R0 mixer + no wavelet_crawl ----------------
-# T2 = T1 architecture extended to levels=7 with R0 mixer pattern at depth 7
-# ([1.0x4, 0.5x4]). Tests whether deeper wavelet decomposition is worth the
-# coarsest-scale boundary cost: bs=256 / 2^7 = 2 tokens at the coarsest
-# scale (the same boundary case explored in the deprecated B3_L7).
-run_ablation "T2_1ep New baseline T2 (levels=7, [1.0x4, 0.5x4] mixer widths, no wavelet_crawl) at 1 epoch" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
-    "T2_1ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + no wavelet_crawl (1ep, bs=256, MBS=8)"
+# # ---- T2: T1 + levels=7 + 8-entry R0 mixer + no wavelet_crawl ----------------
+# # T2 = T1 architecture extended to levels=7 with R0 mixer pattern at depth 7
+# # ([1.0x4, 0.5x4]). Tests whether deeper wavelet decomposition is worth the
+# # coarsest-scale boundary cost: bs=256 / 2^7 = 2 tokens at the coarsest
+# # scale (the same boundary case explored in the deprecated B3_L7).
+# run_ablation "T2_1ep New baseline T2 (levels=7, [1.0x4, 0.5x4] mixer widths, no wavelet_crawl) at 1 epoch" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
+#     "T2_1ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + no wavelet_crawl (1ep, bs=256, MBS=8)"
 
-run_ablation "T2_5ep New baseline T2 at 5 epochs" \
+# ---- T2_WC_1ep: T2 + wavelet_crawl=True (1ep) -------------------------------
+# T1_NoWC_1ep showed wavelet_crawl removal is load-bearing on T1's leaner
+# stack (+0.0083 BPB vs T1, ~5.5x the 0.0015 noise threshold from the 3-seed
+# variance study). T2 was already a clear win without crawl (-0.0146 BPB vs
+# T1, -0.0229 vs T1_NoWC). This run tests whether stacking crawl on top of T2
+# is roughly additive — could land another ~0.0083 BPB lower if so.
+run_ablation "T2_WC_1ep T2 with wavelet_crawl=True (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true}' \
+    "T2_WC_1ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (1ep, bs=256, MBS=8)"
+
+run_ablation "T2_WC_5ep New baseline T2 at 5 epochs (with wavelet_crawl)" \
     "$BASE_PATCH_5EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}' \
-    "T2_5ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + no wavelet_crawl (5ep, bs=256, MBS=8)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true}' \
+    "T2_WC_5ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (5ep, bs=256, MBS=8)"
 
 
 echo ""
 echo "============================================================"
 echo "=== Queue complete."
-echo "===   1) T1_NoWC_1ep — T1 baseline without wavelet_crawl (1 epoch)"
-echo "===   2) T2_1ep      — T1 + levels=7 + [1.0x4, 0.5x4] mixer + no wavelet_crawl (1 epoch)"
-echo "===   3) T2_5ep      — same as T2_1ep but 5 epochs"
+echo "===   1) T2_WC_1ep — T2 + wavelet_crawl=True (1 epoch) — additivity check"
+echo "===   2) T2_WC_5ep — T2 + wavelet_crawl=True (5 epochs) — production-decision datapoint"
 echo "============================================================"
