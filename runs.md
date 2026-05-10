@@ -993,18 +993,18 @@ T2 = T1_NoWC architecture extended to `levels=7` with the R0 mixer pattern at de
 |---|---|---|---|---|---|---|
 | T1 (1ep, with WC) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
 | T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
-| **T2 (1ep, no WC)** | **392.91M** | **1.1616** | **3.6094** | **7,788 MiB** | **3,186 MiB** | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
-| T2 (5ep, no WC, queued) | 392.91M | queued | queued | queued | queued | queued |
+| T2 (1ep, no WC) | 392.91M | 1.1616 | 3.6094 | 7,788 MiB | 3,186 MiB | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
+| **T2 (1ep, with WC)** | **392.91M** | **1.1541** | **3.5881** | **7,788 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| T2 (5ep, with WC, queued) | 392.91M | queued | queued | queued | queued | queued |
 
-**Reading.** T2 wins decisively on both metrics:
-- **vs T1_NoWC (matched-on-no-WC):** ΔBPB sliding = −0.0229 (~15× the 0.0015 noise threshold), Δbest val = −0.0564. The deeper levels=7 + wider mixer ([1.0×4, 0.5×4]) clearly pays for itself even without crawl.
-- **vs T1 (with WC):** ΔBPB sliding = −0.0146 (~10× threshold), Δbest val = −0.0299. T2's structural improvements *more than compensate* for the +0.0083 BPB regression from removing crawl.
+**Reading.** T2 with wavelet_crawl is the new strongest 1-epoch result:
+- **vs T2 no-WC (additivity check):** ΔBPB sliding = −0.0075, Δbest val = −0.0213. **Wavelet_crawl's contribution stacks essentially additively on T2.** Predicted from T1_NoWC's regression (+0.0083 cost from removal): −0.0083; observed: −0.0075. The two architectural changes (deeper levels and wavelet_crawl) compose cleanly.
+- **vs T1 with WC (full T2 win):** ΔBPB sliding = −0.0221 (~15× the 0.0015 noise threshold), Δbest val = −0.0512. Decisive across both metrics.
+- **vs T1_NoWC (worst case avoided):** ΔBPB sliding = −0.0304 (~20× threshold), Δbest val = −0.0777.
 
-**Cost.** +48.28M dense params (+14% vs T1), +921 MiB train VRAM (+13%), +232 MiB inference VRAM (+8%), +15% wall-clock per epoch (~1.83h vs T1_NoWC's ~1.59h).
+**Cost vs T1.** +48.28M dense params (+14%), +921 MiB train VRAM (+13%), +382 MiB inference VRAM (+13%), ~+17% wall-clock per epoch (~1.86h vs T1's ~1.59h).
 
-**Open question.** wavelet_crawl was load-bearing on T1 (+0.0083 BPB cost from disabling). T2 currently lacks crawl. A T2 + crawl variant could plausibly land another ~0.0083 BPB lower (linear additivity assumption — not guaranteed). Worth testing if T2 becomes the production stack.
-
-**Decision criteria.** T2 (1ep) clears the "deeper levels pays its way" bar with margin. Awaiting T2 (5ep) for the matched-budget production-decision datapoint vs T1 (5ep, 3.3341 best val). If T2 (5ep) lands within ~0.02 of T1 (5ep) on best val, the levels=7 commitment is not worth the +14% cost; if it lands ~0.05+ below, T2 becomes the new production baseline.
+**Decision criteria.** T2 (1ep, with WC) clears the bar with substantial margin. Awaiting T2 (5ep, with WC) for the matched-budget production-decision datapoint vs T1 (5ep, 3.3341 best val). If T2 (5ep) lands within ~0.02 of T1 (5ep) on best val, the levels=7 commitment is not worth the +14% cost; if it lands ~0.05+ below, T2 becomes the new production baseline.
 
 ---
 

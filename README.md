@@ -520,7 +520,7 @@ Longer training time, more regularization, and parameter compression are the sur
 4. [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
 5. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
 6. [T1 Baseline Without Wavelet Crawl](#t1-baseline-without-wavelet-crawl)
-7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-no-wavelet-crawl)
+7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 9. [Bisected Block Context Extension](#bisected-block-context-extension)
 10. [Recurrence](#recurrence)
@@ -648,24 +648,24 @@ Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (v
 | T1 (1ep) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
 | T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
 
-ΔBPB +0.0083, Δbest val +0.0265 — both within typical single-seed noise for this regime, consistent with the "performance impact negligible" prediction (15 floats removed; param count identical at the dense-counting level).
+**Conclusion:** Keep wavelet crawl on until a 5+ epoch test validates or refutes this result. Removing wavelet crawl had a detrimental +0.0083 BPB impact on performance across 1 epoch.
 
-### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl
+### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl
 
 Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. 
 
 If these settings improve performance, the new baseline shall be named T2.
 
-| Variant | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
-|---|---|---|---|---|---|---|
-| T1 (1ep) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
-| T1 (5ep) | 344.63M | 1.0796 | 3.3341 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
-| T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
-| T2 (1ep, no WC) | 392.91M | 1.1616 | 3.6094 | 7,788 MiB | 3,186 MiB | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
-| T2 (1ep, with WC, queued) | 392.91M | queued | queued | queued | queued | queued |
-| T2 (5ep, with WC, queued) | 392.91M | queued | queued | queued | queued | queued |
+| Variant | Levels | Wavelet Crawl | Epochs | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|---|---|---|
+| T1 | 5 | ✓ | 1 | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
+| T1 | 5 | ✓ | 5 | 344.63M | 1.0796 | 3.3341 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
+| T1 | 5 | ✗ | 1 | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
+| T2 | 7 | ✗ | 1 | 392.91M | 1.1616 | 3.6094 | 7,788 MiB | 3,186 MiB | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
+| **T2** | **7** | **✓** | **1** | **392.91M** | **1.1541** | **3.5881** | **7,788 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| T2 (queued) | 7 | ✓ | 5 | 392.91M | queued | queued | queued | queued | queued |
 
-**Conclusions:** Keep wavelet crawl on. T2 now includes wavelet crawl and the other choices (levels = 7 and per_scale_mixer_weights = [1.0x4, 0.5x4]).
+**Conclusions:** T2 baseline now includes wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0x4, 0.5x4].
 
 ### Optimizer Sweep (Muon → AdamW)
 
