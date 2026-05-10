@@ -302,6 +302,48 @@ run_ablation() {
 #     "T2_Muon_lr2e-1_1ep: T2 + Muon lr=0.2 (1ep, stress test — well above Keller's published range)"
 
 
+# ---- Sequential block ordering sweep on T2 (4 runs, 2x2 cross) -------------
+# Tests deterministic sequential block ordering vs. the current random sampler.
+# Two MBS regimes (perfect-within-batch via MBS=1/GA=8 vs. stream-batched via
+# MBS=8/GA=1), each at 1 and 2 epochs. The 2-epoch runs probe the one-shot-
+# learner hypothesis: with sequential ordering, every token is seen exactly
+# once per epoch, so a second epoch is purely "second pass over already-seen
+# data." If WaveletLM is a strong one-shot learner, T2_seq_2ep should plateau
+# in late epoch 2 *despite still-elevated post-peak LR* (peak is at step
+# 35,074 = 60% through epoch 1; cosine decay through end of epoch 2 keeps LR
+# above min throughout). The plateau-while-LR-nontrivial is the load-bearing
+# evidence; LR-decay-driven convergence is excluded as a confound.
+#
+# All four runs use T2 architecture (levels=7, [1.0x4, 0.5x4] mixer,
+# wavelet_crawl=True, Adagrad lr=0.01 per BASE_PATCH defaults). Sequential
+# mode is gated by `sequential_blocks=true` in the override. The closure in
+# make_get_batch automatically picks Rainman vs pure based on MBS.
+
+# Run S1: Rainman 1ep (MBS=8 / GA=1, 8 parallel streams advancing in lockstep).
+run_ablation "T2_seq_M8_1ep T2 sequential blocks, MBS=8/GA=1 (Rainman, 1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1}' \
+    "T2_seq_M8_1ep: sequential blocks, MBS=8/GA=1 (Rainman; 1ep, T2 stack, Adagrad lr=0.01)"
+
+# Run S2: Rainman 2ep — one-shot-learner hypothesis test (Rainman variant).
+run_ablation "T2_seq_M8_2ep T2 sequential blocks, MBS=8/GA=1 (Rainman, 2ep)" \
+    "$BASE_PATCH_5EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "epochs": 2}' \
+    "T2_seq_M8_2ep: sequential blocks, MBS=8/GA=1 (Rainman; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
+
+# Run S3: Pure sequential 1ep (MBS=1 / GA=8, single stream).
+run_ablation "T2_seq_M1_1ep T2 sequential blocks, MBS=1/GA=8 (pure sequential, 1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 1, "grad_accum": 8}' \
+    "T2_seq_M1_1ep: sequential blocks, MBS=1/GA=8 (pure sequential; 1ep, T2 stack, Adagrad lr=0.01)"
+
+# Run S4: Pure sequential 2ep — one-shot-learner hypothesis test (pure variant).
+run_ablation "T2_seq_M1_2ep T2 sequential blocks, MBS=1/GA=8 (pure sequential, 2ep)" \
+    "$BASE_PATCH_5EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 1, "grad_accum": 8, "epochs": 2}' \
+    "T2_seq_M1_2ep: sequential blocks, MBS=1/GA=8 (pure sequential; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
+
+
 # ---- Path B v2: tighter LR band between 0.001 (smooth/slow) and 0.01 (oscillates) ----
 # The lr=0.001 run (15:49) trained smoothly but ~10x slower than needed. The
 # lr=0.01 run (17:45) leapt ahead of Adagrad through ~step 6000 but plateaued
@@ -324,10 +366,13 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (Path B v2 — Muon LR sweep, tighter band)."
-echo "===   1) T2_Muon_lr3e-3_1ep — lr=0.003"
-echo "===   2) T2_Muon_lr5e-3_1ep — lr=0.005"
+echo "=== Queue complete (Sequential block ordering + Muon LR sweep)."
+echo "===   1) T2_seq_M8_1ep      — sequential, Rainman (MBS=8/GA=1, 1ep)"
+echo "===   2) T2_seq_M8_2ep      — sequential, Rainman (MBS=8/GA=1, 2ep, one-shot test)"
+echo "===   3) T2_seq_M1_1ep      — sequential, pure (MBS=1/GA=8, 1ep)"
+echo "===   4) T2_seq_M1_2ep      — sequential, pure (MBS=1/GA=8, 2ep, one-shot test)"
+echo "===   5) T2_Muon_lr3e-3_1ep — Muon lr=0.003 (Path B v2)"
+echo "===   6) T2_Muon_lr5e-3_1ep — Muon lr=0.005 (Path B v2)"
 echo "==="
-echo "=== Decision criterion: Muon must clear T2 (Adagrad) 1ep best val 3.5881"
-echo "===   by enough margin to compensate ~2x wall-clock cost. Otherwise Adagrad stays."
+echo "=== Total compute estimate: ~18-20h overnight queue."
 echo "============================================================"

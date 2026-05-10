@@ -328,15 +328,54 @@ def make_get_batch(train_data, val_data, config, device):
     moving the full encoded train tensor onto a 32 GB GPU consumes half the
     VRAM and triggers OOM at the first optimizer step. Per-batch transfers
     are tiny (MBS × T × 8 bytes ≈ 16 KB at MBS=8, T=256) and nearly free.
+
+    Two sampling modes:
+    - Random (default): each block starts at a uniformly random corpus
+      position. Standard nanoGPT-style. ~63% coverage at 1 epoch from
+      `1 - exp(-1)`; ~99.3% at 5 epochs.
+    - Sequential (`sequential_blocks=true`): blocks proceed in corpus order
+      with stride = block_size, no shuffling, no overlap. Each token visited
+      exactly once per epoch as a target. Two flavors automatically selected
+      from the existing MBS / GA config:
+        - MBS=8, GA=1 ("Rainman"): 8 parallel streams advancing through the
+          corpus together. Each stream starts at corpus position k * (N/8).
+        - MBS=1, GA=8 ("pure sequential"): one stream, each grad-accum
+          substep produces the next consecutive block before optimizer.step().
+      Validation always uses random sampling regardless of mode (sequential
+      val would deterministically resample the same blocks each eval call).
     """
     T = config['block_size']
     _arange_T_cpu = torch.arange(T)[None, :]
+    bs = config['micro_batch_size']
+    use_sequential = config.get('sequential_blocks', False)
+
+    # Persistent train-position counters for sequential mode. Mutated in-place
+    # by the closure on each call; modulo wraps at end of corpus.
+    train_max_start = len(train_data) - T - 1
+    if use_sequential:
+        if bs == 1:
+            # Pure sequential: one counter
+            train_positions = [0]
+        else:
+            # Rainman: bs streams strided across the corpus
+            stride = train_max_start // bs
+            train_positions = [k * stride for k in range(bs)]
+    else:
+        train_positions = None
 
     def get_batch(split):
         data = train_data if split == 'train' else val_data
-        bs = config['micro_batch_size']
         max_start = len(data) - T - 1
-        ix = torch.randint(0, max_start, (bs,))  # CPU
+
+        if use_sequential and split == 'train':
+            ix = torch.tensor(train_positions, dtype=torch.long)
+            # Advance positions by T, wrapping at max_start so a multi-epoch
+            # run continues seamlessly past the first full pass.
+            for i in range(len(train_positions)):
+                train_positions[i] = (train_positions[i] + T) % max_start
+        else:
+            ix = torch.randint(0, max_start, (bs,))  # CPU
+
         offsets = ix[:, None] + _arange_T_cpu     # CPU
         x = data[offsets].to(device, non_blocking=True)
         y = data[offsets + 1].to(device, non_blocking=True)

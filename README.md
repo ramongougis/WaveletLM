@@ -728,18 +728,24 @@ The new baseline shall be named **T2**.
 
 ### Sequential Block Ordering
 
-Currently, the model does fully random sampling: each block starts at a uniformly random corpus position with no relationship between consecutive batches. ~37% of training tokens are never sampled at 1 epoch under this regime (~63% coverage from `1 - e^-1`); ~99.3% are covered after 5 epochs.
+Currently, the model does random sampling: each block starts at a uniformly random corpus position with no relationship between consecutive batches. ~37% of training tokens are never sampled at 1 epoch under this regime (~63% coverage from `1 - e^-1`); ~99.3% are covered after 5 epochs.
 
-This section tests **deterministic sequential block ordering** — every token visited exactly once per epoch in corpus order. Rationale is multi-feature: (a) prerequisite for efficient [Bisected Block Context Extension](#bisected-block-context-extension) (consecutive batches share most of their compressed history, enabling caching), (b) prerequisite for [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training), (c) cleaner epoch semantics ("one epoch = one full pass through the corpus"), and (d) tests the **one-shot-learner hypothesis** suggested by WaveletLM's PG-19 sample efficiency vs. transformers.
+This section tests **deterministic sequential block ordering**, where every token is visited exactly once per epoch in corpus order. 
+
+Sequential block ordering will enable or be a prerequisite for: 
+- efficient [Bisected Block Context Extension](#bisected-block-context-extension) (consecutive batches share most of their compressed history, enabling caching and easy moving averages)
+- the [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training)
+- cleaner epoch semantics ("one epoch = one full pass through the corpus")
+- testing the **one-shot-learner hypothesis** suggested by WaveletLM's PG-19 sample efficiency vs. transformers (1/50th the effective epochs or less were required).
 
 **Design choices:**
 
 - **Stride = `block_size`** (no overlap). Each token is seen exactly once per epoch as a target.
-- **Document/book boundaries: ignored** (soft handling). Matches the current random-sampler behavior and the GPT-style "concat-and-chunk" pretraining default. Some blocks naturally straddle boundaries; cross-document context is allowed.
-- **No shuffling.** Pure sequential pass through the corpus. Deliberate departure from most pretraining (which typically shuffles at the block or document level). The point of this experiment is to see whether maintaining corpus-order matters.
+- **Document/book boundaries: ignored** (soft handling). Matches the current random-sampler behavior and the GPT-style "concat-and-chunk" pretraining default. Some blocks naturally straddle boundaries. Cross-document context is allowed.
+- **No shuffling.** Pure sequential pass through the corpus. Deliberate departure from most pretraining (which typically shuffles at the block or document level). The point of this experiment is to see whether maintaining corpus order matters.
 - **Two MBS regimes tested**, both at effective batch size 8:
   - **Pure sequential (MBS=1, GA=8):** one stream, each grad-accum substep processes one strictly-consecutive block before the optimizer step. Maximum within-batch order preservation. ~10–20% wall-clock overhead vs. MBS=8/GA=1 from launch costs.
-  - **Stream-batched sequential ("Rainman", MBS=8, GA=1):** 8 parallel streams advancing through the corpus together (each starting at corpus position `k × N/8`). Within a batch, the 8 elements progress in lockstep. Distant temporal events are split across streams; nearby events are learned simultaneously.
+  - **Parallel in-batch streaming (the "Rainman method", MBS=8, GA=1):** 8 parallel streams advancing through the corpus together while being located nearby (each starts at corpus position `k × N/8`). Within a batch, the 8 elements progress in lockstep. Distant temporal events are split across streams, whereas nearby events are learned simultaneously.
 
 **Test plan (4 runs, 2 × 2 cross):**
 
@@ -750,18 +756,13 @@ This section tests **deterministic sequential block ordering** — every token v
 | T2_seq_M1_1ep | 1 | 8 | 1 | ~2.1h | tests pure sequential vs Rainman at 1ep |
 | T2_seq_M1_2ep | 1 | 8 | 2 | ~4.2h | + 2-epoch one-shot test on pure sequential |
 
-Total: ~12h overnight. The 2×2 cross isolates two effects independently:
-- **MBS dimension** (1ep rows): does perfect within-batch sequentiality help vs. stream-parallel?
-- **Epochs dimension** (1ep vs 2ep, within each MBS regime): does a second pass meaningfully help, or does WaveletLM saturate?
+The 2×2 cross isolates two effects independently:
+- **MBS dimension** (1ep rows): does perfect within-batch sequentiality help vs. streaming in parallel?
+- **Epochs dimension** (1ep vs 2ep, within each MBS regime): does a second pass meaningfully help alongside warmup, or does WaveletLM saturate even with warmup, and where?
 
-**One-shot-learner hypothesis (refined).** With warmup_fraction=0.3 fixed, a 2-epoch run's warmup ends at step 35,074 (60% through epoch 1), peak LR hits there, and cosine decay runs from there to the end of epoch 2. **Early epoch 2 has higher absolute LR than the entire post-warmup tail of epoch 1.** So:
+**One-shot learner hypothesis (refined).** With warmup_fraction=0.3 fixed, a 2-epoch run's warmup ends at step 35,074 (60% through epoch 1), peak LR hits there, and cosine decay runs from there to the end of epoch 2.
 
-- If WaveletLM is a strong one-shot learner: T2_seq_2ep should show meaningful descent through early epoch 2 (post-peak LR + still some warmup-residual novelty), then a **sharp plateau in late epoch 2 despite still-elevated LR**. The plateau-while-LR-nontrivial is the load-bearing evidence — it eliminates "LR decay caused convergence" as a confound.
-- If WaveletLM benefits from repeated passes: continued smooth descent through end of epoch 2, with no LR-independent plateau.
-
-The crispest read comes from the val-loss-per-step curve, not the end-of-run number — look for an inflection in slope around mid-epoch-2.
-
-**Implementation effort.** Modest — a config flag (`sequential_blocks: bool`), a new sampler that maintains a position counter (or 8 position counters for the Rainman variant) and produces strictly-consecutive blocks, and a small change in `make_get_batch` to switch on the flag. ~50–80 lines.
+If WaveletLM is a strong one-shot learner, then it won't benefit from repeated passes over the same data at the full learning rate. This would be indicated by a slowdown to improvement after the first 60% of epoch 2, since 30% warmup extends to 60% of epoch 1.
 
 ### Bisected Block Context Extension
 
