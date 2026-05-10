@@ -523,7 +523,7 @@ Longer training time, more regularization, and parameter compression are the sur
 7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 9. [Bisected Block Context Extension](#bisected-block-context-extension)
-10. [Recurrence](#recurrence)
+10. [Recurrence (Mixer Only)](#recurrence-mixer-only)
 11. [Dropout Sweep](#dropout-sweep)
 12. [Weight Decay Sweep](#weight-decay-sweep)
 13. [Per-scale Mixer Transform Ablation](#per-scale-mixer-transform-ablation)
@@ -677,17 +677,25 @@ Adagrad (lr=0.01, eps=2e-13) sits in the failure path for our two recurring NaN 
 
 ### Bisected Block Context Extension
 
-Inspired by [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections/deepseek-ai/deepseek-v4). HCA-style summarized history as a data-loader transformation: bisect the input — recent `block_size/2` tokens uncompressed (the only loss-bearing positions), past `block_size/2` slots each holding the mean of `g = ceil((block_size_compressed − block_size/2) / (block_size/2))` consecutive corpus tokens. For `block_size=16384`, `block_size_compressed=1,000,000` → `g=122`, ~1.007M-token span; 4M context → `g=488`. Because the seam sits at a power of 2, the bisection is preserved at every wavelet level (seam moves inward, two regimes never mix within a single coarse coefficient), with O(log block_size) total seam-bridging predict/update operations. Sweep `block_size_compressed` ∈ {65K, 262K, 1M, 4M} at L=1 / levels=7 / bs=16384 against headline 1.0974, comparing BPB deltas directly; promote best to 5 epochs. Earlier tiered/recall variants archived in [plans/old_compression_ideas.md](plans/old_compression_ideas.md).
+Inspired by [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections/deepseek-ai/deepseek-v4). HCA-style summarized history at the input computing the mean of a certain number of continuous tokens across each channel. The number of tokens taken depends on the desired context (`block_size_compressed`), which is fully customizable, allowing for arbitrarily large context windows. 
 
-### Recurrence
+Take the most recent `block_size/2` token slots as uncompressed input, and use the other `block_size/2` slots as compressed input, with each compressed token slot holding the per-channel means of `g = ceil((block_size_compressed − block_size/2) / (block_size/2))` consecutive corpus tokens. 
+
+For `block_size=256`, if a 1M context window is desired, `block_size_compressed=1,000,000` → `g=3907`. If a 4M context window is desired, `block_size_compressed=4,000,000` → `g=15625`. For `block_size=512`, 1M context gives `g=1954`, and 4M context yields `g=7813`. 
+
+The half-block-size point marks a common seam for every wavelet scale, as each has 2^k dyadic partitions. Thus the compressed and uncompressed regimes never lie in a single partition window, and so there are O(log block_size) total seam-bridging predict/update operations. 
+
+This section will do 8 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512} x {65K, 262K, 1M, 4M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
+
+### Recurrence (Mixer Only)
 
 Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
 
 `x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
 
-This could be by either repeating the same mixer N times, or having N differnet mixers. If it's stable, the same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#complete-per-scale-mixer-width-contraction-and-expansion). Otherwise, different mixers could operate in a chain and save parameters. On the other hand, different mixers naturally adds more parameters and may result in more stable training.
+This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#complete-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
 
-Other approaches may also exist and options are still being explored.
+Other recurrence approaches likely exist, but this section will only test the mixer.
 
 ### Dropout Sweep
 
