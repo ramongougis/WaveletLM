@@ -652,9 +652,9 @@ Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (v
 
 ### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl
 
-Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_mixer_weights = [1.0x4, 0.5x4] = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. 
+Test the T1 baseline with wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. Keep whatever improves performance.
 
-If these settings improve performance, the new baseline shall be named T2.
+The new baseline shall be named **T2**.
 
 | Variant | Levels | Wavelet Crawl | Epochs | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
 |---|---|---|---|---|---|---|---|---|---|
@@ -665,7 +665,7 @@ If these settings improve performance, the new baseline shall be named T2.
 | **T2** | **7** | **✓** | **1** | **392.91M** | **1.1541** | **3.5881** | **7,788 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
 | T2 (queued) | 7 | ✓ | 5 | 392.91M | queued | queued | queued | queued | queued |
 
-**Conclusions:** T2 baseline now includes wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0x4, 0.5x4].
+**Conclusion:** T2 baseline now includes wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0x4, 0.5x4].
 
 ### Optimizer Sweep (Muon → AdamW)
 
