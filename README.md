@@ -514,12 +514,12 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
-1. [(Complete) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
-2. [(Complete) Parameter Reduction](#complete-parameter-reduction)
-3. [(Complete) Larger Block Size](#complete-larger-block-size)
-4. [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
-5. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
-6. [(Complete) T1 Baseline Without Wavelet Crawl](#complete-t1-baseline-without-wavelet-crawl)
+1. [(Done) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
+2. [(Done) Parameter Reduction](#complete-parameter-reduction)
+3. [(Done) Larger Block Size](#complete-larger-block-size)
+4. [(Done) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
+5. [(Done) Mixer Low Rank](#complete-mixer-low-rank)
+6. [(Done) T1 Baseline Without Wavelet Crawl](#complete-t1-baseline-without-wavelet-crawl)
 7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 9. [Bisected Block Context Extension](#bisected-block-context-extension)
@@ -545,7 +545,7 @@ Longer training time, more regularization, and parameter compression are the sur
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (Complete) Single-Layer WaveletLM with Current Best Config
+### (Done) Single-Layer WaveletLM with Current Best Config
 
 **Result:** 
 
@@ -568,7 +568,7 @@ Tested `layers=1` and `layers=2`, each for 1 epoch and 5 epochs. Both runs were 
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (Complete) Parameter Reduction
+### (Done) Parameter Reduction
 
 Starting with the best WikiText-103 config, we made the following changes to reduce parameters:
 
@@ -597,7 +597,7 @@ The "Test 1", aka **T1**, configuration in the table below incorporates these re
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (Complete) Larger Block Size
+### (Done) Larger Block Size
 
 In this section, we tested the new T1 baseline with `block_size=16384`, which required various adjustments to fit it into VRAM. With these changes, it was temporarily named the **R0** run and used as a new test baseline, but later deprecated as the baseline.
 
@@ -632,7 +632,7 @@ We used  R0's larger block size as the baseline for some later tests in anticipa
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (Complete) Per-Scale Mixer Width Contraction and Expansion
+### (Done) Per-Scale Mixer Width Contraction and Expansion
 
 **Results:** 
 
@@ -653,7 +653,7 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (Complete) Mixer Low Rank
+### (Done) Mixer Low Rank
 
 **Result:** `low_rank=16` (LR16) achieves a 1-epoch sliding BPB of 1.2342 vs. the reference BPB of 1.2361. A longer [5-epoch test](logs/wikitext-103_2026-05-05_21-36-45/log.txt) yielded 1.0971 vs. the baseline 1.0974 = −0.0003, a negligible difference. Full table in [runs.md → Low-rank ablations](runs.md#low-rank-ablations-post-combined-reduction-baseline-l1-levels7-epochs1).
 
@@ -663,7 +663,7 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (Complete) T1 Baseline Without Wavelet Crawl
+### (Done) T1 Baseline Without Wavelet Crawl
 
 Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (very small: only 15 parameters with levels=5) convolution operation in the model. Performance impact negligible.
 
