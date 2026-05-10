@@ -36,12 +36,12 @@ WaveletLM is a wavelet-based, attention-free language model that mixes tokens th
 
 ## Installation
 
-Requires Python 3.10+, PyTorch 2.8+, and CUDA.
+Requires Python 3.10+, PyTorch 2.11+, and CUDA.
 
 ```bash
 git clone https://github.com/ramongougis/WaveletLM.git
 cd WaveletLM
-pip install "torch>=2.11" "datasets<3.0" tiktoken sentencepiece tqdm numpy
+pip install "torch>=2.11" "datasets<3.0" tiktoken sentencepiece \ tqdm numpy --extra-index-url https://download.pytorch.org/whl/cu128
 ```
 
 ## Training
