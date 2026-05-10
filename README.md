@@ -643,7 +643,12 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
 
 Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (very small: only 15 parameters with levels=5) convolution operation in the model. Performance impact negligible.
 
-(insert table here with 1 baseline T1 row with wavelet crawl, and one other T1 without wavelet crawl run row underneath).
+| Variant | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|
+| T1 (1ep) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
+| T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
+
+ΔBPB +0.0083, Δbest val +0.0265 — both within typical single-seed noise for this regime, consistent with the "performance impact negligible" prediction (15 floats removed; param count identical at the dense-counting level).
 
 ### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and no Wavelet Crawl
 
@@ -651,7 +656,13 @@ Test the T1 baseline without wavelet crawl, with levels = 7, and with per_scale_
 
 Run it for 1 epoch and 5 epochs.
 
-(insert table here with 3 baseline rows consisting of T1 for 1 epoch, T1 for 5 epochs, T1 without wavelet crawl for 1 epoch; and with 2 T2 rows for 1 and 5 epochs each).
+| Variant | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|
+| T1 (1ep) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
+| T1 (5ep) | 344.63M | 1.0796 | 3.3341 | 6,867 MiB | — | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
+| T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
+| T2 (1ep, queued) | ~369.91M | queued | queued | queued | queued | queued |
+| T2 (5ep, queued) | ~369.91M | queued | queued | queued | queued | queued |
 
 ### Optimizer Sweep (Muon → AdamW)
 
@@ -672,6 +683,8 @@ Due to wavelet decomposition and reconstruction being inverses of each other, an
 `x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
 
 This could be by either repeating the same mixer N times, or having N differnet mixers. If it's stable, the same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#complete-per-scale-mixer-width-contraction-and-expansion). Otherwise, different mixers could operate in a chain and save parameters. On the other hand, different mixers naturally adds more parameters and may result in more stable training.
+
+Other approaches may also exist and options are still being explored.
 
 ### Dropout Sweep
 

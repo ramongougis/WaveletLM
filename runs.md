@@ -968,6 +968,37 @@ The levels=11 NaN at step 1500 (well before peak LR was reached) confirms the st
 
 ---
 
+## Reversion to T1: T1_NoWC and T2 sweeps
+
+After the dense-counting fix on 2026-05-10, B3 (Test 1 + T-lower − wavelet_crawl) was reverted to the simpler T1 + wavelet_crawl=False variant — T-lower's "9–10% parameter savings" turned out to be entirely masked zeros (no real `.pt`/VRAM/FLOPs reduction; +80 MiB train VRAM from mask-buffer overhead). Test 1 already wins decisively on matched-budget BPB / best val vs the bs=16384 NB stack, so the new active sweep is just confirming the wavelet_crawl removal is BPB-neutral and then probing whether a deeper levels=7 variant ("T2") improves on T1 in the bs=256 throughput regime.
+
+### T1_NoWC: T1 baseline without wavelet_crawl (1ep)
+
+Confirms the negligible-impact prediction: wavelet_crawl is only 15 floats at levels=5 (`torch.zeros(levels=5, k=3)`), so removing it is essentially param-count-identical to T1 (both at 344.63M dense). BPB delta should be within single-seed noise.
+
+| Variant | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|
+| T1 (1ep, reference) | 344.63M | 1.1762 | 3.6393 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-09_07-52-25/log.txt) |
+| **T1_NoWC (1ep)** | **344.63M** | **1.1845** | **3.6658** | **6,867 MiB** | **2,954 MiB** | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
+
+**Reading:** ΔBPB sliding = +0.0083, Δbest val = +0.0265 — both within typical single-seed noise for this regime. Train VRAM identical to T1 (as expected — wavelet_crawl's `dilation_logits` parameter is ~15 floats, well below the noise floor for memory measurements). Inference VRAM nominally +78 MiB (2,954 vs 2,876) but inference VRAM has shown ±100 MiB allocator-related variance across reruns of identical configs, so this is not interpretable as a regression.
+
+**Decision:** wavelet_crawl is confirmed removable at no measurable cost. T1_NoWC is the new T1 default for downstream comparisons; T2 (next section) tests whether deeper levels improve on this baseline.
+
+### T2: T1_NoWC + levels=7 + R0 mixer at depth 7 (1ep, 5ep — queued)
+
+T2 = T1_NoWC architecture extended to `levels=7` with the R0 mixer pattern at depth 7 (`per_scale_mixer_widths=[1.0×4, 0.5×4]`). Tests whether deeper wavelet decomposition is worth the coarsest-scale boundary cost: at bs=256 / 2^7 = 2 tokens at the coarsest wavelet scale (the same boundary case explored in the deprecated B3_L7 run, which trained without issue and was tracking ahead of B3_L5 at step 25k before being deprecated due to dense-counting reframing).
+
+| Variant | Params (dense) | BPB sliding | Best val | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|
+| T1_NoWC (1ep, reference) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
+| T2 (1ep, queued) | ~369.91M | queued | queued | queued | queued | queued |
+| T2 (5ep, queued) | ~369.91M | queued | queued | queued | queued | queued |
+
+**Decision criteria.** If T2 (1ep) lands ~0.02+ below T1_NoWC on best val, deeper levels is paying its way and T2 becomes the production stack. If within noise, levels=5 wins on simpler architecture and slightly lower param count. T2 (5ep) is the matched-budget production-decision datapoint vs T1 (5ep, 3.3341).
+
+---
+
 ## Deprecated approaches
 
 The four sections below were moved here from the README's Future Plans list when mask-based compression was deprecated as a production direction in favor of dense compression alternatives (smaller `mlp_expansion`, smaller `C`, encoder-decoder where it actually helps). Mask-based "compression" doesn't deliver real `.pt` size, training VRAM, or throughput savings under stock kernels — masked-zero positions still occupy full storage, full Adagrad accumulator, and full forward/backward FLOPs. Content is preserved here for the experiment record and for the option of revisiting if/when sparse kernels and sparse-save infrastructure are built.
