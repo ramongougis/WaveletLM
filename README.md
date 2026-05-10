@@ -691,7 +691,7 @@ The new baseline shall be named **T2**.
 | T1 | 5 | ✓ | 5 | 344.63M | 1.0796 | 3.3341 | 6,867 MiB | 2,876 MiB | [link](logs/wikitext-103_2026-05-01_06-33-48/log.txt) |
 | T2 | 7 | ✗ | 1 | 392.91M | 1.1616 | 3.6094 | 7,788 MiB | 3,186 MiB | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
 | **T2** | **7** | **✓** | **1** | **392.91M** | **1.1541** | **3.5881** | **7,788 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
-| T2 (queued) | 7 | ✓ | 5 | 392.91M | queued | queued | queued | queued | queued |
+| **T2** | **7** | **✓** | **5** | **392.91M** | **1.0485** | **3.2630** | **7,788 MiB** | **3,238 MiB** | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
 
 **Conclusion:** T2 baseline now includes wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0x4, 0.5x4].
 

@@ -995,16 +995,19 @@ T2 = T1_NoWC architecture extended to `levels=7` with the R0 mixer pattern at de
 | T1_NoWC (1ep) | 344.63M | 1.1845 | 3.6658 | 6,867 MiB | 2,954 MiB | [link](logs/wikitext-103_2026-05-10_00-02-14/log.txt) |
 | T2 (1ep, no WC) | 392.91M | 1.1616 | 3.6094 | 7,788 MiB | 3,186 MiB | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
 | **T2 (1ep, with WC)** | **392.91M** | **1.1541** | **3.5881** | **7,788 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
-| T2 (5ep, with WC, queued) | 392.91M | queued | queued | queued | queued | queued |
+| **T2 (5ep, with WC)** | **392.91M** | **1.0485** | **3.2630** | **7,788 MiB** | **3,238 MiB** | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
 
-**Reading.** T2 with wavelet_crawl is the new strongest 1-epoch result:
-- **vs T2 no-WC (additivity check):** ΔBPB sliding = −0.0075, Δbest val = −0.0213. **Wavelet_crawl's contribution stacks essentially additively on T2.** Predicted from T1_NoWC's regression (+0.0083 cost from removal): −0.0083; observed: −0.0075. The two architectural changes (deeper levels and wavelet_crawl) compose cleanly.
-- **vs T1 with WC (full T2 win):** ΔBPB sliding = −0.0221 (~15× the 0.0015 noise threshold), Δbest val = −0.0512. Decisive across both metrics.
-- **vs T1_NoWC (worst case avoided):** ΔBPB sliding = −0.0304 (~20× threshold), Δbest val = −0.0777.
+**1-epoch reading.** T2 with wavelet_crawl beat T2 without:
+- **vs T2 no-WC (additivity check):** ΔBPB sliding = −0.0075, Δbest val = −0.0213. Wavelet_crawl's contribution stacks essentially additively on T2 (predicted −0.0083; observed −0.0075).
+- **vs T1 with WC:** ΔBPB sliding = −0.0221 (~15× the 0.0015 noise threshold), Δbest val = −0.0512.
 
-**Cost vs T1.** +48.28M dense params (+14%), +921 MiB train VRAM (+13%), +382 MiB inference VRAM (+13%), ~+17% wall-clock per epoch (~1.86h vs T1's ~1.59h).
+**5-epoch result (production-decision datapoint).** T2 (5ep, with WC) is the new production stack:
+- **vs T1 (5ep):** ΔBPB sliding = **−0.0311** (~21× noise threshold), Δbest val = **−0.0711**. Decisively clears the ~0.05+ best-val bar set by the decision criteria.
+- BPB sliding 1.0485 is the strongest 5ep result on the bs=256 / L=1 stack to date; previous L=2/MLP=20 5ep best (the 883M reference run, BPB sliding 1.0140) is still ahead but at ~3.3× more parameters and ~17h vs ~8.9h training time.
 
-**Decision criteria.** T2 (1ep, with WC) clears the bar with substantial margin. Awaiting T2 (5ep, with WC) for the matched-budget production-decision datapoint vs T1 (5ep, 3.3341 best val). If T2 (5ep) lands within ~0.02 of T1 (5ep) on best val, the levels=7 commitment is not worth the +14% cost; if it lands ~0.05+ below, T2 becomes the new production baseline.
+**Cost vs T1 (5ep).** +48.28M dense params (+14%), +921 MiB train VRAM (+13%), +362 MiB inference VRAM (+13%), ~+17% wall-clock (~8.9h vs T1's ~7.6h).
+
+**Decision: T2 with wavelet_crawl is the new production baseline.** All downstream sweeps (Optimizer, BBCE, Recurrence, Dropout, etc.) should compare against T2's 5-epoch numbers (BPB sliding 1.0485, best val 3.2630, 392.91M params).
 
 ---
 
