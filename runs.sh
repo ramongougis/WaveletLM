@@ -208,20 +208,55 @@ run_ablation() {
 # variance study). T2 was already a clear win without crawl (-0.0146 BPB vs
 # T1, -0.0229 vs T1_NoWC). This run tests whether stacking crawl on top of T2
 # is roughly additive — could land another ~0.0083 BPB lower if so.
-run_ablation "T2_WC_1ep T2 with wavelet_crawl=True (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true}' \
-    "T2_WC_1ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (1ep, bs=256, MBS=8)"
+# run_ablation "T2_WC_1ep T2 with wavelet_crawl=True (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true}' \
+#     "T2_WC_1ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (1ep, bs=256, MBS=8)"
 
-run_ablation "T2_WC_5ep New baseline T2 at 5 epochs (with wavelet_crawl)" \
-    "$BASE_PATCH_5EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true}' \
-    "T2_WC_5ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (5ep, bs=256, MBS=8)"
+# run_ablation "T2_WC_5ep New baseline T2 at 5 epochs (with wavelet_crawl)" \
+#     "$BASE_PATCH_5EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true}' \
+#     "T2_WC_5ep: T1 + levels=7 + R0 mixer widths [1.0x4, 0.5x4] + wavelet_crawl=True (5ep, bs=256, MBS=8)"
+
+
+# ---- Muon optimizer sweep on T2 (1 epoch each) ------------------------------
+# Hybrid Muon + AdamW: Muon on 2D non-embedding hidden weights (Linear matrices
+# in lifting/mixer/MLP), AdamW on biases/norms/embeddings/LM head. Per
+# torch.optim.Muon docs, Muon is for 2D parameters of hidden layers only.
+#
+# Defaults applied: weight_decay=0.1 (paper default; vs Adagrad's 1e-6),
+# momentum=0.95, nesterov=True, ns_coefficients=(3.4445, -4.775, 2.0315),
+# eps=1e-7, ns_steps=5, adjust_lr_fn=None (= "original"). The eps difference
+# is intentional — Muon's 1e-7 vs Adagrad's 2e-13. AdamW group inherits Muon's
+# lr and weight_decay by default (overridable via muon_adamw_lr,
+# muon_adamw_weight_decay).
+#
+# All three runs use the T2 architecture (levels=7, per_scale_mixer_widths
+# =[1.0x4, 0.5x4], wavelet_crawl=True) — the new production stack.
+
+# Run 1: Muon defaults (lr=0.001).
+run_ablation "T2_Muon_default_1ep T2 + Muon defaults (lr=0.001, 1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.001, "min_lr": 0.00002, "weight_decay": 0.1}' \
+    "T2_Muon_default_1ep: T2 + Muon defaults (1ep, lr=0.001, wd=0.1, momentum=0.95, eps=1e-7, ns_steps=5)"
+
+# Run 2: Muon at 2x default lr (lr=0.002).
+run_ablation "T2_Muon_lr2e-3_1ep T2 + Muon lr=0.002 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.002, "min_lr": 0.00004, "weight_decay": 0.1}' \
+    "T2_Muon_lr2e-3_1ep: T2 + Muon lr=0.002 (1ep, otherwise default)"
+
+# Run 3: Muon at half default lr (lr=0.0005).
+run_ablation "T2_Muon_lr5e-4_1ep T2 + Muon lr=0.0005 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.0005, "min_lr": 0.00001, "weight_decay": 0.1}' \
+    "T2_Muon_lr5e-4_1ep: T2 + Muon lr=0.0005 (1ep, otherwise default)"
 
 
 echo ""
 echo "============================================================"
 echo "=== Queue complete."
-echo "===   1) T2_WC_1ep — T2 + wavelet_crawl=True (1 epoch) — additivity check"
-echo "===   2) T2_WC_5ep — T2 + wavelet_crawl=True (5 epochs) — production-decision datapoint"
+echo "===   1) T2_Muon_default_1ep — Muon defaults (lr=0.001) on T2"
+echo "===   2) T2_Muon_lr2e-3_1ep   — Muon at 2x default LR (lr=0.002)"
+echo "===   3) T2_Muon_lr5e-4_1ep   — Muon at 0.5x default LR (lr=0.0005)"
 echo "============================================================"

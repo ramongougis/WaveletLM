@@ -827,19 +827,66 @@ def train():
         optimizer_name = config.get('optimizer', 'Adagrad')
         weight_decay = config.get('weight_decay', 0.0)
         if optimizer_name == 'Adagrad':
-            optimizer = torch.optim.Adagrad(
+            optimizers = [torch.optim.Adagrad(
                 model.parameters(), lr=config['lr'],
                 eps=config.get('optimizer_eps', 2e-13),
-                weight_decay=weight_decay)
+                weight_decay=weight_decay)]
+            wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
+            logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
         elif optimizer_name == 'AdamW':
-            optimizer = torch.optim.AdamW(
+            optimizers = [torch.optim.AdamW(
                 model.parameters(), lr=config['lr'],
                 eps=config.get('optimizer_eps', 1e-8),
-                weight_decay=weight_decay)
+                weight_decay=weight_decay)]
+            wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
+            logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
+        elif optimizer_name == 'Muon':
+            # Hybrid Muon + AdamW. Per torch.optim.Muon docs, Muon is for 2D
+            # hidden-layer weights only; biases / norms / embeddings / LM head
+            # should use AdamW. Split params accordingly.
+            muon_params, adamw_params = [], []
+            muon_names, adamw_names = [], []
+            for name, p in model.named_parameters():
+                if not p.requires_grad:
+                    continue
+                lname = name.lower()
+                is_embedding = 'embedding' in lname or 'lm_head' in lname
+                if p.ndim >= 2 and not is_embedding:
+                    muon_params.append(p)
+                    muon_names.append(name)
+                else:
+                    adamw_params.append(p)
+                    adamw_names.append(name)
+            muon_optim = torch.optim.Muon(
+                muon_params,
+                lr=config['lr'],
+                weight_decay=config.get('muon_weight_decay', 0.1),
+                momentum=config.get('muon_momentum', 0.95),
+                nesterov=config.get('muon_nesterov', True),
+                ns_coefficients=tuple(config.get('muon_ns_coefficients', [3.4445, -4.775, 2.0315])),
+                eps=config.get('muon_eps', 1e-7),
+                ns_steps=config.get('muon_ns_steps', 5),
+                adjust_lr_fn=config.get('muon_adjust_lr_fn', None),
+            )
+            adamw_optim = torch.optim.AdamW(
+                adamw_params,
+                lr=config.get('muon_adamw_lr', config['lr']),
+                weight_decay=config.get('muon_adamw_weight_decay', config.get('muon_weight_decay', 0.1)),
+                eps=config.get('muon_adamw_eps', 1e-8),
+            )
+            optimizers = [muon_optim, adamw_optim]
+            logger.log(
+                f"[Optimizer] Muon+AdamW hybrid: "
+                f"Muon on {len(muon_params)} 2D hidden tensors "
+                f"(lr={config['lr']}, wd={config.get('muon_weight_decay', 0.1)}, "
+                f"momentum={config.get('muon_momentum', 0.95)}, eps={config.get('muon_eps', 1e-7)}, "
+                f"ns_steps={config.get('muon_ns_steps', 5)}), "
+                f"AdamW on {len(adamw_params)} other tensors "
+                f"(lr={config.get('muon_adamw_lr', config['lr'])}, "
+                f"wd={config.get('muon_adamw_weight_decay', config.get('muon_weight_decay', 0.1))})"
+            )
         else:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
-        wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
-        logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
 
         # GradScaler for fp16 only
         use_scaler = use_amp and amp_dtype_str == 'fp16'
@@ -867,10 +914,12 @@ def train():
             pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1}")
             for step in pbar:
                 lr = get_lr(global_step, config, total_steps, warmup_steps)
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = lr
+                for opt in optimizers:
+                    for param_group in opt.param_groups:
+                        param_group['lr'] = lr
 
-                optimizer.zero_grad(set_to_none=True)
+                for opt in optimizers:
+                    opt.zero_grad(set_to_none=True)
                 loss_accum = 0.0
 
                 for micro in range(config.get('grad_accum', 1)):
@@ -889,14 +938,17 @@ def train():
 
                 # Gradient clipping
                 if scaler.is_enabled():
-                    scaler.unscale_(optimizer)
+                    for opt in optimizers:
+                        scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.get("grad_clip", 1.0))
 
                 if scaler.is_enabled():
-                    scaler.step(optimizer)
+                    for opt in optimizers:
+                        scaler.step(opt)
                     scaler.update()
                 else:
-                    optimizer.step()
+                    for opt in optimizers:
+                        opt.step()
 
                 global_step += 1
 
@@ -970,7 +1022,7 @@ def train():
         # TEARDOWN: free all training state to get clean VRAM for inference
         # =====================================================================
 
-        del model, optimizer, scaler
+        del model, optimizers, scaler
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
 

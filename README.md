@@ -707,6 +707,18 @@ Adagrad (lr=0.01, eps=2e-13) sits in the failure path for our two recurring NaN 
 
 **Procedure.** 1-epoch peak-LR screening at L=1 / levels=7 / bs=16384 against Adagrad reference 1.2361, 5-epoch confirmation against headline 1.0974, then retest at `levels=9 / 11` — orthogonalized updates may clear the deferred L=11 cliff. See [plans/other_post_release_plans.md §6](plans/other_post_release_plans.md#6-optimizer-sweep-adagrad--adamw--muon).
 
+**Sweep table.** All runs use the T2 architecture (`levels=7`, `per_scale_mixer_widths=[1.0×4, 0.5×4]`, `wavelet_crawl=true`, `bs=256`, `MBS=8`). Muon hybrid splits params: 2D non-embedding hidden weights → Muon, biases / norms / embeddings / LM head → AdamW (per [torch.optim.Muon](https://docs.pytorch.org/docs/stable/generated/torch.optim.Muon.html) docs). For Adagrad the rows for momentum / NS steps / NS coefficients / adjust LR fn are not applicable.
+
+| Optimizer | LR | Weight Decay | Momentum | Eps | NS Steps | NS Coefficients | Adjust LR Fn | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Adagrad (T2 ref, 1ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 1 | 1.1541 | 36.7905 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| Adagrad (T2 ref, 5ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 5 | 1.0485 | 26.4564 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
+| Muon (default, queued) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (queued) | 0.002 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (queued) | 0.0005 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+
+LR is the headline knob for the first sweep — once a winner is identified, subsequent sweeps will fix LR and vary one of `weight_decay`, `momentum`, `ns_steps`, `ns_coefficients`, or `adjust_lr_fn` at a time. AdamW phase will be added as additional rows below the Muon block once those runs are queued.
+
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
