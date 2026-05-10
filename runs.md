@@ -1029,18 +1029,38 @@ Run log: [logs/wikitext-103_2026-05-10_15-49-10/log.txt](logs/wikitext-103_2026-
 
 **Diagnosis.** With `adjust_lr_fn=None` ("original"), `torch.optim.Muon` scales LR by `max(1, sqrt(A/B))` per matrix. For our 2048×2048 mixer/lifting matrices that's 1.0 — no amplification. The doc's default `lr=0.001` is calibrated for `match_rms_adamw` semantics, which would scale by ~9× for 2048×2048 and ~29× for our (2048, 20480) MLP weights. Under "original" scaling, lr=0.001 is effectively 10–50× below what Muon's reference implementations (Keller, DeepSeek-V4) intend. The originally-queued lr=0.002 / lr=0.0005 variants are also in the under-scaled regime and were not run.
 
-### Path B — LR sweep at Keller's regime (queued)
+### Path B v1 — first sweep at Keller's regime
 
-Keep `adjust_lr_fn=None` as the API default (avoids changing the optimizer's effective semantics for downstream comparisons; just adjusting LR achieves the same goal). Sweep LR in / above Keller's published 0.01–0.05 range to find Muon's native operating point on T2. All other Muon hyperparameters at PyTorch defaults: weight_decay=0.1, momentum=0.95, nesterov=True, ns_coefficients=(3.4445, -4.775, 2.0315), eps=1e-7, ns_steps=5. AdamW group inherits Muon's lr and weight_decay.
+Kept `adjust_lr_fn=None` (the API default), swept LR in / above Keller's 0.01–0.05 range. Originally queued at lr ∈ {0.01, 0.05, 0.10, 0.20}. **Outcome: lr=0.01 already over-aggressive; remaining variants skipped.**
+
+**lr=0.01 partial run** ([log](logs/wikitext-103_2026-05-10_17-45-55/log.txt)) — cancelled at ~step 17,537 (~30%):
+
+| Step | T2 Adagrad val | Muon lr=0.001 val | Muon lr=0.01 val | Muon lr=0.01 vs Adagrad |
+|---|---|---|---|---|
+| 250 | 6.8549 | 39.0890 | 7.6752 | +0.82 worse |
+| 1000 | 6.1318 | 6.9327 | 5.7447 | **−0.39 better** |
+| 2000 | 5.6375 | 5.7273 | 5.2663 | **−0.37 better** |
+| 4000 | 5.2124 | 5.1815 | 4.8860 | **−0.33 better** |
+| 6000 | 4.9438 | 4.9250 | 4.7666 | **−0.18 better** |
+| 8000 | 4.7088 | 4.6917 | 4.7568 | +0.05 worse |
+| 8250 | 4.6956 | 4.6676 | 4.7469 | +0.05 worse |
+
+**Reading.** Muon lr=0.01 took an early head start through ~step 6000 (consistent with the "high LR helps in early phase" pattern), then plateaued/oscillated in a 4.72–4.77 band from step ~5000 onward while Adagrad continued its smooth descent past it. Best val seen (so far) was 4.7274 at step 7,000. Diagnostic: too-aggressive LR for the post-warmup regime; oscillation almost certainly worsens at peak LR (step 17,537).
+
+**lr=0.05 / 0.10 / 0.20 skipped.** With lr=0.01 already over the edge into oscillation, higher LRs were guaranteed worse — wasted compute (~9h projected) for negative information.
+
+### Path B v2 — tighter LR band between under-scaled and over-aggressive (queued)
+
+Pivot to lr=0.003 and lr=0.005, splitting the under-scaled 0.001 and over-aggressive 0.01 endpoints. Goal: find a value that captures lr=0.01's early-LR head start without the post-warmup oscillation. All other Muon hyperparameters unchanged from v1: weight_decay=0.1, momentum=0.95, nesterov=True, ns_coefficients=(3.4445, -4.775, 2.0315), eps=1e-7, ns_steps=5, adjust_lr_fn=None. AdamW group inherits Muon's lr and weight_decay.
 
 | LR | Notes | Status |
 |---|---|---|
-| 0.01 | Low end of Keller's published range | queued |
-| 0.05 | High end of Keller / DeepSeek-V4 territory | queued |
-| 0.10 | Above published range — exploratory | queued |
-| 0.20 | Stress test — well above published range | queued |
+| 0.003 | 3× the under-scaled 0.001 baseline | queued |
+| 0.005 | Half the over-aggressive 0.01 cliff | queued |
 
 **Compute-justified-only criterion.** Muon's per-step cost is ~2× Adagrad's on T2 (5 NS iterations × 77 matrices × 2-3 matmuls each). To justify keeping Muon over Adagrad, it must clear T2 (Adagrad)'s 1ep best val of 3.5881 by enough margin that *matched-compute* favors Muon — i.e., reach equal best val in ≤ half the epochs, or strictly beat Adagrad's end-of-epoch numbers at matched epochs. Otherwise Adagrad stays as the production optimizer.
+
+**Realistic expectation:** even if v2 finds a non-oscillating Muon LR, Muon's per-epoch cost is ~2× Adagrad's. Matching Adagrad's 1ep best val at ~2× the wall-clock isn't a win. Muon needs to be **substantially better at matched compute**, not just non-NaN. If neither v2 LR clears that bar, Adagrad stays and the optimizer sweep ends here pending the AdamW phase.
 
 ---
 

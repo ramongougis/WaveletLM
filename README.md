@@ -522,24 +522,25 @@ Longer training time, more regularization, and parameter compression are the sur
 6. [(Done) T1 Baseline Without Wavelet Crawl](#complete-t1-baseline-without-wavelet-crawl)
 7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-9. [Bisected Block Context Extension](#bisected-block-context-extension)
-10. [Recurrence (Mixer Only)](#recurrence-mixer-only)
-11. [Dropout](#dropout)
-12. [Weight Decay](#weight-decay)
-13. [Mixer Transform Ablation](#mixer-transform-ablation)
-14. [Step-Time Speedups](#step-time-speedups)
-15. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
-16. [Longer PG-19 Training](#longer-pg-19-training)
-17. [Dataset Comparisons](#dataset-comparisons)
-18. [Model Comparisons](#model-comparisons)
-19. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-20. [Multi-Transform Parallelization](#multi-transform-parallelization)
-21. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-22. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-23. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-24. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-25. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-26. [Other Post-Release Plans](#other-post-release-plans)
+9. [Sequential Block Ordering](#sequential-block-ordering)
+10. [Bisected Block Context Extension](#bisected-block-context-extension)
+11. [Recurrence (Mixer Only)](#recurrence-mixer-only)
+12. [Dropout](#dropout)
+13. [Weight Decay](#weight-decay)
+14. [Mixer Transform Ablation](#mixer-transform-ablation)
+15. [Step-Time Speedups](#step-time-speedups)
+16. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+17. [Longer PG-19 Training](#longer-pg-19-training)
+18. [Dataset Comparisons](#dataset-comparisons)
+19. [Model Comparisons](#model-comparisons)
+20. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+21. [Multi-Transform Parallelization](#multi-transform-parallelization)
+22. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+23. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+24. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+25. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+26. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+27. [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -710,10 +711,12 @@ The new baseline shall be named **T2**.
 | Adagrad (T2 ref, 1ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 1 | 1.1541 | 36.7905 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
 | Adagrad (T2 ref, 5ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 5 | 1.0485 | 26.4564 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
 | Muon (defunct ※) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled at step 27,500 / 47%) | — | — | val=4.1243 vs T2 Adagrad's val=3.9342 at the same step (Δ = +0.1901) | partial (~1.62h to step 27,500, projected ~3.05h for 1ep) | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_15-49-10/log.txt) |
-| Muon (queued) | 0.01 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
-| Muon (queued) | 0.05 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
-| Muon (queued) | 0.10 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
-| Muon (queued) | 0.20 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| Muon (over-aggressive ✗) | 0.01 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled at ~step 17,537 / 30%) | — | — | best val 4.7274 at step 7,000; plateau/oscillation in 4.72–4.77 band from step ~5000; ahead of Adagrad through step ~6000 then crossed back behind — see footnote | partial | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_17-45-55/log.txt) |
+| ~~Muon (skipped — lr=0.01 already over-aggressive)~~ | ~~0.05~~ | — | — | — | — | — | — | ~~1~~ | skipped | skipped | skipped | skipped | skipped | skipped | — |
+| ~~Muon (skipped)~~ | ~~0.10~~ | — | — | — | — | — | — | ~~1~~ | skipped | skipped | skipped | skipped | skipped | skipped | — |
+| ~~Muon (skipped)~~ | ~~0.20~~ | — | — | — | — | — | — | ~~1~~ | skipped | skipped | skipped | skipped | skipped | skipped | — |
+| **Muon (queued)** | **0.003** | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
+| **Muon (queued)** | **0.005** | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
 
 ※ **Defunct — LR under-scaled.** With `adjust_lr_fn=None` (= "original" / Keller's scaling, the API default), `torch.optim.Muon` scales LR by `max(1, sqrt(A/B))` per matrix — for square 2048×2048 matrices that's 1.0, *no amplification*. The doc's `lr=0.001` default is calibrated for `match_rms_adamw` semantics, which would scale by ~9× for 2048×2048 and ~29× for our (2048, 20480) MLP weights. Under "original" scaling with lr=0.001, the effective LR is 10–50× below what Muon's reference implementations (Keller, DeepSeek-V4) intend. The partial run confirms this: trains, but ~0.19 nats behind T2 (Adagrad) at matched step. The lr=0.002 / lr=0.0005 sweep variants (originally queued) are also in the under-scaled regime and were not run; subsequent runs jump to lr ∈ {0.01, 0.05, 0.10, 0.20} to test Muon under "original" scaling at LRs in / above Keller's published 0.01–0.05 range.
 
@@ -722,6 +725,43 @@ The new baseline shall be named **T2**.
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
+
+### Sequential Block Ordering
+
+Currently, the model does fully random sampling: each block starts at a uniformly random corpus position with no relationship between consecutive batches. ~37% of training tokens are never sampled at 1 epoch under this regime (~63% coverage from `1 - e^-1`); ~99.3% are covered after 5 epochs.
+
+This section tests **deterministic sequential block ordering** — every token visited exactly once per epoch in corpus order. Rationale is multi-feature: (a) prerequisite for efficient [Bisected Block Context Extension](#bisected-block-context-extension) (consecutive batches share most of their compressed history, enabling caching), (b) prerequisite for [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training), (c) cleaner epoch semantics ("one epoch = one full pass through the corpus"), and (d) tests the **one-shot-learner hypothesis** suggested by WaveletLM's PG-19 sample efficiency vs. transformers.
+
+**Design choices:**
+
+- **Stride = `block_size`** (no overlap). Each token is seen exactly once per epoch as a target.
+- **Document/book boundaries: ignored** (soft handling). Matches the current random-sampler behavior and the GPT-style "concat-and-chunk" pretraining default. Some blocks naturally straddle boundaries; cross-document context is allowed.
+- **No shuffling.** Pure sequential pass through the corpus. Deliberate departure from most pretraining (which typically shuffles at the block or document level). The point of this experiment is to see whether maintaining corpus-order matters.
+- **Two MBS regimes tested**, both at effective batch size 8:
+  - **Pure sequential (MBS=1, GA=8):** one stream, each grad-accum substep processes one strictly-consecutive block before the optimizer step. Maximum within-batch order preservation. ~10–20% wall-clock overhead vs. MBS=8/GA=1 from launch costs.
+  - **Stream-batched sequential ("Rainman", MBS=8, GA=1):** 8 parallel streams advancing through the corpus together (each starting at corpus position `k × N/8`). Within a batch, the 8 elements progress in lockstep. Distant temporal events are split across streams; nearby events are learned simultaneously.
+
+**Test plan (4 runs, 2 × 2 cross):**
+
+| Run | MBS | GA | Epochs | Compute (est.) | Comparison |
+|---|---|---|---|---|---|
+| T2_seq_M8_1ep | 8 | 1 | 1 | ~1.9h | vs T2 random 1ep (best val 3.5881) |
+| T2_seq_M8_2ep | 8 | 1 | 2 | ~3.8h | + tests one-shot-learner hypothesis |
+| T2_seq_M1_1ep | 1 | 8 | 1 | ~2.1h | tests pure sequential vs Rainman at 1ep |
+| T2_seq_M1_2ep | 1 | 8 | 2 | ~4.2h | + 2-epoch one-shot test on pure sequential |
+
+Total: ~12h overnight. The 2×2 cross isolates two effects independently:
+- **MBS dimension** (1ep rows): does perfect within-batch sequentiality help vs. stream-parallel?
+- **Epochs dimension** (1ep vs 2ep, within each MBS regime): does a second pass meaningfully help, or does WaveletLM saturate?
+
+**One-shot-learner hypothesis (refined).** With warmup_fraction=0.3 fixed, a 2-epoch run's warmup ends at step 35,074 (60% through epoch 1), peak LR hits there, and cosine decay runs from there to the end of epoch 2. **Early epoch 2 has higher absolute LR than the entire post-warmup tail of epoch 1.** So:
+
+- If WaveletLM is a strong one-shot learner: T2_seq_2ep should show meaningful descent through early epoch 2 (post-peak LR + still some warmup-residual novelty), then a **sharp plateau in late epoch 2 despite still-elevated LR**. The plateau-while-LR-nontrivial is the load-bearing evidence — it eliminates "LR decay caused convergence" as a confound.
+- If WaveletLM benefits from repeated passes: continued smooth descent through end of epoch 2, with no LR-independent plateau.
+
+The crispest read comes from the val-loss-per-step curve, not the end-of-run number — look for an inflection in slope around mid-epoch-2.
+
+**Implementation effort.** Modest — a config flag (`sequential_blocks: bool`), a new sampler that maintains a position counter (or 8 position counters for the Rainman variant) and produces strictly-consecutive blocks, and a small change in `make_get_batch` to switch on the flag. ~50–80 lines.
 
 ### Bisected Block Context Extension
 

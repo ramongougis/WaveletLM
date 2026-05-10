@@ -271,39 +271,62 @@ run_ablation() {
 #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.0005, "min_lr": 0.00001, "weight_decay": 0.1}' \
 #     "T2_Muon_lr5e-4_1ep: T2 + Muon lr=0.0005 (1ep, otherwise default)"
 
-# Run B1: Muon at lr=0.01 (low end of Keller's published range).
-run_ablation "T2_Muon_lr1e-2_1ep T2 + Muon lr=0.01 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.01, "min_lr": 0.0002, "weight_decay": 0.1}' \
-    "T2_Muon_lr1e-2_1ep: T2 + Muon lr=0.01 (1ep, adjust_lr_fn=None, wd=0.1, momentum=0.95, eps=1e-7, ns_steps=5)"
+# DEFUNCT — Path B v1: lr=0.01 already showed too-aggressive symptoms
+# (oscillation/plateau in a 4.72-4.77 val band from step ~5000 onward, while
+# Adagrad continued smoothly descending past it). lr=0.05 / 0.10 / 0.20 were
+# guaranteed-worse and skipped. Pivoting to lr=0.003 / lr=0.005 to find the
+# true sweet spot between under-scaled (0.001) and over-aggressive (0.01).
+# # Run B1: Muon at lr=0.01 (low end of Keller's published range — partial run).
+# # logs/wikitext-103_2026-05-10_17-45-55/log.txt — cancelled at ~step 17,537 (~30%)
+# run_ablation "T2_Muon_lr1e-2_1ep T2 + Muon lr=0.01 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.01, "min_lr": 0.0002, "weight_decay": 0.1}' \
+#     "T2_Muon_lr1e-2_1ep: T2 + Muon lr=0.01 (1ep, adjust_lr_fn=None, wd=0.1, momentum=0.95, eps=1e-7, ns_steps=5)"
+#
+# # Run B2: Muon at lr=0.05 — skipped (lr=0.01 already over-aggressive).
+# run_ablation "T2_Muon_lr5e-2_1ep T2 + Muon lr=0.05 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.05, "min_lr": 0.001, "weight_decay": 0.1}' \
+#     "T2_Muon_lr5e-2_1ep: T2 + Muon lr=0.05 (1ep, otherwise as B1)"
+#
+# # Run B3: Muon at lr=0.1 — skipped.
+# run_ablation "T2_Muon_lr1e-1_1ep T2 + Muon lr=0.1 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.1, "min_lr": 0.002, "weight_decay": 0.1}' \
+#     "T2_Muon_lr1e-1_1ep: T2 + Muon lr=0.1 (1ep, otherwise as B1)"
+#
+# # Run B4: Muon at lr=0.2 — skipped.
+# run_ablation "T2_Muon_lr2e-1_1ep T2 + Muon lr=0.2 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.2, "min_lr": 0.004, "weight_decay": 0.1}' \
+#     "T2_Muon_lr2e-1_1ep: T2 + Muon lr=0.2 (1ep, stress test — well above Keller's published range)"
 
-# Run B2: Muon at lr=0.05 (high end of Keller's published range, near DeepSeek-V4).
-run_ablation "T2_Muon_lr5e-2_1ep T2 + Muon lr=0.05 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.05, "min_lr": 0.001, "weight_decay": 0.1}' \
-    "T2_Muon_lr5e-2_1ep: T2 + Muon lr=0.05 (1ep, otherwise as B1)"
 
-# Run B3: Muon at lr=0.1 (above Keller's published range — exploratory).
-run_ablation "T2_Muon_lr1e-1_1ep T2 + Muon lr=0.1 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.1, "min_lr": 0.002, "weight_decay": 0.1}' \
-    "T2_Muon_lr1e-1_1ep: T2 + Muon lr=0.1 (1ep, otherwise as B1)"
+# ---- Path B v2: tighter LR band between 0.001 (smooth/slow) and 0.01 (oscillates) ----
+# The lr=0.001 run (15:49) trained smoothly but ~10x slower than needed. The
+# lr=0.01 run (17:45) leapt ahead of Adagrad through ~step 6000 but plateaued
+# in a 4.72-4.77 oscillation band from ~step 5000. The optimal Muon LR for
+# T2 is likely between these — values that give the early-LR head start
+# without the post-warmup oscillation.
 
-# Run B4: Muon at lr=0.2 (well above published range — stress test for Muon's
-# orthogonalization-bounded update at high LR).
-run_ablation "T2_Muon_lr2e-1_1ep T2 + Muon lr=0.2 (1ep)" \
+# Run B5: Muon at lr=0.003 (3x the under-scaled 0.001).
+run_ablation "T2_Muon_lr3e-3_1ep T2 + Muon lr=0.003 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.2, "min_lr": 0.004, "weight_decay": 0.1}' \
-    "T2_Muon_lr2e-1_1ep: T2 + Muon lr=0.2 (1ep, stress test — well above Keller's published range)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.003, "min_lr": 0.00006, "weight_decay": 0.1}' \
+    "T2_Muon_lr3e-3_1ep: T2 + Muon lr=0.003 (1ep, between under-scaled 0.001 and over-aggressive 0.01)"
+
+# Run B6: Muon at lr=0.005 (half the over-aggressive 0.01).
+run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Muon", "lr": 0.005, "min_lr": 0.0001, "weight_decay": 0.1}' \
+    "T2_Muon_lr5e-3_1ep: T2 + Muon lr=0.005 (1ep, otherwise as B5)"
 
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (Path B Muon LR sweep on T2)."
-echo "===   1) T2_Muon_lr1e-2_1ep — lr=0.01 (Keller low end)"
-echo "===   2) T2_Muon_lr5e-2_1ep — lr=0.05 (Keller high end / DeepSeek-V4)"
-echo "===   3) T2_Muon_lr1e-1_1ep — lr=0.10 (above published range)"
-echo "===   4) T2_Muon_lr2e-1_1ep — lr=0.20 (stress test)"
+echo "=== Queue complete (Path B v2 — Muon LR sweep, tighter band)."
+echo "===   1) T2_Muon_lr3e-3_1ep — lr=0.003"
+echo "===   2) T2_Muon_lr5e-3_1ep — lr=0.005"
 echo "==="
 echo "=== Decision criterion: Muon must clear T2 (Adagrad) 1ep best val 3.5881"
 echo "===   by enough margin to compensate ~2x wall-clock cost. Otherwise Adagrad stays."
