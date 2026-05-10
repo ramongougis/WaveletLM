@@ -519,7 +519,7 @@ Longer training time, more regularization, and parameter compression are the sur
 3. [(Complete) Larger Block Size](#complete-larger-block-size)
 4. [(Complete) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
 5. [(Complete) Mixer Low Rank](#complete-mixer-low-rank)
-6. [T1 Baseline Without Wavelet Crawl](#t1-baseline-without-wavelet-crawl)
+6. [(Complete) T1 Baseline Without Wavelet Crawl](#complete-t1-baseline-without-wavelet-crawl)
 7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 9. [Bisected Block Context Extension](#bisected-block-context-extension)
@@ -639,7 +639,7 @@ Full details in [runs.md → Mixer width contractions](runs.md#mixer-width-contr
 
 **Decision:** Keep T1 with `low_rank=4`.
 
-### T1 Baseline Without Wavelet Crawl
+### (Complete) T1 Baseline Without Wavelet Crawl
 
 Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (very small: only 15 parameters with levels=5) convolution operation in the model. Performance impact negligible.
 
