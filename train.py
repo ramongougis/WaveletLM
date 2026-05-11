@@ -343,11 +343,44 @@ def make_get_batch(train_data, val_data, config, device):
           substep produces the next consecutive block before optimizer.step().
       Validation always uses random sampling regardless of mode (sequential
       val would deterministically resample the same blocks each eval call).
+
+    BBCE (`bbce_enabled=true`): each batch reads `block_size_compressed`
+    consecutive tokens per element instead of `block_size`. Targets `y` are
+    only the last `block_size/2` next-token positions of that window (the
+    uncompressed half is the loss-bearing region; the compressed half is
+    context). The model's BBCEPreprocessor handles mean-pooling the
+    compressed half. Currently only supported with random sampling
+    (sequential+BBCE+caching is Phase 2).
     """
     T = config['block_size']
     _arange_T_cpu = torch.arange(T)[None, :]
     bs = config['micro_batch_size']
     use_sequential = config.get('sequential_blocks', False)
+    use_bbce = config.get('bbce_enabled', False)
+
+    if use_bbce:
+        if use_sequential:
+            raise ValueError(
+                "bbce_enabled=true with sequential_blocks=true is not yet "
+                "supported (Phase 2). Use random sampling for the initial BBCE "
+                "sweep."
+            )
+        Tc = int(config['block_size_compressed'])
+        if Tc < T:
+            raise ValueError(
+                f"block_size_compressed ({Tc}) must be >= block_size ({T})"
+            )
+        num_uncompressed = T // 2  # targets are only for the last T/2 positions
+        # x window: [start, start + Tc), tokens 0..Tc-1
+        # y window: [start + Tc - num_uncompressed, start + Tc)
+        # i.e. the next-token target for x[Tc - num_uncompressed - 1] is
+        # at corpus position start + Tc - num_uncompressed; this lines up
+        # with the last num_uncompressed positions of the x window when
+        # shifted by 1 (next-token prediction).
+        _arange_Tc_cpu = torch.arange(Tc)[None, :]
+        _arange_y_cpu = torch.arange(
+            Tc - num_uncompressed, Tc
+        )[None, :]  # offsets for the last num_uncompressed positions
 
     # Persistent train-position counters for sequential mode. Mutated in-place
     # by the closure on each call; modulo wraps at end of corpus.
@@ -364,7 +397,27 @@ def make_get_batch(train_data, val_data, config, device):
         train_positions = None
 
     def get_batch(split):
+        if use_bbce:
+            # For BBCE val, fall back to train_data when val_data is shorter
+            # than block_size_compressed (typical: val=251K, bc=1M+). The
+            # resulting "val" loss is then a train-loss proxy on independent
+            # random samples — still useful for tracking best_val during
+            # training. Test-set BPB is skipped separately in train.py.
+            if split == 'val' and len(val_data) - Tc - 1 < 0:
+                data = train_data
+            else:
+                data = train_data if split == 'train' else val_data
+
+            max_start = len(data) - Tc - 1
+            ix = torch.randint(0, max_start, (bs,))  # CPU
+            x_offsets = ix[:, None] + _arange_Tc_cpu  # (bs, Tc)
+            y_offsets = ix[:, None] + _arange_y_cpu + 1  # (bs, num_uncompressed)
+            x = data[x_offsets].to(device, non_blocking=True)  # (bs, Tc) raw tokens
+            y = data[y_offsets].to(device, non_blocking=True)  # (bs, num_uncompressed)
+            return x, y
+
         data = train_data if split == 'train' else val_data
+
         max_start = len(data) - T - 1
 
         if use_sequential and split == 'train':
@@ -1107,21 +1160,39 @@ def train():
                    f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
                    f"({q_stats['compression_ratio']:.2f}x)")
 
-    # Non-overlapping benchmark
-    results_full = evaluate_full_validation(
-        model, test_data, config, logger, device, use_amp, amp_dtype)
-    if results_full:
-        bpb_full = results_full['bits_per_token'] / bytes_per_token
-        logger.log(f"\n[BENCHMARK - Non-overlapping]")
-        logger.log(f"  Perplexity: {results_full['perplexity']:.4f}")
-        logger.log(f"  BPT: {results_full['bits_per_token']:.4f}")
-        logger.log(f"  BPB: {bpb_full:.4f}")
-        logger.log(f"  Avg Loss: {results_full['avg_loss']:.4f}")
+    # BBCE: test-set benchmark expects model.forward(block_size_sized_input),
+    # but BBCE-trained model expects (B, block_size_compressed) input and does
+    # its own bisection. Skip the benchmark to avoid shape mismatch and
+    # because test_data is typically smaller than block_size_compressed for
+    # the larger BBCE variants. Best-val (training-time eval) is the
+    # informative number for BBCE runs.
+    if config.get('bbce_enabled', False):
+        logger.log(
+            "\n[BENCHMARK] Skipped (bbce_enabled=true). BBCE expects "
+            "block_size_compressed-sized input; test-set benchmarks use "
+            "block_size-sized slices. Best-val from training is the "
+            "informative number; see Best Val Loss in epoch logs."
+        )
+        results_full = None
+        results_sw = None
+        bpb_full = None
+        bpb_sw = None
+    else:
+        # Non-overlapping benchmark
+        results_full = evaluate_full_validation(
+            model, test_data, config, logger, device, use_amp, amp_dtype)
+        if results_full:
+            bpb_full = results_full['bits_per_token'] / bytes_per_token
+            logger.log(f"\n[BENCHMARK - Non-overlapping]")
+            logger.log(f"  Perplexity: {results_full['perplexity']:.4f}")
+            logger.log(f"  BPT: {results_full['bits_per_token']:.4f}")
+            logger.log(f"  BPB: {bpb_full:.4f}")
+            logger.log(f"  Avg Loss: {results_full['avg_loss']:.4f}")
 
-    # Sliding window benchmark
-    results_sw = evaluate_sliding_window(
-        model, test_data, config, logger, device, use_amp, amp_dtype)
-    bpb_sw = None
+        # Sliding window benchmark
+        results_sw = evaluate_sliding_window(
+            model, test_data, config, logger, device, use_amp, amp_dtype)
+        bpb_sw = None
     if results_sw:
         bpb_sw = results_sw['bits_per_token'] / bytes_per_token
         logger.log(f"\n[BENCHMARK - Sliding Window]")

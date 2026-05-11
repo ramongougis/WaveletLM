@@ -401,10 +401,19 @@ run_ablation() {
 # mixer slots (3 per joint level × 3 joint levels = 9 extra mixer instances
 # vs internal's 8). Each PerScaleMixer is ~5.9M params at width=0.5*Cp=1024,
 # so 6 extra mixers ≈ 35M more params. Total: T2 + ~60M (~15% over T2's 393M).
-run_ablation "T2_seq_M8_1ep_2d_subband T2 Rainman + 2D wavelet 'subband' mode (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_mode": "subband"}' \
-    "T2_seq_M8_1ep_2d_subband: Rainman + 2D wavelet 'subband' mode (Phase 2.B; 4 sub-bands per joint level exposed to per-band mixers; mixer count 14 vs 1D's 8)"
+# SHELVED (2026-05-11): both 2D wavelet modes underperformed Rainman baseline
+# on WT-103 sequential. "internal" mode: best val 3.6691 (Δ +0.0090, +14%
+# wall-clock — logs/wikitext-103_2026-05-11_08-05-10/). "subband" mode: best
+# val 3.7199 (Δ +0.0598, +30% wall-clock — logs/wikitext-103_2026-05-11_13-00-11/).
+# Likely cause: Wikipedia articles are largely independent at the chunk level,
+# so cross-batch temporal structure that would justify 2D decomposition isn't
+# present in WT-103. 2D wavelets may still work on PG-19 (long-form novels with
+# multi-book dependencies); revisit there if compute allows. Code preserved in
+# tools/two_d_wavelets.py for future revisit.
+# run_ablation "T2_seq_M8_1ep_2d_subband T2 Rainman + 2D wavelet 'subband' mode (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_mode": "subband"}' \
+#     "T2_seq_M8_1ep_2d_subband: Rainman + 2D wavelet 'subband' mode (Phase 2.B; 4 sub-bands per joint level exposed to per-band mixers; mixer count 14 vs 1D's 8)"
 
 
 # ---- T2 random sampling + lr=0.015 (Adagrad comparison) ---------------------
@@ -421,6 +430,136 @@ run_ablation "T2_rand_1ep_lr15 T2 random sampling + lr=0.015 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003}' \
     "T2_rand_1ep_lr15: T2 random sampling + lr=0.015 (1ep; fair-comparison companion to T2_seq_M8_1ep_lr15; isolates LR vs sequential variable)"
+
+
+# ---- BBCE sweep (Bisected Block Context Extension) --------------------------
+# Each batch reads `block_size_compressed` tokens; the first
+# (block_size_compressed - block_size/2) tokens are chunk-averaged into
+# block_size/2 compressed slots; the last block_size/2 tokens are
+# uncompressed. Concatenated, the (B, block_size, C) result feeds the
+# standard wavelet pipeline. Loss is computed only on the last block_size/2
+# positions (the supervised "uncompressed half").
+#
+# Random sampling is used throughout (Phase 1). Sequential ordering with
+# slot caching is a Phase 2 follow-up if any of these runs shows promise.
+#
+# Sweep grid: block_size ∈ {256, 512} × block_size_compressed ∈ {65K, 262K,
+# 1M, 4M}. Ordered shortest→longest wall-clock to surface signal quickly.
+# The very long variants (4M) may need to be cancelled if too slow; results
+# from smaller variants should already settle the "does long context help?"
+# question.
+#
+# Expected wall-clock per run (random sampling, MBS=8, 5090):
+#   - bc=65K:  ~2-2.5h
+#   - bc=262K: ~3h
+#   - bc=1M:   ~8-10h
+#   - bc=4M:   ~30-40h  (long; may want to cancel early or run separately)
+# block_size=512 variants are roughly 10-20% slower than bs=256 counterparts.
+#
+# Comparison reference: T2 random 1ep best val 3.5881 (the standard baseline).
+# Decision: any BBCE variant must clear 3.5881 by > 0.0015 (noise threshold)
+# to be considered a win. Tied or worse → BBCE adds context that the model
+# can't usefully exploit at this scale, and we drop the direction.
+
+# BBCE base patch — block_size=256, levels=7, T2 mixer widths.
+BBCE_BASE_256='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "bbce_enabled": true, "block_size": 256}'
+# BBCE base patch — block_size=512, levels=7, same mixer widths (8 entries =
+# L+1 regardless of block_size).
+BBCE_BASE_512='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "bbce_enabled": true, "block_size": 512}'
+
+# BBCE-1: bc=65K (smallest, fastest signal)
+run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
+    "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
+
+run_ablation "T2_BBCE_b512_bc65K_1ep block_size=512, block_size_compressed=65,536 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 65536}" \
+    "T2_BBCE_b512_bc65K_1ep: BBCE bs=512/bc=65K (1ep, random sampling, T2 stack)"
+
+# BBCE-2: bc=262K
+run_ablation "T2_BBCE_b256_bc262K_1ep block_size=256, block_size_compressed=262,144 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 262144}" \
+    "T2_BBCE_b256_bc262K_1ep: BBCE bs=256/bc=262K (1ep, random sampling, T2 stack)"
+
+run_ablation "T2_BBCE_b512_bc262K_1ep block_size=512, block_size_compressed=262,144 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 262144}" \
+    "T2_BBCE_b512_bc262K_1ep: BBCE bs=512/bc=262K (1ep, random sampling, T2 stack)"
+
+# BBCE-3: bc=1M
+run_ablation "T2_BBCE_b256_bc1M_1ep block_size=256, block_size_compressed=1,048,576 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 1048576}" \
+    "T2_BBCE_b256_bc1M_1ep: BBCE bs=256/bc=1M (1ep, random sampling, T2 stack)"
+
+run_ablation "T2_BBCE_b512_bc1M_1ep block_size=512, block_size_compressed=1,048,576 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 1048576}" \
+    "T2_BBCE_b512_bc1M_1ep: BBCE bs=512/bc=1M (1ep, random sampling, T2 stack)"
+
+# BBCE-large-bs: block_size=2048 × bc ∈ {65K, 262K, 1M}. Key compute insight:
+# steps_per_epoch = corpus_size / (block_size * effective_batch). At bs=2048,
+# steps_per_epoch is 8× smaller than bs=256 (≈7,325 vs ≈58,500). Per-step
+# compute is ~8× higher (wavelet/mixer/MLP all scale with T), so total
+# compute per epoch is roughly equivalent. BUT BBCE's embedding overhead is
+# per-step, so bs=2048 sees 8× less embedding work per epoch — meaningful
+# savings at large bc.
+#
+# VRAM caveat: at bs=2048/MBS=8 the activation memory would OOM the 5090
+# (~32GB activations alone). Setting MBS=4/GA=2 maintains effective batch=8
+# while fitting VRAM (~16-20GB activations).
+
+run_ablation "T2_BBCE_b2048_bc65K_1ep block_size=2048, block_size_compressed=65,536 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 65536, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+    "T2_BBCE_b2048_bc65K_1ep: BBCE bs=2048/bc=65K (1ep, random sampling, MBS=4/GA=2 for VRAM)"
+
+run_ablation "T2_BBCE_b2048_bc262K_1ep block_size=2048, block_size_compressed=262,144 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 262144, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+    "T2_BBCE_b2048_bc262K_1ep: BBCE bs=2048/bc=262K (1ep, random sampling, MBS=4/GA=2)"
+
+run_ablation "T2_BBCE_b2048_bc1M_1ep block_size=2048, block_size_compressed=1,048,576 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 1048576, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+    "T2_BBCE_b2048_bc1M_1ep: BBCE bs=2048/bc=1M (1ep, random sampling, MBS=4/GA=2)"
+
+
+# ---- T2 random sampling + lr=0.020 (upper bracket of the LR sweep) ----------
+# Confirmation companion to T2_rand_1ep_lr15. The lr=0.015 run is tracking
+# ~0.044 nats ahead of T2 baseline (lr=0.01) at matched step — clear win.
+# This run checks whether lr=0.020 is even better or whether we've already
+# passed the optimum. Decision rule:
+#   - lr=0.020 best val < lr=0.015 best val → optimum is >=0.02; consider
+#     another sweep at lr=0.025 to find the peak.
+#   - lr=0.020 best val ≈ lr=0.015 best val (within noise) → plateau; lock
+#     in 0.015 as the new default.
+#   - lr=0.020 best val > lr=0.015 best val → past the optimum; 0.015 wins.
+# Watch for late-epoch oscillation symptomatic of too-high LR — saw this
+# with Muon at lr=0.01 (plateau/oscillation after step 5000). If lr=0.020
+# shows similar oscillation, it's likely too high for Adagrad on T2.
+run_ablation "T2_rand_1ep_lr20 T2 random sampling + lr=0.020 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.020, "min_lr": 0.0004}' \
+    "T2_rand_1ep_lr20: T2 random sampling + lr=0.020 (1ep; upper-bracket of LR sweep, follows the lr=0.015 win)"
+
+
+# BBCE-4: bc=4M REMOVED — wall-clock impractical (~30-45h per run on a 5090).
+# If the bc=65K/262K/1M sweep shows BBCE is worth pursuing, the 4M variant
+# may be worth revisiting (perhaps with sequential+caching, since random
+# sampling re-embeds the full 4M window every step).
+# run_ablation "T2_BBCE_b256_bc4M_1ep block_size=256, block_size_compressed=4,194,304 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 4194304}" \
+#     "T2_BBCE_b256_bc4M_1ep: BBCE bs=256/bc=4M (1ep, random sampling, T2 stack)"
+#
+# run_ablation "T2_BBCE_b512_bc4M_1ep block_size=512, block_size_compressed=4,194,304 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 4194304}" \
+#     "T2_BBCE_b512_bc4M_1ep: BBCE bs=512/bc=4M (1ep, random sampling, T2 stack)"
 
 
 # ---- Adagrad-fix Rainman tests on sequential ordering (deprioritized) -------
@@ -462,13 +601,39 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (2D wavelet 'internal' + 'subband' + lr=0.015 isolation + Muon LR sweep)."
-echo "===   1) T2_seq_M8_1ep_2d_internal — 2D wavelet 'internal' mode (Phase 2.A, complete)"
-echo "===   2) T2_seq_M8_1ep_2d_subband  — 2D wavelet 'subband' mode (Phase 2.B, PRIORITY)"
-echo "===   3) T2_rand_1ep_lr15          — T2 random + lr=0.015 (isolation: LR vs sequential)"
-echo "===   4) T2_seq_M8_1ep_lr15        — Rainman + lr=0.015 (1ep, complete)"
-echo "===   5) T2_Muon_lr3e-3_1ep        — Muon lr=0.003 (Path B v2)"
-echo "===   6) T2_Muon_lr5e-3_1ep        — Muon lr=0.005 (Path B v2)"
+echo "=== Queue complete (lr=0.015 isolation + BBCE sweep + Muon LR sweep)."
+echo "===   1)  T2_rand_1ep_lr15            — T2 random + lr=0.015 (isolation: LR vs sequential)"
+echo "===   2)  T2_BBCE_b256_bc65K_1ep      — BBCE bs=256/bc=65K   (~2-2.5h)"
+echo "===   3)  T2_BBCE_b512_bc65K_1ep      — BBCE bs=512/bc=65K   (~2-3h)"
+echo "===   4)  T2_BBCE_b256_bc262K_1ep     — BBCE bs=256/bc=262K  (~3h)"
+echo "===   5)  T2_BBCE_b512_bc262K_1ep     — BBCE bs=512/bc=262K  (~3-4h)"
+echo "===   6)  T2_BBCE_b256_bc1M_1ep       — BBCE bs=256/bc=1M    (~8-10h)"
+echo "===   7)  T2_BBCE_b512_bc1M_1ep       — BBCE bs=512/bc=1M    (~9-12h)"
+echo "===   8)  T2_BBCE_b2048_bc65K_1ep     — BBCE bs=2048/bc=65K  (~2-3h)"
+echo "===   9)  T2_BBCE_b2048_bc262K_1ep    — BBCE bs=2048/bc=262K (~2.5-3.5h)"
+echo "===   10) T2_BBCE_b2048_bc1M_1ep      — BBCE bs=2048/bc=1M   (~3-4h, vs bs=256's ~8-10h)"
+echo "===   11) T2_rand_1ep_lr20            — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
+echo "===   12) T2_Muon_lr3e-3_1ep          — Muon lr=0.003 (Path B v2)"
+echo "===   13) T2_Muon_lr5e-3_1ep          — Muon lr=0.005 (Path B v2)"
+echo "==="
+echo "=== bs=2048 runs: MBS=4/GA=2 (effective batch unchanged at 8) to fit VRAM"
+echo "===   at T=2048. steps_per_epoch=7,325 (8x fewer than bs=256) means BBCE"
+echo "===   embedding overhead is 8x less per epoch — meaningful at large bc."
+echo "===   Also a useful axis for studying block-size effect on BBCE quality."
+echo "==="
+echo "=== Removed (wall-clock impractical at ~30-45h per run):"
+echo "===   - T2_BBCE_b256_bc4M_1ep / T2_BBCE_b512_bc4M_1ep"
+echo "===   May revisit with sequential+caching if smaller variants show promise."
+echo "==="
+echo "=== BBCE decision rule: any variant must clear T2 random 1ep best val"
+echo "===   (3.5881) by > 0.0015 (noise threshold) to be considered a win."
+echo "===   Tied or worse → BBCE adds context that the model can't usefully"
+echo "===   exploit at this scale, and we drop the direction."
+echo "==="
+echo "=== Shelved (commented out, code preserved):"
+echo "===   - T2_seq_M8_1ep_2d_internal  — Δ +0.0090 vs Rainman, +14% wall-clock"
+echo "===   - T2_seq_M8_1ep_2d_subband   — Δ +0.0598 vs Rainman, +30% wall-clock"
+echo "===   - T2_seq_M8_1ep_lr15         — completed: best val 3.6231 (~50% gap recovery)"
 echo "==="
 echo "=== Two architectural shots at finding cross-batch lift benefit:"
 echo "===   'internal' — B-axis lift internal to wavelet (sub-band scaling +"

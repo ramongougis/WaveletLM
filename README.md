@@ -523,24 +523,28 @@ Longer training time, more regularization, and parameter compression are the sur
 7. [(Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
 9. [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
-10. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+10. [(Shelved on WT-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-wt-103-2d-wavelet-over-batch-token-with-sequential-training)
 11. [Bisected Block Context Extension](#bisected-block-context-extension)
-12. [Recurrence (Mixer Only)](#recurrence-mixer-only)
-13. [Dropout](#dropout)
-14. [Weight Decay](#weight-decay)
-15. [Mixer Transform Ablation](#mixer-transform-ablation)
-16. [Step-Time Speedups](#step-time-speedups)
-17. [Longer PG-19 Training](#longer-pg-19-training)
-18. [Dataset Comparisons](#dataset-comparisons)
-19. [Model Comparisons](#model-comparisons)
-20. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-21. [Multi-Transform Parallelization](#multi-transform-parallelization)
-22. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-23. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-24. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-25. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-26. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-27. [Other Post-Release Plans](#other-post-release-plans)
+12. [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
+13. [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
+14. [Recurrence (Mixer Only)](#recurrence-mixer-only)
+15. [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
+16. [Complex Wavelets](#complex-wavelets)
+17. [Dropout](#dropout)
+18. [Weight Decay](#weight-decay)
+19. [Mixer Transform Ablation](#mixer-transform-ablation)
+20. [Step-Time Speedups](#step-time-speedups)
+21. [Longer PG-19 Training](#longer-pg-19-training)
+22. [Dataset Comparisons](#dataset-comparisons)
+23. [Model Comparisons](#model-comparisons)
+24. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+25. [Multi-Transform Parallelization](#multi-transform-parallelization)
+26. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+27. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+28. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+29. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+30. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+31. [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -755,22 +759,26 @@ Design choices:
 | T2 sequential | 1 | 8 | 0.01 | 1 | 1.1901 | 41.17 | 3.6503 | ~4.18h | 7,662 MiB | 3,166 MiB | [link](logs/wikitext-103_2026-05-11_01-09-59/log.txt) |
 | **T2 sequential + lr=0.015** | **8** | **1** | **0.015** | **1** | **1.1580** | **37.25** | **3.6231** | **~1.91h** | **8,065 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-11_10-14-25/log.txt) |
 | T2 sequential + 2D internal | 8 | 1 | 0.01 | 1 | 1.1765 | 39.47 | 3.6691 | ~2.11h | 8,269 MiB | 3,398 MiB | [link](logs/wikitext-103_2026-05-11_08-05-10/log.txt) |
+| T2 sequential + 2D subband | 8 | 1 | 0.01 | 1 | 1.1939 | 41.66 | 3.7199 | ~2.40h | 8,990 MiB | 3,514 MiB | [link](logs/wikitext-103_2026-05-11_13-00-11/log.txt) |
 
 **Findings:**
 
 - Sequential ordering at lr=0.01 underperforms random sampling at matched epochs (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB).
 - **Sequential + lr=0.015 (Adagrad uniform LR bump) recovers ~50% of the gap** — best val 3.6231 vs T2 random 3.5881 (Δ = +0.0350 remaining vs the +0.0720 starting gap; 51% gap recovery). BPB sliding gap closes from +0.0185 → +0.0039, within ~3× noise threshold. Hits exactly the predicted "~30–50% recovery" from the LR-bump analysis.
   - Caveat: not fully comparable yet — T2 random reference is at lr=0.01. A matched-LR comparison (T2 random at lr=0.015) is needed to know whether lr=0.015 is a sequential-specific fix or a general improvement. Worth a single follow-up run.
-- **2D wavelet "internal" mode underperforms sequential baseline** (best val 3.6691 vs 3.6601; Δ = +0.0090 worse). The per-sub-band scaling extracts no useful B-axis signal at WT-103 scale, plus a ~14% wall-clock cost. Internal mode shelved on per-compute grounds. Subband mode (Phase 2.B) is queued next — different architecture (per-sub-band mixer specialization vs internal collapse), so the result doesn't carry over.
-- This feature still does not improve the model on its own, but lr=0.015 closes most of the regression and the second-epoch gain (Δ −0.1529 best val between Rainman 1ep and 2ep) confirms sequential is a viable substrate for downstream features that require it (BBCE caching, 2D wavelets, longer-context training).
+- **2D wavelet "internal" mode underperforms sequential baseline** (best val 3.6691 vs 3.6601; Δ = +0.0090, ~6× noise threshold). The per-sub-band scaling extracts no useful B-axis signal at WT-103 scale, plus a ~14% wall-clock cost. Internal mode shelved.
+- **2D wavelet "subband" mode underperforms further** (best val 3.7199 vs 3.6601; Δ = +0.0598, ~40× noise threshold). +63M params (+16%), +30% wall-clock, +15% train VRAM — all costs with negative return. Subband mode shelved. Both 2D modes confirm that B-axis lifting carries no useful signal on WT-103, likely because Wikipedia articles are largely independent and the cross-batch temporal structure that would justify 2D decomposition isn't present. **2D wavelets may still work on PG-19** (long-form novels with multi-book dependencies) but that's a much bigger compute commitment and off the immediate roadmap. Code in `tools/two_d_wavelets.py` is preserved for future revisit; runs.sh entries are commented out.
+- This feature still does not improve the model on its own, but lr=0.015 closes most of the regression and the second-epoch gain (Δ −0.1529 best val between Rainman 1ep and 2ep) confirms sequential is a viable substrate for downstream features that require it (BBCE caching, longer-context training, future PG-19 2D wavelet revisit).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### 2D Wavelet over (Batch, Token) with Sequential Training
+### (Shelved on WT-103) 2D Wavelet over (Batch, Token) with Sequential Training
 
 Generalize the lifting wavelet decomposition from 1D over the token axis to 2D over the joint (batch, token) axis pair. When training proceeds in document-sequential order, the batch axis carries the same multi-scale temporal structure as the token axis, and the same wavelet machinery applies to both. This requires reorganization of the current batch sampling method into a sequential batch processing method, since batches may not be IID with respect to each other. As one example, consider series of novels in PG-19 with temporal plot dependencies between books. Randomly sampling batches breaks this temporal relationship. Using 2D wavelets is a convenient way to enforce and encode temporal relationships at all levels within the model. See [plans/two_d_wavelet_sequential_training.md](plans/two_d_wavelet_sequential_training.md) for the full design.
+
+**Status (2026-05-11):** Two architectural variants tested on T2 + sequential WT-103 at 1 epoch — `"internal"` mode (B-axis lift + per-sub-band scale + B-axis inverse; same output shape as 1D; +6% params) and `"subband"` mode (4 sub-bands per joint level exposed to per-band mixers; +16% params). Both **underperformed the sequential Rainman baseline** (3.6691 / 3.7199 vs 3.6601 best val) at 14% / 30% greater wall-clock respectively. Likely cause: Wikipedia articles are largely independent at the chunk level, so cross-batch temporal structure that would justify 2D decomposition isn't present in WT-103. **2D wavelets may still work on PG-19** (long-form novels with multi-book dependencies) where cross-batch structure is real. Code in [tools/two_d_wavelets.py](tools/two_d_wavelets.py) is preserved for future revisit; runs.sh entries commented out.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -786,7 +794,45 @@ For `block_size=256`, if a 1M context window is desired, `block_size_compressed=
 
 The half-block-size point marks a common seam for every wavelet scale, as each has 2^k dyadic partitions. Thus the compressed and uncompressed regimes never lie in a single partition window, and so there are O(log block_size) total seam-bridging predict/update operations. 
 
-This section will do 8 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512} x {65K, 262K, 1M, 4M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
+This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512, 2048} x {65K, 262K, 1M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Adagrad Learning Rate Tuning
+
+T2's default `lr=0.01` was inherited from earlier baselines and has not been re-tuned for the current architecture. The sequential block ordering experiments surfaced this: the sequential variant of T2 trailed T2 random by Δ best val +0.0720 at lr=0.01, but lr=0.015 (sequential) recovered ~50% of that gap (best val 3.6231 vs Rainman 3.6601). The natural follow-up question was whether lr=0.015 is a sequential-specific Adagrad fix or a general LR re-tune that helps T2 itself.
+
+**Isolation test (T2 random + lr=0.015, in progress at time of writing).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled proportionally to 0.0003). At ~75% of the epoch the trajectory is sustained ~0.044 nats AHEAD of T2 baseline at matched step (e.g., step 43500: val 3.6250 vs T2's 3.6679; Δ ≈ −0.043). Wall-clock matches T2 within 1% (8.9 it/s, ~1.85h projected). The lead is much larger than the 0.0015 noise threshold and persists across many step windows — not sampling variation.
+
+**Implication if confirmed at end of epoch.** lr=0.015 promotes to a new headline baseline. Naming convention: **T3** for the consolidated next baseline, with two possible compositions depending on the BBCE sweep outcome:
+- **T3 = T2 + lr=0.015** (if BBCE shows no improvement). The LR retune alone becomes the new production stack.
+- **T3 = T2 + lr=0.015 + BBCE** (if BBCE shows meaningful improvement on top of the LR retune). Both wins consolidate into one baseline.
+
+In either case, the existing T2 baseline numbers (best val 3.5881 at 1ep, 3.2630 at 5ep) get re-measured under T3's configuration and the headline benchmark in the [Results](#results) section updates accordingly. The sequential lr=0.015 result becomes less of an outlier — it's the same LR fix, just observed on a different sampling mode.
+
+**Why this matters strategically.** Recent architecture-level explorations (2D wavelets — both modes shelved; sequential ordering — needs LR fix to be viable; Muon — no clear win yet) have not surfaced improvements. The lr=0.015 retune appears to be the only meaningful performance gain since the T2 baseline was set, and it costs zero extra compute. Locking it in as T3 captures the win cleanly.
+
+**Follow-up sweep candidate.** lr=0.02 — small extra step to confirm lr=0.015 is in the right neighborhood and we haven't undershot the optimum. Caveat: at sufficiently high LR, Adagrad's accumulator dynamics can change qualitatively (similar to what we saw with Muon at lr=0.01 — fast early descent then oscillation around step 5000). Worth one sweep to verify; if lr=0.02 underperforms 0.015, that's confirmation and we lock in 0.015.
+
+**BBCE compatibility.** The currently-queued BBCE sweep deliberately uses lr=0.01 (T2's existing LR) for apples-to-apples comparison against the T2 baseline. If BBCE shows a winner, that winner will be re-run at lr=0.015 as part of the T3 consolidation. Switching mid-queue would mix two variables and complicate attribution.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Wavelet Sparsity Probe & Wavelet Shrinkage
+
+Two related ablations exploring the sparsity structure of the wavelet's detail coefficients — a property heavily exploited by classical wavelet compression (JPEG 2000) that we have not yet measured or used in our learned-wavelet pipeline.
+
+**Sparsity probe (diagnostic, ~30 minutes).** Run a trained T2 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (e.g., quantiles, fraction below 1% of max). If detail coefficients are heavily sparse (~80%+ near zero, as is typical for natural-signal wavelet decompositions), several optimization directions open up: sparse mixer compute (top-k mixing within each scale), low-bit detail quantization (run details at fp8/int8 while keeping approximation at fp16), sparse activation storage for long-context training, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High information value per compute spent; this is the first thing to run.
+
+**Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients during the forward pass: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` where `λ` is the shrinkage strength (start with 0.1) and `σ_scale` is the per-scale standard deviation (estimated as a running EMA or precomputed once). Forces the model to learn a sparse multi-scale representation, mirroring the noise-suppression behavior wavelet methods use in signal processing. One config flag (`wavelet_shrinkage_lambda`) and ~10 lines in the wavelet's forward. Two outcomes worth distinguishing:
+- **Helps**: shrinkage acts as effective regularization; the model was using too many detail coefficients indiscriminately and dropping the smallest improves generalization.
+- **Hurts**: detail coefficients are not redundant; suppressing them removes information the model was using. Tells us our learned wavelet doesn't have JPEG-style sparsity even after training, which is itself an informative finding.
+
+Both ablations run cheaply on T2/Adagrad at 1 epoch. Combine: run the probe first, calibrate `λ` from the observed magnitude distribution (e.g., the 25th percentile per scale), then test shrinkage with that empirical-data-driven setting.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -801,6 +847,41 @@ Due to wavelet decomposition and reconstruction being inverses of each other, an
 This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#done-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
 
 Other recurrence approaches likely exist, but this section will only test the mixer.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Untied Wavelet Reconstruction
+
+The current implementation **ties** the wavelet reconstruct path to the decompose path: they share the same `predict_nets` and `update_nets` (perfect mathematical invertibility — decompose followed by reconstruct is exactly identity when no processing happens in between). The flag `untied_reconstruction` (already in config.json, currently `false`) would give the reconstruct path its **own** predict/update networks — same architecture, separate weights.
+
+**Trade-off:**
+- **Tied** (current): invertibility preserved. The structural identity `Reconstruct ∘ Decompose = I` is what enables [Recurrence (Mixer Only)](#recurrence-mixer-only) to express N-step recurrence as just N chained mixers (since adjacent Decompose-Reconstruct cycles cancel). Lower parameter count.
+- **Untied**: reconstruct can apply learned transformations that aren't constrained to invert decomposition. More expressive — reconstruction can "fix up" the mixer's spectral output in ways the strict inverse would not allow. But the structural identity breaks, so the model's `x → Decompose → mixers → Reconstruct → x'` is no longer reducible to "mixers in a wavelet basis." Adds ~83.93M params per layer at T2 (matching the existing wavelet param count) — roughly +21% over T2.
+
+**Mutually exclusive with Recurrence (Mixer Only).** Untied reconstruction breaks the invariant that justifies "mixer only" recurrence. If both are pursued, the recurrence design has to be reformulated — either to fold the full `Decompose → ... → Reconstruct` cycle into the recurrent loop (multiplying compute by N), or to share recurrent updates only within the spectral basis with explicit care for the non-inverse reconstruct. Cleaner to commit to one direction first: test untied reconstruction as a standalone variant against T2 baseline (1-epoch at fixed compute), then decide whether to compose it with recurrence.
+
+**Test plan:** single-flag flip (`untied_reconstruction: true`) on T2 + 1ep + sequential? + random? — both sampling modes worth measuring since the wavelet's role differs between them. Compare BPB sliding and best val to T2 reference at matched compute.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Complex Wavelets
+
+Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform, or direct complex parameterization of the lifting predict/update networks). Real wavelets capture only magnitude; complex wavelets carry both magnitude and **phase**.
+
+**Why phase might matter for language.** In signal processing, phase information is what distinguishes "an edge at this position" from "an edge at a slightly different position" — the magnitude is the same, but the phase differs. For text, the analog is positional / structural patterns that recur at different offsets: e.g., the same syntactic structure appearing 5 tokens later vs 20 tokens later. Real wavelets capture *that* such a structure is present at some scale; complex wavelets additionally capture *where within that scale's support window* it is positioned. Whether this distinction carries useful signal for next-token prediction is the empirical question.
+
+**Cost.** Roughly 2× across the board:
+- Wavelet predict/update networks need either complex-valued weights (`torch.complex64`) or real/imag interleaving (a 2C-wide real tensor representing C complex values).
+- FWHT and mixer ops need to handle complex tensors, OR the real/imag interleaving lets the existing real-valued mixer operate on the 2C-wide tensor (simpler but doubles mixer compute).
+- Total: roughly +25M params and +2× wavelet stage compute. The mixer stage stays roughly the same compute if real/imag interleaving is used (since mixer width is determined by the mixer's own config).
+
+**Implementation surface.** Moderate. A new `LiftingWaveletComplex` class in `tools/complex_wavelets.py` mirroring the structure of `LiftingWavelet2D` (selectable via a `wavelet_basis: "real" | "complex"` config flag). Real/imag interleaving keeps `model.py` integration minimal. ~300-500 lines for the wavelet module plus minor model.py changes.
+
+**Empirical question worth flagging upfront.** Most "phase matters for language" intuitions come from signal-processing analogies that may not transfer cleanly. Text isn't a sinusoidal signal; the wavelet basis we use is already learned (not fixed Haar/Daubechies). The learned real-valued predict/update networks may already implicitly capture phase-equivalent information via their shape. Test design needs to disambiguate: does complex outperform real *at matched parameter count* (so we know it's the phase, not the extra params)?
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

@@ -2045,6 +2045,23 @@ class WaveletLM(nn.Module):
         self.per_layer_embedding = config.get("per_layer_embedding", False)
         self.loop_iterations = config.get("loop_iterations", 1)
 
+        # BBCE (Bisected Block Context Extension): preprocessor that bisects
+        # the long-context input into mean-pooled compressed slots + raw
+        # uncompressed tokens, returning a (B, block_size, C) embedding for
+        # the standard wavelet pipeline. See tools/bbce.py.
+        self.bbce_enabled = config.get("bbce_enabled", False)
+        if self.bbce_enabled:
+            from tools.bbce import build_bbce_preprocessor
+            self._bbce_preprocessor = build_bbce_preprocessor(config)
+            self.block_size = int(config["block_size"])
+            print(
+                f"[BBCE] Enabled. block_size={self.block_size}, "
+                f"block_size_compressed={config['block_size_compressed']}, "
+                f"num_slots={self._bbce_preprocessor.num_slots}, "
+                f"g={self._bbce_preprocessor.g}, "
+                f"dropped={self._bbce_preprocessor.num_dropped} boundary tokens"
+            )
+
         # Feedback mechanisms
         self.looped_blocks = config.get("looped_blocks", False)
         self.looped_blocks_count = config.get("looped_blocks_count", 8)
@@ -2235,9 +2252,18 @@ class WaveletLM(nn.Module):
         return logits, loss
 
     def forward(self, idx, targets=None):
-        B, T = idx.shape
+        B, T_in = idx.shape
 
-        tok_emb = self.token_embedding(idx)  # [B, T, C]
+        # BBCE: chunked-embed + bisect + mean-pool → (B, block_size, C).
+        # Memory-bounded by tools/bbce.py:BBCEPreprocessor's chunking. After
+        # this branch, T is always self.block_size (the "supervised window").
+        if self.bbce_enabled:
+            tok_emb = self._bbce_preprocessor(idx, self.token_embedding)
+            T = self.block_size
+        else:
+            tok_emb = self.token_embedding(idx)  # [B, T_in, C]
+            T = T_in
+
         if self.stab_embed_scaling:
             tok_emb = tok_emb * self._embed_scale
         x = self.dropout_emb(tok_emb)
@@ -2288,15 +2314,34 @@ class WaveletLM(nn.Module):
         x = self.dropout_lm(x)
         logits = self.lm_head(x)
 
+        # BBCE: only the last block_size/2 positions are loss-bearing (the
+        # uncompressed half). Slice both logits and all_logits (if any)
+        # before cross-entropy. The data loader already returns targets of
+        # shape (B, block_size/2), so no slicing on targets.
+        if self.bbce_enabled:
+            num_uncompressed = self.block_size // 2
+            logits_for_loss = logits[:, -num_uncompressed:, :]
+            all_logits_for_loss = (
+                [lg[:, -num_uncompressed:, :] for lg in all_logits]
+                if all_logits is not None
+                else None
+            )
+        else:
+            logits_for_loss = logits
+            all_logits_for_loss = all_logits
+
         loss = None
         if targets is not None:
             if self.loop_iterations == 1:
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1).long())
+                loss = F.cross_entropy(
+                    logits_for_loss.reshape(-1, logits_for_loss.size(-1)),
+                    targets.view(-1).long(),
+                )
             else:
                 # Average loss across all iterations (uniform weighting)
                 total_loss = sum(
-                    F.cross_entropy(lg.view(-1, lg.size(-1)), targets.view(-1).long())
-                    for lg in all_logits
+                    F.cross_entropy(lg.reshape(-1, lg.size(-1)), targets.view(-1).long())
+                    for lg in all_logits_for_loss
                 )
                 loss = total_loss / self.loop_iterations
 
