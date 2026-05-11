@@ -866,12 +866,15 @@ def train():
         optimizer_name = config.get('optimizer', 'Adagrad')
         weight_decay = config.get('weight_decay', 0.0)
         if optimizer_name == 'Adagrad':
+            initial_accumulator_value = config.get('adagrad_initial_accumulator_value', 0.0)
             optimizers = [torch.optim.Adagrad(
                 model.parameters(), lr=config['lr'],
                 eps=config.get('optimizer_eps', 2e-13),
-                weight_decay=weight_decay)]
+                weight_decay=weight_decay,
+                initial_accumulator_value=initial_accumulator_value)]
             wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
-            logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
+            iav_str = f", initial_accumulator_value={initial_accumulator_value}" if initial_accumulator_value > 0 else ""
+            logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}{iav_str}")
         elif optimizer_name == 'AdamW':
             optimizers = [torch.optim.AdamW(
                 model.parameters(), lr=config['lr'],

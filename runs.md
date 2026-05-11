@@ -1064,6 +1064,37 @@ Pivot to lr=0.003 and lr=0.005, splitting the under-scaled 0.001 and over-aggres
 
 ---
 
+## Sequential block ordering on T2
+
+First test of deterministic sequential block ordering vs. the existing random-sampling data loader. Two MBS regimes (Rainman = 8 parallel streams advancing in lockstep, vs Pure = single stream with grad-accum), each at 1 and 2 epochs (4 runs total in the original 2×2 cross). Motivation, design, and full hypothesis writeup live in the README's [Sequential Block Ordering](../README.md#sequential-block-ordering) section.
+
+| Run | MBS | GA | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Run Log |
+|---|---|---|---|---|---|---|---|---|
+| T2 random reference (1ep) | 8 | 1 | 1 | 1.1541 | 36.79 | 3.5881 | ~1.86h | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| T2 random reference (5ep) | 8 | 1 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
+| **T2_seq_M8_1ep (Rainman)** | **8** | **1** | **1** | **1.1726** | **38.98** | **3.6601** | **~1.85h** | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
+| **T2_seq_M8_2ep (Rainman)** | **8** | **1** | **2** | **1.1146** | **32.52** | **3.5072** | **~3.64h** | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
+| T2_seq_M1_1ep (pure seq) | 1 | 8 | 1 | running | running | running | ~4h projected | in progress |
+| ~~T2_seq_M1_2ep (pure seq)~~ | ~~1~~ | ~~8~~ | ~~2~~ | cancelled | — | — | (~8h projected) | cancelled — pure-seq ~2.2× wall-clock vs Rainman with no upside; freed slot for Adagrad-fix tests |
+
+**Findings:**
+
+- **Sequential ordering underperforms random sampling at matched 1ep budget.** Rainman vs T2 random: Δ best val = +0.0720, ΔBPB sliding = +0.0185. Direction matches the literature-canonical reason shuffling exists; mechanism (Adagrad's accumulator imbalance under correlated gradients) explained in detail in the README.
+- **WaveletLM is *not* a strong one-shot learner.** Rainman 2ep best val 3.5072 — a meaningful improvement over Rainman 1ep's 3.6601 (Δ = −0.1529 best val). A pure one-shot learner would have plateaued in late epoch 2 *despite still-elevated post-peak LR* (peak hits at step 35,074 = 60% through epoch 1, then cosine-decays through end of epoch 2). The model continued descending. The one-shot hypothesis is refuted; WaveletLM benefits from repeated passes.
+- **Rainman 2ep does beat T2 random 1ep** (3.5072 < 3.5881 best val) — the second epoch's compute pays for the sequential overhead and then some. But it doesn't approach T2 random 5ep (3.2630).
+- **Pure sequential wall-clock is prohibitive.** Projected ~4h/epoch for MBS=1/GA=8 vs ~1.85h for MBS=8/GA=1 — ~2.2× the originally-projected 10–20% overhead. Combined with no observable per-step quality upside, the M1_2ep variant was cancelled to free overnight compute for the Adagrad-fix tests.
+
+**Adagrad-fix follow-up (queued).** Rather than declare sequential dead, two cheap Adagrad-internal fixes are queued before the Muon LR sweep, both on the Rainman MBS=8/GA=1 stack at 1 epoch:
+
+| Run | Fix | Status |
+|---|---|---|
+| T2_seq_M8_1ep + `initial_accumulator_value=0.1` | Bounds first-fire updates by initializing `Σ g²` at a positive value; addresses the rarely-fired-embedding-row explosion that drives the imbalance | queued |
+| T2_seq_M8_1ep + `lr=0.015` | Uniform LR bump; partial fix expected to recover ~30–50% of the gap | queued |
+
+If either closes most of the gap, sequential becomes viable and BBCE's caching efficiency / 2D wavelets directions are unblocked. If both underwhelm, sequential is shelved as a research direction and BBCE proceeds with random sampling (functional but with no caching efficiency win).
+
+---
+
 ## Deprecated approaches
 
 The four sections below were moved here from the README's Future Plans list when mask-based compression was deprecated as a production direction in favor of dense compression alternatives (smaller `mlp_expansion`, smaller `C`, encoder-decoder where it actually helps). Mask-based "compression" doesn't deliver real `.pt` size, training VRAM, or throughput savings under stock kernels — masked-zero positions still occupy full storage, full Adagrad accumulator, and full forward/backward FLOPs. Content is preserved here for the experiment record and for the option of revisiting if/when sparse kernels and sparse-save infrastructure are built.
