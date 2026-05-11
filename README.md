@@ -746,19 +746,23 @@ Design choices:
 
 **Results:**
 
-| Run | MBS | GA | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Train VRAM | Inference VRAM (strategies) | Run Log |
-|---|---|---|---|---|---|---|---|---|---|---|
-| T2 random sampling | 8 | 1 | 1 | 1.1541 | 36.79 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
-| T2 random sampling | 8 | 1 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
-| T2 sequential | 8 | 1 | 1 | 1.1726 | 38.98 | 3.6601 | ~1.85h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
-| T2 sequential | 8 | 1 | 2 | 1.1146 | 32.52 | 3.5072 | ~3.64h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
-| T2 sequential | 1 | 8 | 1 | 1.1901 | 41.17 | 3.6503 | ~4.18h | 7,662 MiB | 3,166 MiB | [link](logs/wikitext-103_2026-05-11_01-09-59/log.txt) |
+| Run | MBS | GA | LR | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| T2 random sampling | 8 | 1 | 0.01 | 1 | 1.1541 | 36.79 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| T2 random sampling | 8 | 1 | 0.01 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
+| T2 sequential | 8 | 1 | 0.01 | 1 | 1.1726 | 38.98 | 3.6601 | ~1.85h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
+| T2 sequential | 8 | 1 | 0.01 | 2 | 1.1146 | 32.52 | 3.5072 | ~3.64h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
+| T2 sequential | 1 | 8 | 0.01 | 1 | 1.1901 | 41.17 | 3.6503 | ~4.18h | 7,662 MiB | 3,166 MiB | [link](logs/wikitext-103_2026-05-11_01-09-59/log.txt) |
+| **T2 sequential + lr=0.015** | **8** | **1** | **0.015** | **1** | **1.1580** | **37.25** | **3.6231** | **~1.91h** | **8,065 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-11_10-14-25/log.txt) |
+| T2 sequential + 2D internal | 8 | 1 | 0.01 | 1 | 1.1765 | 39.47 | 3.6691 | ~2.11h | 8,269 MiB | 3,398 MiB | [link](logs/wikitext-103_2026-05-11_08-05-10/log.txt) |
 
 **Findings:**
 
-- Sequential ordering underperforms random sampling at matched epochs (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB). 
-- This feature does not improve the model by itself, but will be tested alongside others which require it or are made more efficient by it. 
-- Could test it at 5 epochs to see if it performs better over time. Reserving this for the future.
+- Sequential ordering at lr=0.01 underperforms random sampling at matched epochs (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB).
+- **Sequential + lr=0.015 (Adagrad uniform LR bump) recovers ~50% of the gap** — best val 3.6231 vs T2 random 3.5881 (Δ = +0.0350 remaining vs the +0.0720 starting gap; 51% gap recovery). BPB sliding gap closes from +0.0185 → +0.0039, within ~3× noise threshold. Hits exactly the predicted "~30–50% recovery" from the LR-bump analysis.
+  - Caveat: not fully comparable yet — T2 random reference is at lr=0.01. A matched-LR comparison (T2 random at lr=0.015) is needed to know whether lr=0.015 is a sequential-specific fix or a general improvement. Worth a single follow-up run.
+- **2D wavelet "internal" mode underperforms sequential baseline** (best val 3.6691 vs 3.6601; Δ = +0.0090 worse). The per-sub-band scaling extracts no useful B-axis signal at WT-103 scale, plus a ~14% wall-clock cost. Internal mode shelved on per-compute grounds. Subband mode (Phase 2.B) is queued next — different architecture (per-sub-band mixer specialization vs internal collapse), so the result doesn't carry over.
+- This feature still does not improve the model on its own, but lr=0.015 closes most of the regression and the second-epoch gain (Δ −0.1529 best val between Rainman 1ep and 2ep) confirms sequential is a viable substrate for downstream features that require it (BBCE caching, 2D wavelets, longer-context training).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

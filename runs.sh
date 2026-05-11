@@ -407,6 +407,22 @@ run_ablation "T2_seq_M8_1ep_2d_subband T2 Rainman + 2D wavelet 'subband' mode (1
     "T2_seq_M8_1ep_2d_subband: Rainman + 2D wavelet 'subband' mode (Phase 2.B; 4 sub-bands per joint level exposed to per-band mixers; mixer count 14 vs 1D's 8)"
 
 
+# ---- T2 random sampling + lr=0.015 (Adagrad comparison) ---------------------
+# Fair-comparison companion to the sequential lr=0.015 result
+# (logs/wikitext-103_2026-05-11_10-14-25: best val 3.6231). That sequential
+# run beat the lr=0.01 Rainman baseline (3.6601) by Δ=-0.0370, recovering
+# ~50% of the random→sequential gap. But T2 random was still at lr=0.01,
+# so we don't yet know whether lr=0.015 is a sequential-specific fix or a
+# general improvement. This run isolates the LR variable on the random-
+# sampling stack — if random+lr=0.015 also outperforms random+lr=0.01
+# (3.5881), then lr=0.015 is partly a general-purpose Adagrad tune for T2.
+# If it ties or regresses, the lr=0.015 benefit is sequential-specific.
+run_ablation "T2_rand_1ep_lr15 T2 random sampling + lr=0.015 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003}' \
+    "T2_rand_1ep_lr15: T2 random sampling + lr=0.015 (1ep; fair-comparison companion to T2_seq_M8_1ep_lr15; isolates LR vs sequential variable)"
+
+
 # ---- Adagrad-fix Rainman tests on sequential ordering (deprioritized) -------
 # Rainman 1ep (logs/wikitext-103_2026-05-10_19-36-28) trailed T2 random 1ep by
 # +0.0720 best val (3.6601 vs 3.5881). The IAV=0.1 probe was attempted but
@@ -418,10 +434,10 @@ run_ablation "T2_seq_M8_1ep_2d_subband T2 Rainman + 2D wavelet 'subband' mode (1
 # Run A1: Rainman 1ep + lr=0.015 (uniform LR bump; partial fix expected to
 # recover ~30-50% of the gap by lifting the floor for accumulator-collapsed
 # parameters).
-run_ablation "T2_seq_M8_1ep_lr15 T2 Rainman + lr=0.015 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "lr": 0.015, "min_lr": 0.0003}' \
-    "T2_seq_M8_1ep_lr15: Rainman + lr=0.015 (1ep, otherwise as T2_seq_M8_1ep baseline)"
+# run_ablation "T2_seq_M8_1ep_lr15 T2 Rainman + lr=0.015 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "lr": 0.015, "min_lr": 0.0003}' \
+#     "T2_seq_M8_1ep_lr15: Rainman + lr=0.015 (1ep, otherwise as T2_seq_M8_1ep baseline)"
 
 
 # ---- Path B v2: tighter LR band between 0.001 (smooth/slow) and 0.01 (oscillates) ----
