@@ -796,6 +796,8 @@ The half-block-size point marks a common seam for every wavelet scale, as each h
 
 This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512, 2048} x {65K, 262K, 1M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
 
+Note: depending on the metric under consideration (equal wall-clock time or compute, equal block size overall, or double block size to have the same number of actual tokens seen), it may be essential to compare the performance of the model with BBCE and block size 512, as well as BBCE with block size 256; versus the model at block size 256 and without BBCE. That is, direct comparability with the baseline is difficult to gauge cleanly with this feature.
+
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
@@ -804,19 +806,35 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 
 T2's default `lr=0.01` was inherited from earlier baselines and has not been re-tuned for the current architecture. The sequential block ordering experiments surfaced this: the sequential variant of T2 trailed T2 random by Δ best val +0.0720 at lr=0.01, but lr=0.015 (sequential) recovered ~50% of that gap (best val 3.6231 vs Rainman 3.6601). The natural follow-up question was whether lr=0.015 is a sequential-specific Adagrad fix or a general LR re-tune that helps T2 itself.
 
-**Isolation test (T2 random + lr=0.015, in progress at time of writing).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled proportionally to 0.0003). At ~75% of the epoch the trajectory is sustained ~0.044 nats AHEAD of T2 baseline at matched step (e.g., step 43500: val 3.6250 vs T2's 3.6679; Δ ≈ −0.043). Wall-clock matches T2 within 1% (8.9 it/s, ~1.85h projected). The lead is much larger than the 0.0015 noise threshold and persists across many step windows — not sampling variation.
+**Isolation test (T2 random + lr=0.015, complete).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled proportionally to 0.0003). Run log: [logs/wikitext-103_2026-05-11_15-26-31/log.txt](logs/wikitext-103_2026-05-11_15-26-31/log.txt).
 
-**Implication if confirmed at end of epoch.** lr=0.015 promotes to a new headline baseline. Naming convention: **T3** for the consolidated next baseline, with two possible compositions depending on the BBCE sweep outcome:
+| Metric | T2 baseline (lr=0.01) | T2 + lr=0.015 | Δ |
+|---|---|---|---|
+| Best val | 3.5881 | **3.5345** | **−0.0536** |
+| BPB sliding | 1.1541 | **1.1362** | **−0.0179** |
+| PPL sliding | 36.79 | **34.79** | **−2.00** |
+| Train time | 1.83h | 1.84h | +0.6% |
+| Train VRAM | 7,788 MiB | 8,065 MiB | +3.6% |
+| Inference VRAM | 3,258 MiB | 3,258 MiB | (matched) |
+
+Δ best val of **−0.0536 nats is ~36× the noise threshold**. Unambiguous win at near-zero compute cost. The mid-epoch ~0.044 nat lead held through the cosine decay tail and the final number is even larger.
+
+**T3 candidate is now defined.** Two possible compositions depending on the BBCE sweep outcome and a possible further LR refinement (see below):
 - **T3 = T2 + lr=0.015** (if BBCE shows no improvement). The LR retune alone becomes the new production stack.
 - **T3 = T2 + lr=0.015 + BBCE** (if BBCE shows meaningful improvement on top of the LR retune). Both wins consolidate into one baseline.
 
-In either case, the existing T2 baseline numbers (best val 3.5881 at 1ep, 3.2630 at 5ep) get re-measured under T3's configuration and the headline benchmark in the [Results](#results) section updates accordingly. The sequential lr=0.015 result becomes less of an outlier — it's the same LR fix, just observed on a different sampling mode.
+The existing T2 baseline numbers (best val 3.5881 at 1ep, 3.2630 at 5ep) will be replaced by re-measured T3 numbers (1ep and 5ep) in the [Results](#results) section. The replacement is **deferred until after the lr=0.020 / further LR refinement sweep and the BBCE outcome are settled**, so the headline benchmark gets stacked all known improvements at once rather than incremented run-by-run.
 
-**Why this matters strategically.** Recent architecture-level explorations (2D wavelets — both modes shelved; sequential ordering — needs LR fix to be viable; Muon — no clear win yet) have not surfaced improvements. The lr=0.015 retune appears to be the only meaningful performance gain since the T2 baseline was set, and it costs zero extra compute. Locking it in as T3 captures the win cleanly.
+**Why this matters strategically.** Recent architecture-level explorations (2D wavelets — both modes shelved; sequential ordering — needs LR fix to be viable; Muon — no clear win yet) have not surfaced improvements. The lr=0.015 retune is the only meaningful performance gain since the T2 baseline was set, and it costs zero extra compute.
 
-**Follow-up sweep candidate.** lr=0.02 — small extra step to confirm lr=0.015 is in the right neighborhood and we haven't undershot the optimum. Caveat: at sufficiently high LR, Adagrad's accumulator dynamics can change qualitatively (similar to what we saw with Muon at lr=0.01 — fast early descent then oscillation around step 5000). Worth one sweep to verify; if lr=0.02 underperforms 0.015, that's confirmation and we lock in 0.015.
+**Follow-up: lr=0.020 sweep (queued).** Small extra step to confirm lr=0.015 is in the right neighborhood and we haven't undershot the optimum. Decision rule:
+- lr=0.020 better than 0.015 by > 0.0015 → optimum is ≥ 0.020; consider another sweep at lr=0.025.
+- lr=0.020 within ~0.002 of 0.015 → plateau; lock in 0.015.
+- lr=0.020 worse than 0.015 → past the optimum; 0.015 wins.
 
-**BBCE compatibility.** The currently-queued BBCE sweep deliberately uses lr=0.01 (T2's existing LR) for apples-to-apples comparison against the T2 baseline. If BBCE shows a winner, that winner will be re-run at lr=0.015 as part of the T3 consolidation. Switching mid-queue would mix two variables and complicate attribution.
+Caveat: at sufficiently high LR, Adagrad's accumulator dynamics can change qualitatively (similar to what we saw with Muon at lr=0.01 — fast early descent then plateau/oscillation around step 5000). The 0.020 run is the canary.
+
+**BBCE compatibility.** The currently-queued BBCE sweep deliberately uses lr=0.01 (T2's existing LR) for apples-to-apples comparison against the T2 baseline. If BBCE shows a winner, that winner will be re-run at the locked-in LR (0.015 or whatever the sweep settles on) as part of the T3 consolidation. Switching mid-queue would mix two variables and complicate attribution.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
