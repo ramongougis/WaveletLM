@@ -168,28 +168,30 @@ class LiftingWavelet2D(nn.Module):
                 nn.Linear(C, C) for _ in range(self.b_levels)
             ])
 
-            # Per-sub-band scales: shape (b_levels, 4, C). 4 sub-bands per
-            # level (LL, LH, HL, HH); each gets a per-channel scalar gain.
-            # Cheap (only ~24K params total for b_levels=3, C=2048) and
-            # cleanly identity-initializable.
-            self.sb_scales = nn.Parameter(torch.ones(self.b_levels, 4, C))
-
             if init_zero:
                 # Zero-init the B-axis predict/update networks so that
                 # b_detail = (odd_B - 0) * inv_sqrt2 = odd_B * inv_sqrt2 and
                 # b_approx = (even_B + 0) * inv_sqrt2 = even_B * inv_sqrt2.
-                # Combined with sb_scales=1.0, the B-axis inverse lift
-                # exactly recovers the input (approx_T, detail_T) pair.
                 for lin in self.b_predict_nets:
                     nn.init.zeros_(lin.weight)
                     nn.init.zeros_(lin.bias)
                 for lin in self.b_update_nets:
                     nn.init.zeros_(lin.weight)
                     nn.init.zeros_(lin.bias)
-                # sb_scales already initialized to ones above.
         else:
             self.b_predict_nets = None
             self.b_update_nets = None
+
+        # Per-sub-band scales: only used by "internal" mode. Shape
+        # (b_levels, 4, C). 4 sub-bands per level (LL, LH, HL, HH); each
+        # gets a per-channel scalar gain. Init to ones (identity scaling)
+        # so that combined with zero-init b_predict/update_nets, the B-axis
+        # path is exact identity at step 0. In "subband" mode the per-sub-
+        # band specialization happens via the downstream per-scale mixers
+        # (one mixer per sub-band), so no internal scales are needed.
+        if mode == "internal" and self.b_levels > 0:
+            self.sb_scales = nn.Parameter(torch.ones(self.b_levels, 4, C))
+        else:
             self.sb_scales = None
 
         # Phase 3: cross-batch state buffer (LL approximation from previous
