@@ -1411,7 +1411,29 @@ class WaveletLMBlock(nn.Module):
                     lifting_reference_weights=lifting_reference_weights,
                 )
 
-            if untied_reconstruction:
+            # Detect 2D wavelet "subband" mode via duck typing (avoids hard
+            # import dep on tools/two_d_wavelets.py). In subband mode the
+            # wavelet emits more details per joint level (3 sub-bands instead
+            # of 1), so the per-scale mixer and decompose-bypass machinery
+            # need to size to the larger S_effective. Other modes (off,
+            # passthrough, internal) keep the standard 1D S = levels + 1.
+            self.is_subband_mode = (
+                getattr(self.lifting_wavelet, 'mode', None) == 'subband'
+            )
+            if self.is_subband_mode:
+                self.s_effective = self.lifting_wavelet.subband_num_scales
+            else:
+                self.s_effective = self.levels + 1
+
+            # Reconstruct path. In subband mode the 2D wavelet handles its own
+            # reconstruct (via LiftingWavelet2D.reconstruct_subband) because it
+            # needs to invert both the T-axis and B-axis lifting cascades with
+            # the proper sub-band layout. The standard LiftingWaveletReconstruct
+            # only handles 1D inversion. For all other modes (off, passthrough,
+            # internal), the standard reconstruct path applies.
+            if self.is_subband_mode:
+                self.lifting_reconstruct = None  # handled by self.lifting_wavelet directly
+            elif untied_reconstruction:
                 # Asymmetric: reconstruction has its own predict/update networks,
                 # breaking the strict-invertibility constraint of classical wavelets.
                 if multi_basis_lifting:
@@ -1453,8 +1475,10 @@ class WaveletLMBlock(nn.Module):
         # Decompose bypass projections
         self.decompose_bypass_ema = decompose_bypass_ema and decompose_bypass
         if self.decompose_bypass:
+            # Size to s_effective so subband mode's expanded scale count
+            # (3*b_levels + (L - b_levels) + 1) gets its own per-scale gains.
             self.history_gains = nn.Parameter(
-                torch.zeros(self.levels + 1, self.C, device=device, dtype=dtype)
+                torch.zeros(self.s_effective, self.C, device=device, dtype=dtype)
             )
             self.cross_layer_mix = nn.Linear(
                 self.C, self.C, bias=False, device=device, dtype=dtype
@@ -1477,9 +1501,26 @@ class WaveletLMBlock(nn.Module):
                     self.ema_gate.weight.zero_()   # start with α = σ(b) = σ(0) = 0.5
                     self.ema_gate.bias.zero_()
 
-        # Spectral mixers: one per scale, optionally stacked with mixer_depth
-        S = levels + 1
+        # Spectral mixers: one per scale, optionally stacked with mixer_depth.
+        # In subband mode, S = 3*b_levels + (L - b_levels) + 1 (more sub-bands
+        # per joint level); otherwise S = L + 1 (the standard 1D scale count).
+        S = self.s_effective
         self.mixer_depth = mixer_depth
+
+        # Auto-expand per_scale_mixer_widths when user provided a 1D-length
+        # list (L+1 entries) but subband mode requires the larger expanded
+        # list. The expansion triples the widths at joint-level positions to
+        # cover (LH, HL, HH) sub-bands with the same per-channel width as
+        # the original 1D detail entry. See
+        # tools/two_d_wavelets.py:expand_per_scale_widths_for_subband.
+        if (
+            self.is_subband_mode
+            and per_scale_mixer_widths is not None
+            and len(per_scale_mixer_widths) == levels + 1
+        ):
+            per_scale_mixer_widths = self.lifting_wavelet.expand_per_scale_widths_for_subband(
+                list(per_scale_mixer_widths)
+            )
 
         # Cross-scale gating (routing mode): learned (S, S) routing matrix that
         # mixes scales' inputs before each per-scale gate. Init to identity so
@@ -1648,7 +1689,7 @@ class WaveletLMBlock(nn.Module):
                 mixed_context = current_running_mean
 
             gate_bias_scales = []
-            for s in range(self.levels + 1):
+            for s in range(self.s_effective):
                 gb = mixed_context * self.history_gains[s].view(1, 1, self.C)
                 gb = pad_features_to_pow2(gb, self.Cp)
                 gate_bias_scales.append(gb)
@@ -1669,7 +1710,7 @@ class WaveletLMBlock(nn.Module):
         # Stack coefficients top-down: [approx, detail_coarsest, ..., detail_finest]
         coeffs_top_down = [approx] + details[::-1]
         stacked_coeffs = torch.stack(coeffs_top_down, dim=2)  # [B, T, S, Cp]
-        S = self.levels + 1
+        S = self.s_effective
 
         # Add decompose bypass bias
         if self.decompose_bypass and gate_bias_scales is not None:
@@ -1755,7 +1796,15 @@ class WaveletLMBlock(nn.Module):
         approx_proc = processed_top_down[0]
         details_proc = processed_top_down[1:][::-1]
         if self.wavelet_mode == "lifting":
-            reconstructed_padded = self.lifting_reconstruct(approx_proc, details_proc)
+            if self.is_subband_mode:
+                # Subband mode: the 2D wavelet owns reconstruction since it
+                # needs to invert both the T-axis and B-axis lifting cascades
+                # with the proper (LH, HL, HH) sub-band layout per joint level.
+                reconstructed_padded = self.lifting_wavelet.reconstruct_subband(
+                    approx_proc, details_proc
+                )
+            else:
+                reconstructed_padded = self.lifting_reconstruct(approx_proc, details_proc)
         else:
             reconstructed_padded = causal_haar_reconstruct(approx_proc, details_proc)
 

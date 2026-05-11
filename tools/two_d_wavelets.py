@@ -228,13 +228,7 @@ class LiftingWavelet2D(nn.Module):
         elif self.mode == "internal":
             return self._forward_internal(x)
         elif self.mode == "subband":
-            raise NotImplementedError(
-                "wavelet_2d_mode='subband' is Phase 2.B and not yet implemented. "
-                "Implementing it requires changes to model.py (2D per-scale mixer "
-                "table) and the reconstruct path (4 sub-bands per level instead "
-                "of 2). Use 'internal' mode for now, which is self-contained in "
-                "tools/two_d_wavelets.py."
-            )
+            return self._forward_subband(x)
         else:
             raise ValueError(
                 f"Unknown wavelet_2d_mode: {self.mode!r}. "
@@ -344,6 +338,197 @@ class LiftingWavelet2D(nn.Module):
             cur = approx_T
 
         return cur, details
+
+    def _forward_subband(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        """Phase 2.B mode: separable T-then-B lifting at each joint level,
+        with sub-bands kept separate and returned to the caller. Per-sub-band
+        mixer specialization happens downstream in model.py.
+
+        Per joint level k (k < b_levels):
+            1. T-axis lift: cur → approx_T, detail_T (each (B, T, C)).
+            2. B-axis lift on approx_T → LL, LH (each (B, T, C)).
+            3. B-axis lift on detail_T → HL, HH.
+            4. Append LH, HL, HH to details (3 entries per joint level).
+            5. Recurse on cur = LL.
+
+        Per T-only level k (k >= b_levels):
+            1. T-axis lift: cur → approx_T, detail_T.
+            2. Append detail_T to details (1 entry).
+            3. Recurse on cur = approx_T.
+
+        Output ordering (finest-first, matching 1D convention):
+            [LH_0, HL_0, HH_0,  # joint level 0 (finest joint)
+             LH_1, HL_1, HH_1,  # joint level 1
+             ...,
+             LH_{b-1}, HL_{b-1}, HH_{b-1},  # coarsest joint
+             dT_b, dT_{b+1}, ..., dT_{L-1}]  # T-only details, coarse-to-fine reversed
+
+        Total length: 3*b_levels + (L - b_levels) details + 1 final approx.
+        For T2 (L=7, b_levels=3): 13 details + 1 approx = 14 total scales.
+        """
+        t_wavelet = self._t_wavelet
+        details: List[torch.Tensor] = []
+        cur = x
+
+        for level in range(t_wavelet.levels):
+            # ---- T-axis lift (mirrors 1D forward; supports wavelet_crawl) ----
+            base_dilation_T = 1 << level
+            T = cur.shape[1]
+
+            if t_wavelet.wavelet_crawl:
+                K = t_wavelet.wavelet_crawl_k
+                offsets = t_wavelet._crawl_offsets[level]
+                weights = F.softmax(t_wavelet.dilation_logits[level], dim=0)
+                max_d = offsets[-1]
+                padded = F.pad(cur, (0, 0, max_d, 0))
+                odd_T = sum(
+                    weights[k] * padded[:, max_d - offsets[k]:max_d - offsets[k] + T, :]
+                    for k in range(K)
+                )
+            else:
+                padded = F.pad(cur, (0, 0, base_dilation_T, 0))
+                odd_T = padded[:, :-base_dilation_T, :]
+
+            even_T = cur
+            predicted_T = t_wavelet.predict_nets[level](even_T)
+            detail_T = (odd_T - predicted_T) * self.inv_sqrt2
+            update_T = t_wavelet.update_nets[level](detail_T)
+            approx_T = (even_T + update_T) * self.inv_sqrt2
+
+            if level < self.b_levels:
+                # ---- Joint level: do B-axis lift on both approx_T and detail_T ----
+                base_dilation_B = 1 << level
+
+                # B-axis lift on approx_T → (LL, LH).
+                padded_B = F.pad(approx_T, (0, 0, 0, 0, base_dilation_B, 0))
+                odd_B_a = padded_B[:-base_dilation_B, :, :]
+                even_B_a = approx_T
+                pred_B_a = self.b_predict_nets[level](even_B_a)
+                LH = (odd_B_a - pred_B_a) * self.inv_sqrt2
+                upd_B_a = self.b_update_nets[level](LH)
+                LL = (even_B_a + upd_B_a) * self.inv_sqrt2
+
+                # B-axis lift on detail_T → (HL, HH).
+                padded_B = F.pad(detail_T, (0, 0, 0, 0, base_dilation_B, 0))
+                odd_B_d = padded_B[:-base_dilation_B, :, :]
+                even_B_d = detail_T
+                pred_B_d = self.b_predict_nets[level](even_B_d)
+                HH = (odd_B_d - pred_B_d) * self.inv_sqrt2
+                upd_B_d = self.b_update_nets[level](HH)
+                HL = (even_B_d + upd_B_d) * self.inv_sqrt2
+
+                # Expose all three details (LH, HL, HH) — per-sub-band scaling
+                # and mixer specialization happens downstream in model.py.
+                # LL is kept as internal state for the next level's input.
+                details.append(LH)
+                details.append(HL)
+                details.append(HH)
+                cur = LL
+            else:
+                # ---- T-only level: standard 1D detail/approx ----
+                details.append(detail_T)
+                cur = approx_T
+
+        return cur, details
+
+    def reconstruct_subband(
+        self, approx: torch.Tensor, details: List[torch.Tensor]
+    ) -> torch.Tensor:
+        """Inverse of `_forward_subband`. Reconstructs the original tensor
+        from the processed approx and details (typically after the per-scale
+        mixer has operated on them in model.py).
+
+        The details list is expected to be in the same finest-first order as
+        produced by `_forward_subband`:
+            indices 0..3*b_levels-1: joint level sub-bands (LH, HL, HH per level)
+            indices 3*b_levels..(2*b_levels+L-1): T-only details (level b_levels..L-1)
+
+        Returns the reconstructed tensor of shape (B, T, C).
+        """
+        t_wavelet = self._t_wavelet
+        L = t_wavelet.levels
+        b = self.b_levels
+        cur = approx
+
+        # ---- T-only inverse (coarsest T-only level down to b_levels) ----
+        for level in range(L - 1, b - 1, -1):
+            # T-only details start at index 3*b_levels and continue in
+            # forward order (level b_levels first). For level L = level
+            # index in T-only block:
+            detail_idx = 3 * b + (level - b)
+            detail = details[detail_idx]
+            upd_T = t_wavelet.update_nets[level](detail)
+            cur = cur * self.sqrt2 - upd_T
+
+        # ---- Joint level inverse (b_levels-1 down to 0) ----
+        for level in range(b - 1, -1, -1):
+            lh = details[3 * level + 0]
+            hl = details[3 * level + 1]
+            hh = details[3 * level + 2]
+
+            # B-axis inverse: reconstruct approx_T from (LL=cur, LH) and
+            # detail_T from (HL, HH). Mirrors LiftingWaveletReconstruct's
+            # `cur = approx * sqrt2 - update_net(detail)` formula but on
+            # the B-axis.
+            upd_B_a = self.b_update_nets[level](lh)
+            approx_T = cur * self.sqrt2 - upd_B_a
+
+            upd_B_d = self.b_update_nets[level](hh)
+            detail_T = hl * self.sqrt2 - upd_B_d
+
+            # T-axis inverse using the standard update_net formula.
+            upd_T = t_wavelet.update_nets[level](detail_T)
+            cur = approx_T * self.sqrt2 - upd_T
+
+        return cur
+
+    @property
+    def subband_num_scales(self) -> int:
+        """Total number of scales in subband mode = 3*b_levels + (L-b_levels) + 1.
+        Used by model.py to size the per-scale mixer."""
+        return 2 * self.b_levels + self._t_wavelet.levels + 1
+
+    def expand_per_scale_widths_for_subband(
+        self, widths_1d: List[float]
+    ) -> List[float]:
+        """Auto-expand a 1D `per_scale_mixer_widths` list of length L+1 into
+        a subband-mode list of length 3*b_levels + L - b_levels + 1.
+
+        The 1D widths layout (in coeffs_top_down order, coarsest-first):
+            widths_1d[0]   = approx (coarsest)
+            widths_1d[1]   = detail at level L-1 (coarsest detail)
+            widths_1d[k]   = detail at level L-k
+            widths_1d[L]   = detail at level 0 (finest)
+
+        In subband mode, the finest b_levels details (positions L, L-1, ...,
+        L-b_levels+1 in 1D coeffs_top_down) each expand to 3 sub-band entries
+        (LH, HL, HH). The expanded position uses the same width as the
+        original 1D entry.
+
+        Returns the expanded widths list of length self.subband_num_scales.
+        """
+        L = self._t_wavelet.levels
+        b = self.b_levels
+        if len(widths_1d) != L + 1:
+            raise ValueError(
+                f"expand_per_scale_widths_for_subband: expected widths_1d of "
+                f"length L+1 = {L+1}, got {len(widths_1d)}"
+            )
+
+        # T-only block: widths_1d[0..L-b]  (positions: approx + T-only details)
+        widths_2d: List[float] = list(widths_1d[: L - b + 1])
+        # Joint block: widths_1d[L-b+1..L] each triple-expanded
+        for k in range(L - b + 1, L + 1):
+            w = widths_1d[k]
+            widths_2d.extend([w, w, w])
+
+        assert len(widths_2d) == self.subband_num_scales, (
+            f"expand_per_scale_widths_for_subband: got {len(widths_2d)} "
+            f"entries, expected {self.subband_num_scales}"
+        )
+        return widths_2d
 
     def extra_repr(self) -> str:
         return (
