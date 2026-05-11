@@ -320,28 +320,55 @@ run_ablation() {
 # make_get_batch automatically picks Rainman vs pure based on MBS.
 
 # Run S1: Rainman 1ep (MBS=8 / GA=1, 8 parallel streams advancing in lockstep).
-run_ablation "T2_seq_M8_1ep T2 sequential blocks, MBS=8/GA=1 (Rainman, 1ep)" \
+# run_ablation "T2_seq_M8_1ep T2 sequential blocks, MBS=8/GA=1 (Rainman, 1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1}' \
+#     "T2_seq_M8_1ep: sequential blocks, MBS=8/GA=1 (Rainman; 1ep, T2 stack, Adagrad lr=0.01)"
+
+# # Run S2: Rainman 2ep — one-shot-learner hypothesis test (Rainman variant).
+# run_ablation "T2_seq_M8_2ep T2 sequential blocks, MBS=8/GA=1 (Rainman, 2ep)" \
+#     "$BASE_PATCH_5EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "epochs": 2}' \
+#     "T2_seq_M8_2ep: sequential blocks, MBS=8/GA=1 (Rainman; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
+
+# # Run S3: Pure sequential 1ep (MBS=1 / GA=8, single stream).
+# run_ablation "T2_seq_M1_1ep T2 sequential blocks, MBS=1/GA=8 (pure sequential, 1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 1, "grad_accum": 8}' \
+#     "T2_seq_M1_1ep: sequential blocks, MBS=1/GA=8 (pure sequential; 1ep, T2 stack, Adagrad lr=0.01)"
+
+# # Run S4: Pure sequential 2ep — one-shot-learner hypothesis test (pure variant).
+# run_ablation "T2_seq_M1_2ep T2 sequential blocks, MBS=1/GA=8 (pure sequential, 2ep)" \
+#     "$BASE_PATCH_5EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 1, "grad_accum": 8, "epochs": 2}' \
+#     "T2_seq_M1_2ep: sequential blocks, MBS=1/GA=8 (pure sequential; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
+
+
+# ---- Adagrad-fix Rainman tests on sequential ordering -----------------------
+# Rainman 1ep (logs/wikitext-103_2026-05-10_19-36-28) trailed T2 random 1ep by
+# +0.0720 best val (3.6601 vs 3.5881). Rainman 2ep (21-29-38) reached 3.5072,
+# beating T2 random 1ep but still well above T2 random 5ep (3.2630). The gap
+# is consistent with the Adagrad-correlated-gradient interaction: rarely-fired
+# embedding rows get explosive first-fire updates (lr / sqrt(2e-13) ≈ lr × 2.2M)
+# when their token first appears mid-epoch under sequential ordering. Two
+# cheap Adagrad-internal fixes are tested here before the Muon LR sweep.
+# (See README's Sequential Block Ordering section for full reasoning.)
+
+# Run A1: Rainman 1ep + initial_accumulator_value=0.1 (the canonical Adagrad
+# fix for non-stationary / sparse-update data — bounds first-fire updates by
+# initializing Σ g² at a positive value).
+run_ablation "T2_seq_M8_1ep_iav T2 Rainman + initial_accumulator_value=0.1 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1}' \
-    "T2_seq_M8_1ep: sequential blocks, MBS=8/GA=1 (Rainman; 1ep, T2 stack, Adagrad lr=0.01)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "adagrad_initial_accumulator_value": 0.1}' \
+    "T2_seq_M8_1ep_iav: Rainman + initial_accumulator_value=0.1 (1ep, otherwise as T2_seq_M8_1ep baseline)"
 
-# Run S2: Rainman 2ep — one-shot-learner hypothesis test (Rainman variant).
-run_ablation "T2_seq_M8_2ep T2 sequential blocks, MBS=8/GA=1 (Rainman, 2ep)" \
-    "$BASE_PATCH_5EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "epochs": 2}' \
-    "T2_seq_M8_2ep: sequential blocks, MBS=8/GA=1 (Rainman; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
-
-# Run S3: Pure sequential 1ep (MBS=1 / GA=8, single stream).
-run_ablation "T2_seq_M1_1ep T2 sequential blocks, MBS=1/GA=8 (pure sequential, 1ep)" \
+# Run A2: Rainman 1ep + lr=0.015 (uniform LR bump; partial fix expected to
+# recover ~30-50% of the gap by lifting the floor for accumulator-collapsed
+# parameters).
+run_ablation "T2_seq_M8_1ep_lr15 T2 Rainman + lr=0.015 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 1, "grad_accum": 8}' \
-    "T2_seq_M1_1ep: sequential blocks, MBS=1/GA=8 (pure sequential; 1ep, T2 stack, Adagrad lr=0.01)"
-
-# Run S4: Pure sequential 2ep — one-shot-learner hypothesis test (pure variant).
-run_ablation "T2_seq_M1_2ep T2 sequential blocks, MBS=1/GA=8 (pure sequential, 2ep)" \
-    "$BASE_PATCH_5EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 1, "grad_accum": 8, "epochs": 2}' \
-    "T2_seq_M1_2ep: sequential blocks, MBS=1/GA=8 (pure sequential; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "lr": 0.015, "min_lr": 0.0003}' \
+    "T2_seq_M8_1ep_lr15: Rainman + lr=0.015 (1ep, otherwise as T2_seq_M8_1ep baseline)"
 
 
 # ---- Path B v2: tighter LR band between 0.001 (smooth/slow) and 0.01 (oscillates) ----
@@ -366,13 +393,14 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (Sequential block ordering + Muon LR sweep)."
-echo "===   1) T2_seq_M8_1ep      — sequential, Rainman (MBS=8/GA=1, 1ep)"
-echo "===   2) T2_seq_M8_2ep      — sequential, Rainman (MBS=8/GA=1, 2ep, one-shot test)"
-echo "===   3) T2_seq_M1_1ep      — sequential, pure (MBS=1/GA=8, 1ep)"
-echo "===   4) T2_seq_M1_2ep      — sequential, pure (MBS=1/GA=8, 2ep, one-shot test)"
-echo "===   5) T2_Muon_lr3e-3_1ep — Muon lr=0.003 (Path B v2)"
-echo "===   6) T2_Muon_lr5e-3_1ep — Muon lr=0.005 (Path B v2)"
+echo "=== Queue complete (Adagrad-fix Rainman runs + Muon LR sweep)."
+echo "===   1) T2_seq_M8_1ep_iav   — Rainman + initial_accumulator_value=0.1 (1ep)"
+echo "===   2) T2_seq_M8_1ep_lr15  — Rainman + lr=0.015 (1ep)"
+echo "===   3) T2_Muon_lr3e-3_1ep  — Muon lr=0.003 (Path B v2)"
+echo "===   4) T2_Muon_lr5e-3_1ep  — Muon lr=0.005 (Path B v2)"
 echo "==="
-echo "=== Total compute estimate: ~18-20h overnight queue."
+echo "=== If either Adagrad-fix run closes most of the ~0.07 nat best-val gap"
+echo "===   vs T2 random 1ep (3.5881), sequential becomes viable for downstream"
+echo "===   work (BBCE caching, 2D wavelets). If both underwhelm, sequential is"
+echo "===   shelved and BBCE proceeds with random sampling."
 echo "============================================================"

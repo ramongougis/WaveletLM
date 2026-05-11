@@ -749,14 +749,23 @@ Sequential block ordering will enable or be a prerequisite for:
   - **Pure sequential (MBS=1, GA=8):** one stream, each grad-accum substep processes one strictly-consecutive block before the optimizer step. Maximum within-batch order preservation. ~10–20% wall-clock overhead vs. MBS=8/GA=1 from launch costs.
   - **Parallel in-batch streaming (the "Rainman method", MBS=8, GA=1):** 8 parallel streams advancing through the corpus together while being located nearby (each starts at corpus position `k × N/8`). Within a batch, the 8 elements progress in lockstep. Distant temporal events are split across streams, whereas nearby events are learned simultaneously.
 
-**Test plan (4 runs, 2 × 2 cross):**
+**Test plan and results:**
 
-| Run | MBS | GA | Epochs | Compute (est.) | Comparison |
-|---|---|---|---|---|---|
-| T2_seq_M8_1ep | 8 | 1 | 1 | ~1.9h | vs T2 random 1ep (best val 3.5881) |
-| T2_seq_M8_2ep | 8 | 1 | 2 | ~3.8h | + tests one-shot-learner hypothesis |
-| T2_seq_M1_1ep | 1 | 8 | 1 | ~2.1h | tests pure sequential vs Rainman at 1ep |
-| T2_seq_M1_2ep | 1 | 8 | 2 | ~4.2h | + 2-epoch one-shot test on pure sequential |
+| Run | MBS | GA | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Train VRAM | Inference VRAM (strategies) | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|
+| T2 random reference (1ep) | 8 | 1 | 1 | 1.1541 | 36.79 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| T2 random reference (5ep) | 8 | 1 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
+| **T2_seq_M8_1ep (Rainman)** | **8** | **1** | **1** | **1.1726** | **38.98** | **3.6601** | **~1.85h** | **8,065 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
+| **T2_seq_M8_2ep (Rainman)** | **8** | **1** | **2** | **1.1146** | **32.52** | **3.5072** | **~3.64h** | **8,065 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
+| T2_seq_M1_1ep (pure seq) | 1 | 8 | 1 | running | running | running | ~4h projected | pending | pending | in progress |
+| ~~T2_seq_M1_2ep (pure seq)~~ | ~~1~~ | ~~8~~ | ~~2~~ | cancelled | cancelled | cancelled | (~8h projected) | — | — | cancelled — pure-seq variant runs ~2.2× wall-clock vs Rainman with no observable upside |
+
+**Findings (2026-05-11):**
+
+- **Sequential ordering underperforms random sampling at matched epochs** (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB). This is the empirically expected result given the Adagrad-correlated-gradient interaction documented below.
+- **WaveletLM is *not* a strong one-shot learner.** Rainman 2ep best val 3.5072 — meaningful improvement over Rainman 1ep's 3.6601 (Δ = −0.1529 best val). A pure one-shot learner would have plateaued in late epoch 2 *despite still-elevated post-peak LR*, but the model continued descending. The one-shot hypothesis is refuted; WaveletLM benefits from repeat passes.
+- **Rainman 2ep does beat T2 random 1ep** (3.5072 vs 3.5881 best val) — the second epoch's compute pays for the sequential overhead and then some. But it doesn't approach T2 random 5ep (3.2630).
+- **Pure sequential (MBS=1/GA=8) wall-clock is prohibitive** at ~4h/epoch (~2.2× Rainman's 1.85h/epoch, vs the ~10–20% overhead originally projected). Combined with no observable per-step quality upside, the M1_2ep variant was cancelled to free overnight compute for the Adagrad-fix tests below. The M1_1ep run completes for symmetry with the existing test plan.
 
 The 2×2 cross isolates two effects independently:
 - **MBS dimension** (1ep rows): does perfect within-batch sequentiality help vs. streaming in parallel?
@@ -766,7 +775,7 @@ The 2×2 cross isolates two effects independently:
 
 If WaveletLM is a strong one-shot learner, then it won't benefit from repeated passes over the same data at the full learning rate. This would be indicated by a slowdown to improvement after the first 60% of epoch 2, since 30% warmup extends to 60% of epoch 1.
 
-**Note on early Adagrad results (Rainman 1ep, in progress).** Early observation: the Rainman run trails T2 (random sampling) by ~0.14 nats consistently across steps 250–3750 (e.g., step 3500: 5.4957 vs 5.2588). This is the literature-canonical reason shuffling exists, compounded for our setup:
+**Note on Adagrad-sequential interaction (confirmed by results above).** The completed Rainman 1ep result (best val 3.6601) trailed T2 random 1ep (best val 3.5881) by +0.0720 — clearly outside the 0.0015 noise threshold from the 3-seed variance study. Early-step gap during training was even wider (~0.14 nats at steps 250–3750), narrowing somewhat by epoch end. The mechanism is the literature-canonical reason shuffling exists, compounded for our setup:
 
 1. **Adagrad's accumulator collapses LR for correlated gradients.** Adagrad maintains `Σ g²` per parameter; with sequential ordering, consecutive batches hit similar content (same Wikipedia article, same topical vocabulary), driving the accumulator up faster for those specific parameters and dropping their effective LR *before* the model has finished learning them. Random sampling distributes hits evenly.
 2. **Within-article gradient redundancy.** Each Rainman batch covers ~8 different articles (one per stream), but successive batches re-hit the same articles' vocabulary. Random sampling sees fresh distributions every step.
