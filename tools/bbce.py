@@ -199,3 +199,34 @@ def build_bbce_preprocessor(config: dict) -> BBCEPreprocessor:
             config.get("bbce_target_peak_chunk_bytes", 500 * 1024 * 1024)
         ),
     )
+
+
+def pad_idx_for_bbce(
+    idx: torch.Tensor,
+    block_size_compressed: int,
+    pad_id: int = 0,
+) -> torch.Tensor:
+    """Left-pad idx to (B, block_size_compressed) using pad_id.
+
+    BBCEPreprocessor strictly requires the exact bs_compressed shape because
+    its bisection and chunked-pooling math depend on it. At inference and
+    benchmark time, the available context is often shorter (a 3-token prompt;
+    a test-set window where bs_compressed > test_len). Left-padding fills the
+    compressed half so the supervised half (rightmost block_size/2 positions)
+    holds the real context closest to the prediction site.
+
+    If idx is longer than bs_compressed, take only the trailing bs_compressed
+    tokens (typical generation case where idx grows past the context window).
+    """
+    B, T = idx.shape
+    if T == block_size_compressed:
+        return idx
+    if T > block_size_compressed:
+        return idx[:, -block_size_compressed:]
+    pad = torch.full(
+        (B, block_size_compressed - T),
+        pad_id,
+        dtype=idx.dtype,
+        device=idx.device,
+    )
+    return torch.cat([pad, idx], dim=1)

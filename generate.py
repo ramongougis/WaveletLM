@@ -30,6 +30,7 @@ from model import (
     WaveletLM, MultiNodeWaveletLM, causal_haar_decompose, quantize_model,
     get_tokenizer, GPT2Tokenizer, SentencePieceTokenizer, SP_PG19_MODEL_PATH,
 )
+from tools.bbce import pad_idx_for_bbce
 
 
 # ==============================================================================
@@ -315,8 +316,16 @@ def _score_lookahead(model, idx, candidate_token, depth, context_len, use_amp, a
     idx_extended = torch.cat([idx, candidate_token.view(1, 1)], dim=1)
     cumulative_log_prob = 0.0
 
+    base_model = getattr(model, "_orig_mod", model)
+    bbce_enabled = getattr(base_model, "bbce_enabled", False)
+    bbce_bsc = (
+        int(base_model._bbce_preprocessor.block_size_compressed) if bbce_enabled else None
+    )
+
     for _ in range(depth):
         idx_cond = idx_extended[:, -context_len:]
+        if bbce_enabled:
+            idx_cond = pad_idx_for_bbce(idx_cond, bbce_bsc)
         with torch.autocast(device_type=device.type, dtype=amp_dtype,
                             enabled=use_amp and device.type == 'cuda'):
             logits, _ = model(idx_cond, targets=None)
@@ -387,8 +396,16 @@ def generate_one(
     log_probs_list = []
     entropies_list = []
 
+    base_model = getattr(model, "_orig_mod", model)
+    bbce_enabled = getattr(base_model, "bbce_enabled", False)
+    bbce_bsc = (
+        int(base_model._bbce_preprocessor.block_size_compressed) if bbce_enabled else None
+    )
+
     for i in range(num_tokens):
         idx_cond = idx[:, -context_len:]
+        if bbce_enabled:
+            idx_cond = pad_idx_for_bbce(idx_cond, bbce_bsc)
 
         with torch.autocast(device_type=device.type, dtype=amp_dtype,
                             enabled=use_amp and device.type == 'cuda'):
@@ -813,7 +830,12 @@ def main():
         prompt_ids = [0]
     input_tensor = torch.tensor([prompt_ids], dtype=torch.long, device=device)
 
-    context_len = config.get('block_size', 512)
+    if config.get('bbce_enabled', False):
+        # BBCE forward requires (B, block_size_compressed) input; padding to
+        # this length is handled inside generate_one / _score_lookahead.
+        context_len = int(config['block_size_compressed'])
+    else:
+        context_len = config.get('block_size', 512)
 
     gen_kwargs = dict(
         temperature=args.temperature,

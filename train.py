@@ -683,6 +683,153 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
     }
 
 
+@torch.no_grad()
+def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
+                  max_windows=256, pad_id=0):
+    """BBCE-aware test benchmark.
+
+    Each window scores `block_size/2` consecutive next-token predictions in
+    eval_data (the supervised half of BBCE's bisected output). Context is
+    `block_size_compressed` tokens ending immediately before the supervised
+    region; when the available real context is shorter than
+    `block_size_compressed` (typical for the larger BBCE configs where the
+    test set is smaller than the context window), the missing prefix is
+    left-padded with `pad_id`. Every supervised position in eval_data thus
+    gets scored, regardless of whether the model's full long context fits
+    inside the test set — the configs that need padding are clearly logged
+    so the comparison is honest.
+
+    Coverage is non-overlapping at the supervised level: target windows are
+    placed at corpus positions stride=block_size/2 apart. With max_windows
+    cap, windows are uniformly subsampled across the full test set (not
+    front-truncated) so the benchmark is statistically representative
+    rather than start-biased.
+
+    Returns the same dict shape as evaluate_full_validation / sliding for
+    consistent downstream logging.
+    """
+    model.eval()
+    base_model = getattr(model, "_orig_mod", model)
+    if hasattr(base_model, 'reset_semantic_state'):
+        base_model.reset_semantic_state()
+
+    # Disable cross-window state and FwPKM inference updates during eval,
+    # same rationale as evaluate_full_validation / evaluate_sliding_window.
+    _prev_cwb = getattr(base_model, 'decompose_bypass_cross_window', False)
+    base_model.decompose_bypass_cross_window = False
+    _prev_fwpkm_upd = []
+    for layer in base_model.layers if hasattr(base_model, 'layers') else []:
+        if hasattr(layer, 'fwpkm') and getattr(layer.fwpkm, 'inference_updates', False):
+            _prev_fwpkm_upd.append((layer, layer.fwpkm.inference_updates))
+            layer.fwpkm.inference_updates = False
+
+    def _restore_flags():
+        base_model.decompose_bypass_cross_window = _prev_cwb
+        for layer, v in _prev_fwpkm_upd:
+            layer.fwpkm.inference_updates = v
+
+    from tools.bbce import pad_idx_for_bbce
+
+    bs = int(config['block_size'])
+    bsc = int(config['block_size_compressed'])
+    half = bs // 2
+    eval_len = len(eval_data)
+
+    # Window math, matched to the training data loader (make_get_batch BBCE
+    # branch) so the supervised slice means the same thing here and there:
+    #   training: x = data[start : start + Tc],
+    #             y = data[start + Tc - half + 1 : start + Tc + 1]
+    # Let ctx_end = start + Tc (exclusive). Then x covers corpus positions
+    # [ctx_end - Tc, ctx_end) and y covers corpus positions
+    # [ctx_end - half + 1, ctx_end + 1) — i.e. next-token predictions for
+    # the LAST `half` input positions, offset by 1.
+    # We parameterize by `target_start = ctx_end - half`, so:
+    #   x covers [target_start + half - Tc, target_start + half), left-padded
+    #     to length Tc if target_start + half - Tc < 0
+    #   y covers [target_start + 1, target_start + half + 1).
+    # Stride = half for non-overlapping supervised coverage. Constraint:
+    # target_start + half + 1 <= eval_len → target_start <= eval_len - half - 1.
+    max_target_start = eval_len - half - 1
+    if max_target_start < 0:
+        logger.log("[BBCE BENCHMARK] eval_data shorter than block_size/2 + 1; cannot benchmark.")
+        _restore_flags()
+        model.train()
+        return None
+
+    all_target_starts = list(range(0, max_target_start + 1, half))
+    num_natural = len(all_target_starts)
+
+    # Uniform subsample to max_windows so we get representative coverage of
+    # the whole test set, not just its front.
+    if num_natural > max_windows:
+        step = num_natural / max_windows
+        idxs = [int(i * step) for i in range(max_windows)]
+        target_starts = [all_target_starts[i] for i in idxs]
+    else:
+        target_starts = all_target_starts
+
+    # How many windows will need left-padding? Padding kicks in whenever
+    # target_start + half - bsc < 0 → target_start < bsc - half. For larger
+    # bsc relative to the test set, this can be every window.
+    n_padded = sum(1 for s in target_starts if (s + half - bsc) < 0)
+
+    logger.log(
+        f"\n[BBCE BENCHMARK] block_size={bs}, block_size_compressed={bsc}, "
+        f"stride={half}, {len(target_starts)} of {num_natural} natural windows "
+        f"(max={max_windows}), {n_padded} require left-padding"
+    )
+
+    total_loss = 0.0
+    total_tokens = 0
+
+    pbar = tqdm(target_starts, desc="BBCE Benchmark")
+    for target_start in pbar:
+        ctx_end = target_start + half  # exclusive (corresponds to training's ix + Tc)
+        ctx_start = ctx_end - bsc
+        real_ctx_start = max(0, ctx_start)
+        real_ctx = eval_data[real_ctx_start:ctx_end].unsqueeze(0)  # (1, T_real)
+        x = pad_idx_for_bbce(real_ctx.long(), bsc, pad_id=pad_id)
+        # Next-token targets, offset by 1 from the context's trailing half:
+        # logits[:, -half:, :][k] predicts data[ctx_end - half + k + 1] =
+        # data[target_start + 1 + k].
+        y = eval_data[target_start + 1:target_start + half + 1].unsqueeze(0).long()
+
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
+
+        with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
+            logits, _ = model(x, targets=None)  # (1, bs, V)
+
+        logits_scored = logits[:, -half:, :]
+        V = logits_scored.size(-1)
+        loss_per_token = F.cross_entropy(
+            logits_scored.reshape(-1, V), y.view(-1), reduction='none')
+        total_loss += loss_per_token.float().sum().item()
+        total_tokens += y.numel()
+
+    _restore_flags()
+    model.train()
+
+    if total_tokens == 0:
+        return None
+
+    avg_loss = total_loss / total_tokens
+    perplexity = math.exp(avg_loss)
+    bits_per_token = avg_loss / math.log(2)
+
+    return {
+        'perplexity': perplexity,
+        'bits_per_token': bits_per_token,
+        'avg_loss': avg_loss,
+        'total_scored_tokens': total_tokens,
+        'num_windows': len(target_starts),
+        'num_natural_windows': num_natural,
+        'num_padded_windows': n_padded,
+        'stride': half,
+        'block_size_compressed': bsc,
+    }
+
+
 # ==============================================================================
 # CHECKPOINT SAVE
 # ==============================================================================
@@ -1160,23 +1307,31 @@ def train():
                    f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
                    f"({q_stats['compression_ratio']:.2f}x)")
 
-    # BBCE: test-set benchmark expects model.forward(block_size_sized_input),
-    # but BBCE-trained model expects (B, block_size_compressed) input and does
-    # its own bisection. Skip the benchmark to avoid shape mismatch and
-    # because test_data is typically smaller than block_size_compressed for
-    # the larger BBCE variants. Best-val (training-time eval) is the
-    # informative number for BBCE runs.
+    # BBCE benchmark: BBCE-trained models require (B, block_size_compressed)
+    # input. evaluate_bbce slides bs/2-stride supervised windows over the test
+    # set, left-padding the context when bs_compressed > test_len. Reported as
+    # results_full so downstream logging/aggregation paths see a single number;
+    # results_sw is set to None because BBCE has only one natural eval style
+    # (supervised-half scoring) — there is no second "sliding" benchmark to run.
     if config.get('bbce_enabled', False):
-        logger.log(
-            "\n[BENCHMARK] Skipped (bbce_enabled=true). BBCE expects "
-            "block_size_compressed-sized input; test-set benchmarks use "
-            "block_size-sized slices. Best-val from training is the "
-            "informative number; see Best Val Loss in epoch logs."
+        max_windows = int(config.get('bbce_benchmark_max_windows', 256))
+        results_full = evaluate_bbce(
+            model, test_data, config, logger, device, use_amp, amp_dtype,
+            max_windows=max_windows,
         )
-        results_full = None
         results_sw = None
         bpb_full = None
         bpb_sw = None
+        if results_full:
+            bpb_full = results_full['bits_per_token'] / bytes_per_token
+            logger.log(f"\n[BBCE BENCHMARK Results]")
+            logger.log(f"  Perplexity: {results_full['perplexity']:.4f}")
+            logger.log(f"  BPT: {results_full['bits_per_token']:.4f}")
+            logger.log(f"  BPB: {bpb_full:.4f}")
+            logger.log(f"  Avg Loss: {results_full['avg_loss']:.4f}")
+            logger.log(f"  Windows: {results_full['num_windows']} "
+                       f"(of {results_full['num_natural_windows']} natural, "
+                       f"{results_full['num_padded_windows']} padded)")
     else:
         # Non-overlapping benchmark
         results_full = evaluate_full_validation(
@@ -1235,10 +1390,18 @@ def train():
     num_tokens = config.get('num_new_tokens', 512)
     block_size = config['block_size']
 
+    # BBCE forward requires (B, block_size_compressed) input. generate_one
+    # pads short idx_cond up to bs_compressed internally; here we just set
+    # context_len so the rolling window keeps the right number of recent tokens.
+    if config.get('bbce_enabled', False):
+        gen_context_len = int(config['block_size_compressed'])
+    else:
+        gen_context_len = block_size
+
     base_kwargs = dict(
         temperature=config.get('temperature', 1.0),
         num_tokens=num_tokens,
-        context_len=block_size,
+        context_len=gen_context_len,
         use_amp=use_amp,
         amp_dtype=amp_dtype,
     )

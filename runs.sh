@@ -156,6 +156,57 @@ run_ablation() {
     git_commit_push "${COMMIT_MSG}"
 }
 
+benchmark_only_run() {
+    # Replay the post-training steps (test benchmark + two generation passes)
+    # against an existing run directory's best_model.pt. No training, no model
+    # state mutation, no new run dir.
+    #
+    # train.py is invoked in benchmark_only mode: it reads $TARGET_DIR/config.json
+    # as the source of truth for every architectural key, only re-pinning
+    # benchmark_only=true and benchmark_run_dir from our temp config. The root
+    # config.json is never touched (build_run_config writes only to $TMP_CFG;
+    # git_commit_push reverts any unexpected changes), and the run dir's saved
+    # config.json is only READ. Downstream consumers of the checkpoint
+    # (HF release, future benchmark replays) continue to see the original
+    # training config as authoritative.
+    local LABEL="$1"
+    local TARGET_DIR="$2"
+    local COMMIT_MSG="$3"
+
+    echo ""
+    echo "============================================================"
+    echo "=== Benchmark-only: ${LABEL}"
+    echo "===   Target run dir: ${TARGET_DIR}"
+    echo "============================================================"
+
+    if [ ! -d "$TARGET_DIR" ]; then
+        echo "[runs.sh] ERROR: ${TARGET_DIR} does not exist; skipping benchmark-only run"
+        return
+    fi
+    if [ ! -f "$TARGET_DIR/best_model.pt" ]; then
+        echo "[runs.sh] ERROR: ${TARGET_DIR}/best_model.pt missing; skipping"
+        return
+    fi
+
+    build_run_config "{\"benchmark_only\": true, \"benchmark_run_dir\": \"${TARGET_DIR}\"}"
+    python train.py --config "$TMP_CFG"
+    local TRAIN_EXIT=$?
+    if [ "$TRAIN_EXIT" -ne 0 ]; then
+        echo "[runs.sh] train.py (benchmark_only) exited with code $TRAIN_EXIT; continuing"
+    fi
+
+    echo ""
+    echo "=== Measuring inference VRAM (fresh process, standard) for ${TARGET_DIR}"
+    python generate.py --checkpoint "$TARGET_DIR/best_model.pt" || \
+        echo "[runs.sh] generate.py (standard) exited non-zero; continuing"
+    echo ""
+    echo "=== Measuring inference VRAM (fresh process, --strategies) for ${TARGET_DIR}"
+    python generate.py --checkpoint "$TARGET_DIR/best_model.pt" --strategies || \
+        echo "[runs.sh] generate.py --strategies exited non-zero; continuing"
+
+    git_commit_push "${COMMIT_MSG}"
+}
+
 
 # # ---- B3 Baseline (deprecated) ----
 # run_ablation "T2_1ep Baseline 3 verification (1ep, redefined: Test 1 + wavelet_crawl=False)" \
@@ -468,10 +519,24 @@ BBCE_BASE_256='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5,
 BBCE_BASE_512='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "bbce_enabled": true, "block_size": 512}'
 
 # BBCE-1: bc=65K (smallest, fastest signal)
-run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
-    "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
+# run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
+#     "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
+
+# ---- One-off: replay benchmark + generations for T2_BBCE_b256_bc65K_1ep -----
+# The 2026-05-11_17-25-07 run trained successfully (best val 3.8018) but the
+# original post-training steps failed: the old code skipped the test benchmark
+# for any BBCE run (block_size mismatch with test slices) and generation
+# crashed because the BBCE preprocessor strictly requires (B, bs_compressed)
+# input while generate.py was passing the raw 3-token prompt. Both fixed in
+# train.py (evaluate_bbce) and generate.py (pad_idx_for_bbce), so we replay
+# the post-training steps against the existing best_model.pt before resuming
+# the rest of the sweep. Neither config.json is mutated — see
+# benchmark_only_run docstring.
+benchmark_only_run "T2_BBCE_b256_bc65K_1ep (benchmark + generations replay)" \
+    "logs/wikitext-103_2026-05-11_17-25-07" \
+    "T2_BBCE_b256_bc65K_1ep: replay benchmark + generations against existing checkpoint (post BBCE benchmark/generation fixes)"
 
 run_ablation "T2_BBCE_b512_bc65K_1ep block_size=512, block_size_compressed=65,536 (1ep)" \
     "$BASE_PATCH_1EP" \
@@ -604,6 +669,7 @@ echo "============================================================"
 echo "=== Queue complete (lr=0.015 isolation + BBCE sweep + Muon LR sweep)."
 echo "===   1)  T2_rand_1ep_lr15            — T2 random + lr=0.015 (isolation: LR vs sequential)"
 echo "===   2)  T2_BBCE_b256_bc65K_1ep      — BBCE bs=256/bc=65K   (~2-2.5h)"
+echo "===   2b) T2_BBCE_b256_bc65K_1ep      — benchmark + generations replay (no training)"
 echo "===   3)  T2_BBCE_b512_bc65K_1ep      — BBCE bs=512/bc=65K   (~2-3h)"
 echo "===   4)  T2_BBCE_b256_bc262K_1ep     — BBCE bs=256/bc=262K  (~3h)"
 echo "===   5)  T2_BBCE_b512_bc262K_1ep     — BBCE bs=512/bc=262K  (~3-4h)"
