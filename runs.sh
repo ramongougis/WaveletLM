@@ -500,11 +500,14 @@ benchmark_only_run() {
 # from smaller variants should already settle the "does long context help?"
 # question.
 #
-# Expected wall-clock per run (random sampling, MBS=8, 5090):
-#   - bc=65K:  ~2-2.5h
-#   - bc=262K: ~3h
-#   - bc=1M:   ~8-10h
-#   - bc=4M:   ~30-40h  (long; may want to cancel early or run separately)
+# Expected wall-clock per run (random sampling, MBS=8, 5090). BBCE epoch
+# defined as one full pass over supervised positions = step count doubles
+# vs the prior bs-only formula (see Step Count Methodology in README BBCE
+# section).
+#   - bc=65K:  ~4-5h
+#   - bc=262K: ~6h
+#   - bc=1M:   ~16-20h
+#   - bc=4M:   ~60-80h  (long; may want to cancel early or run separately)
 # block_size=512 variants are roughly 10-20% slower than bs=256 counterparts.
 #
 # Comparison reference: T2 random 1ep best val 3.5881 (the standard baseline).
@@ -519,10 +522,10 @@ BBCE_BASE_256='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5,
 BBCE_BASE_512='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "bbce_enabled": true, "block_size": 512}'
 
 # BBCE-1: bc=65K (smallest, fastest signal)
-# run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
-#     "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
+run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
+    "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
 
 # ---- One-off: replay benchmark + generations for T2_BBCE_b256_bc65K_1ep -----
 # The 2026-05-11_17-25-07 run trained successfully (best val 3.8018) but the
@@ -534,9 +537,9 @@ BBCE_BASE_512='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5,
 # the post-training steps against the existing best_model.pt before resuming
 # the rest of the sweep. Neither config.json is mutated — see
 # benchmark_only_run docstring.
-benchmark_only_run "T2_BBCE_b256_bc65K_1ep (benchmark + generations replay)" \
-    "logs/wikitext-103_2026-05-11_17-25-07" \
-    "T2_BBCE_b256_bc65K_1ep: replay benchmark + generations against existing checkpoint (post BBCE benchmark/generation fixes)"
+# benchmark_only_run "T2_BBCE_b256_bc65K_1ep (benchmark + generations replay)" \
+#     "logs/wikitext-103_2026-05-11_17-25-07" \
+#     "T2_BBCE_b256_bc65K_1ep: replay benchmark + generations against existing checkpoint (post BBCE benchmark/generation fixes)"
 
 run_ablation "T2_BBCE_b512_bc65K_1ep block_size=512, block_size_compressed=65,536 (1ep)" \
     "$BASE_PATCH_1EP" \
@@ -666,26 +669,29 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (lr=0.015 isolation + BBCE sweep + Muon LR sweep)."
-echo "===   1)  T2_rand_1ep_lr15            — T2 random + lr=0.015 (isolation: LR vs sequential)"
-echo "===   2)  T2_BBCE_b256_bc65K_1ep      — BBCE bs=256/bc=65K   (~2-2.5h)"
-echo "===   2b) T2_BBCE_b256_bc65K_1ep      — benchmark + generations replay (no training)"
-echo "===   3)  T2_BBCE_b512_bc65K_1ep      — BBCE bs=512/bc=65K   (~2-3h)"
-echo "===   4)  T2_BBCE_b256_bc262K_1ep     — BBCE bs=256/bc=262K  (~3h)"
-echo "===   5)  T2_BBCE_b512_bc262K_1ep     — BBCE bs=512/bc=262K  (~3-4h)"
-echo "===   6)  T2_BBCE_b256_bc1M_1ep       — BBCE bs=256/bc=1M    (~8-10h)"
-echo "===   7)  T2_BBCE_b512_bc1M_1ep       — BBCE bs=512/bc=1M    (~9-12h)"
-echo "===   8)  T2_BBCE_b2048_bc65K_1ep     — BBCE bs=2048/bc=65K  (~2-3h)"
-echo "===   9)  T2_BBCE_b2048_bc262K_1ep    — BBCE bs=2048/bc=262K (~2.5-3.5h)"
-echo "===   10) T2_BBCE_b2048_bc1M_1ep      — BBCE bs=2048/bc=1M   (~3-4h, vs bs=256's ~8-10h)"
-echo "===   11) T2_rand_1ep_lr20            — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
-echo "===   12) T2_Muon_lr3e-3_1ep          — Muon lr=0.003 (Path B v2)"
-echo "===   13) T2_Muon_lr5e-3_1ep          — Muon lr=0.005 (Path B v2)"
+echo "=== Queue complete (BBCE sweep + LR=0.020 confirmation + Muon LR sweep)."
+echo "===   1)  T2_BBCE_b256_bc65K_1ep      — BBCE bs=256/bc=65K   (~4-5h)"
+echo "===   2)  T2_BBCE_b512_bc65K_1ep      — BBCE bs=512/bc=65K   (~4-6h)"
+echo "===   3)  T2_BBCE_b256_bc262K_1ep     — BBCE bs=256/bc=262K  (~6h)"
+echo "===   4)  T2_BBCE_b512_bc262K_1ep     — BBCE bs=512/bc=262K  (~6-8h)"
+echo "===   5)  T2_BBCE_b256_bc1M_1ep       — BBCE bs=256/bc=1M    (~16-20h)"
+echo "===   6)  T2_BBCE_b512_bc1M_1ep       — BBCE bs=512/bc=1M    (~18-24h)"
+echo "===   7)  T2_BBCE_b2048_bc65K_1ep     — BBCE bs=2048/bc=65K  (~4-6h)"
+echo "===   8)  T2_BBCE_b2048_bc262K_1ep    — BBCE bs=2048/bc=262K (~5-7h)"
+echo "===   9)  T2_BBCE_b2048_bc1M_1ep      — BBCE bs=2048/bc=1M   (~6-8h)"
+echo "===   10) T2_rand_1ep_lr20            — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
+echo "===   11) T2_Muon_lr3e-3_1ep          — Muon lr=0.003 (Path B v2)"
+echo "===   12) T2_Muon_lr5e-3_1ep          — Muon lr=0.005 (Path B v2)"
+echo "==="
+echo "=== BBCE step count: full-corpus supervised coverage per epoch under the"
+echo "===   new active-stride formula (block_size/2 for BBCE, block_size"
+echo "===   otherwise). Per-epoch step count is ~2x the prior bs-only formula."
 echo "==="
 echo "=== bs=2048 runs: MBS=4/GA=2 (effective batch unchanged at 8) to fit VRAM"
-echo "===   at T=2048. steps_per_epoch=7,325 (8x fewer than bs=256) means BBCE"
-echo "===   embedding overhead is 8x less per epoch — meaningful at large bc."
-echo "===   Also a useful axis for studying block-size effect on BBCE quality."
+echo "===   at T=2048. steps_per_epoch=14,650 (4x fewer than bs=256 BBCE's"
+echo "===   116,914) means BBCE embedding overhead is 4x less per epoch —"
+echo "===   meaningful at large bc. Also a useful axis for studying"
+echo "===   block-size effect on BBCE quality."
 echo "==="
 echo "=== Removed (wall-clock impractical at ~30-45h per run):"
 echo "===   - T2_BBCE_b256_bc4M_1ep / T2_BBCE_b512_bc4M_1ep"

@@ -796,7 +796,33 @@ The half-block-size point marks a common seam for every wavelet scale, as each h
 
 This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512, 2048} x {65K, 262K, 1M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
 
+**Step Count Methodology.** "1 epoch" is defined as one full pass over the corpus's *supervised* positions — identical across BBCE and non-BBCE. The training schedule uses an **active stride** equal to the number of new corpus tokens consumed for supervision per micro-batch sample: `block_size` without BBCE (every position is supervised) and `block_size/2` with BBCE (only the uncompressed half is supervised; the compressed half is reused context, treated as an architectural add-on rather than additional epoch budget). Per-epoch supervised-token coverage is the full corpus in both cases. In practical step counts at MBS=8 over WikiText-103 (119.7M tokens):
+
+| Config | Steps/epoch |
+|---|---|
+| bs=256 non-BBCE | 58,457 |
+| bs=256 BBCE | 116,914 |
+| bs=512 BBCE | 58,457 |
+| bs=2048 BBCE | 14,650 |
+
 **Comparability Note:** depending on the metric under consideration (equal wall-clock time or compute, equal block size overall, or double block size to have the same number of actual tokens seen), it may be essential to compare the performance of the model with BBCE and block size 512, as well as BBCE with block size 256; versus the model at block size 256 and without BBCE. An additional run without BBCE and with block size 512 would offer another perspective. That is, direct comparability with the baseline is difficult to gauge cleanly with this feature.
+
+**Benchmark Methodology.** Test-set BPB follows the [HuggingFace sliding-window perplexity convention](https://huggingface.co/docs/transformers/perplexity): only non-context tokens contribute to the log-loss. For BBCE that means **only the supervised half** (the last `block_size/2` positions per window) is scored, and the compressed half is excluded as context. Stride is fixed at `block_size/2` so every test token is scored exactly once at its supervised position. This produces a single test-set BPB number that is directly comparable to the sliding-window BPB reported elsewhere in this README for non-BBCE runs, and to sliding-window perplexity numbers in the broader literature. The standard "non-overlapping" benchmark has no separate analogue for BBCE — BBCE has one natural test-set eval style (supervised-half scoring), not two.
+
+**Sweep results (1 epoch).** Decision rule: a BBCE variant must clear the T2 baseline best val (3.5881) by more than the 0.0015-nat noise threshold to be considered a win.
+
+| Run | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
+|---|---|---|---|---|---|---|
+| **T2 baseline** (bs=256, no BBCE) | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
+| BBCE bs=256 / bc=65K | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=65K | (pending) | — | — | — | — | — |
+| BBCE bs=256 / bc=262K | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=262K | (pending) | — | — | — | — | — |
+| BBCE bs=256 / bc=1M | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=1M | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=65K | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=262K | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=1M | (pending) | — | — | — | — | — |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

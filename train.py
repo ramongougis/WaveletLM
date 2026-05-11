@@ -1030,10 +1030,23 @@ def train():
     # negligible (~16 KB/batch).
     vocab_size = enc.vocab_size
 
-    # Compute training schedule
+    # Compute training schedule. The stride per step is the number of *new
+    # corpus tokens* the step consumes for supervision — i.e. the number of
+    # loss-bearing (next-token) positions per micro-batch sample. Without
+    # BBCE every position in a block_size-sized window is supervised, so the
+    # stride equals block_size. Under BBCE only the uncompressed half is
+    # supervised (the compressed half is reused context, an architectural
+    # add-on), so the stride is block_size/2. Using the supervised stride
+    # keeps "1 epoch" defined as one full pass over the corpus's supervised
+    # positions, identically across BBCE and non-BBCE — and per-epoch
+    # supervised-token coverage is the full corpus in both cases.
     T = config['block_size']
+    if config.get('bbce_enabled', False):
+        active_stride = T // 2
+    else:
+        active_stride = T
     effective_batch = config['micro_batch_size'] * config.get('grad_accum', 1)
-    steps_per_epoch = len(train_data) // (T * effective_batch)
+    steps_per_epoch = len(train_data) // (active_stride * effective_batch)
     total_steps = config['epochs'] * steps_per_epoch
     warmup_fraction = config.get('warmup_fraction', 0.3)
     warmup_steps = int(warmup_fraction * total_steps)
