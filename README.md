@@ -796,7 +796,7 @@ The half-block-size point marks a common seam for every wavelet scale, as each h
 
 This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512, 2048} x {65K, 262K, 1M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
 
-Note: depending on the metric under consideration (equal wall-clock time or compute, equal block size overall, or double block size to have the same number of actual tokens seen), it may be essential to compare the performance of the model with BBCE and block size 512, as well as BBCE with block size 256; versus the model at block size 256 and without BBCE. That is, direct comparability with the baseline is difficult to gauge cleanly with this feature.
+**Comparability Note:** depending on the metric under consideration (equal wall-clock time or compute, equal block size overall, or double block size to have the same number of actual tokens seen), it may be essential to compare the performance of the model with BBCE and block size 512, as well as BBCE with block size 256; versus the model at block size 256 and without BBCE. That is, direct comparability with the baseline is difficult to gauge cleanly with this feature.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
