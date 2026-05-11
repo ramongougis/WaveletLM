@@ -377,10 +377,34 @@ run_ablation() {
 # 3 * 4 * 2048 = 24K params. Total ≈ +25M (~6% increase over T2's 393M).
 
 # Run W1: T2 Rainman + wavelet_2d_mode="internal" (Phase 2.A test).
-run_ablation "T2_seq_M8_1ep_2d_internal T2 Rainman + 2D wavelet 'internal' mode (1ep)" \
+# run_ablation "T2_seq_M8_1ep_2d_internal T2 Rainman + 2D wavelet 'internal' mode (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_mode": "internal"}' \
+#     "T2_seq_M8_1ep_2d_internal: Rainman + 2D wavelet 'internal' mode (Phase 2.A; identity-init B-axis lift + per-sub-band scale + B-axis inverse; same output shape as 1D)"
+
+# Run W2: T2 Rainman + wavelet_2d_mode="subband" (Phase 2.B test).
+# Per the architectural distinction (see tools/two_d_wavelets.py docstring):
+# subband mode exposes 3 detail sub-bands per joint level (LH, HL, HH) to the
+# downstream per-scale mixer instead of collapsing them back into 1 detail.
+# Per-sub-band mixer specialization captures band-specific structure that
+# "internal" mode's reassembly throws away. Mixer count auto-extends from 8
+# (1D: L+1) to 14 (subband: 3*b_levels + (L-b_levels) + 1 for T2's b_levels=3).
+# per_scale_mixer_widths auto-expands from 8 entries to 14 (joint-level
+# entries get tripled). Reconstruction uses LiftingWavelet2D.reconstruct_subband.
+#
+# Init semantics: same as internal mode — B-axis nets zero-init, so step-0
+# behavior is exactly the 1D wavelet (the extra mixer slots get identity-ish
+# init via the existing per-scale mixer code). Training learns whether to
+# activate the B-axis path AND the per-sub-band mixer specialization.
+#
+# Param overhead vs internal mode: same B-axis nets (~25M) PLUS the extra 6
+# mixer slots (3 per joint level × 3 joint levels = 9 extra mixer instances
+# vs internal's 8). Each PerScaleMixer is ~5.9M params at width=0.5*Cp=1024,
+# so 6 extra mixers ≈ 35M more params. Total: T2 + ~60M (~15% over T2's 393M).
+run_ablation "T2_seq_M8_1ep_2d_subband T2 Rainman + 2D wavelet 'subband' mode (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_mode": "internal"}' \
-    "T2_seq_M8_1ep_2d_internal: Rainman + 2D wavelet 'internal' mode (Phase 2.A; identity-init B-axis lift + per-sub-band scale + B-axis inverse; same output shape as 1D)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_mode": "subband"}' \
+    "T2_seq_M8_1ep_2d_subband: Rainman + 2D wavelet 'subband' mode (Phase 2.B; 4 sub-bands per joint level exposed to per-band mixers; mixer count 14 vs 1D's 8)"
 
 
 # ---- Adagrad-fix Rainman tests on sequential ordering (deprioritized) -------
@@ -422,16 +446,20 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (2D wavelet 'internal' + Adagrad-fix + Muon LR sweep)."
+echo "=== Queue complete (2D wavelet 'internal' + 'subband' + Adagrad-fix + Muon LR sweep)."
 echo "===   1) T2_seq_M8_1ep_2d_internal — 2D wavelet 'internal' mode (Phase 2.A, PRIORITY)"
-echo "===   2) T2_seq_M8_1ep_lr15        — Rainman + lr=0.015 (1ep)"
-echo "===   3) T2_Muon_lr3e-3_1ep        — Muon lr=0.003 (Path B v2)"
-echo "===   4) T2_Muon_lr5e-3_1ep        — Muon lr=0.005 (Path B v2)"
+echo "===   2) T2_seq_M8_1ep_2d_subband  — 2D wavelet 'subband' mode (Phase 2.B, PRIORITY)"
+echo "===   3) T2_seq_M8_1ep_lr15        — Rainman + lr=0.015 (1ep)"
+echo "===   4) T2_Muon_lr3e-3_1ep        — Muon lr=0.003 (Path B v2)"
+echo "===   5) T2_Muon_lr5e-3_1ep        — Muon lr=0.005 (Path B v2)"
 echo "==="
-echo "=== 2D wavelet 'internal' mode test: B-axis lift + per-sub-band scale +"
-echo "===   B-axis inverse, init as identity (recovers 1D at step 0). Watch"
-echo "===   trajectory vs Rainman baseline (3.66 best val). If lower by"
-echo "===   > 0.0015 nats, B-axis lifting carries useful signal. If higher,"
-echo "===   training is finding the B-axis path counterproductive. See"
-echo "===   tools/two_d_wavelets.py and plans/two_d_wavelet_sequential_training.md."
+echo "=== Two architectural shots at finding cross-batch lift benefit:"
+echo "===   'internal' — B-axis lift internal to wavelet (sub-band scaling +"
+echo "===                inverse lift); same (approx, details) output shape."
+echo "===   'subband' — 4 sub-bands per joint level exposed to per-band mixers"
+echo "===                (mixer count 14 vs 1D's 8); per-band specialization."
+echo "==="
+echo "=== Watch vs Rainman baseline (3.66 best val). If lower by > 0.0015 nats,"
+echo "===   that mode's architectural premise carries useful signal."
+echo "=== See tools/two_d_wavelets.py and plans/two_d_wavelet_sequential_training.md."
 echo "============================================================"
