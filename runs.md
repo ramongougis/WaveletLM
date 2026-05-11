@@ -1074,8 +1074,9 @@ First test of deterministic sequential block ordering vs. the existing random-sa
 | T2 random reference (5ep) | 8 | 1 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
 | **T2_seq_M8_1ep (Rainman)** | **8** | **1** | **1** | **1.1726** | **38.98** | **3.6601** | **~1.85h** | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
 | **T2_seq_M8_2ep (Rainman)** | **8** | **1** | **2** | **1.1146** | **32.52** | **3.5072** | **~3.64h** | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
-| T2_seq_M1_1ep (pure seq) | 1 | 8 | 1 | running | running | running | ~4h projected | in progress |
-| ~~T2_seq_M1_2ep (pure seq)~~ | ~~1~~ | ~~8~~ | ~~2~~ | cancelled | — | — | (~8h projected) | cancelled — pure-seq ~2.2× wall-clock vs Rainman with no upside; freed slot for Adagrad-fix tests |
+| T2_seq_M1_1ep (pure seq) | 1 | 8 | 1 | 1.1901 | 41.17 | 3.6503 | ~4.18h | [link](logs/wikitext-103_2026-05-11_01-09-59/log.txt) |
+| ~~T2_seq_M1_2ep (pure seq)~~ | ~~1~~ | ~~8~~ | ~~2~~ | cancelled | — | — | (~8h projected) | cancelled — pure-seq ~2.26× wall-clock vs Rainman (4.18h vs 1.85h) with no upside; freed slot for Adagrad-fix tests |
+| Rainman + IAV=0.1 (failed) | 8 | 1 | 1 | failed | — | failed (val ≈ 7.6 at step 2000, ~1.8 nats worse than Rainman baseline) | partial (cancelled) | cancelled — IAV breaks Adagrad's sparse-adaptive behavior on this stack |
 
 **Findings:**
 
@@ -1084,14 +1085,14 @@ First test of deterministic sequential block ordering vs. the existing random-sa
 - **Rainman 2ep does beat T2 random 1ep** (3.5072 < 3.5881 best val) — the second epoch's compute pays for the sequential overhead and then some. But it doesn't approach T2 random 5ep (3.2630).
 - **Pure sequential wall-clock is prohibitive.** Projected ~4h/epoch for MBS=1/GA=8 vs ~1.85h for MBS=8/GA=1 — ~2.2× the originally-projected 10–20% overhead. Combined with no observable per-step quality upside, the M1_2ep variant was cancelled to free overnight compute for the Adagrad-fix tests.
 
-**Adagrad-fix follow-up (queued).** Rather than declare sequential dead, two cheap Adagrad-internal fixes are queued before the Muon LR sweep, both on the Rainman MBS=8/GA=1 stack at 1 epoch:
+**Adagrad-fix follow-up (in progress).** Originally queued two Adagrad-internal fixes on Rainman 1ep. First test (IAV=0.1) failed catastrophically — see "Why IAV=0.1 failed" reasoning in the README's Sequential Block Ordering section. Updated status:
 
 | Run | Fix | Status |
 |---|---|---|
-| T2_seq_M8_1ep + `initial_accumulator_value=0.1` | Bounds first-fire updates by initializing `Σ g²` at a positive value; addresses the rarely-fired-embedding-row explosion that drives the imbalance | queued |
-| T2_seq_M8_1ep + `lr=0.015` | Uniform LR bump; partial fix expected to recover ~30–50% of the gap | queued |
+| ~~T2_seq_M8_1ep + `initial_accumulator_value=0.1`~~ | ~~Bounds first-fire updates~~ — empirically refuted; cancelled at ~step 2200 with val 7.58 (~1.8 nats worse than Rainman baseline) | **cancelled, failed** |
+| T2_seq_M8_1ep + `lr=0.015` | Uniform LR bump; partial fix expected to recover ~30–50% of the gap (mechanism-agnostic) | queued |
 
-If either closes most of the gap, sequential becomes viable and BBCE's caching efficiency / 2D wavelets directions are unblocked. If both underwhelm, sequential is shelved as a research direction and BBCE proceeds with random sampling (functional but with no caching efficiency win).
+**Revised reasoning:** the IAV failure indicates Adagrad's tiny-`eps` first-fire behavior is *intentional sparse-adaptive amplification*, not an "explosion" to be bounded. M1_1ep's tie with Rainman (3.6503 vs 3.6601) also indicates within-batch correlation is *not* the dominant driver of the sequential gap. The remaining mechanism-agnostic probe (LR-bumped Adagrad to 0.015) runs next; if it underwhelms, sequential is likely shelved.
 
 ---
 

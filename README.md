@@ -514,22 +514,22 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
-1. [(Done) Single-Layer WaveletLM with Current Best Config](#complete-single-layer-waveletlm-with-current-best-config)
-2. [(Done) Parameter Reduction](#complete-parameter-reduction)
-3. [(Done) Larger Block Size](#complete-larger-block-size)
-4. [(Done) Per-Scale Mixer Width Contraction and Expansion](#complete-per-scale-mixer-width-contraction-and-expansion)
-5. [(Done) Mixer Low Rank](#complete-mixer-low-rank)
-6. [(Done) T1 Baseline Without Wavelet Crawl](#complete-t1-baseline-without-wavelet-crawl)
-7. [New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
+1. [(Done) Single-Layer WaveletLM with Current Best Config](#done-single-layer-waveletlm-with-current-best-config)
+2. [(Done) Parameter Reduction](#done-parameter-reduction)
+3. [(Done) Larger Block Size](#done-larger-block-size)
+4. [(Done) Per-Scale Mixer Width Contraction and Expansion](#done-per-scale-mixer-width-contraction-and-expansion)
+5. [(Done) Mixer Low Rank](#done-mixer-low-rank)
+6. [(Done) T1 Baseline Without Wavelet Crawl](#done-t1-baseline-without-wavelet-crawl)
+7. [(Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
 8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-9. [Sequential Block Ordering](#sequential-block-ordering)
-10. [Bisected Block Context Extension](#bisected-block-context-extension)
-11. [Recurrence (Mixer Only)](#recurrence-mixer-only)
-12. [Dropout](#dropout)
-13. [Weight Decay](#weight-decay)
-14. [Mixer Transform Ablation](#mixer-transform-ablation)
-15. [Step-Time Speedups](#step-time-speedups)
-16. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+9. [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
+10. [2D Wavelet over (Batch, Token) with Sequential Training](#2d-wavelet-over-batch-token-with-sequential-training)
+11. [Bisected Block Context Extension](#bisected-block-context-extension)
+12. [Recurrence (Mixer Only)](#recurrence-mixer-only)
+13. [Dropout](#dropout)
+14. [Weight Decay](#weight-decay)
+15. [Mixer Transform Ablation](#mixer-transform-ablation)
+16. [Step-Time Speedups](#step-time-speedups)
 17. [Longer PG-19 Training](#longer-pg-19-training)
 18. [Dataset Comparisons](#dataset-comparisons)
 19. [Model Comparisons](#model-comparisons)
@@ -604,7 +604,7 @@ In this section, we tested the new T1 baseline with `block_size=16384`, which re
 
 Changes required:
 
-- All four [parameter reduction](#complete-parameter-reduction) changes above from the T1 (reduced parameter) build
+- All four [parameter reduction](#done-parameter-reduction) changes above from the T1 (reduced parameter) build
 - `block_size: 256 → 16384` for more context and direct comparison with other models
 - `levels: 5 → 7` to process the higher context
 - `per_scale_mixer_widths` extended to 8 entries to match levels + 1 scales
@@ -679,7 +679,7 @@ Test the T1 baseline without wavelet crawl for 1 epoch. This removes the only (v
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl
+### (Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl
 
 Test the T1 baseline with wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]. Keep whatever improves performance.
 
@@ -728,71 +728,49 @@ The new baseline shall be named **T2**.
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Sequential Block Ordering
+### (Done) Sequential Block Ordering
 
-Currently, the model does random sampling: each block starts at a uniformly random corpus position with no relationship between consecutive batches. ~37% of training tokens are never sampled at 1 epoch under this regime (~63% coverage from `1 - e^-1`); ~99.3% are covered after 5 epochs.
+Currently, the model does random sampling: each block starts at a uniformly random corpus position with no relationship between consecutive batches.
 
-This section tests **deterministic sequential block ordering**, where every token is visited exactly once per epoch in corpus order. 
+This section tests sequential block ordering, where every token and block is visited exactly once per epoch in corpus order. We'll see if it works as a standalone feature. Otherwise, it'll be turned on only for later features which require it.
 
-Sequential block ordering will enable or be a prerequisite for: 
-- efficient [Bisected Block Context Extension](#bisected-block-context-extension) (consecutive batches share most of their compressed history, enabling caching and easy moving averages)
-- the [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training)
-- cleaner epoch semantics ("one epoch = one full pass through the corpus")
-- testing the **one-shot-learner hypothesis** suggested by WaveletLM's PG-19 sample efficiency vs. transformers (1/50th the effective epochs or less were required).
+It is a prerequisite for:
+- the [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training) 
+- efficient [Bisected Block Context Extension] compression(#bisected-block-context-extension) (not strictly necessary).
 
-**Design choices:**
+Design choices:
 
-- **Stride = `block_size`** (no overlap). Each token is seen exactly once per epoch as a target.
-- **Document/book boundaries: ignored** (soft handling). Matches the current random-sampler behavior and the GPT-style "concat-and-chunk" pretraining default. Some blocks naturally straddle boundaries. Cross-document context is allowed.
-- **No shuffling.** Pure sequential pass through the corpus. Deliberate departure from most pretraining (which typically shuffles at the block or document level). The point of this experiment is to see whether maintaining corpus order matters.
-- **Two MBS regimes tested**, both at effective batch size 8:
-  - **Pure sequential (MBS=1, GA=8):** one stream, each grad-accum substep processes one strictly-consecutive block before the optimizer step. Maximum within-batch order preservation. ~10–20% wall-clock overhead vs. MBS=8/GA=1 from launch costs.
-  - **Parallel in-batch streaming (the "Rainman method", MBS=8, GA=1):** 8 parallel streams advancing through the corpus together while being located nearby (each starts at corpus position `k × N/8`). Within a batch, the 8 elements progress in lockstep. Distant temporal events are split across streams, whereas nearby events are learned simultaneously.
+- Stride = `block_size` (no overlap).
+- Document/book boundaries are ignored. Matches the current random sampler behavior and the GPT-style "concat-and-chunk" pretraining default.
+- No shuffling. The point of this experiment is to see whether maintaining corpus order matters.
 
-**Test plan and results:**
+**Results:**
 
 | Run | MBS | GA | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Train VRAM | Inference VRAM (strategies) | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|
-| T2 random reference (1ep) | 8 | 1 | 1 | 1.1541 | 36.79 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
-| T2 random reference (5ep) | 8 | 1 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
-| **T2_seq_M8_1ep (Rainman)** | **8** | **1** | **1** | **1.1726** | **38.98** | **3.6601** | **~1.85h** | **8,065 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
-| **T2_seq_M8_2ep (Rainman)** | **8** | **1** | **2** | **1.1146** | **32.52** | **3.5072** | **~3.64h** | **8,065 MiB** | **3,258 MiB** | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
-| T2_seq_M1_1ep (pure seq) | 1 | 8 | 1 | running | running | running | ~4h projected | pending | pending | in progress |
-| ~~T2_seq_M1_2ep (pure seq)~~ | ~~1~~ | ~~8~~ | ~~2~~ | cancelled | cancelled | cancelled | (~8h projected) | — | — | cancelled — pure-seq variant runs ~2.2× wall-clock vs Rainman with no observable upside |
+| T2 random sampling | 8 | 1 | 1 | 1.1541 | 36.79 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| T2 random sampling | 8 | 1 | 5 | 1.0485 | 26.46 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
+| T2 sequential | 8 | 1 | 1 | 1.1726 | 38.98 | 3.6601 | ~1.85h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_19-36-28/log.txt) |
+| T2 sequential | 8 | 1 | 2 | 1.1146 | 32.52 | 3.5072 | ~3.64h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_21-29-38/log.txt) |
+| T2 sequential | 1 | 8 | 1 | 1.1901 | 41.17 | 3.6503 | ~4.18h | 7,662 MiB | 3,166 MiB | [link](logs/wikitext-103_2026-05-11_01-09-59/log.txt) |
 
-**Findings (2026-05-11):**
+**Findings:**
 
-- **Sequential ordering underperforms random sampling at matched epochs** (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB). This is the empirically expected result given the Adagrad-correlated-gradient interaction documented below.
-- **WaveletLM is *not* a strong one-shot learner.** Rainman 2ep best val 3.5072 — meaningful improvement over Rainman 1ep's 3.6601 (Δ = −0.1529 best val). A pure one-shot learner would have plateaued in late epoch 2 *despite still-elevated post-peak LR*, but the model continued descending. The one-shot hypothesis is refuted; WaveletLM benefits from repeat passes.
-- **Rainman 2ep does beat T2 random 1ep** (3.5072 vs 3.5881 best val) — the second epoch's compute pays for the sequential overhead and then some. But it doesn't approach T2 random 5ep (3.2630).
-- **Pure sequential (MBS=1/GA=8) wall-clock is prohibitive** at ~4h/epoch (~2.2× Rainman's 1.85h/epoch, vs the ~10–20% overhead originally projected). Combined with no observable per-step quality upside, the M1_2ep variant was cancelled to free overnight compute for the Adagrad-fix tests below. The M1_1ep run completes for symmetry with the existing test plan.
+- Sequential ordering underperforms random sampling at matched epochs (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB). 
+- This feature does not improve the model by itself, but will be tested alongside others which require it or are made more efficient by it. 
+- Could test it at 5 epochs to see if it performs better over time. Reserving this for the future.
 
-The 2×2 cross isolates two effects independently:
-- **MBS dimension** (1ep rows): does perfect within-batch sequentiality help vs. streaming in parallel?
-- **Epochs dimension** (1ep vs 2ep, within each MBS regime): does a second pass meaningfully help alongside warmup, or does WaveletLM saturate even with warmup, and where?
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
 
-**One-shot learner hypothesis (refined).** With warmup_fraction=0.3 fixed, a 2-epoch run's warmup ends at step 35,074 (60% through epoch 1), peak LR hits there, and cosine decay runs from there to the end of epoch 2.
+### 2D Wavelet over (Batch, Token) with Sequential Training
 
-If WaveletLM is a strong one-shot learner, then it won't benefit from repeated passes over the same data at the full learning rate. This would be indicated by a slowdown to improvement after the first 60% of epoch 2, since 30% warmup extends to 60% of epoch 1.
+Generalize the lifting wavelet decomposition from 1D over the token axis to 2D over the joint (batch, token) axis pair. When training proceeds in document-sequential order, the batch axis carries the same multi-scale temporal structure as the token axis, and the same wavelet machinery applies to both. This requires reorganization of the current batch sampling method into a sequential batch processing method, since batches may not be IID with respect to each other. As one example, consider series of novels in PG-19 with temporal plot dependencies between books. Randomly sampling batches breaks this temporal relationship. Using 2D wavelets is a convenient way to enforce and encode temporal relationships at all levels within the model. See [plans/two_d_wavelet_sequential_training.md](plans/two_d_wavelet_sequential_training.md) for the full design.
 
-**Note on Adagrad-sequential interaction (confirmed by results above).** The completed Rainman 1ep result (best val 3.6601) trailed T2 random 1ep (best val 3.5881) by +0.0720 — clearly outside the 0.0015 noise threshold from the 3-seed variance study. Early-step gap during training was even wider (~0.14 nats at steps 250–3750), narrowing somewhat by epoch end. The mechanism is the literature-canonical reason shuffling exists, compounded for our setup:
-
-1. **Adagrad's accumulator collapses LR for correlated gradients.** Adagrad maintains `Σ g²` per parameter; with sequential ordering, consecutive batches hit similar content (same Wikipedia article, same topical vocabulary), driving the accumulator up faster for those specific parameters and dropping their effective LR *before* the model has finished learning them. Random sampling distributes hits evenly.
-2. **Within-article gradient redundancy.** Each Rainman batch covers ~8 different articles (one per stream), but successive batches re-hit the same articles' vocabulary. Random sampling sees fresh distributions every step.
-3. **Distribution shift at article boundaries** integrates as noise into Adagrad's accumulator without ever resetting.
-
-**Possible fixes, ordered by cost and evidence.** Important framing caveat first: Adagrad has been the best-performing optimizer across every settled experiment on this architecture (T2 5ep: BPB 1.0485, best val 3.2630). Muon at lr=0.001 trailed Adagrad by ~0.19 nats at 2× wall-clock; lr=0.01 oscillated and crossed back behind Adagrad by step 8000. AdamW is untested. So "swap the optimizer" is a *theoretical* fix (EMA accumulator should handle sequential correlation better) without empirical confirmation yet — and any swap carries the empirical risk that our alternatives have so far been worse on the *uncorrelated* random-sampling setup. The candidates, ranked by combined cost and expected effectiveness:
-
-1. **`initial_accumulator_value > 0`** (cheapest, directly attacks the mechanism). Adagrad's built-in `initial_accumulator_value` parameter initializes `Σ g²` at a positive value instead of zero. With our current setting (0) and tiny `eps=2e-13`, a parameter firing for the *first* time gets a per-step effective LR of `lr / sqrt(2e-13) ≈ lr × 2.2M` — essentially unbounded, which is exactly what causes the explosion when an embedding row first fires under sequential ordering (its corresponding token appearing for the first time mid-epoch). A positive `initial_accumulator_value` (e.g., 0.01 or 0.1) bounds every parameter's first-fire update, and the warmup floor automatically fades as real gradient history accumulates. **One-line config addition; the canonical Adagrad fix for non-stationary / sparse-update data, and the first probe worth running.**
-2. **LR-bumped Adagrad** (cheapest uniform fix, partial). Raise `base_lr` 0.01 → ~0.015. Lifts the effective per-parameter LR for the accumulator-collapsed parameters but doesn't fix the underlying imbalance distribution — over-trained vs. under-trained parameter spread stays the same shape. Estimated gap recovery: ~30–50%. Config-only change.
-3. **Parameter-group Adagrad** (surgical). Higher LR for the token embedding (where the imbalance concentrates — embedding rows fire only when their token appears, so sequential ordering causes the worst accumulator imbalance there) while keeping the dense Linear matrices at the standard LR. Targets the actual failure mechanism per-parameter-class rather than uniformly. ~20–30 lines of code. Expected to fix more of the gap than uniform LR scaling, complementary to option 1.
-4. **AdamW on sequential** (untested). EMA accumulator (β₂) is the theoretically-right tool — exponentially forgets old gradients on a timescale shorter than corpus traversal, so the accumulator imbalance never builds. Comparable compute to Adagrad (no NS iteration cost). The risk is empirical: we haven't run a single AdamW experiment on this architecture, and Muon has been disappointing, so there's no guarantee AdamW won't have its own surprises.
-5. **Muon on sequential** (currently tested on random, queued for tomorrow). Same EMA-rationale as AdamW. 2× compute cost has to be justified by gap closure greater than what cheaper alternatives achieve.
-6. **Drop the sequential direction.** BBCE functionally works with random sampling (long-context windows are per-example, not cross-batch); only the caching efficiency benefit is lost. 2D wavelets over batch axis is the only feature that strictly needs sequential. If 1–5 don't close the gap meaningfully, this is the honest fallback — keep Adagrad + random sampling as production, accept that 2D wavelets aren't viable, and absorb BBCE's recomputation cost.
-
-**Adagrad-internal hyperparameters that do *not* help, for record:** raising `eps` (counter-intuitive — our tiny `eps=2e-13` is what gives rarely-fired params their big-jump updates; a larger `eps` would *hurt* the very imbalance we want to fix). `lr_decay` (PyTorch Adagrad's per-step decay) duplicates what our cosine scheduler already does. `weight_decay` doesn't target the imbalance.
-
-Strategy for tomorrow's analysis: option 1 (`initial_accumulator_value`) is the cheapest probe and directly targets the failure mechanism — try it on Rainman first. If it closes most of the gap, the optimizer-swap discussion is moot. The Muon LR sweep settles whether Muon is even worth trying on sequential. If lr=0.003 / 0.005 produces a clear winner *on random sampling*, sequential + Muon becomes worth one run to test the optimizer-sequential coupling hypothesis. If both option 1 and Muon fail, options 2/3 become the next-cheapest probes; 6 becomes plausible.
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
 
 ### Bisected Block Context Extension
 
@@ -816,7 +794,7 @@ Due to wavelet decomposition and reconstruction being inverses of each other, an
 
 `x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
 
-This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#complete-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
+This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#done-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
 
 Other recurrence approaches likely exist, but this section will only test the mixer.
 
@@ -853,14 +831,6 @@ Test the contribution of the FWHT slot in the per-scale mixer versus having no t
 ### Step-Time Speedups
 
 Throughput per token of context flattens past `bs≈1024` despite linear-in-N theoretical scaling — a memory-bandwidth wall, not algorithmic. Use [`profile_step.py`](profile_step.py) to attribute step time across architectural components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever crosses 25% at `bs=16384`. Candidate quick wins: fused SwiGLU kernel (Liger / Unsloth / xformers — drop-in for the MLP block), `torch.compile(mode='reduce-overhead')` for CUDA Graphs capture, fused Adagrad, and (architectural) low-rank lifting predict/update networks. See [plans/other_post_release_plans.md §12](plans/other_post_release_plans.md#12-step-time-speedup-quick-wins-informed-by-profiler) for the full menu and decision rule.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### 2D Wavelet over (Batch, Token) with Sequential Training
-
-Generalize the lifting wavelet decomposition from 1D over the token axis to 2D over the joint (batch, token) axis pair. When training proceeds in document-sequential order, the batch axis carries the same multi-scale temporal structure as the token axis, and the same wavelet machinery applies to both. This requires reorganization of the current batch sampling method into a sequential batch processing method, since batches may not be IID with respect to each other. As one example, consider series of novels in PG-19 with temporal plot dependencies between books. Randomly sampling batches breaks this temporal relationship. Using 2D wavelets is a convenient way to enforce and encode temporal relationships at all levels within the model. See [plans/two_d_wavelet_sequential_training.md](plans/two_d_wavelet_sequential_training.md) for the full design.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

@@ -354,17 +354,12 @@ run_ablation() {
 # cheap Adagrad-internal fixes are tested here before the Muon LR sweep.
 # (See README's Sequential Block Ordering section for full reasoning.)
 
-# Run A1: Rainman 1ep + initial_accumulator_value=0.1 (the canonical Adagrad
-# fix for non-stationary / sparse-update data — bounds first-fire updates by
-# initializing Σ g² at a positive value).
-run_ablation "T2_seq_M8_1ep_iav T2 Rainman + initial_accumulator_value=0.1 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "adagrad_initial_accumulator_value": 0.1}' \
-    "T2_seq_M8_1ep_iav: Rainman + initial_accumulator_value=0.1 (1ep, otherwise as T2_seq_M8_1ep baseline)"
-
-# Run A2: Rainman 1ep + lr=0.015 (uniform LR bump; partial fix expected to
+# Run A1: Rainman 1ep + lr=0.015 (uniform LR bump; partial fix expected to
 # recover ~30-50% of the gap by lifting the floor for accumulator-collapsed
-# parameters).
+# parameters). The IAV=0.1 probe was attempted but failed catastrophically
+# (val ~7.6 at step 2000 vs Rainman baseline 5.77) — see Sequential Block
+# Ordering section in README for the post-mortem. IAV support has been
+# removed from train.py / config.json as failed-experiment bloat.
 run_ablation "T2_seq_M8_1ep_lr15 T2 Rainman + lr=0.015 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "lr": 0.015, "min_lr": 0.0003}' \
