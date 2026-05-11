@@ -426,10 +426,10 @@ run_ablation() {
 # sampling stack — if random+lr=0.015 also outperforms random+lr=0.01
 # (3.5881), then lr=0.015 is partly a general-purpose Adagrad tune for T2.
 # If it ties or regresses, the lr=0.015 benefit is sequential-specific.
-run_ablation "T2_rand_1ep_lr15 T2 random sampling + lr=0.015 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003}' \
-    "T2_rand_1ep_lr15: T2 random sampling + lr=0.015 (1ep; fair-comparison companion to T2_seq_M8_1ep_lr15; isolates LR vs sequential variable)"
+# run_ablation "T2_rand_1ep_lr15 T2 random sampling + lr=0.015 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003}' \
+#     "T2_rand_1ep_lr15: T2 random sampling + lr=0.015 (1ep; fair-comparison companion to T2_seq_M8_1ep_lr15; isolates LR vs sequential variable)"
 
 
 # ---- BBCE sweep (Bisected Block Context Extension) --------------------------
