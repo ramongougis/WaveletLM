@@ -345,25 +345,42 @@ run_ablation() {
 
 
 # ---- 2D wavelet over (batch, token) — PRIORITY: tested first ----------------
-# Phase 1 of the 2D wavelet rollout: scaffold validation. The 2D wrapper is
-# a pass-through to the existing 1D T-axis lifting wavelet, so this run is
-# expected to land at the same val loss as a matched-config Rainman 1ep
-# baseline (best val ~3.66). It validates: (a) the wavelet_2d_enabled config
-# flag works, (b) tools/two_d_wavelets.py imports and instantiates correctly,
-# (c) LiftingWavelet2D as a drop-in for LiftingWaveletDecompose doesn't
-# disturb LiftingWaveletReconstruct's access to predict_nets/update_nets via
-# forwarded properties.
+# Phase 2.A of the 2D wavelet rollout: "internal" mode. Adds separable B-axis
+# lifting at each level (up to log2(B)=3 levels for B=8), with per-sub-band
+# scaling, then B-axis inverse lift to reassemble into the standard (approx,
+# details) output shape. Cross-batch information enters via the per-sub-band
+# processing; no changes to model.py mixer or reconstruct paths required.
 #
-# If this run matches Rainman baseline within noise, the integration surface
-# is confirmed and Phase 2 (real B-axis lifting math) can land safely on top.
-# See plans/two_d_wavelet_sequential_training.md and tools/two_d_wavelets.py
-# for the full design.
+# Phase 1 scaffold (mode="passthrough") was validated on 2026-05-11
+# (logs/wikitext-103_2026-05-11_05-26-15 et al.): trajectory matches the
+# Rainman baseline within noise (~0.001 nats), confirming the integration
+# surface (config flag, lazy import, forwarded properties, autograd) is
+# clean. We now enable mode="internal" to test whether the B-axis lifting
+# itself provides cross-batch benefit.
+#
+# Init semantics: wavelet_2d_init_zero=true means B-axis predict/update nets
+# start as zero (no contribution) AND per-sub-band scales start as 1.0
+# (identity). Net effect: step-0 behavior is exactly the 1D wavelet. Training
+# learns whether to activate the B-axis path.
+#
+# Expected outcome:
+#   * If "internal" mode helps: best val < 3.66 (Rainman baseline) by a
+#     meaningful margin (> 0.0015 noise threshold).
+#   * If it hurts: best val > 3.66. Probably won't be catastrophic since
+#     init=identity, but the optimizer may push it in a bad direction.
+#   * If it ties: best val ≈ 3.66. Suggests B-axis lifting via "internal"
+#     mode doesn't carry useful gradient signal, and we should try "subband"
+#     (Phase 2.B) which exposes sub-bands to per-band mixers.
+#
+# Param overhead: small. 2 * b_levels Linear(C, C) for b_predict_nets +
+# b_update_nets = 2 * 3 * 2048^2 ≈ 25M new params. Per-sub-band scales:
+# 3 * 4 * 2048 = 24K params. Total ≈ +25M (~6% increase over T2's 393M).
 
-# Run W1: T2 Rainman + wavelet_2d_enabled=true (Phase 1 scaffold smoke test).
-run_ablation "T2_seq_M8_1ep_2d T2 Rainman + 2D wavelet scaffold (Phase 1 pass-through, 1ep)" \
+# Run W1: T2 Rainman + wavelet_2d_mode="internal" (Phase 2.A test).
+run_ablation "T2_seq_M8_1ep_2d_internal T2 Rainman + 2D wavelet 'internal' mode (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_enabled": true}' \
-    "T2_seq_M8_1ep_2d: Rainman + 2D wavelet scaffold (Phase 1 pass-through; should match Rainman baseline best val ~3.66)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_mode": "internal"}' \
+    "T2_seq_M8_1ep_2d_internal: Rainman + 2D wavelet 'internal' mode (Phase 2.A; identity-init B-axis lift + per-sub-band scale + B-axis inverse; same output shape as 1D)"
 
 
 # ---- Adagrad-fix Rainman tests on sequential ordering (deprioritized) -------
@@ -405,14 +422,16 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (2D wavelet scaffold + Adagrad-fix + Muon LR sweep)."
-echo "===   1) T2_seq_M8_1ep_2d    — 2D wavelet Phase 1 scaffold smoke test (PRIORITY)"
-echo "===   2) T2_seq_M8_1ep_lr15  — Rainman + lr=0.015 (1ep)"
-echo "===   3) T2_Muon_lr3e-3_1ep  — Muon lr=0.003 (Path B v2)"
-echo "===   4) T2_Muon_lr5e-3_1ep  — Muon lr=0.005 (Path B v2)"
+echo "=== Queue complete (2D wavelet 'internal' + Adagrad-fix + Muon LR sweep)."
+echo "===   1) T2_seq_M8_1ep_2d_internal — 2D wavelet 'internal' mode (Phase 2.A, PRIORITY)"
+echo "===   2) T2_seq_M8_1ep_lr15        — Rainman + lr=0.015 (1ep)"
+echo "===   3) T2_Muon_lr3e-3_1ep        — Muon lr=0.003 (Path B v2)"
+echo "===   4) T2_Muon_lr5e-3_1ep        — Muon lr=0.005 (Path B v2)"
 echo "==="
-echo "=== 2D wavelet Phase 1 is a pass-through scaffold — should match Rainman"
-echo "===   baseline within noise (~3.66 best val). If it does, the integration"
-echo "===   surface is validated and Phase 2 (real B-axis lifting math) can land"
-echo "===   on top safely. See plans/two_d_wavelet_sequential_training.md."
+echo "=== 2D wavelet 'internal' mode test: B-axis lift + per-sub-band scale +"
+echo "===   B-axis inverse, init as identity (recovers 1D at step 0). Watch"
+echo "===   trajectory vs Rainman baseline (3.66 best val). If lower by"
+echo "===   > 0.0015 nats, B-axis lifting carries useful signal. If higher,"
+echo "===   training is finding the B-axis path counterproductive. See"
+echo "===   tools/two_d_wavelets.py and plans/two_d_wavelet_sequential_training.md."
 echo "============================================================"

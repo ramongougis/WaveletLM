@@ -1918,19 +1918,22 @@ class WaveletLM(nn.Module):
                 lifting_reference_weights=lifting_reference_weights,
             )
             # 2D wavelet over (batch, token): wrap the 1D T-axis lifting in
-            # the 2D scaffold when enabled. Phase 1 of the 2D rollout is a
-            # pass-through (B-axis logic not yet implemented); the wrapper
-            # exists to validate the integration surface. See
-            # tools/two_d_wavelets.py and plans/two_d_wavelet_sequential_training.md.
-            if config.get("wavelet_2d_enabled", False):
+            # the 2D module when `wavelet_2d_mode != "off"`. Mode semantics
+            # documented in tools/two_d_wavelets.py:
+            #   - "passthrough": Phase 1 scaffold (no-op delegation to 1D)
+            #   - "internal":    Phase 2.A (B-axis lift + per-sub-band scale +
+            #                    B-axis inverse → same output shape as 1D)
+            #   - "subband":     Phase 2.B (4 sub-bands exposed; NOT YET IMPL)
+            wavelet_2d_mode = config.get("wavelet_2d_mode", "off")
+            if wavelet_2d_mode != "off":
                 from tools.two_d_wavelets import build_lifting_wavelet_2d
                 shared_lifting = build_lifting_wavelet_2d(
                     t_wavelet=shared_lifting,
                     config=config,
                 )
                 print(
-                    f"[Lifting] 2D wavelet enabled (Phase 1 pass-through scaffold). "
-                    f"b_levels={config.get('wavelet_2d_b_levels', -1)}, "
+                    f"[Lifting] 2D wavelet enabled (mode={wavelet_2d_mode!r}). "
+                    f"b_levels={shared_lifting.b_levels}, "
                     f"init_zero={config.get('wavelet_2d_init_zero', True)}, "
                     f"state_passing={config.get('wavelet_2d_state_passing', False)}"
                 )
