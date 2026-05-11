@@ -344,22 +344,39 @@ run_ablation() {
 #     "T2_seq_M1_2ep: sequential blocks, MBS=1/GA=8 (pure sequential; 2ep one-shot test, T2 stack, Adagrad lr=0.01)"
 
 
-# ---- Adagrad-fix Rainman tests on sequential ordering -----------------------
+# ---- 2D wavelet over (batch, token) — PRIORITY: tested first ----------------
+# Phase 1 of the 2D wavelet rollout: scaffold validation. The 2D wrapper is
+# a pass-through to the existing 1D T-axis lifting wavelet, so this run is
+# expected to land at the same val loss as a matched-config Rainman 1ep
+# baseline (best val ~3.66). It validates: (a) the wavelet_2d_enabled config
+# flag works, (b) tools/two_d_wavelets.py imports and instantiates correctly,
+# (c) LiftingWavelet2D as a drop-in for LiftingWaveletDecompose doesn't
+# disturb LiftingWaveletReconstruct's access to predict_nets/update_nets via
+# forwarded properties.
+#
+# If this run matches Rainman baseline within noise, the integration surface
+# is confirmed and Phase 2 (real B-axis lifting math) can land safely on top.
+# See plans/two_d_wavelet_sequential_training.md and tools/two_d_wavelets.py
+# for the full design.
+
+# Run W1: T2 Rainman + wavelet_2d_enabled=true (Phase 1 scaffold smoke test).
+run_ablation "T2_seq_M8_1ep_2d T2 Rainman + 2D wavelet scaffold (Phase 1 pass-through, 1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "wavelet_2d_enabled": true}' \
+    "T2_seq_M8_1ep_2d: Rainman + 2D wavelet scaffold (Phase 1 pass-through; should match Rainman baseline best val ~3.66)"
+
+
+# ---- Adagrad-fix Rainman tests on sequential ordering (deprioritized) -------
 # Rainman 1ep (logs/wikitext-103_2026-05-10_19-36-28) trailed T2 random 1ep by
-# +0.0720 best val (3.6601 vs 3.5881). Rainman 2ep (21-29-38) reached 3.5072,
-# beating T2 random 1ep but still well above T2 random 5ep (3.2630). The gap
-# is consistent with the Adagrad-correlated-gradient interaction: rarely-fired
-# embedding rows get explosive first-fire updates (lr / sqrt(2e-13) ≈ lr × 2.2M)
-# when their token first appears mid-epoch under sequential ordering. Two
-# cheap Adagrad-internal fixes are tested here before the Muon LR sweep.
-# (See README's Sequential Block Ordering section for full reasoning.)
+# +0.0720 best val (3.6601 vs 3.5881). The IAV=0.1 probe was attempted but
+# failed catastrophically (val ~7.6 at step 2000 vs Rainman baseline 5.77) —
+# see Sequential Block Ordering section in README for the post-mortem.
+# IAV support has been removed from train.py / config.json as failed-experiment
+# bloat. The lr=0.015 probe remains as a mechanism-agnostic uniform LR bump.
 
 # Run A1: Rainman 1ep + lr=0.015 (uniform LR bump; partial fix expected to
 # recover ~30-50% of the gap by lifting the floor for accumulator-collapsed
-# parameters). The IAV=0.1 probe was attempted but failed catastrophically
-# (val ~7.6 at step 2000 vs Rainman baseline 5.77) — see Sequential Block
-# Ordering section in README for the post-mortem. IAV support has been
-# removed from train.py / config.json as failed-experiment bloat.
+# parameters).
 run_ablation "T2_seq_M8_1ep_lr15 T2 Rainman + lr=0.015 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "sequential_blocks": true, "micro_batch_size": 8, "grad_accum": 1, "lr": 0.015, "min_lr": 0.0003}' \
@@ -388,14 +405,14 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (Adagrad-fix Rainman runs + Muon LR sweep)."
-echo "===   1) T2_seq_M8_1ep_iav   — Rainman + initial_accumulator_value=0.1 (1ep)"
+echo "=== Queue complete (2D wavelet scaffold + Adagrad-fix + Muon LR sweep)."
+echo "===   1) T2_seq_M8_1ep_2d    — 2D wavelet Phase 1 scaffold smoke test (PRIORITY)"
 echo "===   2) T2_seq_M8_1ep_lr15  — Rainman + lr=0.015 (1ep)"
 echo "===   3) T2_Muon_lr3e-3_1ep  — Muon lr=0.003 (Path B v2)"
 echo "===   4) T2_Muon_lr5e-3_1ep  — Muon lr=0.005 (Path B v2)"
 echo "==="
-echo "=== If either Adagrad-fix run closes most of the ~0.07 nat best-val gap"
-echo "===   vs T2 random 1ep (3.5881), sequential becomes viable for downstream"
-echo "===   work (BBCE caching, 2D wavelets). If both underwhelm, sequential is"
-echo "===   shelved and BBCE proceeds with random sampling."
+echo "=== 2D wavelet Phase 1 is a pass-through scaffold — should match Rainman"
+echo "===   baseline within noise (~3.66 best val). If it does, the integration"
+echo "===   surface is validated and Phase 2 (real B-axis lifting math) can land"
+echo "===   on top safely. See plans/two_d_wavelet_sequential_training.md."
 echo "============================================================"
