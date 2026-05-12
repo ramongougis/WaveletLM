@@ -811,20 +811,24 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 
 **Sweep results (1 epoch).** Decision rule: a BBCE variant must clear the T2 baseline best val (3.5881) by more than the 0.0015-nat noise threshold to be considered a win.
 
-| Run | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
-|---|---|---|---|---|---|---|
-| **T2 baseline** (bs=256, no BBCE) | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
-| BBCE bs=256 / bc=65K | 3.5725 | −0.0156 | 1.1551 | 5.89h | 7,809 MiB | (pending) |
-| BBCE bs=512 / bc=65K | 3.5922 | +0.0041 | **1.1530** | 3.88h | 8,177 MiB | (pending) |
-| BBCE bs=512 / bc=131K | (pending) | — | — | — | — | — |
-| BBCE bs=512 / bc=250K † | (pending) | — | — | — | — | — |
-| BBCE bs=1024 / bc=65K | (pending) | — | — | — | — | — |
-| BBCE bs=1024 / bc=131K | (pending) | — | — | — | — | — |
-| BBCE bs=1024 / bc=250K † | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=65K | (running) | — | — | — | — | — |
-| BBCE bs=2048 / bc=131K | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=250K † | (pending) | — | — | — | — | — |
-| BBCE bs=512 / bc=65K + `compressed_grad=false` | (pending) | — | — | — | — | — |
+| Run | g § | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
+|---|---|---|---|---|---|---|---|
+| **T2 baseline** (bs=256, no BBCE) | — | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
+| BBCE bs=256 / bc=65K | 511 | 3.5725 | −0.0156 | 1.1551 | 5.89h | 7,809 MiB | (pending) |
+| BBCE bs=512 / bc=65K | 255 | 3.5922 | +0.0041 | **1.1530** | 3.88h | 8,177 MiB | (pending) |
+| BBCE bs=512 / bc=131K | 511 | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=250K † | 975 | (pending) | — | — | — | — | — |
+| BBCE bs=1024 / bc=65K | 127 | (pending) | — | — | — | — | — |
+| BBCE bs=1024 / bc=131K | 255 | (pending) | — | — | — | — | — |
+| BBCE bs=1024 / bc=250K † | 487 | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=65K | 63 | 3.6541 | +0.0660 | 1.1706 | 2.21h | 15,941 MiB | (pending) |
+| BBCE bs=2048 / bc=131K | 127 | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=250K † | 243 | (pending) | — | — | — | — | — |
+| bs=1024 non-BBCE (control) ‡ | — | (pending) | — | — | — | — | — |
+| bs=2048 non-BBCE (control) ‡ | — | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=65K + `compressed_grad=false` | 255 | (pending) | — | — | — | — | — |
+
+§ `g` = **compression factor**, the number of corpus tokens averaged into each compressed slot via mean-pooling. Defined as `g = (block_size_compressed − block_size/2) // (block_size/2)`, where `block_size/2` is also the number of compressed slots (the slot count and the uncompressed-position count coincide). A column entry of "—" means the row doesn't use BBCE compression. Higher `g` = each slot pools more tokens = denser per-slot semantic load (closer to a topic vector); lower `g` = each slot pools fewer tokens (closer to a local fragment). See "g-matched diagonal" below for why holding `g` constant while varying `bs` is the cleanest single-axis comparison BBCE supports within WT-103.
 
 **WT-103 test-set ceilings (honest limitations).** WikiText-103 caps the bc values we can measure cleanly:
 - **Val cliff at bc=251K:** `val_data` is 251,048 tokens. When `bc ≥ 251K`, the BBCE val branch falls back to sampling from `train_data`, so "Best Val" stops measuring val-distribution loss and becomes a train-distribution proxy — not directly comparable to baseline.
@@ -832,6 +836,28 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 - **OOM at bc=1M:** compressed-half saved activations for the backward pass exceed 32 GiB on a single 5090; either `bbce_compressed_grad: false` (drops gradient through compressed) or a streaming sum / chunked-reduction refactor would be needed to fit. Neither is implemented yet.
 
 For bc > 256K, **PG-19** is the natural next test set: ~28M test tokens means bc=1M would be at 0.04× test_len vs WT-103's 3.5× — virtually no padding, and the long-form novel structure is exactly where BBCE's value proposition lives (cross-chapter / cross-book conditioning). Filed as the scale-up direction once the current WT-103 cells settle the bc-scaling question.
+
+**g-matched diagonal (the apples-to-apples comparison).** Compression ratio `g = (bc - bs/2) / (bs/2)` = tokens per compressed slot. Across the queued sweep, `g` varies wildly even at fixed bc, which means BBCE's value proposition is being tested at very different per-slot semantic densities cell-by-cell. The bs=2048/bc=65K result (Δ +0.0660 vs T2 — clear regression) may be telling us that g=63 is *too little* per slot to carry useful semantic content, not that bs=2048 itself is unviable. To separate the bs effect from the g effect we need a diagonal where g is held roughly constant:
+
+| bs | bc | g (tokens per slot) | Status |
+|---|---|---|---|
+| 512 | 65K | 255 | completed (Δ +0.0041 best val) |
+| 1024 | 131K | 255 | queued |
+| 2048 | 250K | 243 | queued |
+
+These three sit at **g ≈ 250**, varying only `bs` (and proportionally `bc`). The cell already completed (bs=512/bc=65K) lands within noise of T2; the queued pair will tell us whether scaling along this diagonal helps (BBCE's compressed history is genuinely informative when slots carry comparable semantic load) or plateaus (per-batch supervised stride dominates regardless). A second g-matched diagonal at g=511 would test the "denser slot" regime but isn't cleanly buildable within WT-103's ceilings (would require bc=263K or bc=512K cells).
+
+**Non-BBCE controls at larger bs (`‡` rows in the table).** Without these, "bs=1024 BBCE beat T2" is confounded — was the gain from the long compressed context or from the larger window itself? Two control runs at the T2 architecture (levels=7, T2 mixer widths, wavelet_crawl=true, Adagrad lr=0.01) but with `block_size ∈ {1024, 2048}` and BBCE off isolate the variables:
+
+| Run | What it isolates |
+|---|---|
+| T2 (bs=256, no BBCE) | baseline |
+| bs=1024 non-BBCE | "what does larger window give without BBCE?" |
+| bs=2048 non-BBCE | same, at the largest bs in the BBCE sweep |
+| BBCE bs=1024 / bc=131K (g=255) | larger window + long compressed context, matched-g diagonal |
+| BBCE bs=2048 / bc=250K (g=243) | largest window + long compressed context, matched-g diagonal |
+
+If the non-BBCE controls land near T2 and BBCE at the matched-g diagonal beats them: BBCE provides real long-context value. If non-BBCE bs=1024/2048 already beat T2: the gain is from larger windows, not BBCE. If non-BBCE bs=1024/2048 underperform: caveat — at 1 epoch under the active-stride formula, bs=1024 has only 14,610 optimizer steps (vs T2's 58,457) and bs=2048 has 7,304. Adagrad may be update-starved at these step counts; a 2-4 epoch follow-up matched to T2's step budget would disambiguate update-starvation from "larger bs is worse" if needed.
 
 **Compensation observation (preliminary).** The `bs=256 / bc=65K` row lands at Δ +0.0010 BPB vs T2 baseline — within the 0.0015-nat noise threshold, statistically identical. That's the load-bearing surprise: BBCE supervises half as many tokens per batch as T2, yet test-set perplexity matches. The 65K of compressed context appears to exactly compensate for the halved per-batch supervision — no more, no less. The Best Val drift (Δ −0.0156, ~10× noise) suggests the compressed context is doing real work; it just doesn't show up on the test-set BPB until either `block_size` grows or, possibly, `block_size_compressed` does. The rest of the sweep distinguishes two scenarios:
 - **(a) Longer bc yields strict gains beyond the compensation point**: `bs=256 / bc=1M` would beat T2 by a margin; `bs=512 / bc=1M` would beat its bc=65K counterpart. This is the desired outcome — compressed context is genuinely informative and scales.
