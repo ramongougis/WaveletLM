@@ -552,21 +552,50 @@ BBCE_BASE_512='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5,
 #     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 262144}" \
 #     "T2_BBCE_b256_bc262K_1ep: BBCE bs=256/bc=262K (1ep, random sampling, T2 stack)"
 
-run_ablation "T2_BBCE_b512_bc262K_1ep block_size=512, block_size_compressed=262,144 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 262144}" \
-    "T2_BBCE_b512_bc262K_1ep: BBCE bs=512/bc=262K (1ep, random sampling, T2 stack)"
+# BBCE-2: bc=131K (~125K) — rebalanced from bc=262K. The 262K variant was
+# completed (logs/wikitext-103_2026-05-12_09-08-21) but hit two measurement
+# ceilings on WT-103: (1) bc >= val_data size (251K) forces the BBCE val
+# branch to fall back to sampling from train_data, so "Best Val" stops
+# measuring val-distribution loss; (2) bc near or above test_data size
+# (287K) means most test windows require left-padding and the BPB benchmark
+# measures off-distribution (mostly-zero compressed context). bc=131K is
+# well below both ceilings (~120K val starts, 54% unpadded test windows)
+# and probes the bc-scaling story one step beyond bc=65K without methodological
+# compromise. Power-of-2 keeps g math clean (g=511 for bs=512).
+# run_ablation "T2_BBCE_b512_bc262K_1ep block_size=512, block_size_compressed=262,144 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 262144}" \
+#     "T2_BBCE_b512_bc262K_1ep: BBCE bs=512/bc=262K (1ep, random sampling, T2 stack)"
 
-# # BBCE-3: bc=1M
+run_ablation "T2_BBCE_b512_bc131K_1ep block_size=512, block_size_compressed=131,072 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 131072}" \
+    "T2_BBCE_b512_bc131K_1ep: BBCE bs=512/bc=131K (1ep, random sampling, T2 stack; rebalanced from bc=262K — within WT-103 val ceiling and 54% unpadded test windows)"
+
+# BBCE-3: bc=250K — rebalanced from bc=1M. The 1M variant OOM'd at step 0
+# (compressed-half saved activations for backward exceed 32 GiB at bc=1M);
+# would require either bbce_compressed_grad=false or a streaming sum / chunked-
+# reduction refactor to fit. bc=250K is right under the val ceiling (251K)
+# so val still uses val_data (~1K starts — narrow but reasonable coverage at
+# eval_interval=250 × MBS=8 = 2000 samples per eval). BPB still 87% padded
+# at bc=250K (test_data is only 287K), which is the remaining honest limitation
+# — Best Val is the trustworthy metric for this cell; BPB needs an asterisk.
+# Bigger bc would need PG-19 or another long-form test set; flagged as the
+# natural scale-up direction once bc-scaling is confirmed at bc<=250K.
 # run_ablation "T2_BBCE_b256_bc1M_1ep block_size=256, block_size_compressed=1,048,576 (1ep)" \
 #     "$BASE_PATCH_1EP" \
 #     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 1048576}" \
 #     "T2_BBCE_b256_bc1M_1ep: BBCE bs=256/bc=1M (1ep, random sampling, T2 stack)"
 
-run_ablation "T2_BBCE_b512_bc1M_1ep block_size=512, block_size_compressed=1,048,576 (1ep)" \
+# run_ablation "T2_BBCE_b512_bc1M_1ep block_size=512, block_size_compressed=1,048,576 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 1048576}" \
+#     "T2_BBCE_b512_bc1M_1ep: BBCE bs=512/bc=1M (1ep, random sampling, T2 stack)"
+
+run_ablation "T2_BBCE_b512_bc250K_1ep block_size=512, block_size_compressed=250,000 (1ep)" \
     "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 1048576}" \
-    "T2_BBCE_b512_bc1M_1ep: BBCE bs=512/bc=1M (1ep, random sampling, T2 stack)"
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 250000}" \
+    "T2_BBCE_b512_bc250K_1ep: BBCE bs=512/bc=250K (1ep, random sampling, T2 stack; rebalanced from bc=1M — right under WT-103 val ceiling; BPB 87% padded so Best Val is the trustworthy metric)"
 
 # BBCE-large-bs: block_size=2048 × bc ∈ {65K, 262K, 1M}. Key compute insight:
 # steps_per_epoch = corpus_size / (block_size * effective_batch). At bs=2048,
@@ -585,15 +614,53 @@ run_ablation "T2_BBCE_b2048_bc65K_1ep block_size=2048, block_size_compressed=65,
     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 65536, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
     "T2_BBCE_b2048_bc65K_1ep: BBCE bs=2048/bc=65K (1ep, random sampling, MBS=4/GA=2 for VRAM)"
 
-run_ablation "T2_BBCE_b2048_bc262K_1ep block_size=2048, block_size_compressed=262,144 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 262144, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
-    "T2_BBCE_b2048_bc262K_1ep: BBCE bs=2048/bc=262K (1ep, random sampling, MBS=4/GA=2)"
+# Rebalanced from bc=262K and bc=1M (see comments above in the bs=512 block
+# for the WT-103 measurement-ceiling rationale). bs=2048 bcs are matched to
+# bs=512 for direct comparison along the bc axis.
+# run_ablation "T2_BBCE_b2048_bc262K_1ep block_size=2048, block_size_compressed=262,144 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 262144, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+#     "T2_BBCE_b2048_bc262K_1ep: BBCE bs=2048/bc=262K (1ep, random sampling, MBS=4/GA=2)"
 
-run_ablation "T2_BBCE_b2048_bc1M_1ep block_size=2048, block_size_compressed=1,048,576 (1ep)" \
+# run_ablation "T2_BBCE_b2048_bc1M_1ep block_size=2048, block_size_compressed=1,048,576 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 1048576, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+#     "T2_BBCE_b2048_bc1M_1ep: BBCE bs=2048/bc=1M (1ep, random sampling, MBS=4/GA=2)"
+
+run_ablation "T2_BBCE_b2048_bc131K_1ep block_size=2048, block_size_compressed=131,072 (1ep)" \
     "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 1048576, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
-    "T2_BBCE_b2048_bc1M_1ep: BBCE bs=2048/bc=1M (1ep, random sampling, MBS=4/GA=2)"
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 131072, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+    "T2_BBCE_b2048_bc131K_1ep: BBCE bs=2048/bc=131K (1ep, random sampling, MBS=4/GA=2; rebalanced from bc=262K — within WT-103 val ceiling, 54% unpadded test windows)"
+
+run_ablation "T2_BBCE_b2048_bc250K_1ep block_size=2048, block_size_compressed=250,000 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 2048, \"block_size_compressed\": 250000, \"micro_batch_size\": 4, \"grad_accum\": 2}" \
+    "T2_BBCE_b2048_bc250K_1ep: BBCE bs=2048/bc=250K (1ep, random sampling, MBS=4/GA=2; rebalanced from bc=1M — right under WT-103 val ceiling, BPB 87% padded so Best Val is the trustworthy metric)"
+
+
+# BBCE-middle-bs: bs=1024 × bc ∈ {65K, 131K, 250K} — interpolation row.
+# Fills in the bs axis between bs=512 and bs=2048 so we have 3 data points
+# per block_size and a reliable bc-vs-bs interpolation surface (3 bs × 3 bc
+# = 9 cells total at the headline level). MBS=8/GA=1 matches the bs=512
+# column (the unified-MBS regime); empirically activation memory scales
+# linearly with bs and bs=512/MBS=8 used ~8 GiB, so bs=1024/MBS=8 lands
+# around ~16 GiB at bc=65K and ~18-22 GiB at bc=250K — comfortably within
+# the 32 GiB 5090. If VRAM pressure surfaces, fall back to MBS=4/GA=2 to
+# match the bs=2048 column.
+run_ablation "T2_BBCE_b1024_bc65K_1ep block_size=1024, block_size_compressed=65,536 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 1024, \"block_size_compressed\": 65536}" \
+    "T2_BBCE_b1024_bc65K_1ep: BBCE bs=1024/bc=65K (1ep, random sampling, T2 stack; interpolation row between bs=512 and bs=2048)"
+
+run_ablation "T2_BBCE_b1024_bc131K_1ep block_size=1024, block_size_compressed=131,072 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 1024, \"block_size_compressed\": 131072}" \
+    "T2_BBCE_b1024_bc131K_1ep: BBCE bs=1024/bc=131K (1ep, random sampling, T2 stack; interpolation row, within WT-103 val ceiling, 54% unpadded test windows)"
+
+run_ablation "T2_BBCE_b1024_bc250K_1ep block_size=1024, block_size_compressed=250,000 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 1024, \"block_size_compressed\": 250000}" \
+    "T2_BBCE_b1024_bc250K_1ep: BBCE bs=1024/bc=250K (1ep, random sampling, T2 stack; interpolation row, right under WT-103 val ceiling, BPB 87% padded so Best Val is the trustworthy metric)"
 
 
 # ---- T2 random sampling + lr=0.020 (upper bracket of the LR sweep) ----------
@@ -699,16 +766,26 @@ run_ablation "T2_BBCE_b512_bc65K_1ep_ngrad bbce_compressed_grad=false (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (trimmed BBCE sweep + LR=0.020 + Muon LR + compressed_grad A/B)."
-echo "===   1) T2_BBCE_b512_bc262K_1ep      — BBCE bs=512/bc=262K  (~6-8h)"
-echo "===   2) T2_BBCE_b512_bc1M_1ep        — BBCE bs=512/bc=1M    (~18-24h)"
-echo "===   3) T2_BBCE_b2048_bc65K_1ep      — BBCE bs=2048/bc=65K  (~4-6h)"
-echo "===   4) T2_BBCE_b2048_bc262K_1ep     — BBCE bs=2048/bc=262K (~5-7h)"
-echo "===   5) T2_BBCE_b2048_bc1M_1ep       — BBCE bs=2048/bc=1M   (~6-8h)"
-echo "===   6) T2_rand_1ep_lr20             — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
-echo "===   7) T2_Muon_lr3e-3_1ep           — Muon lr=0.003 (Path B v2)"
-echo "===   8) T2_Muon_lr5e-3_1ep           — Muon lr=0.005 (Path B v2)"
-echo "===   9) T2_BBCE_b512_bc65K_1ep_ngrad — bbce_compressed_grad=false A/B (~2.5h)"
+echo "=== Queue complete (BBCE 3x3 grid + LR=0.020 + Muon LR + compressed_grad A/B)."
+echo "===   1)  T2_BBCE_b512_bc131K_1ep     — BBCE bs=512/bc=131K  (~5-6h)"
+echo "===   2)  T2_BBCE_b512_bc250K_1ep     — BBCE bs=512/bc=250K  (~6-7h)"
+echo "===   3)  T2_BBCE_b2048_bc65K_1ep     — BBCE bs=2048/bc=65K  (~4-6h)"
+echo "===   4)  T2_BBCE_b2048_bc131K_1ep    — BBCE bs=2048/bc=131K (~5-7h)"
+echo "===   5)  T2_BBCE_b2048_bc250K_1ep    — BBCE bs=2048/bc=250K (~6-8h)"
+echo "===   6)  T2_BBCE_b1024_bc65K_1ep     — BBCE bs=1024/bc=65K  (~4-5h, interpolation)"
+echo "===   7)  T2_BBCE_b1024_bc131K_1ep    — BBCE bs=1024/bc=131K (~5-6h, interpolation)"
+echo "===   8)  T2_BBCE_b1024_bc250K_1ep    — BBCE bs=1024/bc=250K (~6-7h, interpolation)"
+echo "===   9)  T2_rand_1ep_lr20            — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
+echo "===   10) T2_Muon_lr3e-3_1ep          — Muon lr=0.003 (Path B v2)"
+echo "===   11) T2_Muon_lr5e-3_1ep          — Muon lr=0.005 (Path B v2)"
+echo "===   12) T2_BBCE_b512_bc65K_1ep_ngrad — bbce_compressed_grad=false A/B (~2.5h)"
+echo "==="
+echo "=== BBCE headline grid (block_size × bc, 3 × 3 = 9 cells, completed +"
+echo "===   queued). The 9 cells let us interpolate the bc-scaling surface"
+echo "===   along the bs axis with three data points per block_size."
+echo "===   bc=65K cells: completed (bs=256, bs=512) or running (bs=2048)."
+echo "===   bs=512 / bs=2048 columns have bc=131K and bc=250K queued; bs=1024"
+echo "===   column is the new interpolation row."
 echo "==="
 echo "=== Completed (commented out above):"
 echo "===   - T2_rand_1ep_lr15             — T2 + lr=0.015, Δ best val −0.0536 vs T2 baseline (win)"
@@ -719,6 +796,17 @@ echo "=== Dropped (cost vs information not worth it; bs=512 / bs=2048 columns"
 echo "===   already cover the bc-scaling story at more interesting block sizes):"
 echo "===   - T2_BBCE_b256_bc262K_1ep      — ~6h saved"
 echo "===   - T2_BBCE_b256_bc1M_1ep        — ~16-20h saved"
+echo "==="
+echo "=== Rebalanced (WT-103 measurement-ceiling: val_data=251K caps bc <= 251K"
+echo "===   before val falls back to train_data; test_data=287K makes BPB"
+echo "===   heavily padded above bc=200K-ish; bc=1M also OOMs at step 0):"
+echo "===   - T2_BBCE_b512_bc262K_1ep      — completed methodologically compromised; replaced by bc=131K"
+echo "===   - T2_BBCE_b512_bc1M_1ep        — OOM at step 0; replaced by bc=250K"
+echo "===   - T2_BBCE_b2048_bc262K_1ep     — preemptively replaced by bc=131K"
+echo "===   - T2_BBCE_b2048_bc1M_1ep       — preemptively replaced by bc=250K"
+echo "===   For bc > 256K, PG-19 (~28M test tokens, long-form) is the natural"
+echo "===   next test set — virtually zero padding and the long-form structure"
+echo "===   matches BBCE's value proposition. Filed as future direction."
 echo "==="
 echo "=== BBCE step count: full-corpus supervised coverage per epoch under the"
 echo "===   new active-stride formula (block_size/2 for BBCE, block_size"

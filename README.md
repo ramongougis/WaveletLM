@@ -814,14 +814,24 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 | Run | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
 |---|---|---|---|---|---|---|
 | **T2 baseline** (bs=256, no BBCE) | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
-| BBCE bs=256 / bc=65K | **3.5725** | **−0.0156** | 1.1551 | 5.89h | 7,809 MiB | (pending) |
-| BBCE bs=512 / bc=65K | (running) | — | — | — | — | — |
-| BBCE bs=512 / bc=262K | (pending) | — | — | — | — | — |
-| BBCE bs=512 / bc=1M | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=65K | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=262K | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=1M | (pending) | — | — | — | — | — |
+| BBCE bs=256 / bc=65K | 3.5725 | −0.0156 | 1.1551 | 5.89h | 7,809 MiB | (pending) |
+| BBCE bs=512 / bc=65K | 3.5922 | +0.0041 | **1.1530** | 3.88h | 8,177 MiB | (pending) |
+| BBCE bs=512 / bc=131K | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=250K † | (pending) | — | — | — | — | — |
+| BBCE bs=1024 / bc=65K | (pending) | — | — | — | — | — |
+| BBCE bs=1024 / bc=131K | (pending) | — | — | — | — | — |
+| BBCE bs=1024 / bc=250K † | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=65K | (running) | — | — | — | — | — |
+| BBCE bs=2048 / bc=131K | (pending) | — | — | — | — | — |
+| BBCE bs=2048 / bc=250K † | (pending) | — | — | — | — | — |
 | BBCE bs=512 / bc=65K + `compressed_grad=false` | (pending) | — | — | — | — | — |
+
+**WT-103 test-set ceilings (honest limitations).** WikiText-103 caps the bc values we can measure cleanly:
+- **Val cliff at bc=251K:** `val_data` is 251,048 tokens. When `bc ≥ 251K`, the BBCE val branch falls back to sampling from `train_data`, so "Best Val" stops measuring val-distribution loss and becomes a train-distribution proxy — not directly comparable to baseline.
+- **Padding pressure gradual to bc=287K:** `test_data` is 287,644 tokens. As `bc` grows, fewer test windows have a full `bc`-token real context — the rest left-pad with zeros. At bc=131K, 54% of test windows are unpadded; at bc=250K, only 13% are. The BPB benchmark for high-bc cells therefore measures off-distribution performance (mostly-zero compressed slots, which the model never trained on). Cells marked † in the table fall in this regime — Best Val is the trustworthy metric there; BPB needs an asterisk.
+- **OOM at bc=1M:** compressed-half saved activations for the backward pass exceed 32 GiB on a single 5090; either `bbce_compressed_grad: false` (drops gradient through compressed) or a streaming sum / chunked-reduction refactor would be needed to fit. Neither is implemented yet.
+
+For bc > 256K, **PG-19** is the natural next test set: ~28M test tokens means bc=1M would be at 0.04× test_len vs WT-103's 3.5× — virtually no padding, and the long-form novel structure is exactly where BBCE's value proposition lives (cross-chapter / cross-book conditioning). Filed as the scale-up direction once the current WT-103 cells settle the bc-scaling question.
 
 **Compensation observation (preliminary).** The `bs=256 / bc=65K` row lands at Δ +0.0010 BPB vs T2 baseline — within the 0.0015-nat noise threshold, statistically identical. That's the load-bearing surprise: BBCE supervises half as many tokens per batch as T2, yet test-set perplexity matches. The 65K of compressed context appears to exactly compensate for the halved per-batch supervision — no more, no less. The Best Val drift (Δ −0.0156, ~10× noise) suggests the compressed context is doing real work; it just doesn't show up on the test-set BPB until either `block_size` grows or, possibly, `block_size_compressed` does. The rest of the sweep distinguishes two scenarios:
 - **(a) Longer bc yields strict gains beyond the compensation point**: `bs=256 / bc=1M` would beat T2 by a margin; `bs=512 / bc=1M` would beat its bc=65K counterpart. This is the desired outcome — compressed context is genuinely informative and scales.
