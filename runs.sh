@@ -667,6 +667,36 @@ run_ablation "T2_Muon_lr5e-3_1ep T2 + Muon lr=0.005 (1ep)" \
     "T2_Muon_lr5e-3_1ep: T2 + Muon lr=0.005 (1ep, otherwise as B5)"
 
 
+# ---- BBCE compressed-half gradient ablation --------------------------------
+# Single confirmatory test of `bbce_compressed_grad=false`: torch.no_grad
+# wraps the chunked embedding lookup + mean-pool for the compressed half,
+# halting backprop into the embedding table for tokens that appear there.
+# The embedding table still learns from uncompressed-half appearances; the
+# wavelet/mixer/MLP still learn to USE compressed slots — they just don't
+# get to tell the embedding table to be a better mean-pool basis.
+#
+# Expected speedup: ~1.3-1.5x on backward (per Gemini's analysis, unverified).
+# Expected quality: marked decrease vs the bbce_compressed_grad=true variant
+# of the same cell (bs=512 / bc=65K), but still likely better than the T2
+# baseline (the compressed half being treated as cheap "additional context"
+# is the working theory). Decision logic:
+#   - Within noise of the gradient-on variant: bbce_compressed_grad=false
+#     becomes a viable speed/quality tradeoff for compute-bound regimes.
+#   - Notable regression (Δ best val > +0.01 vs gradient-on): the embedding
+#     table's role as a learned mean-pool basis matters; keep gradients on
+#     by default.
+#   - Catastrophic (Δ best val > +0.05): bbce_compressed_grad=false is not
+#     usable; the embedding table being trained for mean-pool quality is
+#     load-bearing.
+#
+# Picked bs=512 / bc=65K as the test cell because it's the cheapest of the
+# headline (per-batch-supervision-matched) BBCE configs.
+run_ablation "T2_BBCE_b512_bc65K_1ep_ngrad bbce_compressed_grad=false (1ep)" \
+    "$BASE_PATCH_1EP" \
+    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 65536, \"bbce_compressed_grad\": false}" \
+    "T2_BBCE_b512_bc65K_1ep_ngrad: BBCE bs=512/bc=65K + bbce_compressed_grad=false (1ep, single confirmatory A/B vs the gradient-on counterpart from the main sweep)"
+
+
 echo ""
 echo "============================================================"
 echo "=== Queue complete (BBCE sweep + LR=0.020 confirmation + Muon LR sweep)."
@@ -682,6 +712,7 @@ echo "===   9)  T2_BBCE_b2048_bc1M_1ep      — BBCE bs=2048/bc=1M   (~6-8h)"
 echo "===   10) T2_rand_1ep_lr20            — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
 echo "===   11) T2_Muon_lr3e-3_1ep          — Muon lr=0.003 (Path B v2)"
 echo "===   12) T2_Muon_lr5e-3_1ep          — Muon lr=0.005 (Path B v2)"
+echo "===   13) T2_BBCE_b512_bc65K_1ep_ngrad — bbce_compressed_grad=false A/B (~2.5h)"
 echo "==="
 echo "=== BBCE step count: full-corpus supervised coverage per epoch under the"
 echo "===   new active-stride formula (block_size/2 for BBCE, block_size"

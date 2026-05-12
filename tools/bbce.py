@@ -85,6 +85,7 @@ class BBCEPreprocessor(nn.Module):
         block_size: int,
         block_size_compressed: int,
         target_peak_chunk_bytes: int = 500 * 1024 * 1024,
+        compressed_grad: bool = True,
     ):
         super().__init__()
         if block_size & (block_size - 1) != 0:
@@ -101,6 +102,17 @@ class BBCEPreprocessor(nn.Module):
         self.block_size = block_size
         self.block_size_compressed = block_size_compressed
         self.target_peak_chunk_bytes = target_peak_chunk_bytes
+        # compressed_grad=False detaches the compressed slots: embedding lookups
+        # for compressed-half tokens run under no_grad, and the slots feed the
+        # downstream wavelet without backprop into the embedding table for
+        # those positions. The embedding table still learns from uncompressed-
+        # half positions, and the wavelet/mixer/MLP still learn to USE
+        # compressed slots — they just don't tell the embedding table to be a
+        # better mean-pool basis. Expected ~1.3-1.5x speedup on backward;
+        # quality impact is open and must be measured (the dilution-only
+        # argument that justifies skipping it is unverified). Default True
+        # preserves the principled behavior.
+        self.compressed_grad = compressed_grad
 
         self.num_slots = block_size // 2  # = block_size_uncompressed = block_size/2
         # Compressed region length (after truncating to an exact multiple of num_slots).
@@ -158,19 +170,32 @@ class BBCEPreprocessor(nn.Module):
         #   4. Mean over dim=2 (the g axis) → (B, chunk_slots, C)
         #   5. Discard the full embedded tensor
         compressed_slots = []
-        for chunk_start in range(0, self.num_slots, slots_per_chunk):
-            chunk_end = min(chunk_start + slots_per_chunk, self.num_slots)
-            chunk_size = chunk_end - chunk_start
+        # Optionally run the compressed chunking loop without gradient tracking.
+        # When compressed_grad=False, embedding gradients are *not* accumulated
+        # for tokens that appear in the compressed half (they still accumulate
+        # from any appearance in the uncompressed half of this or future
+        # batches). Saves the heavy backward pass over num_slots*g embedding
+        # lookups per batch element.
+        grad_ctx = torch.enable_grad() if self.compressed_grad else torch.no_grad()
+        with grad_ctx:
+            for chunk_start in range(0, self.num_slots, slots_per_chunk):
+                chunk_end = min(chunk_start + slots_per_chunk, self.num_slots)
+                chunk_size = chunk_end - chunk_start
 
-            chunk_idx = compressed_idx[:, chunk_start:chunk_end, :]  # (B, chunk_size, g)
-            chunk_idx_flat = chunk_idx.reshape(B, chunk_size * self.g)
-            chunk_emb = token_embedding(chunk_idx_flat)  # (B, chunk_size*g, C)
-            chunk_emb = chunk_emb.view(B, chunk_size, self.g, C)
-            chunk_mean = chunk_emb.mean(dim=2)  # (B, chunk_size, C)
-            compressed_slots.append(chunk_mean)
-            del chunk_emb  # free intermediate
+                chunk_idx = compressed_idx[:, chunk_start:chunk_end, :]  # (B, chunk_size, g)
+                chunk_idx_flat = chunk_idx.reshape(B, chunk_size * self.g)
+                chunk_emb = token_embedding(chunk_idx_flat)  # (B, chunk_size*g, C)
+                chunk_emb = chunk_emb.view(B, chunk_size, self.g, C)
+                chunk_mean = chunk_emb.mean(dim=2)  # (B, chunk_size, C)
+                compressed_slots.append(chunk_mean)
+                del chunk_emb  # free intermediate
 
         compressed_slots = torch.cat(compressed_slots, dim=1)  # (B, num_slots, C)
+        if not self.compressed_grad:
+            # Belt-and-suspenders: detach() ensures autograd halts at this
+            # boundary even if any node inside the no_grad context somehow
+            # retained grad (it shouldn't, but the cost is one extra view op).
+            compressed_slots = compressed_slots.detach()
 
         # Uncompressed half: normal embedding.
         uncompressed_emb = token_embedding(uncompressed_idx)  # (B, num_slots, C)
@@ -198,6 +223,7 @@ def build_bbce_preprocessor(config: dict) -> BBCEPreprocessor:
         target_peak_chunk_bytes=int(
             config.get("bbce_target_peak_chunk_bytes", 500 * 1024 * 1024)
         ),
+        compressed_grad=bool(config.get("bbce_compressed_grad", True)),
     )
 
 

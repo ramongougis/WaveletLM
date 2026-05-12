@@ -685,7 +685,7 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
 
 @torch.no_grad()
 def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
-                  max_windows=256, pad_id=0):
+                  max_windows=None, pad_id=0):
     """BBCE-aware test benchmark.
 
     Each window scores `block_size/2` consecutive next-token predictions in
@@ -700,10 +700,12 @@ def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
     so the comparison is honest.
 
     Coverage is non-overlapping at the supervised level: target windows are
-    placed at corpus positions stride=block_size/2 apart. With max_windows
-    cap, windows are uniformly subsampled across the full test set (not
-    front-truncated) so the benchmark is statistically representative
-    rather than start-biased.
+    placed at corpus positions stride=block_size/2 apart. By default
+    (max_windows=None) every natural window is scored — same convention as
+    the non-BBCE sliding-window benchmark which covers the whole test set.
+    If max_windows is set to a positive integer and there are more natural
+    windows, they're uniformly subsampled across the full test set (not
+    front-truncated) so the benchmark stays statistically representative.
 
     Returns the same dict shape as evaluate_full_validation / sliding for
     consistent downstream logging.
@@ -759,9 +761,11 @@ def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
     all_target_starts = list(range(0, max_target_start + 1, half))
     num_natural = len(all_target_starts)
 
-    # Uniform subsample to max_windows so we get representative coverage of
-    # the whole test set, not just its front.
-    if num_natural > max_windows:
+    # Default behavior: score every natural window (full test-set coverage,
+    # matching the non-BBCE sliding-window benchmark). If max_windows is set
+    # to a positive integer below the natural count, uniformly subsample
+    # across the test set (representative, not front-truncated).
+    if max_windows is not None and max_windows > 0 and num_natural > max_windows:
         step = num_natural / max_windows
         idxs = [int(i * step) for i in range(max_windows)]
         target_starts = [all_target_starts[i] for i in idxs]
@@ -773,10 +777,11 @@ def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
     # bsc relative to the test set, this can be every window.
     n_padded = sum(1 for s in target_starts if (s + half - bsc) < 0)
 
+    cap_str = "uncapped" if (max_windows is None or max_windows <= 0) else f"max={max_windows}"
     logger.log(
         f"\n[BBCE BENCHMARK] block_size={bs}, block_size_compressed={bsc}, "
         f"stride={half}, {len(target_starts)} of {num_natural} natural windows "
-        f"(max={max_windows}), {n_padded} require left-padding"
+        f"({cap_str}), {n_padded} require left-padding"
     )
 
     total_loss = 0.0
@@ -1327,7 +1332,15 @@ def train():
     # results_sw is set to None because BBCE has only one natural eval style
     # (supervised-half scoring) — there is no second "sliding" benchmark to run.
     if config.get('bbce_enabled', False):
-        max_windows = int(config.get('bbce_benchmark_max_windows', 256))
+        # Default uncapped: score every natural window, matching the non-BBCE
+        # sliding-window benchmark's full test-set coverage. The config key
+        # `bbce_benchmark_max_windows` may set a positive integer to cap and
+        # uniformly subsample (representative, not front-truncated) — useful
+        # for very long bc on huge test sets if benchmark time becomes
+        # binding. Defaults to None (uncapped).
+        max_windows = config.get('bbce_benchmark_max_windows', None)
+        if max_windows is not None:
+            max_windows = int(max_windows)
         results_full = evaluate_bbce(
             model, test_data, config, logger, device, use_amp, amp_dtype,
             max_windows=max_windows,

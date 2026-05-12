@@ -814,8 +814,8 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 | Run | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
 |---|---|---|---|---|---|---|
 | **T2 baseline** (bs=256, no BBCE) | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
-| BBCE bs=256 / bc=65K | (pending) | — | — | — | — | — |
-| BBCE bs=512 / bc=65K | (pending) | — | — | — | — | — |
+| BBCE bs=256 / bc=65K | **3.5725** | **−0.0156** | 1.1540 | 5.89h | 7,809 MiB | (pending) |
+| BBCE bs=512 / bc=65K | (running) | — | — | — | — | — |
 | BBCE bs=256 / bc=262K | (pending) | — | — | — | — | — |
 | BBCE bs=512 / bc=262K | (pending) | — | — | — | — | — |
 | BBCE bs=256 / bc=1M | (pending) | — | — | — | — | — |
@@ -823,6 +823,9 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 | BBCE bs=2048 / bc=65K | (pending) | — | — | — | — | — |
 | BBCE bs=2048 / bc=262K | (pending) | — | — | — | — | — |
 | BBCE bs=2048 / bc=1M | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=65K + `compressed_grad=false` | (pending) | — | — | — | — | — |
+
+**Compressed-half gradient toggle (`bbce_compressed_grad`).** When `true` (default), gradients flow back through the mean-pool into the embedding table for tokens appearing in the compressed half — every appearance contributes `(1/g) × dL/dslot` to its embedding row, so over a batch the embedding table learns to be a good mean-pool basis as well as a good direct-prediction basis. When `false`, the chunked embedding lookup runs under `torch.no_grad()` and the compressed slots are detached: the embedding table only updates from uncompressed-half appearances, and the wavelet/mixer/MLP still learn to USE compressed slots but can't push the embedding table toward better averaging behavior. The dilution-only argument that justifies `false` is unverified — at WT-103 scale (120M tokens, 1 epoch), incidental averaging quality emerging "for free" from next-token training is not guaranteed. Backward-pass speedup with `false` is expected ~1.3-1.5×. A single confirmatory A/B run is queued at the end of the sweep (bs=512 / bc=65K cell).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
