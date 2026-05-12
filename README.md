@@ -814,16 +814,18 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 | Run | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
 |---|---|---|---|---|---|---|
 | **T2 baseline** (bs=256, no BBCE) | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
-| BBCE bs=256 / bc=65K | **3.5725** | **−0.0156** | 1.1540 | 5.89h | 7,809 MiB | (pending) |
+| BBCE bs=256 / bc=65K | **3.5725** | **−0.0156** | 1.1551 | 5.89h | 7,809 MiB | (pending) |
 | BBCE bs=512 / bc=65K | (running) | — | — | — | — | — |
-| BBCE bs=256 / bc=262K | (pending) | — | — | — | — | — |
 | BBCE bs=512 / bc=262K | (pending) | — | — | — | — | — |
-| BBCE bs=256 / bc=1M | (pending) | — | — | — | — | — |
 | BBCE bs=512 / bc=1M | (pending) | — | — | — | — | — |
 | BBCE bs=2048 / bc=65K | (pending) | — | — | — | — | — |
 | BBCE bs=2048 / bc=262K | (pending) | — | — | — | — | — |
 | BBCE bs=2048 / bc=1M | (pending) | — | — | — | — | — |
 | BBCE bs=512 / bc=65K + `compressed_grad=false` | (pending) | — | — | — | — | — |
+
+**Compensation observation (preliminary).** The `bs=256 / bc=65K` row lands at Δ +0.0010 BPB vs T2 baseline — within the 0.0015-nat noise threshold, statistically identical. That's the load-bearing surprise: BBCE supervises half as many tokens per batch as T2, yet test-set perplexity matches. The 65K of compressed context appears to exactly compensate for the halved per-batch supervision — no more, no less. The Best Val drift (Δ −0.0156, ~10× noise) suggests the compressed context is doing real work; it just doesn't show up on the test-set BPB until either `block_size` grows or, possibly, `block_size_compressed` does. The rest of the sweep distinguishes two scenarios:
+- **(a) Longer bc yields strict gains beyond the compensation point**: `bs=256 / bc=1M` would beat T2 by a margin; `bs=512 / bc=1M` would beat its bc=65K counterpart. This is the desired outcome — compressed context is genuinely informative and scales.
+- **(b) Per-batch supervised stride is the dominant factor**: any `bs=256` BBCE config plateaus near T2 regardless of bc, and gains only come from larger `bs`. Interesting if true (it would suggest block size and architecture are intrinsically coupled, independent of content), but a weaker claim for the feature.
 
 **Compressed-half gradient toggle (`bbce_compressed_grad`).** When `true` (default), gradients flow back through the mean-pool into the embedding table for tokens appearing in the compressed half — every appearance contributes `(1/g) × dL/dslot` to its embedding row, so over a batch the embedding table learns to be a good mean-pool basis as well as a good direct-prediction basis. When `false`, the chunked embedding lookup runs under `torch.no_grad()` and the compressed slots are detached: the embedding table only updates from uncompressed-half appearances, and the wavelet/mixer/MLP still learn to USE compressed slots but can't push the embedding table toward better averaging behavior. The dilution-only argument that justifies `false` is unverified — at WT-103 scale (120M tokens, 1 epoch), incidental averaging quality emerging "for free" from next-token training is not guaranteed. Backward-pass speedup with `false` is expected ~1.3-1.5×. A single confirmatory A/B run is queued at the end of the sweep (bs=512 / bc=65K cell).
 

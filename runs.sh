@@ -522,10 +522,10 @@ BBCE_BASE_256='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5,
 BBCE_BASE_512='{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "bbce_enabled": true, "block_size": 512}'
 
 # BBCE-1: bc=65K (smallest, fastest signal)
-run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
-    "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
+# run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,536 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 65536}" \
+#     "T2_BBCE_b256_bc65K_1ep: BBCE bs=256/bc=65K (1ep, random sampling, T2 stack)"
 
 # ---- One-off: replay benchmark + generations for T2_BBCE_b256_bc65K_1ep -----
 # The 2026-05-11_17-25-07 run trained successfully (best val 3.8018) but the
@@ -541,27 +541,27 @@ run_ablation "T2_BBCE_b256_bc65K_1ep block_size=256, block_size_compressed=65,53
 #     "logs/wikitext-103_2026-05-11_17-25-07" \
 #     "T2_BBCE_b256_bc65K_1ep: replay benchmark + generations against existing checkpoint (post BBCE benchmark/generation fixes)"
 
-run_ablation "T2_BBCE_b512_bc65K_1ep block_size=512, block_size_compressed=65,536 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 65536}" \
-    "T2_BBCE_b512_bc65K_1ep: BBCE bs=512/bc=65K (1ep, random sampling, T2 stack)"
+# run_ablation "T2_BBCE_b512_bc65K_1ep block_size=512, block_size_compressed=65,536 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 65536}" \
+#     "T2_BBCE_b512_bc65K_1ep: BBCE bs=512/bc=65K (1ep, random sampling, T2 stack)"
 
-# BBCE-2: bc=262K
-run_ablation "T2_BBCE_b256_bc262K_1ep block_size=256, block_size_compressed=262,144 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 262144}" \
-    "T2_BBCE_b256_bc262K_1ep: BBCE bs=256/bc=262K (1ep, random sampling, T2 stack)"
+# # BBCE-2: bc=262K
+# run_ablation "T2_BBCE_b256_bc262K_1ep block_size=256, block_size_compressed=262,144 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 262144}" \
+#     "T2_BBCE_b256_bc262K_1ep: BBCE bs=256/bc=262K (1ep, random sampling, T2 stack)"
 
 run_ablation "T2_BBCE_b512_bc262K_1ep block_size=512, block_size_compressed=262,144 (1ep)" \
     "$BASE_PATCH_1EP" \
     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 512, \"block_size_compressed\": 262144}" \
     "T2_BBCE_b512_bc262K_1ep: BBCE bs=512/bc=262K (1ep, random sampling, T2 stack)"
 
-# BBCE-3: bc=1M
-run_ablation "T2_BBCE_b256_bc1M_1ep block_size=256, block_size_compressed=1,048,576 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 1048576}" \
-    "T2_BBCE_b256_bc1M_1ep: BBCE bs=256/bc=1M (1ep, random sampling, T2 stack)"
+# # BBCE-3: bc=1M
+# run_ablation "T2_BBCE_b256_bc1M_1ep block_size=256, block_size_compressed=1,048,576 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{\"levels\": 7, \"per_scale_mixer_widths\": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], \"wavelet_crawl\": true, \"bbce_enabled\": true, \"block_size\": 256, \"block_size_compressed\": 1048576}" \
+#     "T2_BBCE_b256_bc1M_1ep: BBCE bs=256/bc=1M (1ep, random sampling, T2 stack)"
 
 run_ablation "T2_BBCE_b512_bc1M_1ep block_size=512, block_size_compressed=1,048,576 (1ep)" \
     "$BASE_PATCH_1EP" \
@@ -699,20 +699,26 @@ run_ablation "T2_BBCE_b512_bc65K_1ep_ngrad bbce_compressed_grad=false (1ep)" \
 
 echo ""
 echo "============================================================"
-echo "=== Queue complete (BBCE sweep + LR=0.020 confirmation + Muon LR sweep)."
-echo "===   1)  T2_BBCE_b256_bc65K_1ep      — BBCE bs=256/bc=65K   (~4-5h)"
-echo "===   2)  T2_BBCE_b512_bc65K_1ep      — BBCE bs=512/bc=65K   (~4-6h)"
-echo "===   3)  T2_BBCE_b256_bc262K_1ep     — BBCE bs=256/bc=262K  (~6h)"
-echo "===   4)  T2_BBCE_b512_bc262K_1ep     — BBCE bs=512/bc=262K  (~6-8h)"
-echo "===   5)  T2_BBCE_b256_bc1M_1ep       — BBCE bs=256/bc=1M    (~16-20h)"
-echo "===   6)  T2_BBCE_b512_bc1M_1ep       — BBCE bs=512/bc=1M    (~18-24h)"
-echo "===   7)  T2_BBCE_b2048_bc65K_1ep     — BBCE bs=2048/bc=65K  (~4-6h)"
-echo "===   8)  T2_BBCE_b2048_bc262K_1ep    — BBCE bs=2048/bc=262K (~5-7h)"
-echo "===   9)  T2_BBCE_b2048_bc1M_1ep      — BBCE bs=2048/bc=1M   (~6-8h)"
-echo "===   10) T2_rand_1ep_lr20            — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
-echo "===   11) T2_Muon_lr3e-3_1ep          — Muon lr=0.003 (Path B v2)"
-echo "===   12) T2_Muon_lr5e-3_1ep          — Muon lr=0.005 (Path B v2)"
-echo "===   13) T2_BBCE_b512_bc65K_1ep_ngrad — bbce_compressed_grad=false A/B (~2.5h)"
+echo "=== Queue complete (trimmed BBCE sweep + LR=0.020 + Muon LR + compressed_grad A/B)."
+echo "===   1) T2_BBCE_b512_bc262K_1ep      — BBCE bs=512/bc=262K  (~6-8h)"
+echo "===   2) T2_BBCE_b512_bc1M_1ep        — BBCE bs=512/bc=1M    (~18-24h)"
+echo "===   3) T2_BBCE_b2048_bc65K_1ep      — BBCE bs=2048/bc=65K  (~4-6h)"
+echo "===   4) T2_BBCE_b2048_bc262K_1ep     — BBCE bs=2048/bc=262K (~5-7h)"
+echo "===   5) T2_BBCE_b2048_bc1M_1ep       — BBCE bs=2048/bc=1M   (~6-8h)"
+echo "===   6) T2_rand_1ep_lr20             — T2 random + lr=0.020 (upper-bracket of LR sweep, ~1.85h)"
+echo "===   7) T2_Muon_lr3e-3_1ep           — Muon lr=0.003 (Path B v2)"
+echo "===   8) T2_Muon_lr5e-3_1ep           — Muon lr=0.005 (Path B v2)"
+echo "===   9) T2_BBCE_b512_bc65K_1ep_ngrad — bbce_compressed_grad=false A/B (~2.5h)"
+echo "==="
+echo "=== Completed (commented out above):"
+echo "===   - T2_rand_1ep_lr15             — T2 + lr=0.015, Δ best val −0.0536 vs T2 baseline (win)"
+echo "===   - T2_BBCE_b256_bc65K_1ep       — completed: best val 3.5725, BPB 1.1551 (Δ +0.0010 vs T2, tied within noise)"
+echo "===   - T2_BBCE_b512_bc65K_1ep       — in progress / completed (the bs=512 headline bc=65K cell)"
+echo "==="
+echo "=== Dropped (cost vs information not worth it; bs=512 / bs=2048 columns"
+echo "===   already cover the bc-scaling story at more interesting block sizes):"
+echo "===   - T2_BBCE_b256_bc262K_1ep      — ~6h saved"
+echo "===   - T2_BBCE_b256_bc1M_1ep        — ~16-20h saved"
 echo "==="
 echo "=== BBCE step count: full-corpus supervised coverage per epoch under the"
 echo "===   new active-stride formula (block_size/2 for BBCE, block_size"
