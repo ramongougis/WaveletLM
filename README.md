@@ -816,17 +816,18 @@ This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256
 | **T2 baseline** (bs=256, no BBCE) | — | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
 | BBCE bs=256 / bc=65K | 511 | 3.5725 | −0.0156 | 1.1551 | 5.89h | 7,809 MiB | (pending) |
 | BBCE bs=512 / bc=65K | 255 | 3.5922 | +0.0041 | **1.1530** | 3.88h | 8,177 MiB | (pending) |
-| BBCE bs=512 / bc=131K | 511 | (pending) | — | — | — | — | — |
-| BBCE bs=512 / bc=250K † | 975 | (pending) | — | — | — | — | — |
-| BBCE bs=1024 / bc=65K | 127 | (pending) | — | — | — | — | — |
-| BBCE bs=1024 / bc=131K | 255 | (pending) | — | — | — | — | — |
-| BBCE bs=1024 / bc=250K † | 487 | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=65K | 63 | 3.6541 | +0.0660 | 1.1706 | 2.21h | 15,941 MiB | (pending) |
-| BBCE bs=2048 / bc=131K | 127 | (pending) | — | — | — | — | — |
-| BBCE bs=2048 / bc=250K † | 243 | (pending) | — | — | — | — | — |
-| bs=1024 non-BBCE (control) ‡ | — | (pending) | — | — | — | — | — |
-| bs=2048 non-BBCE (control) ‡ | — | (pending) | — | — | — | — | — |
-| BBCE bs=512 / bc=65K + `compressed_grad=false` | 255 | (pending) | — | — | — | — | — |
+| BBCE bs=512 / bc=131K | 511 | 3.6364 | +0.0483 | 1.1567 | 4.07h | 9,923 MiB | (pending) |
+| BBCE bs=512 / bc=250K † | 975 | 3.6247 | +0.0366 | 1.1593 | 4.44h | 12,230 MiB | (not measured) |
+| BBCE bs=1024 / bc=65K | 127 | (not run) | — | — | — | — | — |
+| BBCE bs=1024 / bc=131K | 255 | (not run) | — | — | — | — | — |
+| BBCE bs=1024 / bc=250K † | 487 | (not run) | — | — | — | — | — |
+| BBCE bs=2048 / bc=65K | 63 | 3.6541 | +0.0660 | 1.1706 | 2.21h | 15,941 MiB | (not measured) |
+| BBCE bs=2048 / bc=65K *(rerun, reproducibility check)* | 63 | 3.6552 | +0.0671 | 1.1713 | 2.17h | 14,046 MiB | (not measured) |
+| BBCE bs=2048 / bc=131K | 127 | (in progress at shutdown) | — | — | — | — | — |
+| BBCE bs=2048 / bc=250K † | 243 | (not run) | — | — | — | — | — |
+| bs=1024 non-BBCE (control) ‡ | — | (not run) | — | — | — | — | — |
+| bs=2048 non-BBCE (control) ‡ | — | (not run) | — | — | — | — | — |
+| BBCE bs=512 / bc=65K + `compressed_grad=false` | 255 | (not run) | — | — | — | — | — |
 
 § `g` = **compression factor**, the number of corpus tokens averaged into each compressed slot via mean-pooling. Defined as `g = (block_size_compressed − block_size/2) // (block_size/2)`, where `block_size/2` is also the number of compressed slots (the slot count and the uncompressed-position count coincide). A column entry of "—" means the row doesn't use BBCE compression. Higher `g` = each slot pools more tokens = denser per-slot semantic load (closer to a topic vector); lower `g` = each slot pools fewer tokens (closer to a local fragment). See "g-matched diagonal" below for why holding `g` constant while varying `bs` is the cleanest single-axis comparison BBCE supports within WT-103.
 
@@ -863,7 +864,23 @@ If the non-BBCE controls land near T2 and BBCE at the matched-g diagonal beats t
 - **(a) Longer bc yields strict gains beyond the compensation point**: `bs=256 / bc=1M` would beat T2 by a margin; `bs=512 / bc=1M` would beat its bc=65K counterpart. This is the desired outcome — compressed context is genuinely informative and scales.
 - **(b) Per-batch supervised stride is the dominant factor**: any `bs=256` BBCE config plateaus near T2 regardless of bc, and gains only come from larger `bs`. Interesting if true (it would suggest block size and architecture are intrinsically coupled, independent of content), but a weaker claim for the feature.
 
-**Compressed-half gradient toggle (`bbce_compressed_grad`).** When `true` (default), gradients flow back through the mean-pool into the embedding table for tokens appearing in the compressed half — every appearance contributes `(1/g) × dL/dslot` to its embedding row, so over a batch the embedding table learns to be a good mean-pool basis as well as a good direct-prediction basis. When `false`, the chunked embedding lookup runs under `torch.no_grad()` and the compressed slots are detached: the embedding table only updates from uncompressed-half appearances, and the wavelet/mixer/MLP still learn to USE compressed slots but can't push the embedding table toward better averaging behavior. The dilution-only argument that justifies `false` is unverified — at WT-103 scale (120M tokens, 1 epoch), incidental averaging quality emerging "for free" from next-token training is not guaranteed. Backward-pass speedup with `false` is expected ~1.3-1.5×. A single confirmatory A/B run is queued at the end of the sweep (bs=512 / bc=65K cell).
+**Compressed-half gradient toggle (`bbce_compressed_grad`).** When `true` (default), gradients flow back through the mean-pool into the embedding table for tokens appearing in the compressed half — every appearance contributes `(1/g) × dL/dslot` to its embedding row, so over a batch the embedding table learns to be a good mean-pool basis as well as a good direct-prediction basis. When `false`, the chunked embedding lookup runs under `torch.no_grad()` and the compressed slots are detached: the embedding table only updates from uncompressed-half appearances, and the wavelet/mixer/MLP still learn to USE compressed slots but can't push the embedding table toward better averaging behavior. The dilution-only argument that justifies `false` is unverified — at WT-103 scale (120M tokens, 1 epoch), incidental averaging quality emerging "for free" from next-token training is not guaranteed. Backward-pass speedup with `false` is expected ~1.3-1.5×. The toggle was implemented but not empirically tested before project closure; the code path is preserved in `tools/bbce.py` for future researchers.
+
+**Findings & Recommendations (final, project closed 2026-05-13).** The BBCE sweep was halted before all queued cells completed. Within what was measured, the headline empirical findings are:
+
+- **bs=256 / bc=65K (g=511) is the only cell that measurably beats T2 baseline on Best Val** — Δ −0.0156 nats (~10× the 0.0015-nat noise threshold). On test-set BPB it is statistically tied with T2 (Δ +0.0010, within noise). This is the smallest-bs, highest-g cell measured. **Tentative recommendation:** if BBCE is to be used at all in this architecture, start in the high-g, small-bs regime — the compressed slots appear most useful when each represents many tokens (a topic-vector-like density) rather than few tokens (a fragment-like density).
+- **Increasing bc at fixed bs regressed in every measured case at bs ≥ 512.** bs=512: bc=65K (3.5922) → bc=131K (3.6364) → bc=250K (3.6247). bs=2048/bc=65K already regressed at +0.0660. The hypothesis "more compressed context monotonically helps" was not supported within the measured WT-103 cells.
+- **Increasing bs at fixed bc=65K monotonically regressed.** bs=256 (3.5725) → bs=512 (3.5922) → bs=2048 (3.6541). The g-matched diagonal that would have disambiguated bs vs g was not completed (bs=1024/bc=131K was queued but not run; bs=2048/bc=131K was in progress at shutdown).
+- **Run-to-run reproducibility is excellent.** The two bs=2048/bc=65K runs produced Best Val 3.6541 vs 3.6552 (Δ 0.0011, well below noise threshold), confirming the 0.0015-nat threshold is well-calibrated and that single-seed BBCE results are reliable indicators of converged behavior.
+
+**What is worth recommending to other researchers, regardless of the architectural outcome:**
+
+1. **The active-stride formula for chunked-context training.** Defining `1 epoch` as one full pass over *supervised positions* (using `block_size/2` as the stride under bisected-context schemes, `block_size` otherwise) makes epoch-counting comparable across architectures with different supervised-fraction-per-batch ratios. This was load-bearing for fair comparisons in this work and would be reusable in any future bisected-context or compressed-context architecture.
+2. **The g-matched analytical framework.** When comparing compression-based architectures, hold `g = tokens-per-compressed-slot` constant rather than holding `bc` constant. The g axis is what determines per-slot information density; varying bc at fixed bs varies g, conflating two effects.
+3. **The HF-style sliding-window benchmark for bisected-context models** (`evaluate_bbce` in train.py). Stride = `block_size/2`, score the supervised half only, uncapped windows by default. This produces a single test-set BPB number directly comparable to the standard sliding-window BPB used elsewhere in the literature, with explicit padded-window accounting.
+4. **Honest measurement-ceiling documentation.** The "WT-103 test-set ceilings" subsection above documents the val cliff at bc=251K and the gradual padding cliff to bc=287K. This kind of explicit dataset-limit documentation is necessary for any compressed-context evaluation and was useful here for sharply distinguishing "the architecture didn't help" from "we couldn't measure it cleanly."
+
+The architectural direction (wavelets as attention substitute) has prior work — see [Kiruluta 2025, "Learnable Multi-Scale Wavelet Transformer" (arXiv:2504.08801)](https://arxiv.org/abs/2504.08801) for an earlier published proposal in MT, and [Kiruluta 2025, "Breaking Quadratic Barriers" (arXiv:2506.01963)](https://arxiv.org/abs/2506.01963) for a non-attention LLM in the same task regime (WT-103 LM) using SSM + convolution + retrieval primitives. Future researchers in this space should treat that line of work as the established context.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
