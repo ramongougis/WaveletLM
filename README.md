@@ -17,7 +17,17 @@
 
 <br>
 
-WaveletLM is a wavelet-based, attention-free language model that mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and sparse product-key memory, this yields an architecture with no attention and O(n log n) scaling in sequence length.
+WaveletLM is an autoregressive language model in the "wavelet as attention replacement" direction pioneered by Andrew Kiruluta et al. (2025)[^1]. Specifically, this work builds on:
+
+- **Wavelet Logic Machines (WLM)**: wavelet-based classification ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
+- **Learnable Multi-Scale Wavelet Transformer (LMWT)**: a replacement for attention which uses wavelets for machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
+- **Breaking Quadratic Barriers**: non-attention LLM for long context, specifically regarding mean chunking and pooling ([arXiv:2506.01963](https://arxiv.org/abs/2506.01963))
+
+WaveletLM extends LMWT's direction to autoregressive language modeling at scale (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) below.
+
+The model uses a learned embedding and mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and sparse product-key memory, this yields an architecture with no attention and O(n log n) scaling in sequence length.
+
+Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with far less training; and better performance on WT-103 than Transformer-XL and GPT-2, with clear room for improvement on language modeling tasks.
 
 <br>
 
@@ -365,6 +375,8 @@ Note the typical failure mode with the naive generation: register-coherent meteo
   <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="80%"/>
 </p>
 
+The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kirulata et al's Learnable Multi-Scale Wavelet Transformer[^2]. WaveletLM extends that direction with several architectural additions described below: lifting wavelets parameterized as learned predict/update MLPs (rather than the per-dimension scalar mixing coefficients in LMWT's Haar formulation), a per-scale gated spectral mixer over a Walsh-Hadamard basis, decompose-bypass, sparse product-key memory integrated per-layer, and a bisected compressed-context mechanism for long inputs.
+
 ### Key Components
 
 - **Learned lifting wavelets**: Haar-initialized MLPs decompose each block into multi-scale coefficients via lifting predict/update steps. Each wavelet scale processes either coarse summaries or fine details across tokens. Reconstruction reuses the same MLPs in reverse with a sign flip, so perfect inversion is structurally guaranteed regardless of what the weights learn. About 16.8M parameters per (predict, update) pair at C=2048, one pair per scale, and shared across all layers via `shared_lifting_weights`.
@@ -458,12 +470,12 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 
 | Model | Type | Params | Context | Epochs | PPL |
 |-------|------|--------|---------|--------|-----|
-| Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^8] |
+| Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^10] |
 | **WaveletLM (1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **27.40†** |
-| Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^5] |
-| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^6] |
-| Compressive Transformer | Transformer + compressive memory | 257M | 2,048 effective | ~50 | 33.6[^7] |
-| Transformer-XL | Transformer + recurrence | 257M | 1,024 effective | ~50 | 36.3[^7] |
+| Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^7] |
+| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^8] |
+| Compressive Transformer | Transformer + compressive memory | 257M | 2,048 effective | ~50 | 33.6[^9] |
+| Transformer-XL | Transformer + recurrence | 257M | 1,024 effective | ~50 | 36.3[^9] |
 
 All models in this table were trained and evaluated on PG-19. Most use SentencePiece tokenization; Hyena uses GPT-2 BPE. WaveletLM was trained for one epoch only at the smallest context length of any entry.
 
@@ -483,14 +495,14 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 
 | Model | Type | Trained on | Params | Context | PPL |
 |-------|------|-----------|--------|---------|-----|
-| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 17.5[^3] |
-| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | 18.3[^2]* |
-| GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 19.3[^3] |
-| S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 1024* | 20.9[^4]* |
-| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 22.1[^3] |
+| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 17.5[^5] |
+| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | 18.3[^4]* |
+| GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 19.3[^5] |
+| S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 1024* | 20.9[^6]* |
+| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 22.1[^5] |
 | **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **883M** | **256†** | **23.8†** |
-| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | 24.0[^2]* |
-| GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 29.4[^3] |
+| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | 24.0[^4]* |
+| GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 29.4[^5] |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
@@ -1151,11 +1163,15 @@ Apache License 2.0
 
 ## References
 
-[^2]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
-[^3]: Radford et al. "Language Models are Unsupervised Multitask Learners." OpenAI, 2019.
-[^4]: Gu et al. "Efficiently Modeling Long Sequences with Structured State Spaces." arXiv:2111.00396, 2021.
-[^5]: Hawthorne et al. "General-purpose, long-context autoregressive modeling with Perceiver AR." arXiv:2202.07765, 2022.
-[^6]: Hutchins et al. "Block-Recurrent Transformers." arXiv:2203.07852, 2022.
-[^7]: Rae et al. "Compressive Transformers for Long-Range Sequence Modelling." arXiv:1911.05507, 2019. (PG-19 dataset introduction; reports both Compressive Transformer and Transformer-XL on PG-19.)
+[^1]: Kiruluta. "Wavelet Logic Machines: Learning and Reasoning in the Spectral Domain Without Neural Networks." [arXiv:2507.19514](https://arxiv.org/abs/2507.19514), 2025. (WLM; classification-focused with frozen pretrained embeddings.)
+[^2]: Kiruluta, Burity, and Williams. "Learnable Multi-Scale Wavelet Transformer: A Novel Alternative to Self-Attention." [arXiv:2504.08801](https://arxiv.org/abs/2504.08801), 2025. (LMWT; encoder-decoder MT model using learnable Haar wavelet coefficients in place of self-attention. Closest published prior to WaveletLM's direction.)
+[^3]: Kiruluta, Raju, and Burity. "Breaking Quadratic Barriers: A Non-Attention LLM for Ultra-Long Context Horizons." [arXiv:2506.01963](https://arxiv.org/abs/2506.01963), 2025. (Non-attention LLM on WikiText-103 / Enwik8 using SSM + multi-resolution convolution + RNN supervisor + retrieval — different primitives, same task as WaveletLM.)
 
-[^8]: Poli et al. "Hyena Hierarchy: Towards Larger Convolutional Language Models." arXiv:2302.10866, 2023. PG-19 result on page 20: Hyena 153M reaches 14.6 test PPL with 16k context length, 8 epochs, GPT-2 BPE tokenization.
+[^4]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
+[^5]: Radford et al. "Language Models are Unsupervised Multitask Learners." OpenAI, 2019.
+[^6]: Gu et al. "Efficiently Modeling Long Sequences with Structured State Spaces." arXiv:2111.00396, 2021.
+[^7]: Hawthorne et al. "General-purpose, long-context autoregressive modeling with Perceiver AR." arXiv:2202.07765, 2022.
+[^8]: Hutchins et al. "Block-Recurrent Transformers." arXiv:2203.07852, 2022.
+[^9]: Rae et al. "Compressive Transformers for Long-Range Sequence Modelling." arXiv:1911.05507, 2019. (PG-19 dataset introduction; reports both Compressive Transformer and Transformer-XL on PG-19.)
+
+[^10]: Poli et al. "Hyena Hierarchy: Towards Larger Convolutional Language Models." arXiv:2302.10866, 2023. PG-19 result on page 20: Hyena 153M reaches 14.6 test PPL with 16k context length, 8 epochs, GPT-2 BPE tokenization.
