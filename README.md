@@ -984,7 +984,7 @@ The current implementation **ties** the wavelet reconstruct path to the decompos
 
 ### Complex Wavelets
 
-Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform, or direct complex parameterization of the lifting predict/update networks). Real wavelets capture only magnitude; complex wavelets carry both magnitude and **phase**.
+Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform, or direct complex parameterization of the lifting predict/update networks). Real wavelets capture only magnitude; complex wavelets carry both magnitude and **phase**. 
 
 **Why phase might matter for language.** In signal processing, phase information is what distinguishes "an edge at this position" from "an edge at a slightly different position" — the magnitude is the same, but the phase differs. For text, the analog is positional / structural patterns that recur at different offsets: e.g., the same syntactic structure appearing 5 tokens later vs 20 tokens later. Real wavelets capture *that* such a structure is present at some scale; complex wavelets additionally capture *where within that scale's support window* it is positioned. Whether this distinction carries useful signal for next-token prediction is the empirical question.
 
