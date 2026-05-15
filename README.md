@@ -720,27 +720,22 @@ The new baseline shall be named **T2**.
 
 ### Optimizer Sweep (Muon → AdamW)
 
-**Phase 1: Muon** ([Jordan et al., 2025](https://arxiv.org/abs/2502.16982); used in DeepSeek-V4). Newton-Schulz orthogonalization bounds every update's spectral norm — structurally the same property mHC uses to scale residual depth, applied to our matrix-heavy MLP / mixer / lifting `Linear(C, C)`. Start from DeepSeek-V4's hybrid recipe (8 iterations at (3.4445, -4.7750, 2.0315) + 2 at (2, -1.5, 0.5)); embedding / LM head / RMSNorm stay on AdamW. **Phase 2: AdamW** as fallback baseline.
-
-**Sweep table.** All runs use the T2 architecture (`levels=7`, `per_scale_mixer_widths=[1.0×4, 0.5×4]`, `wavelet_crawl=true`, `bs=256`, `MBS=8`). Muon hybrid splits params: 2D non-embedding hidden weights → Muon, biases / norms / embeddings / LM head → AdamW (per [torch.optim.Muon](https://docs.pytorch.org/docs/stable/generated/torch.optim.Muon.html) docs). For Adagrad the rows for momentum / NS steps / NS coefficients / adjust LR fn are not applicable.
+**Phase 1: Muon** ([Jordan et al., 2025](https://arxiv.org/abs/2502.16982); used in DeepSeek-V4) — Newton-Schulz orthogonalization bounds every update's spectral norm, applied to the matrix-heavy MLP / mixer / lifting `Linear(C, C)`. Hybrid split: 2D non-embedding hidden weights → Muon, biases / norms / embeddings / LM head → AdamW. **Phase 2: AdamW** as fallback baseline. All runs use T2 architecture (`levels=7`, T2 mixer widths, `wavelet_crawl=true`, `bs=256`, `MBS=8`).
 
 | Optimizer | LR | Weight Decay | Momentum | Eps | NS Steps | NS Coefficients | Adjust LR Fn | Epochs | BPB sliding | PPL sliding | Best val | Train Time | Train VRAM | Inference VRAM (strategies) | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Adagrad (T2 ref, 1ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 1 | 1.1541 | 36.7905 | 3.5881 | ~1.86h | 7,788 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
 | Adagrad (T2 ref, 5ep) | 0.01 | 1e-6 | — | 2e-13 | — | — | — | 5 | 1.0485 | 26.4564 | 3.2630 | ~8.92h | 7,788 MiB | 3,238 MiB | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
-| Muon (defunct ※) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled at step 27,500 / 47%) | — | — | val=4.1243 vs T2 Adagrad's val=3.9342 at the same step (Δ = +0.1901) | partial (~1.62h to step 27,500, projected ~3.05h for 1ep) | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_15-49-10/log.txt) |
-| Muon (over-aggressive ✗) | 0.01 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled at ~step 17,537 / 30%) | — | — | best val 4.7274 at step 7,000; plateau/oscillation in 4.72–4.77 band from step ~5000; ahead of Adagrad through step ~6000 then crossed back behind — see footnote | partial | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_17-45-55/log.txt) |
-| ~~Muon (skipped — lr=0.01 already over-aggressive)~~ | ~~0.05~~ | — | — | — | — | — | — | ~~1~~ | skipped | skipped | skipped | skipped | skipped | skipped | — |
-| ~~Muon (skipped)~~ | ~~0.10~~ | — | — | — | — | — | — | ~~1~~ | skipped | skipped | skipped | skipped | skipped | skipped | — |
-| ~~Muon (skipped)~~ | ~~0.20~~ | — | — | — | — | — | — | ~~1~~ | skipped | skipped | skipped | skipped | skipped | skipped | — |
+| Muon (defunct ※) | 0.001 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled 47%) | — | — | val=4.1243 vs T2 Adagrad's 3.9342 at matched step | partial | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_15-49-10/log.txt) |
+| Muon (over-aggressive ✗) | 0.01 | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 (cancelled 30%) | — | — | plateau in 4.72–4.77 band from step ~5000 | partial | 7,788 MiB | — | [link](logs/wikitext-103_2026-05-10_17-45-55/log.txt) |
 | **Muon (queued)** | **0.003** | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
 | **Muon (queued)** | **0.005** | 0.1 | 0.95 | 1e-7 | 5 | (3.4445, -4.775, 2.0315) | original | 1 | queued | queued | queued | queued | queued | queued | queued |
 
-※ **Defunct — LR under-scaled.** With `adjust_lr_fn=None` (= "original" / Keller's scaling, the API default), `torch.optim.Muon` scales LR by `max(1, sqrt(A/B))` per matrix — for square 2048×2048 matrices that's 1.0, *no amplification*. The doc's `lr=0.001` default is calibrated for `match_rms_adamw` semantics, which would scale by ~9× for 2048×2048 and ~29× for our (2048, 20480) MLP weights. Under "original" scaling with lr=0.001, the effective LR is 10–50× below what Muon's reference implementations (Keller, DeepSeek-V4) intend. The partial run ([log](logs/wikitext-103_2026-05-10_15-49-10/log.txt)) confirms this: trains, but ~0.19 nats behind T2 (Adagrad) at matched step. The lr=0.002 / lr=0.0005 sweep variants (originally queued) are also in the under-scaled regime and were not run; subsequent runs jumped to lr ∈ {0.01, 0.05, 0.10, 0.20} to test Muon under "original" scaling at LRs in / above Keller's published 0.01–0.05 range.
+※ **lr=0.001 under-scaled.** With `adjust_lr_fn="original"` (API default), `torch.optim.Muon` scales LR by `max(1, sqrt(A/B))` — for 2048×2048 that's 1.0, no amplification. The 0.001 default is calibrated for `match_rms_adamw` (~9–29× scaling for our matrices); effective LR was 10–50× below reference Muon recipes. Trains, but ~0.19 nats behind T2 at matched step.
 
-✗ **Over-aggressive — too high LR for sustained training.** The lr=0.01 run ([log](logs/wikitext-103_2026-05-10_17-45-55/log.txt)) showed the opposite failure: a strong early-LR head start through ~step 6000 (ahead of Adagrad by 0.18–0.39 nats across steps 1000–6000), followed by **plateau/oscillation in a 4.72–4.77 val band from step ~5000 onward** while Adagrad continued its smooth descent past it. Best val 4.7274 at step 7,000; by step 8000 lr=0.01 had crossed back *behind* Adagrad (+0.05 nats) and showed no clear downward trend with continued training. Cancelled at ~step 17,537 (30%, just at peak LR) since further training would only deepen the oscillation. Classic "too high LR" signature: parameters bouncing around a local minimum rather than converging. The originally-queued lr=0.05 / lr=0.10 / lr=0.20 variants were guaranteed worse (higher LR, same failure mode amplified) and skipped. The Path B v2 sweep at lr=0.003 / lr=0.005 splits the band between under-scaled (0.001) and over-aggressive (0.01) to find Muon's native operating point on T2.
+✗ **lr=0.01 over-aggressive.** Strong early lead through step ~6000 (0.18–0.39 nats ahead), then plateau/oscillation in 4.72–4.77 val band from step ~5000 — classic too-high-LR signature. Cancelled at 30%; lr ∈ {0.05, 0.10, 0.20} skipped as guaranteed worse. The lr=0.003 / lr=0.005 sweep splits the band between under-scaled (0.001) and over-aggressive (0.01).
 
-**Compute-justified-only criterion.** Muon's per-step cost is ~2× Adagrad's on this stack (5 NS iterations across 77 2D matrices). To justify keeping Muon over Adagrad, it must clear T2 (Adagrad)'s 1ep best val (3.5881) by enough margin that *matched-compute* favors it — i.e., reach equal best val in ≤ half the epochs, or strictly beat Adagrad's end-of-epoch numbers at matched epochs. Otherwise Adagrad stays as the production optimizer.
+**Compute-justified-only criterion.** Muon's per-step cost is ~2× Adagrad's. To justify keeping Muon, it must clear T2 Adagrad's 1ep best val (3.5881) by enough that matched-compute favors it; otherwise Adagrad stays.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -748,19 +743,7 @@ The new baseline shall be named **T2**.
 
 ### (Done) Sequential Block Ordering
 
-Currently, the model does random sampling: each block starts at a uniformly random corpus position with no relationship between consecutive batches.
-
-This section tests sequential block ordering, where every token and block is visited exactly once per epoch in corpus order. We'll see if it works as a standalone feature. Otherwise, it'll be turned on only for later features which require it.
-
-It is a prerequisite for:
-- the [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training) 
-- efficient [Bisected Block Context Extension] compression(#bisected-block-context-extension) (not strictly necessary).
-
-Design choices:
-
-- Stride = `block_size` (no overlap).
-- Document/book boundaries are ignored. Matches the current random sampler behavior and the GPT-style "concat-and-chunk" pretraining default.
-- No shuffling. The point of this experiment is to see whether maintaining corpus order matters.
+Test whether visiting every token in corpus order (stride = `block_size`, no overlap, no shuffling, document boundaries ignored) helps as a standalone feature. Prerequisite for [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training); convenient (not strictly required) for efficient [BBCE](#bisected-block-context-extension) compression.
 
 **Results:**
 
@@ -775,14 +758,7 @@ Design choices:
 | T2 sequential + 2D internal | 8 | 1 | 0.01 | 1 | 1.1765 | 39.47 | 3.6691 | ~2.11h | 8,269 MiB | 3,398 MiB | [link](logs/wikitext-103_2026-05-11_08-05-10/log.txt) |
 | T2 sequential + 2D subband | 8 | 1 | 0.01 | 1 | 1.1939 | 41.66 | 3.7199 | ~2.40h | 8,990 MiB | 3,514 MiB | [link](logs/wikitext-103_2026-05-11_13-00-11/log.txt) |
 
-**Findings:**
-
-- Sequential ordering at lr=0.01 underperforms random sampling at matched epochs (Rainman 1ep best val 3.6601 vs T2 random 1ep best val 3.5881; Δ = +0.0720 best val, +0.0185 BPB).
-- **Sequential + lr=0.015 (Adagrad uniform LR bump) recovers ~50% of the gap** — best val 3.6231 vs T2 random 3.5881 (Δ = +0.0350 remaining vs the +0.0720 starting gap; 51% gap recovery). BPB sliding gap closes from +0.0185 → +0.0039, within ~3× noise threshold. Hits exactly the predicted "~30–50% recovery" from the LR-bump analysis.
-  - Caveat: not fully comparable yet — T2 random reference is at lr=0.01. A matched-LR comparison (T2 random at lr=0.015) is needed to know whether lr=0.015 is a sequential-specific fix or a general improvement. Worth a single follow-up run.
-- **2D wavelet "internal" mode underperforms sequential baseline** (best val 3.6691 vs 3.6601; Δ = +0.0090, ~6× noise threshold). The per-sub-band scaling extracts no useful B-axis signal at WT-103 scale, plus a ~14% wall-clock cost. Internal mode shelved.
-- **2D wavelet "subband" mode underperforms further** (best val 3.7199 vs 3.6601; Δ = +0.0598, ~40× noise threshold). +63M params (+16%), +30% wall-clock, +15% train VRAM — all costs with negative return. Subband mode shelved. Both 2D modes confirm that B-axis lifting carries no useful signal on WT-103, likely because Wikipedia articles are largely independent and the cross-batch temporal structure that would justify 2D decomposition isn't present. **2D wavelets may still work on PG-19** (long-form novels with multi-book dependencies) but that's a much bigger compute commitment and off the immediate roadmap. Code in `tools/two_d_wavelets.py` is preserved for future revisit; runs.sh entries are commented out.
-- This feature still does not improve the model on its own, but lr=0.015 closes most of the regression and the second-epoch gain (Δ −0.1529 best val between Rainman 1ep and 2ep) confirms sequential is a viable substrate for downstream features that require it (BBCE caching, longer-context training, future PG-19 2D wavelet revisit).
+**Findings.** Sequential at lr=0.01 underperforms random (+0.0720 best val, +0.0185 BPB). **Sequential + lr=0.015 recovers ~50% of the gap** (best val 3.6231 vs 3.5881; remaining Δ +0.0350). The second-epoch gain (Δ −0.1529 between 1ep and 2ep) confirms sequential is a viable substrate for downstream features that require it (BBCE caching, longer-context, PG-19 2D revisit). **2D wavelet modes regressed**: "internal" +0.0090 vs sequential baseline (~6× noise, +14% wall-clock); "subband" +0.0598 (~40× noise, +16% params, +30% wall-clock). Both shelved — Wikipedia articles are largely independent so cross-batch temporal structure isn't present on WT-103; PG-19 (multi-book dependencies) is the natural revisit. Code preserved at [tools/two_d_wavelets.py](tools/two_d_wavelets.py); runs.sh entries commented out.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -790,9 +766,7 @@ Design choices:
 
 ### (Shelved on WT-103) 2D Wavelet over (Batch, Token) with Sequential Training
 
-Generalize the lifting wavelet decomposition from 1D over the token axis to 2D over the joint (batch, token) axis pair. When training proceeds in document-sequential order, the batch axis carries the same multi-scale temporal structure as the token axis, and the same wavelet machinery applies to both. This requires reorganization of the current batch sampling method into a sequential batch processing method, since batches may not be IID with respect to each other. As one example, consider series of novels in PG-19 with temporal plot dependencies between books. Randomly sampling batches breaks this temporal relationship. Using 2D wavelets is a convenient way to enforce and encode temporal relationships at all levels within the model. See [plans/two_d_wavelet_sequential_training.md](plans/two_d_wavelet_sequential_training.md) for the full design.
-
-**Status (2026-05-11):** Two architectural variants tested on T2 + sequential WT-103 at 1 epoch — `"internal"` mode (B-axis lift + per-sub-band scale + B-axis inverse; same output shape as 1D; +6% params) and `"subband"` mode (4 sub-bands per joint level exposed to per-band mixers; +16% params). Both **underperformed the sequential Rainman baseline** (3.6691 / 3.7199 vs 3.6601 best val) at 14% / 30% greater wall-clock respectively. Likely cause: Wikipedia articles are largely independent at the chunk level, so cross-batch temporal structure that would justify 2D decomposition isn't present in WT-103. **2D wavelets may still work on PG-19** (long-form novels with multi-book dependencies) where cross-batch structure is real. Code in [tools/two_d_wavelets.py](tools/two_d_wavelets.py) is preserved for future revisit; runs.sh entries commented out.
+Generalize the lifting wavelet from 1D (token axis) to 2D (joint batch-token axis), requiring sequential batch processing so cross-batch temporal structure is preserved (e.g., PG-19 multi-book plot dependencies). Two variants tested at 1ep on T2 + sequential WT-103: `"internal"` (+6% params, same output shape) and `"subband"` (+16% params, 4 sub-bands per joint level exposed to per-band mixers) — both regressed (3.6691 / 3.7199 vs 3.6601 best val) at +14% / +30% wall-clock. Wikipedia articles are largely independent at chunk level, so the cross-batch structure 2D decomposition needs isn't there. **PG-19** (long-form novels) is the natural revisit. Design: [plans/two_d_wavelet_sequential_training.md](plans/two_d_wavelet_sequential_training.md); code: [tools/two_d_wavelets.py](tools/two_d_wavelets.py).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -800,99 +774,18 @@ Generalize the lifting wavelet decomposition from 1D over the token axis to 2D o
 
 ### Bisected Block Context Extension
 
-Inspired by [DeepSeek-V4 (DeepSeek-AI, 2026)](https://huggingface.co/collections/deepseek-ai/deepseek-v4). HCA-style summarized history at the input computing the mean of a certain number of continuous tokens across each channel. The number of tokens taken depends on the desired context (`block_size_compressed`), which is fully customizable, allowing for arbitrarily large context windows. 
+Inspired by [DeepSeek-V4](https://huggingface.co/collections/deepseek-ai/deepseek-v4): take the most recent `block_size/2` slots as uncompressed input; use the other `block_size/2` slots to hold per-channel means of `g = (block_size_compressed − block_size/2) / (block_size/2)` consecutive corpus tokens. The half-block-size seam aligns with every wavelet scale's dyadic partitions, giving O(log block_size) seam-bridging predict/update ops. Sweep across `block_size × block_size_compressed ∈ {256, 512, 1024, 2048} × {65K, 131K, 250K}` was queued; partially completed before project closure on 2026-05-13.
 
-Take the most recent `block_size/2` token slots as uncompressed input, and use the other `block_size/2` slots as compressed input, with each compressed token slot holding the per-channel means of `g = ceil((block_size_compressed − block_size/2) / (block_size/2))` consecutive corpus tokens. 
+**Findings (sweep partial).** Only **bs=256 / bc=65K (g=511)** measurably beat T2 baseline on Best Val (Δ −0.0156, ~10× the 0.0015-nat noise threshold); on test-set BPB it was statistically tied (Δ +0.0010). Increasing `bc` at fixed `bs ≥ 512` regressed in every measured case (bs=512: 3.5922 → 3.6364 → 3.6247 across bc ∈ {65K, 131K, 250K}); increasing `bs` at fixed `bc=65K` monotonically regressed (3.5725 → 3.5922 → 3.6541). Reproducibility was excellent (Δ 0.0011 between bs=2048/bc=65K reruns). The g-matched diagonal that would disambiguate `bs` vs `g` was not completed. Tentative read: BBCE may help in the *high-g, small-bs* regime where compressed slots carry topic-vector-like density; the "more bc monotonically helps" hypothesis was not supported.
 
-For `block_size=256`, if a 1M context window is desired, `block_size_compressed=1,000,000` → `g=3907`. If a 4M context window is desired, `block_size_compressed=4,000,000` → `g=15625`. For `block_size=512`, 1M context gives `g=1954`, and 4M context yields `g=7813`. 
+**Methodological contributions preserved for future researchers** (architecture outcome aside):
 
-The half-block-size point marks a common seam for every wavelet scale, as each has 2^k dyadic partitions. Thus the compressed and uncompressed regimes never lie in a single partition window, and so there are O(log block_size) total seam-bridging predict/update operations. 
+1. **Active-stride epoch definition** — count `1 epoch` as one full pass over *supervised positions* (stride `block_size/2` under bisected-context, `block_size` otherwise). Makes epoch counts comparable across compressed-context schemes.
+2. **g-matched comparison framework** — hold `g = tokens-per-compressed-slot` constant, not `bc`. The g axis determines per-slot information density; varying bc at fixed bs conflates two effects.
+3. **HF-style sliding-window benchmark for bisected-context models** (`evaluate_bbce`) — stride = `block_size/2`, score supervised half only, explicit padded-window accounting. Directly comparable to standard sliding-window BPB in the literature.
+4. **Explicit dataset-ceiling documentation** — for WT-103, the val cliff at bc=251K and padding-pressure ramp to bc=287K must be documented to distinguish "didn't help" from "couldn't measure cleanly." **PG-19** (~28M test tokens, multi-book structure) is the natural scale-up for bc > 256K.
 
-This section will do 9 sweeps of `block_size` x `block_size_compressed` ∈ {256, 512, 2048} x {65K, 262K, 1M}, 1 epoch each, using the T2 baseline after optimizer tests. The best-performing version will then run for 5 epochs.
-
-**Step Count Methodology.** "1 epoch" is defined as one full pass over the corpus's *supervised* positions — identical across BBCE and non-BBCE. The training schedule uses an **active stride** equal to the number of new corpus tokens consumed for supervision per micro-batch sample: `block_size` without BBCE (every position is supervised) and `block_size/2` with BBCE (only the uncompressed half is supervised; the compressed half is reused context, treated as an architectural add-on rather than additional epoch budget). Per-epoch supervised-token coverage is the full corpus in both cases. In practical step counts at MBS=8 over WikiText-103 (119.7M tokens):
-
-| Config | Steps/epoch |
-|---|---|
-| bs=256 non-BBCE | 58,457 |
-| bs=256 BBCE | 116,914 |
-| bs=512 BBCE | 58,457 |
-| bs=2048 BBCE | 14,650 |
-
-**Comparability Note:** depending on the metric under consideration (equal wall-clock time or compute, equal block size overall, or double block size to have the same number of actual tokens seen), it may be essential to compare the performance of the model with BBCE and block size 512, as well as BBCE with block size 256; versus the model at block size 256 and without BBCE. An additional run without BBCE and with block size 512 would offer another perspective. That is, direct comparability with the baseline is difficult to gauge cleanly with this feature.
-
-**Benchmark Methodology.** Test-set BPB follows the [HuggingFace sliding-window perplexity convention](https://huggingface.co/docs/transformers/perplexity): only non-context tokens contribute to the log-loss. For BBCE that means **only the supervised half** (the last `block_size/2` positions per window) is scored, and the compressed half is excluded as context. Stride is fixed at `block_size/2` so every test token is scored exactly once at its supervised position. This produces a single test-set BPB number that is directly comparable to the sliding-window BPB reported elsewhere in this README for non-BBCE runs, and to sliding-window perplexity numbers in the broader literature. The standard "non-overlapping" benchmark has no separate analogue for BBCE — BBCE has one natural test-set eval style (supervised-half scoring), not two.
-
-**Sweep results (1 epoch).** Decision rule: a BBCE variant must clear the T2 baseline best val (3.5881) by more than the 0.0015-nat noise threshold to be considered a win.
-
-| Run | g § | Best Val | Δ vs T2 | BPB sliding | Train Time | Train VRAM | Inf VRAM |
-|---|---|---|---|---|---|---|---|
-| **T2 baseline** (bs=256, no BBCE) | — | 3.5881 | (ref) | 1.1541 | 1.83h | 7,788 MiB | 3,258 MiB |
-| BBCE bs=256 / bc=65K | 511 | 3.5725 | −0.0156 | 1.1551 | 5.89h | 7,809 MiB | (pending) |
-| BBCE bs=512 / bc=65K | 255 | 3.5922 | +0.0041 | **1.1530** | 3.88h | 8,177 MiB | (pending) |
-| BBCE bs=512 / bc=131K | 511 | 3.6364 | +0.0483 | 1.1567 | 4.07h | 9,923 MiB | (pending) |
-| BBCE bs=512 / bc=250K † | 975 | 3.6247 | +0.0366 | 1.1593 | 4.44h | 12,230 MiB | (not measured) |
-| BBCE bs=1024 / bc=65K | 127 | (not run) | — | — | — | — | — |
-| BBCE bs=1024 / bc=131K | 255 | (not run) | — | — | — | — | — |
-| BBCE bs=1024 / bc=250K † | 487 | (not run) | — | — | — | — | — |
-| BBCE bs=2048 / bc=65K | 63 | 3.6541 | +0.0660 | 1.1706 | 2.21h | 15,941 MiB | (not measured) |
-| BBCE bs=2048 / bc=65K *(rerun, reproducibility check)* | 63 | 3.6552 | +0.0671 | 1.1713 | 2.17h | 14,046 MiB | (not measured) |
-| BBCE bs=2048 / bc=131K | 127 | (in progress at shutdown) | — | — | — | — | — |
-| BBCE bs=2048 / bc=250K † | 243 | (not run) | — | — | — | — | — |
-| bs=1024 non-BBCE (control) ‡ | — | (not run) | — | — | — | — | — |
-| bs=2048 non-BBCE (control) ‡ | — | (not run) | — | — | — | — | — |
-| BBCE bs=512 / bc=65K + `compressed_grad=false` | 255 | (not run) | — | — | — | — | — |
-
-§ `g` = **compression factor**, the number of corpus tokens averaged into each compressed slot via mean-pooling. Defined as `g = (block_size_compressed − block_size/2) // (block_size/2)`, where `block_size/2` is also the number of compressed slots (the slot count and the uncompressed-position count coincide). A column entry of "—" means the row doesn't use BBCE compression. Higher `g` = each slot pools more tokens = denser per-slot semantic load (closer to a topic vector); lower `g` = each slot pools fewer tokens (closer to a local fragment). See "g-matched diagonal" below for why holding `g` constant while varying `bs` is the cleanest single-axis comparison BBCE supports within WT-103.
-
-**WT-103 test-set ceilings (honest limitations).** WikiText-103 caps the bc values we can measure cleanly:
-- **Val cliff at bc=251K:** `val_data` is 251,048 tokens. When `bc ≥ 251K`, the BBCE val branch falls back to sampling from `train_data`, so "Best Val" stops measuring val-distribution loss and becomes a train-distribution proxy — not directly comparable to baseline.
-- **Padding pressure gradual to bc=287K:** `test_data` is 287,644 tokens. As `bc` grows, fewer test windows have a full `bc`-token real context — the rest left-pad with zeros. At bc=131K, 54% of test windows are unpadded; at bc=250K, only 13% are. The BPB benchmark for high-bc cells therefore measures off-distribution performance (mostly-zero compressed slots, which the model never trained on). Cells marked † in the table fall in this regime — Best Val is the trustworthy metric there; BPB needs an asterisk.
-- **OOM at bc=1M:** compressed-half saved activations for the backward pass exceed 32 GiB on a single 5090; either `bbce_compressed_grad: false` (drops gradient through compressed) or a streaming sum / chunked-reduction refactor would be needed to fit. Neither is implemented yet.
-
-For bc > 256K, **PG-19** is the natural next test set: ~28M test tokens means bc=1M would be at 0.04× test_len vs WT-103's 3.5× — virtually no padding, and the long-form novel structure is exactly where BBCE's value proposition lives (cross-chapter / cross-book conditioning). Filed as the scale-up direction once the current WT-103 cells settle the bc-scaling question.
-
-**g-matched diagonal (the apples-to-apples comparison).** Compression ratio `g = (bc - bs/2) / (bs/2)` = tokens per compressed slot. Across the queued sweep, `g` varies wildly even at fixed bc, which means BBCE's value proposition is being tested at very different per-slot semantic densities cell-by-cell. The bs=2048/bc=65K result (Δ +0.0660 vs T2 — clear regression) may be telling us that g=63 is *too little* per slot to carry useful semantic content, not that bs=2048 itself is unviable. To separate the bs effect from the g effect we need a diagonal where g is held roughly constant:
-
-| bs | bc | g (tokens per slot) | Status |
-|---|---|---|---|
-| 512 | 65K | 255 | completed (Δ +0.0041 best val) |
-| 1024 | 131K | 255 | queued |
-| 2048 | 250K | 243 | queued |
-
-These three sit at **g ≈ 250**, varying only `bs` (and proportionally `bc`). The cell already completed (bs=512/bc=65K) lands within noise of T2; the queued pair will tell us whether scaling along this diagonal helps (BBCE's compressed history is genuinely informative when slots carry comparable semantic load) or plateaus (per-batch supervised stride dominates regardless). A second g-matched diagonal at g=511 would test the "denser slot" regime but isn't cleanly buildable within WT-103's ceilings (would require bc=263K or bc=512K cells).
-
-**Non-BBCE controls at larger bs (`‡` rows in the table).** Without these, "bs=1024 BBCE beat T2" is confounded — was the gain from the long compressed context or from the larger window itself? Two control runs at the T2 architecture (levels=7, T2 mixer widths, wavelet_crawl=true, Adagrad lr=0.01) but with `block_size ∈ {1024, 2048}` and BBCE off isolate the variables:
-
-| Run | What it isolates |
-|---|---|
-| T2 (bs=256, no BBCE) | baseline |
-| bs=1024 non-BBCE | "what does larger window give without BBCE?" |
-| bs=2048 non-BBCE | same, at the largest bs in the BBCE sweep |
-| BBCE bs=1024 / bc=131K (g=255) | larger window + long compressed context, matched-g diagonal |
-| BBCE bs=2048 / bc=250K (g=243) | largest window + long compressed context, matched-g diagonal |
-
-If the non-BBCE controls land near T2 and BBCE at the matched-g diagonal beats them: BBCE provides real long-context value. If non-BBCE bs=1024/2048 already beat T2: the gain is from larger windows, not BBCE. If non-BBCE bs=1024/2048 underperform: caveat — at 1 epoch under the active-stride formula, bs=1024 has only 14,610 optimizer steps (vs T2's 58,457) and bs=2048 has 7,304. Adagrad may be update-starved at these step counts; a 2-4 epoch follow-up matched to T2's step budget would disambiguate update-starvation from "larger bs is worse" if needed.
-
-**Compensation observation (preliminary).** The `bs=256 / bc=65K` row lands at Δ +0.0010 BPB vs T2 baseline — within the 0.0015-nat noise threshold, statistically identical. That's the load-bearing surprise: BBCE supervises half as many tokens per batch as T2, yet test-set perplexity matches. The 65K of compressed context appears to exactly compensate for the halved per-batch supervision — no more, no less. The Best Val drift (Δ −0.0156, ~10× noise) suggests the compressed context is doing real work; it just doesn't show up on the test-set BPB until either `block_size` grows or, possibly, `block_size_compressed` does. The rest of the sweep distinguishes two scenarios:
-- **(a) Longer bc yields strict gains beyond the compensation point**: `bs=256 / bc=1M` would beat T2 by a margin; `bs=512 / bc=1M` would beat its bc=65K counterpart. This is the desired outcome — compressed context is genuinely informative and scales.
-- **(b) Per-batch supervised stride is the dominant factor**: any `bs=256` BBCE config plateaus near T2 regardless of bc, and gains only come from larger `bs`. Interesting if true (it would suggest block size and architecture are intrinsically coupled, independent of content), but a weaker claim for the feature.
-
-**Compressed-half gradient toggle (`bbce_compressed_grad`).** When `true` (default), gradients flow back through the mean-pool into the embedding table for tokens appearing in the compressed half — every appearance contributes `(1/g) × dL/dslot` to its embedding row, so over a batch the embedding table learns to be a good mean-pool basis as well as a good direct-prediction basis. When `false`, the chunked embedding lookup runs under `torch.no_grad()` and the compressed slots are detached: the embedding table only updates from uncompressed-half appearances, and the wavelet/mixer/MLP still learn to USE compressed slots but can't push the embedding table toward better averaging behavior. The dilution-only argument that justifies `false` is unverified — at WT-103 scale (120M tokens, 1 epoch), incidental averaging quality emerging "for free" from next-token training is not guaranteed. Backward-pass speedup with `false` is expected ~1.3-1.5×. The toggle was implemented but not empirically tested before project closure; the code path is preserved in `tools/bbce.py` for future researchers.
-
-**Findings & Recommendations (final, project closed 2026-05-13).** The BBCE sweep was halted before all queued cells completed. Within what was measured, the headline empirical findings are:
-
-- **bs=256 / bc=65K (g=511) is the only cell that measurably beats T2 baseline on Best Val** — Δ −0.0156 nats (~10× the 0.0015-nat noise threshold). On test-set BPB it is statistically tied with T2 (Δ +0.0010, within noise). This is the smallest-bs, highest-g cell measured. **Tentative recommendation:** if BBCE is to be used at all in this architecture, start in the high-g, small-bs regime — the compressed slots appear most useful when each represents many tokens (a topic-vector-like density) rather than few tokens (a fragment-like density).
-- **Increasing bc at fixed bs regressed in every measured case at bs ≥ 512.** bs=512: bc=65K (3.5922) → bc=131K (3.6364) → bc=250K (3.6247). bs=2048/bc=65K already regressed at +0.0660. The hypothesis "more compressed context monotonically helps" was not supported within the measured WT-103 cells.
-- **Increasing bs at fixed bc=65K monotonically regressed.** bs=256 (3.5725) → bs=512 (3.5922) → bs=2048 (3.6541). The g-matched diagonal that would have disambiguated bs vs g was not completed (bs=1024/bc=131K was queued but not run; bs=2048/bc=131K was in progress at shutdown).
-- **Run-to-run reproducibility is excellent.** The two bs=2048/bc=65K runs produced Best Val 3.6541 vs 3.6552 (Δ 0.0011, well below noise threshold), confirming the 0.0015-nat threshold is well-calibrated and that single-seed BBCE results are reliable indicators of converged behavior.
-
-**What is worth recommending to other researchers, regardless of the architectural outcome:**
-
-1. **The active-stride formula for chunked-context training.** Defining `1 epoch` as one full pass over *supervised positions* (using `block_size/2` as the stride under bisected-context schemes, `block_size` otherwise) makes epoch-counting comparable across architectures with different supervised-fraction-per-batch ratios. This was load-bearing for fair comparisons in this work and would be reusable in any future bisected-context or compressed-context architecture.
-2. **The g-matched analytical framework.** When comparing compression-based architectures, hold `g = tokens-per-compressed-slot` constant rather than holding `bc` constant. The g axis is what determines per-slot information density; varying bc at fixed bs varies g, conflating two effects.
-3. **The HF-style sliding-window benchmark for bisected-context models** (`evaluate_bbce` in train.py). Stride = `block_size/2`, score the supervised half only, uncapped windows by default. This produces a single test-set BPB number directly comparable to the standard sliding-window BPB used elsewhere in the literature, with explicit padded-window accounting.
-4. **Honest measurement-ceiling documentation.** The "WT-103 test-set ceilings" subsection above documents the val cliff at bc=251K and the gradual padding cliff to bc=287K. This kind of explicit dataset-limit documentation is necessary for any compressed-context evaluation and was useful here for sharply distinguishing "the architecture didn't help" from "we couldn't measure it cleanly."
+Full sweep tables, the `bbce_compressed_grad` toggle, and the bc=1M OOM analysis are preserved in git history at the project-closure commit; the code path lives in `tools/bbce.py`.
 
 
 <p align="center">
@@ -901,37 +794,17 @@ If the non-BBCE controls land near T2 and BBCE at the matched-g diagonal beats t
 
 ### Adagrad Learning Rate Tuning
 
-T2's default `lr=0.01` was inherited from earlier baselines and has not been re-tuned for the current architecture. The sequential block ordering experiments surfaced this: the sequential variant of T2 trailed T2 random by Δ best val +0.0720 at lr=0.01, but lr=0.015 (sequential) recovered ~50% of that gap (best val 3.6231 vs Rainman 3.6601). The natural follow-up question was whether lr=0.015 is a sequential-specific Adagrad fix or a general LR re-tune that helps T2 itself.
+T2's default `lr=0.01` was inherited from earlier baselines. Sequential block ordering surfaced that lr=0.015 recovered ~50% of the sequential-vs-random gap; the follow-up was whether this generalizes to T2 random.
 
-**Isolation test (T2 random + lr=0.015, complete).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled proportionally to 0.0003). Run log: [logs/wikitext-103_2026-05-11_15-26-31/log.txt](logs/wikitext-103_2026-05-11_15-26-31/log.txt).
+**Isolation test (T2 random + lr=0.015, complete).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled to 0.0003). Run log: [logs/wikitext-103_2026-05-11_15-26-31/log.txt](logs/wikitext-103_2026-05-11_15-26-31/log.txt).
 
-| Metric | T2 baseline (lr=0.01) | T2 + lr=0.015 | Δ |
-|---|---|---|---|
-| Best val | 3.5881 | **3.5345** | **−0.0536** |
-| BPB sliding | 1.1541 | **1.1362** | **−0.0179** |
-| PPL sliding | 36.79 | **34.79** | **−2.00** |
-| Train time | 1.83h | 1.84h | +0.6% |
-| Train VRAM | 7,788 MiB | 8,065 MiB | +3.6% |
-| Inference VRAM | 3,258 MiB | 3,258 MiB | (matched) |
+| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
+|---|---|---|---|---|---|---|
+| T2 baseline (lr=0.01) | 3.5881 | 1.1541 | 36.79 | 1.83h | 7,788 MiB | 3,258 MiB |
+| T2 + lr=0.015 | **3.5345** | **1.1362** | **34.79** | 1.84h | 8,065 MiB | 3,258 MiB |
+| Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
 
-Δ best val of **−0.0536 nats is ~36× the noise threshold**. Unambiguous win at near-zero compute cost. The mid-epoch ~0.044 nat lead held through the cosine decay tail and the final number is even larger.
-
-**T3 candidate is now defined.** Two possible compositions depending on the BBCE sweep outcome and a possible further LR refinement (see below):
-- **T3 = T2 + lr=0.015** (if BBCE shows no improvement). The LR retune alone becomes the new production stack.
-- **T3 = T2 + lr=0.015 + BBCE** (if BBCE shows meaningful improvement on top of the LR retune). Both wins consolidate into one baseline.
-
-The existing T2 baseline numbers (best val 3.5881 at 1ep, 3.2630 at 5ep) will be replaced by re-measured T3 numbers (1ep and 5ep) in the [Results](#results) section. The replacement is **deferred until after the lr=0.020 / further LR refinement sweep and the BBCE outcome are settled**, so the headline benchmark gets stacked all known improvements at once rather than incremented run-by-run.
-
-**Why this matters strategically.** Recent architecture-level explorations (2D wavelets — both modes shelved; sequential ordering — needs LR fix to be viable; Muon — no clear win yet) have not surfaced improvements. The lr=0.015 retune is the only meaningful performance gain since the T2 baseline was set, and it costs zero extra compute.
-
-**Follow-up: lr=0.020 sweep (queued).** Small extra step to confirm lr=0.015 is in the right neighborhood and we haven't undershot the optimum. Decision rule:
-- lr=0.020 better than 0.015 by > 0.0015 → optimum is ≥ 0.020; consider another sweep at lr=0.025.
-- lr=0.020 within ~0.002 of 0.015 → plateau; lock in 0.015.
-- lr=0.020 worse than 0.015 → past the optimum; 0.015 wins.
-
-Caveat: at sufficiently high LR, Adagrad's accumulator dynamics can change qualitatively (similar to what we saw with Muon at lr=0.01 — fast early descent then plateau/oscillation around step 5000). The 0.020 run is the canary.
-
-**BBCE compatibility.** The currently-queued BBCE sweep deliberately uses lr=0.01 (T2's existing LR) for apples-to-apples comparison against the T2 baseline. If BBCE shows a winner, that winner will be re-run at the locked-in LR (0.015 or whatever the sweep settles on) as part of the T3 consolidation. Switching mid-queue would mix two variables and complicate attribution.
+Δ best val of **−0.0536 nats is ~36× the noise threshold** — unambiguous win at near-zero compute cost. **T3 = T2 + lr=0.015** is the new baseline (or **T3 = T2 + lr=0.015 + BBCE** if BBCE shows a stack-on win). A lr=0.020 canary is queued to confirm 0.015 isn't undershooting; at sufficiently high LR Adagrad's accumulator dynamics may change qualitatively. The BBCE sweep stays at lr=0.01 for apples-to-apples comparison; winners get re-run at the locked LR as part of T3 consolidation.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -939,15 +812,11 @@ Caveat: at sufficiently high LR, Adagrad's accumulator dynamics can change quali
 
 ### Wavelet Sparsity Probe & Wavelet Shrinkage
 
-Two related ablations exploring the sparsity structure of the wavelet's detail coefficients — a property heavily exploited by classical wavelet compression (JPEG 2000) that we have not yet measured or used in our learned-wavelet pipeline.
+Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.
 
-**Sparsity probe (diagnostic, ~30 minutes).** Run a trained T2 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (e.g., quantiles, fraction below 1% of max). If detail coefficients are heavily sparse (~80%+ near zero, as is typical for natural-signal wavelet decompositions), several optimization directions open up: sparse mixer compute (top-k mixing within each scale), low-bit detail quantization (run details at fp8/int8 while keeping approximation at fp16), sparse activation storage for long-context training, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High information value per compute spent; this is the first thing to run.
+**Sparsity probe (diagnostic, ~30 minutes).** Run a trained T2 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (quantiles, fraction below 1% of max). If ~80%+ are near zero (typical for natural signals), several optimization directions open: sparse mixer compute (top-k mixing per scale), low-bit detail quantization (details at fp8/int8, approximation at fp16), sparse activation storage for long-context, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High info-per-compute; run this first.
 
-**Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients during the forward pass: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` where `λ` is the shrinkage strength (start with 0.1) and `σ_scale` is the per-scale standard deviation (estimated as a running EMA or precomputed once). Forces the model to learn a sparse multi-scale representation, mirroring the noise-suppression behavior wavelet methods use in signal processing. One config flag (`wavelet_shrinkage_lambda`) and ~10 lines in the wavelet's forward. Two outcomes worth distinguishing:
-- **Helps**: shrinkage acts as effective regularization; the model was using too many detail coefficients indiscriminately and dropping the smallest improves generalization.
-- **Hurts**: detail coefficients are not redundant; suppressing them removes information the model was using. Tells us our learned wavelet doesn't have JPEG-style sparsity even after training, which is itself an informative finding.
-
-Both ablations run cheaply on T2/Adagrad at 1 epoch. Combine: run the probe first, calibrate `λ` from the observed magnitude distribution (e.g., the 25th percentile per scale), then test shrinkage with that empirical-data-driven setting.
+**Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients in forward: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` with `λ ~ 0.1` and `σ_scale` a per-scale running EMA. One config flag (`wavelet_shrinkage_lambda`), ~10 lines. **Helps** → effective regularization (model was using detail coefficients indiscriminately); **Hurts** → coefficients aren't redundant, the learned wavelet lacks JPEG-style sparsity (itself informative). Combine: run probe first, calibrate `λ` from the 25th percentile per scale, then test shrinkage at 1ep on T2/Adagrad.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
