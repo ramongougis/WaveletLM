@@ -27,7 +27,9 @@ WaveletLM extends WLM to autoregressive language modeling at scale (currently, 3
 
 The model uses a learned embedding and mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length.
 
-Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with far less training; and better performance on WT-103 than Transformer-XL and GPT-2, with clear room for improvement in all areas: regularization, more levels, recurrence, longer training, and scale.
+Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WT-103 than Transformer-XL and GPT-2. 
+
+Furthermore, there is clear room for improvement in several areas: parameter reduction, regularization, more levels, recurrence, longer training, scale, and others. In particular, conversion of the learned embedding to a semantic embedding would more than half the current trainable parameter size while potentially boosting interpretability far beyond other transformer-based or hybrid models.
 
 <br>
 
