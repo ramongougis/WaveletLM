@@ -23,11 +23,11 @@ WaveletLM is an autoregressive language model in the "wavelet as attention repla
 - **Learnable Multi-Scale Wavelet Transformer (LMWT)**: a replacement for attention which uses wavelets for machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
 - **Breaking Quadratic Barriers**: non-attention LLM for long context, specifically regarding mean chunking and pooling ([arXiv:2506.01963](https://arxiv.org/abs/2506.01963))
 
-WaveletLM extends LMWT's direction to autoregressive language modeling at scale (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) below.
+WaveletLM extends WLM to autoregressive language modeling at scale (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) below, and further parameter reductions and improvements demonstrated in the [Future Plans](#future-plans) section.
 
-The model uses a learned embedding and mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and sparse product-key memory, this yields an architecture with no attention and O(n log n) scaling in sequence length.
+The model uses a learned embedding and mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length.
 
-Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with far less training; and better performance on WT-103 than Transformer-XL and GPT-2, with clear room for improvement on language modeling tasks.
+Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with far less training; and better performance on WT-103 than Transformer-XL and GPT-2, with clear room for improvement in all areas: regularization, more levels, recurrence, longer training, and scale.
 
 <br>
 
@@ -892,7 +892,6 @@ If the non-BBCE controls land near T2 and BBCE at the matched-g diagonal beats t
 3. **The HF-style sliding-window benchmark for bisected-context models** (`evaluate_bbce` in train.py). Stride = `block_size/2`, score the supervised half only, uncapped windows by default. This produces a single test-set BPB number directly comparable to the standard sliding-window BPB used elsewhere in the literature, with explicit padded-window accounting.
 4. **Honest measurement-ceiling documentation.** The "WT-103 test-set ceilings" subsection above documents the val cliff at bc=251K and the gradual padding cliff to bc=287K. This kind of explicit dataset-limit documentation is necessary for any compressed-context evaluation and was useful here for sharply distinguishing "the architecture didn't help" from "we couldn't measure it cleanly."
 
-The architectural direction (wavelets as attention substitute) has prior work — see [Kiruluta 2025, "Learnable Multi-Scale Wavelet Transformer" (arXiv:2504.08801)](https://arxiv.org/abs/2504.08801) for an earlier published proposal in MT, and [Kiruluta 2025, "Breaking Quadratic Barriers" (arXiv:2506.01963)](https://arxiv.org/abs/2506.01963) for a non-attention LLM in the same task regime (WT-103 LM) using SSM + convolution + retrieval primitives. Future researchers in this space should treat that line of work as the established context.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
