@@ -17,7 +17,7 @@
 
 <br>
 
-WaveletLM is an autoregressive language model in the "wavelet as attention replacement" direction pioneered by Andrew Kiruluta et al. (2025)[^1]. Specifically, this work builds on:
+WaveletLM is an autoregressive language model in the "wavelet-as-attention-replacement" domain which explores a direction pioneered by Andrew Kiruluta et al. (2025)[^1]. Specifically, this work builds on:
 
 - **Wavelet Logic Machines (WLM)**: wavelet-based classification ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
 - **Learnable Multi-Scale Wavelet Transformer (LMWT)**: a replacement for attention which uses wavelets for machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
