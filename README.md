@@ -792,6 +792,20 @@ Full sweep tables, the `bbce_compressed_grad` toggle, and the bc=1M OOM analysis
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Recurrence (Mixer Only)
+
+Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
+
+`x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
+
+This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#done-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
+
+Other recurrence approaches likely exist, but this section will only test the mixer.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Adagrad Learning Rate Tuning
 
 T2's default `lr=0.01` was inherited from earlier baselines. Sequential block ordering surfaced that lr=0.015 recovered ~50% of the sequential-vs-random gap; the follow-up was whether this generalizes to T2 random.
@@ -817,20 +831,6 @@ Two related ablations on the sparsity structure of the wavelet's detail coeffici
 **Sparsity probe (diagnostic, ~30 minutes).** Run a trained T2 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (quantiles, fraction below 1% of max). If ~80%+ are near zero (typical for natural signals), several optimization directions open: sparse mixer compute (top-k mixing per scale), low-bit detail quantization (details at fp8/int8, approximation at fp16), sparse activation storage for long-context, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High info-per-compute; run this first.
 
 **Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients in forward: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` with `λ ~ 0.1` and `σ_scale` a per-scale running EMA. One config flag (`wavelet_shrinkage_lambda`), ~10 lines. **Helps** → effective regularization (model was using detail coefficients indiscriminately); **Hurts** → coefficients aren't redundant, the learned wavelet lacks JPEG-style sparsity (itself informative). Combine: run probe first, calibrate `λ` from the 25th percentile per scale, then test shrinkage at 1ep on T2/Adagrad.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Recurrence (Mixer Only)
-
-Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
-
-`x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
-
-This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#done-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
-
-Other recurrence approaches likely exist, but this section will only test the mixer.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
