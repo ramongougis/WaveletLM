@@ -1317,6 +1317,8 @@ class WaveletLMBlock(nn.Module):
         mixer_depth: int = 1,
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
+        mixer_recurrence_steps: int = 1,
+        mixer_recurrence_distinct_mixer_count: int = 1,
         per_layer_embedding: bool = False,
         fht_input_cap_enabled: bool = False,
         fht_input_cap_value: float = 1000.0,
@@ -1507,6 +1509,47 @@ class WaveletLMBlock(nn.Module):
         S = self.s_effective
         self.mixer_depth = mixer_depth
 
+        # Mixer recurrence — N applications of the mixer stage between FWHT and
+        # iFWHT, exploiting that Decompose/Reconstruct are inverses (so identity
+        # cancels except for the mixer body). Two parameters control the sweep:
+        #   N = mixer_recurrence_steps           — total number of applications
+        #   K = mixer_recurrence_distinct_mixer_count
+        #                                        — number of distinct per-scale
+        #                                          mixer banks; K must be in [1, N].
+        # At step r ∈ [0, N), bank `r % K` is used. K=1 reuses one bank N times
+        # (no extra params); K=N gives each step its own bank (N× mixer params);
+        # 1 < K < N cycles K banks across N steps (intermediate compromise).
+        self.mixer_recurrence_steps = int(mixer_recurrence_steps)
+        self.mixer_recurrence_distinct_mixer_count = int(mixer_recurrence_distinct_mixer_count)
+        if self.mixer_recurrence_steps < 1:
+            raise ValueError(
+                f"mixer_recurrence_steps must be >= 1, got {self.mixer_recurrence_steps}"
+            )
+        if self.mixer_recurrence_distinct_mixer_count < 1:
+            raise ValueError(
+                "mixer_recurrence_distinct_mixer_count must be >= 1, "
+                f"got {self.mixer_recurrence_distinct_mixer_count}"
+            )
+        if self.mixer_recurrence_distinct_mixer_count > self.mixer_recurrence_steps:
+            raise ValueError(
+                "mixer_recurrence_distinct_mixer_count "
+                f"({self.mixer_recurrence_distinct_mixer_count}) must be <= "
+                f"mixer_recurrence_steps ({self.mixer_recurrence_steps})."
+            )
+        if self.mixer_recurrence_steps > 1:
+            if mixer_depth != 1:
+                raise ValueError(
+                    "mixer_recurrence_steps > 1 requires mixer_depth == 1 "
+                    f"(got mixer_depth={mixer_depth}). Stack recurrence on a "
+                    "depth-1 mixer rather than combining the two."
+                )
+            if untied_reconstruction:
+                raise ValueError(
+                    "mixer_recurrence_steps > 1 is mutually exclusive with "
+                    "untied_reconstruction: recurrence relies on "
+                    "Reconstruct ∘ Decompose = I, which untied breaks."
+                )
+
         # Auto-expand per_scale_mixer_widths when user provided a 1D-length
         # list (L+1 entries) but subband mode requires the larger expanded
         # list. The expansion triples the widths at joint-level positions to
@@ -1565,6 +1608,43 @@ class WaveletLMBlock(nn.Module):
                     )
                     for _ in range(S)
                 ])
+
+            # Mixer recurrence with K > 1: allocate (K - 1) additional mixer
+            # banks. Step 0 always uses self.scale_mixers; subsequent steps cycle
+            # through self.scale_mixers and the K-1 extras via index `r % K`,
+            # so step r uses bank (r % K). K=1 (default) allocates nothing.
+            if self.mixer_recurrence_distinct_mixer_count > 1:
+                extra_banks = []
+                for _ in range(self.mixer_recurrence_distinct_mixer_count - 1):
+                    if per_scale_mixer_widths is not None:
+                        widths_extra = [max(1, int(self.Cp * w)) for w in per_scale_mixer_widths]
+                        bank = nn.ModuleList([
+                            PerScaleMixer(
+                                Cp=self.Cp, width=widths_extra[s], num_blocks=1, rank=low_rank,
+                                use_mixer_gate=use_mixer_gate,
+                                mixer_gate_activation=mixer_gate_activation,
+                                add_bias=False,
+                                device=device, dtype=dtype,
+                                stab_spectral_norm=stab_spectral_norm,
+                                stab_mixer_eps_scaling=stab_mixer_eps_scaling,
+                            )
+                            for s in range(S)
+                        ])
+                    else:
+                        bank = nn.ModuleList([
+                            GatedSpectralMixer(
+                                Cp=self.Cp, num_blocks=1, rank=low_rank,
+                                use_mixer_gate=use_mixer_gate,
+                                mixer_gate_activation=mixer_gate_activation,
+                                add_bias=False,
+                                device=device, dtype=dtype,
+                                stab_spectral_norm=stab_spectral_norm,
+                                stab_mixer_eps_scaling=stab_mixer_eps_scaling,
+                            )
+                            for _ in range(S)
+                        ])
+                    extra_banks.append(bank)
+                self.scale_mixers_recurrent_extra = nn.ModuleList(extra_banks)
         else:
             # Depth > 1: intermediate steps get LN + bias, final step gets neither
             self.mixer_depth_stabilizers = mixer_depth_stabilizers
@@ -1733,20 +1813,37 @@ class WaveletLMBlock(nn.Module):
         # FHT forward
         stacked_spec = self.fht(stacked_coeffs)
 
-        # Per-scale spectral mixing (with optional depth stacking)
+        # Per-scale spectral mixing (with optional depth stacking and optional
+        # recurrence — N applications of the mixer cascade between FWHT and
+        # iFWHT, see mixer_recurrence_steps / mixer_recurrence_mode).
         if self.mixer_depth == 1:
-            if self.cross_scale_gating:
-                routed_gate_input = torch.einsum(
-                    'rs,btsd->btrd', self.scale_routing, stacked_spec)
-            else:
-                routed_gate_input = None
-            mixed_by_scale = []
-            for s in range(S):
-                Xs = stacked_spec[:, :, s, :]
-                Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
-                Ys = self.scale_mixers[s](Xs, gate_input=Gs)
-                mixed_by_scale.append(Ys)
-            mixed_spec = torch.stack(mixed_by_scale, dim=2)
+            current_spec = stacked_spec
+            K = self.mixer_recurrence_distinct_mixer_count
+            for r in range(self.mixer_recurrence_steps):
+                # Cycle through K distinct banks. Bank 0 is self.scale_mixers;
+                # banks 1..K-1 are scale_mixers_recurrent_extra[0..K-2].
+                # K=1 always picks bank 0 (shared); K=N picks a new bank each
+                # step (fully distinct); intermediate K cycles.
+                bank_idx = r % K
+                if bank_idx == 0:
+                    step_mixers = self.scale_mixers
+                else:
+                    step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
+                # Recompute gate routing from the current spectral state
+                # so each recurrence step gates on its own input.
+                if self.cross_scale_gating:
+                    routed_gate_input = torch.einsum(
+                        'rs,btsd->btrd', self.scale_routing, current_spec)
+                else:
+                    routed_gate_input = None
+                mixed_by_scale = []
+                for s in range(S):
+                    Xs = current_spec[:, :, s, :]
+                    Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
+                    Ys = step_mixers[s](Xs, gate_input=Gs)
+                    mixed_by_scale.append(Ys)
+                current_spec = torch.stack(mixed_by_scale, dim=2)
+            mixed_spec = current_spec
         else:
             mixed_spec = stacked_spec
             for d in range(self.mixer_depth):
@@ -2131,6 +2228,10 @@ class WaveletLM(nn.Module):
                 mixer_depth=config.get("mixer_depth", 1),
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
+                mixer_recurrence_steps=config.get("mixer_recurrence_steps", 1),
+                mixer_recurrence_distinct_mixer_count=config.get(
+                    "mixer_recurrence_distinct_mixer_count", 1
+                ),
                 per_layer_embedding=config.get("per_layer_embedding", False),
                 fht_input_cap_enabled=config.get("fht_input_cap_enabled", False),
                 fht_input_cap_value=config.get("fht_input_cap_value", 1000.0),

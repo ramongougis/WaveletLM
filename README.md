@@ -539,26 +539,27 @@ Longer training time, more regularization, and parameter compression are the sur
 9. [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
 10. [(Shelved on WT-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-wt-103-2d-wavelet-over-batch-token-with-sequential-training)
 11. [Bisected Block Context Extension](#bisected-block-context-extension)
-12. [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
-13. [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
-14. [Recurrence (Mixer Only)](#recurrence-mixer-only)
-15. [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
-16. [Complex Wavelets](#complex-wavelets)
-17. [Dropout](#dropout)
-18. [Weight Decay](#weight-decay)
-19. [Mixer Transform Ablation](#mixer-transform-ablation)
-20. [Step-Time Speedups](#step-time-speedups)
-21. [Longer PG-19 Training](#longer-pg-19-training)
-22. [Dataset Comparisons](#dataset-comparisons)
-23. [Model Comparisons](#model-comparisons)
-24. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-25. [Multi-Transform Parallelization](#multi-transform-parallelization)
-26. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-27. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-28. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-29. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-30. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-31. [Other Post-Release Plans](#other-post-release-plans)
+12. [Recurrence (Mixer Only)](#recurrence-mixer-only)
+13. [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
+14. [New T3 Baseline](#new-t3-baseline)
+15. [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
+16. [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
+17. [Complex Wavelets](#complex-wavelets)
+18. [Dropout](#dropout)
+19. [Weight Decay](#weight-decay)
+20. [Mixer Transform Ablation](#mixer-transform-ablation)
+21. [Step-Time Speedups](#step-time-speedups)
+22. [Longer PG-19 Training](#longer-pg-19-training)
+23. [Dataset Comparisons](#dataset-comparisons)
+24. [Model Comparisons](#model-comparisons)
+25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+26. [Multi-Transform Parallelization](#multi-transform-parallelization)
+27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
+32. [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -796,9 +797,48 @@ Full sweep tables, the `bbce_compressed_grad` toggle, and the bc=1M OOM analysis
 
 Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
 
-`x → Decompose → FWHT → Mixer1 → Mixer2 → ... → MixerN → iFWHT → Reconstruct → x'`
+`x → Decompose → FWHT → Mixer₁ → Mixer₂ → ... → Mixer_N → iFWHT → Reconstruct → x'`
 
-This could be by either repeating the same mixer N times (most likely), or having N different mixers. The same mixer repeated N times could benefit from expansion of `per_scale_mixer_widths` per our [previous mixer width expansion results](#done-per-scale-mixer-width-contraction-and-expansion), depending on the dataset size. On the other hand, different mixers naturally adds more parameters. Training stability is dependent on the outcome of optimizer tests, degree of per-scale mixer width expansion, and the number of mixers used.
+Two parameters control the sweep:
+
+- **N = `mixer_recurrence_steps`** — total mixer applications per pass through the block.
+- **K = `mixer_recurrence_distinct_mixer_count`** — distinct per-scale mixer banks, with K ∈ [1, N]. At step `r`, bank `r mod K` is used.
+
+| K relative to N | Meaning | Param cost |
+|---|---|---|
+| K = 1 | One shared bank reused N times | none |
+| K = N | Each step gets its own bank | (N − 1)× mixer params |
+| 1 < K < N | K banks cycled across N steps (e.g., N=5, K=2 → m₀,m₁,m₀,m₁,m₀) | (K − 1)× mixer params |
+
+Mutually exclusive with `untied_reconstruction` (recurrence relies on `Reconstruct ∘ Decompose = I`); also requires `mixer_depth == 1` to avoid combinatorial expansion of the mixer body.
+
+**Wall-clock cost.** The mixer is roughly **~55%** of per-block forward+backward compute at T2, so total time ≈ `(1 + (N − 1) · 0.55) × baseline`. T3 baseline at 1 epoch is ~1.84h:
+
+| N | Cost factor | Wall-clock (1ep) |
+|---|---|---|
+| 2 | ~1.55× | ~2.8h |
+| 5 | ~3.20× | ~5.9h |
+| 10 | ~5.95× | ~10.9h |
+| 20 | ~11.45× | ~21h |
+
+K is free in wall-clock (same total mixer applications) but multiplies the mixer-only param subset by K.
+
+**Sweep (1 epoch each, ordered cost-ascending; reference row = T3 baseline at N=K=1).**
+
+| Run | N | K | Mode | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train Time | Train VRAM | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|
+| T3 baseline (N=1, K=1) | 1 | 1 | — | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h | 8,065 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| T3 + recur N=2 K=1 | 2 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=2 K=2 | 2 | 2 | distinct | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=1 | 5 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=2 | 5 | 2 | cyclic | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=5 | 5 | 5 | distinct | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=10 K=1 | 10 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=20 K=1 | 20 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
+
+**Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win. Total queue budget if every cell runs: ~55h (~2.3 days continuous on a single A40).
+
+**What each row tests.** The N=1..20, K=1 shared column probes the *fixed-point dynamics* of repeatedly applying the same mixer — does it converge to a useful attractor, oscillate, or wash out? The K=N distinct rows at N ∈ {2, 5} test whether decoupled mixers behave as a "deeper architecture" or just over-parameterize. The N=5, K=2 cyclic cell is the cheap interpolation: minimal extra params (one extra bank) with a recurring two-state structure that mirrors a small RNN unrolled.
 
 Other recurrence approaches likely exist, but this section will only test the mixer.
 
@@ -819,6 +859,20 @@ T2's default `lr=0.01` was inherited from earlier baselines. Sequential block or
 | Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
 
 Δ best val of **−0.0536 nats is ~36× the noise threshold** — unambiguous win at near-zero compute cost. **T3 = T2 + lr=0.015** is the new baseline (or **T3 = T2 + lr=0.015 + BBCE** if BBCE shows a stack-on win). A lr=0.020 canary is queued to confirm 0.015 isn't undershooting; at sufficiently high LR Adagrad's accumulator dynamics may change qualitatively. The BBCE sweep stays at lr=0.01 for apples-to-apples comparison; winners get re-run at the locked LR as part of T3 consolidation.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### New T3 Baseline
+
+Establishing a new baseline of T2 using lr = 0.015 (without the BBCE). Comparison table:
+
+| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
+|---|---|---|---|---|---|---|
+| T2 baseline (lr=0.01) | 3.5881 | 1.1541 | 36.79 | 1.83h | 7,788 MiB | 3,258 MiB |
+| T2 + lr=0.015 | **3.5345** | **1.1362** | **34.79** | 1.84h | 8,065 MiB | 3,258 MiB |
+| Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

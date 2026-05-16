@@ -889,3 +889,101 @@ echo "=== Watch vs Rainman baseline (3.66 best val). If lower by > 0.0015 nats,"
 echo "===   that mode's architectural premise carries useful signal."
 echo "=== See tools/two_d_wavelets.py and plans/two_d_wavelet_sequential_training.md."
 echo "============================================================"
+
+
+# ---- Mixer recurrence sweep (T3 + N x K) ------------------------------------
+# Tests the "mixer-only recurrence" architectural feature: apply the per-scale
+# mixer stack N times in a row inside one wavelet+FWHT pipeline before
+# reconstruction. Wavelet decompose/reconstruct and FWHT/iFWHT are inverses,
+# so the only thing that repeats is the mixer body.
+#
+# Two parameters:
+#   N = mixer_recurrence_steps               — total mixer applications
+#   K = mixer_recurrence_distinct_mixer_count — distinct per-scale banks; K
+#                                               must be in [1, N]. Step r
+#                                               uses bank `r % K`.
+# K = 1   : one shared mixer reused N times (no extra params; pure compute).
+# K = N   : every step gets its own bank (N x mixer params; full distinct).
+# 1<K<N   : cyclic — K banks rotating across N steps.
+#
+# All runs build on T3 (= T2 + lr=0.015 + min_lr=0.0003). Reference row in
+# the README "Recurrence (Mixer Only)" section is the T3 baseline at N=K=1
+# (best val 3.5345). Decision rule: a recurrence variant must clear T3 best
+# val (3.5345) by > 0.0015 (noise threshold) to be considered a win.
+#
+# Wall-clock estimate (mixer is ~55% of per-block forward+backward at T2):
+# total_factor ≈ 1 + (N - 1) * 0.55, multiplied by T3 baseline ~1.84h.
+#   N=2:  ~1.55x = ~2.8h
+#   N=5:  ~3.20x = ~5.9h
+#   N=10: ~5.95x = ~10.9h
+#   N=20: ~11.45x = ~21h
+# K (distinct mixer count) is free in compute but multiplies mixer-only param
+# count by K (other params unchanged). T2 mixer-only is ~40-80M params, so
+# K=5 adds ~160-320M and K=10 would add ~360-720M.
+#
+# Sweep ordered cost-ascending so the schedule can be cancelled midstream if
+# early canaries (N=2) already diverge or plateau.
+
+# Run R1: N=2, K=1 (shared) — cheapest canary.
+run_ablation "T3_recur_N2_K1_1ep T3 + mixer recurrence N=2 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T3_recur_N2_K1_1ep: T3 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock)"
+
+# Run R2: N=2, K=2 (full distinct at N=2).
+run_ablation "T3_recur_N2_K2_1ep T3 + mixer recurrence N=2 K=2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2}' \
+    "T3_recur_N2_K2_1ep: T3 + mixer recurrence (N=2 steps, K=2 full distinct; +1x mixer params vs T3)"
+
+# Run R3: N=5, K=1 (shared).
+run_ablation "T3_recur_N5_K1_1ep T3 + mixer recurrence N=5 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T3_recur_N5_K1_1ep: T3 + mixer recurrence (N=5 steps, K=1 shared bank; ~3.2x wall-clock)"
+
+# Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
+run_ablation "T3_recur_N5_K2_1ep T3 + mixer recurrence N=5 K=2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2}' \
+    "T3_recur_N5_K2_1ep: T3 + mixer recurrence (N=5 steps, K=2 cyclic; banks alternate m0,m1,m0,m1,m0; +1x mixer params)"
+
+# Run R5: N=5, K=5 (full distinct at N=5).
+run_ablation "T3_recur_N5_K5_1ep T3 + mixer recurrence N=5 K=5 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 5}' \
+    "T3_recur_N5_K5_1ep: T3 + mixer recurrence (N=5 steps, K=5 full distinct; +4x mixer params)"
+
+# Run R6: N=10, K=1 (shared, substantive depth).
+run_ablation "T3_recur_N10_K1_1ep T3 + mixer recurrence N=10 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T3_recur_N10_K1_1ep: T3 + mixer recurrence (N=10 steps, K=1 shared bank; ~5.95x wall-clock)"
+
+# Run R7: N=20, K=1 (shared, deep). Conditional canary for "does it keep
+# climbing?"; if N=10 already plateaus/regresses, skip.
+run_ablation "T3_recur_N20_K1_1ep T3 + mixer recurrence N=20 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T3_recur_N20_K1_1ep: T3 + mixer recurrence (N=20 steps, K=1 shared bank; ~11.45x wall-clock, ~21h)"
+
+
+echo ""
+echo "============================================================"
+echo "=== MIXER RECURRENCE QUEUE (T3 + N x K sweep, 1ep each)"
+echo "==="
+echo "=== All runs build on T3 (= T2 + lr=0.015). Reference: T3 baseline"
+echo "===   best val 3.5345 (BPB 1.1362) — see New T3 Baseline section in"
+echo "===   README. Decision rule: > 0.0015 nat improvement on best val."
+echo "==="
+echo "=== Queue (cost-ascending; cancellable midstream):"
+echo "===   1) T3_recur_N2_K1_1ep    — N=2  K=1  shared,   ~2.8h"
+echo "===   2) T3_recur_N2_K2_1ep    — N=2  K=2  distinct, ~2.8h, +1x mixer params"
+echo "===   3) T3_recur_N5_K1_1ep    — N=5  K=1  shared,   ~5.9h"
+echo "===   4) T3_recur_N5_K2_1ep    — N=5  K=2  cyclic,   ~5.9h, +1x mixer params"
+echo "===   5) T3_recur_N5_K5_1ep    — N=5  K=5  distinct, ~5.9h, +4x mixer params"
+echo "===   6) T3_recur_N10_K1_1ep   — N=10 K=1  shared,   ~10.9h"
+echo "===   7) T3_recur_N20_K1_1ep   — N=20 K=1  shared,   ~21h (cancel if N=10 plateaus)"
+echo "==="
+echo "=== Total budget if all run: ~55h (~2.3 days continuous)."
+echo "============================================================"
