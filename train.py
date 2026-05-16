@@ -23,6 +23,7 @@ import random
 import shutil
 import argparse
 import datetime
+import subprocess
 
 # Silence HuggingFace per-file download progress bars before importing datasets.
 # Streaming PG-19 emits one bar per book file (~28K bars total), which spams
@@ -1025,6 +1026,17 @@ def train():
         if not k.startswith("__"):
             logger.log(f"\t{k.ljust(max_len + 1)}: {v}")
     logger.log("")
+
+    if device == 'cuda':
+        try:
+            gpu_name = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                text=True,
+            ).strip()
+            if gpu_name:
+                logger.log(f"[GPU] {gpu_name}")
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
 
     # Load dataset
     train_data, val_data, test_data, enc, bytes_per_token = load_and_encode_dataset(config, logger)
