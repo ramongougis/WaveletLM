@@ -1319,6 +1319,7 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_residuals: bool = False,
         mixer_recurrence_steps: int = 1,
         mixer_recurrence_distinct_mixer_count: int = 1,
+        mixer_recurrence_residuals: bool = True,
         per_layer_embedding: bool = False,
         fht_input_cap_enabled: bool = False,
         fht_input_cap_value: float = 1000.0,
@@ -1509,18 +1510,27 @@ class WaveletLMBlock(nn.Module):
         S = self.s_effective
         self.mixer_depth = mixer_depth
 
-        # Mixer recurrence — N applications of the mixer stage between FWHT and
-        # iFWHT, exploiting that Decompose/Reconstruct are inverses (so identity
-        # cancels except for the mixer body). Two parameters control the sweep:
-        #   N = mixer_recurrence_steps           — total number of applications
-        #   K = mixer_recurrence_distinct_mixer_count
-        #                                        — number of distinct per-scale
-        #                                          mixer banks; K must be in [1, N].
-        # At step r ∈ [0, N), bank `r % K` is used. K=1 reuses one bank N times
-        # (no extra params); K=N gives each step its own bank (N× mixer params);
-        # 1 < K < N cycles K banks across N steps (intermediate compromise).
+        # Mixer recurrence — apply the mixer stage multiple times between FWHT
+        # and iFWHT, exploiting that Decompose/Reconstruct are inverses (so
+        # identity cancels except for the mixer body). Two parameters control:
+        #   N = mixer_recurrence_steps                — outer loop count
+        #   K = mixer_recurrence_distinct_mixer_count — distinct per-scale
+        #                                               mixer banks per cycle
+        # Semantics: a single "cycle" applies bank 0, bank 1, ..., bank K-1
+        # in sequence. The cycle is repeated N times. Total mixer applications
+        # per block = N * K. K=1: one shared bank reused N times (no extra
+        # params). K>1: K independent banks (K-1 extra mixer-only banks
+        # allocated); the K-sequence repeats N times.
+        #
+        # mixer_recurrence_residuals: when True (default), each mixer
+        # application inside the recurrence loop adds a residual connection
+        # (Y_step = X_step + mixer(X_step)) to prevent representation collapse
+        # over many recurrent steps (cf. ALBERT, Universal Transformers).
+        # Only applied when N*K > 1 — preserves baseline behavior when no
+        # recurrence is active (default N=K=1).
         self.mixer_recurrence_steps = int(mixer_recurrence_steps)
         self.mixer_recurrence_distinct_mixer_count = int(mixer_recurrence_distinct_mixer_count)
+        self.mixer_recurrence_residuals = bool(mixer_recurrence_residuals)
         if self.mixer_recurrence_steps < 1:
             raise ValueError(
                 f"mixer_recurrence_steps must be >= 1, got {self.mixer_recurrence_steps}"
@@ -1530,22 +1540,22 @@ class WaveletLMBlock(nn.Module):
                 "mixer_recurrence_distinct_mixer_count must be >= 1, "
                 f"got {self.mixer_recurrence_distinct_mixer_count}"
             )
-        if self.mixer_recurrence_distinct_mixer_count > self.mixer_recurrence_steps:
-            raise ValueError(
-                "mixer_recurrence_distinct_mixer_count "
-                f"({self.mixer_recurrence_distinct_mixer_count}) must be <= "
-                f"mixer_recurrence_steps ({self.mixer_recurrence_steps})."
-            )
-        if self.mixer_recurrence_steps > 1:
-            if mixer_depth != 1:
+        # N and K are independent under the new nested-loop semantics.
+        # Constraints below apply when recurrence is actually active.
+        recurrence_active = (
+            self.mixer_recurrence_steps > 1
+            or self.mixer_recurrence_distinct_mixer_count > 1
+        )
+        if recurrence_active:
+            if self.mixer_recurrence_distinct_mixer_count > 1 and mixer_depth != 1:
                 raise ValueError(
-                    "mixer_recurrence_steps > 1 requires mixer_depth == 1 "
-                    f"(got mixer_depth={mixer_depth}). Stack recurrence on a "
-                    "depth-1 mixer rather than combining the two."
+                    "mixer_recurrence_distinct_mixer_count > 1 requires "
+                    f"mixer_depth == 1 (got mixer_depth={mixer_depth}); K-distinct "
+                    "banks are only allocated for the depth-1 mixer path."
                 )
             if untied_reconstruction:
                 raise ValueError(
-                    "mixer_recurrence_steps > 1 is mutually exclusive with "
+                    "Mixer recurrence is mutually exclusive with "
                     "untied_reconstruction: recurrence relies on "
                     "Reconstruct ∘ Decompose = I, which untied breaks."
                 )
@@ -1610,9 +1620,10 @@ class WaveletLMBlock(nn.Module):
                 ])
 
             # Mixer recurrence with K > 1: allocate (K - 1) additional mixer
-            # banks. Step 0 always uses self.scale_mixers; subsequent steps cycle
-            # through self.scale_mixers and the K-1 extras via index `r % K`,
-            # so step r uses bank (r % K). K=1 (default) allocates nothing.
+            # banks. Bank 0 is self.scale_mixers; banks 1..K-1 live in
+            # self.scale_mixers_recurrent_extra[0..K-2]. The K-sequence (bank
+            # 0, 1, ..., K-1) repeats N times in forward(). K=1 allocates
+            # nothing — the same single bank is reused N times.
             if self.mixer_recurrence_distinct_mixer_count > 1:
                 extra_banks = []
                 for _ in range(self.mixer_recurrence_distinct_mixer_count - 1):
@@ -1814,57 +1825,69 @@ class WaveletLMBlock(nn.Module):
         stacked_spec = self.fht(stacked_coeffs)
 
         # Per-scale spectral mixing (with optional depth stacking and optional
-        # recurrence — N applications of the mixer cascade between FWHT and
-        # iFWHT, see mixer_recurrence_steps / mixer_recurrence_mode).
+        # recurrence — total N*K applications of the mixer between FWHT and
+        # iFWHT, see mixer_recurrence_steps / mixer_recurrence_distinct_mixer_count).
         if self.mixer_depth == 1:
             current_spec = stacked_spec
+            N = self.mixer_recurrence_steps
             K = self.mixer_recurrence_distinct_mixer_count
-            for r in range(self.mixer_recurrence_steps):
-                # Cycle through K distinct banks. Bank 0 is self.scale_mixers;
-                # banks 1..K-1 are scale_mixers_recurrent_extra[0..K-2].
-                # K=1 always picks bank 0 (shared); K=N picks a new bank each
-                # step (fully distinct); intermediate K cycles.
-                bank_idx = r % K
-                if bank_idx == 0:
-                    step_mixers = self.scale_mixers
-                else:
-                    step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
-                # Recompute gate routing from the current spectral state
-                # so each recurrence step gates on its own input.
-                if self.cross_scale_gating:
-                    routed_gate_input = torch.einsum(
-                        'rs,btsd->btrd', self.scale_routing, current_spec)
-                else:
-                    routed_gate_input = None
-                mixed_by_scale = []
-                for s in range(S):
-                    Xs = current_spec[:, :, s, :]
-                    Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
-                    Ys = step_mixers[s](Xs, gate_input=Gs)
-                    mixed_by_scale.append(Ys)
-                current_spec = torch.stack(mixed_by_scale, dim=2)
+            # Apply residual at every recurrent step (Y = X + mixer(X)) when
+            # recurrence is active. Without it, chaining identical or repeated
+            # layers can cause representation collapse over many steps.
+            # Preserves baseline (N=K=1) behavior when no recurrence is active.
+            apply_residual = self.mixer_recurrence_residuals and (N * K > 1)
+            # Outer loop: repeat the K-bank cycle N times.
+            # Inner loop: apply each of the K distinct banks once per cycle.
+            for _ in range(N):
+                for bank_idx in range(K):
+                    if bank_idx == 0:
+                        step_mixers = self.scale_mixers
+                    else:
+                        step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
+                    # Recompute gate routing from the current spectral state
+                    # so each step gates on its own input.
+                    if self.cross_scale_gating:
+                        routed_gate_input = torch.einsum(
+                            'rs,btsd->btrd', self.scale_routing, current_spec)
+                    else:
+                        routed_gate_input = None
+                    mixed_by_scale = []
+                    for s in range(S):
+                        Xs = current_spec[:, :, s, :]
+                        Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
+                        Ys = step_mixers[s](Xs, gate_input=Gs)
+                        mixed_by_scale.append(Xs + Ys if apply_residual else Ys)
+                    current_spec = torch.stack(mixed_by_scale, dim=2)
             mixed_spec = current_spec
         else:
-            mixed_spec = stacked_spec
-            for d in range(self.mixer_depth):
-                depth_mixers = self.scale_mixers_by_depth[d]
-                mixed_by_scale = []
-                for s in range(S):
-                    Xs = mixed_spec[:, :, s, :]
-                    if d < self.mixer_depth - 1:
-                        # Intermediate: LN + mixer(+bias)
-                        Xs_normed = self.mixer_depth_norms[d][s](Xs)
-                        if self.mixer_depth_stabilizers:
-                            Xs_normed = self.mixer_depth_betas[d] * Xs_normed
-                        Ys = depth_mixers[s](Xs_normed)
-                        if self.mixer_depth_stabilizers:
-                            Ys = self.mixer_depth_alphas[d] * Ys
-                        mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
-                    else:
-                        # Final: raw mixer, no LN, no bias
-                        Ys = depth_mixers[s](Xs)
-                        mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
-                mixed_spec = torch.stack(mixed_by_scale, dim=2)
+            # Depth > 1: the entire depth cascade is the unit that recurs.
+            # K > 1 is disallowed at depth > 1 (no per-bank allocation), so
+            # the only recurrence parameter that matters here is N.
+            current_spec = stacked_spec
+            for _ in range(self.mixer_recurrence_steps):
+                mixed_spec = current_spec
+                for d in range(self.mixer_depth):
+                    depth_mixers = self.scale_mixers_by_depth[d]
+                    mixed_by_scale = []
+                    for s in range(S):
+                        Xs = mixed_spec[:, :, s, :]
+                        if d < self.mixer_depth - 1:
+                            # Intermediate: LN + mixer(+bias)
+                            Xs_normed = self.mixer_depth_norms[d][s](Xs)
+                            if self.mixer_depth_stabilizers:
+                                Xs_normed = self.mixer_depth_betas[d] * Xs_normed
+                            Ys = depth_mixers[s](Xs_normed)
+                            if self.mixer_depth_stabilizers:
+                                Ys = self.mixer_depth_alphas[d] * Ys
+                            mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
+                        else:
+                            # Final: raw mixer, no LN, no bias
+                            Ys = depth_mixers[s](Xs)
+                            mixed_by_scale.append(Xs + Ys if self.mixer_depth_residuals else Ys)
+                    mixed_spec = torch.stack(mixed_by_scale, dim=2)
+                # Feed the cascade output back as input for the next recurrence pass.
+                current_spec = mixed_spec
+            mixed_spec = current_spec
 
         # Apply same cap to inverse FWHT input (mixer output) so the inverse
         # FWHT output is bounded the same way the forward FWHT output is.
@@ -2231,6 +2254,9 @@ class WaveletLM(nn.Module):
                 mixer_recurrence_steps=config.get("mixer_recurrence_steps", 1),
                 mixer_recurrence_distinct_mixer_count=config.get(
                     "mixer_recurrence_distinct_mixer_count", 1
+                ),
+                mixer_recurrence_residuals=config.get(
+                    "mixer_recurrence_residuals", True
                 ),
                 per_layer_embedding=config.get("per_layer_embedding", False),
                 fht_input_cap_enabled=config.get("fht_input_cap_enabled", False),

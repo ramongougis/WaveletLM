@@ -799,46 +799,49 @@ Due to wavelet decomposition and reconstruction being inverses of each other, an
 
 `x → Decompose → FWHT → Mixer₁ → Mixer₂ → ... → Mixer_N → iFWHT → Reconstruct → x'`
 
-Two parameters control the sweep:
+Three parameters control the sweep:
 
-- **N = `mixer_recurrence_steps`** — total mixer applications per pass through the block.
-- **K = `mixer_recurrence_distinct_mixer_count`** — distinct per-scale mixer banks, with K ∈ [1, N]. At step `r`, bank `r mod K` is used.
+- **N = `mixer_recurrence_steps`** — outer-loop count.
+- **K = `mixer_recurrence_distinct_mixer_count`** — distinct per-scale mixer banks per cycle.
+- **`mixer_recurrence_residuals`** (bool, default `true`) — add a residual `X + mixer(X)` at every recurrent step to prevent representation collapse over many applications. Only applied when N×K > 1; at the default N=K=1 the residual is skipped to preserve baseline behavior.
 
-| K relative to N | Meaning | Param cost |
-|---|---|---|
-| K = 1 | One shared bank reused N times | none |
-| K = N | Each step gets its own bank | (N − 1)× mixer params |
-| 1 < K < N | K banks cycled across N steps (e.g., N=5, K=2 → m₀,m₁,m₀,m₁,m₀) | (K − 1)× mixer params |
+**Semantics** (nested loops): one cycle applies bank 0, bank 1, …, bank K−1 in sequence, and the cycle repeats N times. Total mixer applications per block = **N × K**.
 
-Mutually exclusive with `untied_reconstruction` (recurrence relies on `Reconstruct ∘ Decompose = I`); also requires `mixer_depth == 1` to avoid combinatorial expansion of the mixer body.
+| (N, K) shape | Meaning | Param cost | Total applications |
+|---|---|---|---|
+| K = 1 | One shared bank reused N times | none | N |
+| K > 1 | K independent banks; sequence repeats N times | (K − 1)× mixer-only params | N × K |
 
-**Wall-clock cost.** The mixer is roughly **~55%** of per-block forward+backward compute at T2, so total time ≈ `(1 + (N − 1) · 0.55) × baseline`. T3 baseline at 1 epoch is ~1.84h:
+Mutually exclusive with `untied_reconstruction` (recurrence relies on `Reconstruct ∘ Decompose = I`). K > 1 additionally requires `mixer_depth == 1` (banks are only allocated for the depth-1 mixer path); N > 1 works at any depth — the depth cascade itself is wrapped in the N-loop.
 
-| N | Cost factor | Wall-clock (1ep) |
-|---|---|---|
-| 2 | ~1.55× | ~2.8h |
-| 5 | ~3.20× | ~5.9h |
-| 10 | ~5.95× | ~10.9h |
-| 20 | ~11.45× | ~21h |
+**Wall-clock cost.** The mixer is roughly **~55%** of per-block forward+backward compute at T2, so total time ≈ `(1 + (N·K − 1) · 0.55) × baseline`. T3 baseline at 1 epoch is ~1.84h:
 
-K is free in wall-clock (same total mixer applications) but multiplies the mixer-only param subset by K.
+| N | K | Total apps | Cost factor | Wall-clock (1ep, 5090) |
+|---|---|---|---|---|
+| 2 | 1 | 2 | ~1.55× | ~2.8h |
+| 2 | 2 | 4 | ~2.65× | ~4.9h |
+| 5 | 1 | 5 | ~3.20× | ~5.9h |
+| 5 | 2 | 10 | ~5.95× | ~10.9h |
+| 10 | 1 | 10 | ~5.95× | ~10.9h |
+| 20 | 1 | 20 | ~11.45× | ~21h |
+
+(On A5000, multiply each by roughly 1.9× — see A5000 vs 5090 throughput note in the BBCE/optimizer-sweep context.)
 
 **Sweep (1 epoch each, ordered cost-ascending; reference row = T3 baseline at N=K=1).**
 
-| Run | N | K | Mode | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train Time | Train VRAM | Run Log |
-|---|---|---|---|---|---|---|---|---|---|---|
-| T3 baseline (N=1, K=1) | 1 | 1 | — | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h | 8,065 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
-| T3 + recur N=2 K=1 | 2 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=2 K=2 | 2 | 2 | distinct | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=1 | 5 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=2 | 5 | 2 | cyclic | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=5 | 5 | 5 | distinct | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=10 K=1 | 10 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=20 K=1 | 20 | 1 | shared | queued | queued | queued | — | queued | queued | queued |
+| Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train Time | Train VRAM | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| T3 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h | 8,065 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| T3 + recur N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
 
-**Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win. Total queue budget if every cell runs: ~55h (~2.3 days continuous on a single A40).
+**Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win.
 
-**What each row tests.** The N=1..20, K=1 shared column probes the *fixed-point dynamics* of repeatedly applying the same mixer — does it converge to a useful attractor, oscillate, or wash out? The K=N distinct rows at N ∈ {2, 5} test whether decoupled mixers behave as a "deeper architecture" or just over-parameterize. The N=5, K=2 cyclic cell is the cheap interpolation: minimal extra params (one extra bank) with a recurring two-state structure that mirrors a small RNN unrolled.
+**What each row tests.** The N ∈ {2, 5, 10, 20}, K=1 column probes the *fixed-point dynamics* of repeatedly applying the same mixer — does it converge to a useful attractor, oscillate, or collapse? Per-step residuals (`mixer_recurrence_residuals=true`) prevent representation collapse over many steps, mirroring the design of Universal Transformers / ALBERT. The N=2, K=2 distinct cell tests whether two fully-decoupled banks (4 total apps) behave as a "deeper architecture" or just over-parameterize. The N=5, K=2 cyclic cell is the cheap diversification: one extra bank, two-state recurrent structure across 10 apps.
 
 Other recurrence approaches likely exist, but this section will only test the mixer.
 
