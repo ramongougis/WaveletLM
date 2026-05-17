@@ -17,15 +17,14 @@
 
 <br>
 
-WaveletLM is an autoregressive language model in the "wavelet-as-attention-replacement" domain which explores a direction pioneered by Andrew Kiruluta et al. (2025)[^1]. Specifically, this work builds on:
+WaveletLM is a generative, causal, and attention-free language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1] in the following papers:
 
-- **Wavelet Logic Machines (WLM)**: wavelet-based classification ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
-- **Learnable Multi-Scale Wavelet Transformer (LMWT)**: a replacement for attention which uses wavelets for machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
-- **Breaking Quadratic Barriers**: non-attention LLM for long context, specifically regarding mean chunking and pooling ([arXiv:2506.01963](https://arxiv.org/abs/2506.01963))
+- **Wavelet Logic Machines**: wavelet-based classification on fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
+- **Learnable Multi-Scale Wavelet Transformer (LMWT)**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
 
-WaveletLM extends WLM to autoregressive language modeling at scale (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) below, and further parameter reductions and improvements demonstrated in the [Future Plans](#future-plans) section.
+WaveletLM extends the Wavelet Logic Machine from classification to autoregressive language modeling (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) section below, and further parameter reductions and improvements demonstrated in the [Future Plans](#future-plans) portion.
 
-The model uses a learned embedding and mixes tokens through learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixing with SwiGLU activation, an inverse FWHT, and wavelet reconstruction. Combined with expanded MLPs and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length.
+It uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixer with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with a 2-layer, expanded width MLP and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
 
 Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WT-103 than Transformer-XL and GPT-2. 
 
@@ -377,7 +376,7 @@ Note the typical failure mode with the naive generation: register-coherent meteo
   <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="80%"/>
 </p>
 
-The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kirulata et al's Learnable Multi-Scale Wavelet Transformer[^2]. WaveletLM extends that direction with several architectural additions described below: lifting wavelets parameterized as learned predict/update MLPs (rather than the per-dimension scalar mixing coefficients in LMWT's Haar formulation), a per-scale gated spectral mixer over a Walsh-Hadamard basis, decompose-bypass, sparse product-key memory integrated per-layer, and a bisected compressed-context mechanism for long inputs.
+The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kiruluta et al's Learnable Multi-Scale Wavelet Transformer[^2]. WaveletLM extends that direction with several architectural additions described below: lifting wavelets parameterized as learned predict/update MLPs (rather than the per-dimension scalar mixing coefficients in LMWT's Haar formulation), a per-scale gated spectral mixer over a Walsh-Hadamard basis, decompose-bypass, sparse product-key memory integrated per-layer, and a bisected compressed-context mechanism for long inputs.
 
 ### Key Components
 
@@ -1138,7 +1137,7 @@ Apache License 2.0
 
 ## References
 
-[^1]: Kiruluta. "Wavelet Logic Machines: Learning and Reasoning in the Spectral Domain Without Neural Networks." [arXiv:2507.19514](https://arxiv.org/abs/2507.19514), 2025. (WLM; classification-focused with frozen pretrained embeddings.)
+[^1]: Kiruluta. "Wavelet Logic Machines: Learning and Reasoning in the Spectral Domain Without Neural Networks." [arXiv:2507.19514](https://arxiv.org/abs/2507.19514), 2025. (classification-focused with frozen pretrained embeddings.)
 [^2]: Kiruluta, Burity, and Williams. "Learnable Multi-Scale Wavelet Transformer: A Novel Alternative to Self-Attention." [arXiv:2504.08801](https://arxiv.org/abs/2504.08801), 2025. (LMWT; encoder-decoder MT model using learnable Haar wavelet coefficients in place of self-attention. Closest published prior to WaveletLM's direction.)
 [^3]: Kiruluta, Raju, and Burity. "Breaking Quadratic Barriers: A Non-Attention LLM for Ultra-Long Context Horizons." [arXiv:2506.01963](https://arxiv.org/abs/2506.01963), 2025. (Non-attention LLM on WikiText-103 / Enwik8 using SSM + multi-resolution convolution + RNN supervisor + retrieval — different primitives, same task as WaveletLM.)
 
