@@ -24,7 +24,7 @@ WaveletLM is a generative, causal, and attention-free language model based upon 
 
 WaveletLM extends the Wavelet Logic Machine from classification to autoregressive language modeling (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) section below, and further parameter reductions and improvements demonstrated in the [Future Plans](#future-plans) portion.
 
-It uses a learned embedding and mixes tokens with causal masking via learned lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixer with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with a 2-layer, expanded width MLP and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
+It uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixer with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with a 2-layer, expanded width MLP and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
 
 Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WT-103 than Transformer-XL and GPT-2. 
 
