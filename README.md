@@ -22,7 +22,7 @@ WaveletLM is a generative, attention-free language model based upon the architec
 - **Wavelet Logic Machines**: wavelet-based classification on fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
 - **Learnable Multi-Scale Wavelet Transformer (LMWT)**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
 
-WaveletLM extends the Wavelet Logic Machine from classification to autoregressive language modeling (currently, 392M parameters on WikiText-103 and PG-19), with architectural additions detailed in the [Architecture](#architecture) section below, and further parameter reductions and improvements demonstrated in the [Future Plans](#future-plans) portion.
+WaveletLM adapts the Wavelet Logic Machine's approach to autoregressive language modeling with the components detailed in the [Architecture](#architecture) section below. Furthermore, a planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters achieved by our [benchmark results](#results) while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
 
 It uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixer with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with a 2-layer, width-expanded MLP and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
 
