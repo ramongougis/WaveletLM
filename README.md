@@ -17,7 +17,7 @@
 
 <br>
 
-WaveletLM is a generative, causal, and attention-free language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1] in the following papers:
+WaveletLM is a generative, attention-free language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1] in the following papers:
 
 - **Wavelet Logic Machines**: wavelet-based classification on fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
 - **Learnable Multi-Scale Wavelet Transformer (LMWT)**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
