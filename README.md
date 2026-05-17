@@ -859,14 +859,19 @@ Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step
 
 **LR sweep (1 epoch each, T3 architecture base):**
 
-| Run | lr | min_lr | betas | eps | weight_decay | amsgrad | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T3 baseline (Adagrad ref) | 0.015 | 0.0003 | — | — | — | — | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
-| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | 1.1539 | 36.77 | 3.5822 | +0.048 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_04-46-42/log.txt) |
-| AdamW A2 | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
-| AdamW A3 (default) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
-| AdamW A4 | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
-| AdamW A5 | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+**Note on precision:** A1 ran in fp16 (stable). A2 (fp16) diverged to NaN from step 27,250 onward — best val 4.0270 at step 27,000 before permanent optimizer-state corruption. Root cause: fp16 activation overflow (ceiling ~65,504) at peak LR ~3.16e-4; AdamW's exponential second-moment (`v_t`) accumulated NaN and could not self-correct. A3–A5 switched to **bf16** (`amp_dtype: bfloat16`), which shares fp32's exponent range (±3.4×10³⁸) and eliminates overflow as a failure mode. GradScaler is automatically disabled for bf16. A1 may be re-run in bf16 for a clean apples-to-apples comparison once A3–A5 confirm stability.
+
+| Run | lr | min_lr | betas | eps | weight_decay | amsgrad | amp_dtype | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T3 baseline (Adagrad ref) | 0.015 | 0.0003 | — | — | — | — | fp16 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | fp16 | 1.1539 | 36.77 | 3.5822 | +0.048 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_04-46-42/log.txt) |
+| AdamW A2 | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | fp16 | NaN† | NaN† | 4.0270‡ | — | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_09-57-10/log.txt) |
+| AdamW A3 (default) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | queued | queued | queued | — | queued | — |
+| AdamW A4 | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | queued | queued | queued | — | queued | — |
+| AdamW A5 | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | queued | queued | queued | — | queued | — |
+
+† Benchmark invalid — permanent NaN from step 27,250 due to fp16 overflow corrupting `v_t`.  
+‡ Best val before divergence (step 27,000); not comparable to completed runs.
 
 After the LR sweep, subsequent sweeps will cover `betas`, `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
 
