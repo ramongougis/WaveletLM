@@ -376,7 +376,7 @@ Note the typical failure mode with the naive generation: register-coherent meteo
   <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="80%"/>
 </p>
 
-The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kiruluta et al's Wavelet Logic Machines concept[^1]. WaveletLM extends that direction with several architectural additions described below: lifting wavelets parameterized as learned predict/update MLPs (rather than the per-dimension scalar mixing coefficients in LMWT's Haar formulation), a per-scale gated spectral mixer over a Walsh-Hadamard basis, decompose-bypass, sparse product-key memory integrated per-layer, and a bisected compressed-context mechanism for long inputs.
+The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kiruluta's' Wavelet Logic Machine[^1] and Kiruluta, Burity, and Williams's Learnable Multi-Scale Wavelet Transformer[^2]. WaveletLM extends this approach from sentiment classification to language modeling with several architectural additions and components, detailed below.
 
 ### Key Components
 
