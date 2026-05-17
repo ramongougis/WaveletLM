@@ -862,7 +862,7 @@ Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step
 | Run | lr | min_lr | betas | eps | weight_decay | amsgrad | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | T3 baseline (Adagrad ref) | 0.015 | 0.0003 | — | — | — | — | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
-| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | 1.1539 | 36.77 | 3.5822 | +0.048 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_04-46-42/log.txt) |
 | AdamW A2 | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
 | AdamW A3 (default) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
 | AdamW A4 | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |

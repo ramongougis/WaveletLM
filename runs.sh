@@ -26,7 +26,7 @@ git_commit_push() {
     fi
     git add . || true
     git commit --no-edit -m "${MSG}" || true
-    git pull --no-edit || true
+    git pull --no-rebase --no-edit -X theirs || true
     git push || true
 }
 
@@ -328,10 +328,10 @@ benchmark_only_run() {
 #   A5: lr=0.01        min_lr=2e-4      (T3/Adagrad LR, 10x above default)
 
 # Run A1: lr=0.0001 (lowest; 10x below AdamW default)
-run_ablation "AdamW_LR0.0001_1ep AdamW LR=0.0001 (T3 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0001, "min_lr": 2e-6}' \
-    "AdamW_LR0.0001_1ep: AdamW LR sweep (lr=0.0001, min_lr=2e-6, T3 base)"
+# run_ablation "AdamW_LR0.0001_1ep AdamW LR=0.0001 (T3 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0001, "min_lr": 2e-6}' \
+#     "AdamW_LR0.0001_1ep: AdamW LR sweep (lr=0.0001, min_lr=2e-6, T3 base)"
 
 # Run A2: lr=0.00031623 (≈ sqrt(10)/10000; one step above A1)
 run_ablation "AdamW_LR0.00031623_1ep AdamW LR=0.00031623 (T3 base)" \
