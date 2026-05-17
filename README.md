@@ -528,38 +528,40 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
-1. [(Done) Single-Layer WaveletLM with Current Best Config](#done-single-layer-waveletlm-with-current-best-config)
-2. [(Done) Parameter Reduction](#done-parameter-reduction)
-3. [(Done) Larger Block Size](#done-larger-block-size)
-4. [(Done) Per-Scale Mixer Width Contraction and Expansion](#done-per-scale-mixer-width-contraction-and-expansion)
-5. [(Done) Mixer Low Rank](#done-mixer-low-rank)
-6. [(Done) T1 Baseline Without Wavelet Crawl](#done-t1-baseline-without-wavelet-crawl)
-7. [(Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
-8. [Optimizer Sweep (Muon → AdamW)](#optimizer-sweep-muon--adamw)
-9. [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
-10. [(Shelved on WT-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-wt-103-2d-wavelet-over-batch-token-with-sequential-training)
-11. [Bisected Block Context Extension](#bisected-block-context-extension)
-12. [Recurrence (Mixer Only)](#recurrence-mixer-only)
-13. [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
-14. [New T3 Baseline](#new-t3-baseline)
-15. [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
-16. [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
-17. [Complex Wavelets](#complex-wavelets)
-18. [Dropout](#dropout)
-19. [Weight Decay](#weight-decay)
-20. [Mixer Transform Ablation](#mixer-transform-ablation)
-21. [Step-Time Speedups](#step-time-speedups)
-22. [Longer PG-19 Training](#longer-pg-19-training)
-23. [Dataset Comparisons](#dataset-comparisons)
-24. [Model Comparisons](#model-comparisons)
-25. [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-26. [Multi-Transform Parallelization](#multi-transform-parallelization)
-27. [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
-28. [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
-29. [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
-30. [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-31. [Scaled-Up Model (B200)](#scaled-up-model-b200)
-32. [Other Post-Release Plans](#other-post-release-plans)
+- [(Done) Single-Layer WaveletLM with Current Best Config](#done-single-layer-waveletlm-with-current-best-config)
+- [(Done) Parameter Reduction](#done-parameter-reduction)
+- [(Done) Larger Block Size](#done-larger-block-size)
+- [(Done) Per-Scale Mixer Width Contraction and Expansion](#done-per-scale-mixer-width-contraction-and-expansion)
+- [(Done) Mixer Low Rank](#done-mixer-low-rank)
+- [(Done) T1 Baseline Without Wavelet Crawl](#done-t1-baseline-without-wavelet-crawl)
+- [(Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
+- [Optimizer Swap (Muon)](#optimizer-swap-muon)
+- [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
+- [(Shelved on WT-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-wt-103-2d-wavelet-over-batch-token-with-sequential-training)
+- [Bisected Block Context Extension](#bisected-block-context-extension)
+- [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial)
+- [Optimizer Swap (AdamW)](#optimizer-swap-adamw)
+- [Recurrence (AdamW)](#recurrence-adamw)
+- [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
+- [New T3 Baseline](#new-t3-baseline)
+- [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
+- [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
+- [Complex Wavelets](#complex-wavelets)
+- [Dropout](#dropout)
+- [Weight Decay](#weight-decay)
+- [Mixer Transform Ablation](#mixer-transform-ablation)
+- [Step-Time Speedups](#step-time-speedups)
+- [Longer PG-19 Training](#longer-pg-19-training)
+- [Dataset Comparisons](#dataset-comparisons)
+- [Model Comparisons](#model-comparisons)
+- [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
+- [Multi-Transform Parallelization](#multi-transform-parallelization)
+- [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
+- [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
+- [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
+- [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+- [Scaled-Up Model (B200)](#scaled-up-model-b200)
+- [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -719,7 +721,7 @@ The new baseline shall be named **T2**.
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Optimizer Sweep (Muon → AdamW)
+### Optimizer Swap (Muon)
 
 **Phase 1: Muon** ([Jordan et al., 2025](https://arxiv.org/abs/2502.16982); used in DeepSeek-V4) — Newton-Schulz orthogonalization bounds every update's spectral norm, applied to the matrix-heavy MLP / mixer / lifting `Linear(C, C)`. Hybrid split: 2D non-embedding hidden weights → Muon, biases / norms / embeddings / LM head → AdamW. **Phase 2: AdamW** as fallback baseline. All runs use T2 architecture (`levels=7`, T2 mixer widths, `wavelet_crawl=true`, `bs=256`, `MBS=8`).
 
@@ -793,7 +795,7 @@ Full sweep tables, the `bbce_compressed_grad` toggle, and the bc=1M OOM analysis
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence (Mixer Only)
+### Recurrence (Adagrad, partial)
 
 Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
 
@@ -833,19 +835,50 @@ Mutually exclusive with `untied_reconstruction` (recurrence relies on `Reconstru
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | T3 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | 8,065 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
 | T3 + recur N=2 K=1 | 2 | 1 | shared | 2 | 1.1357 | 34.74 | 3.5294 | −0.0051 | 5.08h (A5000) | 7,789 MiB | [link](logs/wikitext-103_2026-05-16_10-03-55/log.txt) |
-| T3 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=2 K=2 | 2 | 2 | distinct | 4 | 1.1310 | 34.23 | 3.5162 | −0.0183 | 6.30h (A5000) | 8,910 MiB | [link](logs/wikitext-103_2026-05-16_15-25-50/log.txt) |
+| T3 + recur N=5 K=1 | 5 | 1 | shared | 5 | NaN (step 8000) | — | 4.6052‡ | — | 5.98h (A5000) | 7,789 MiB | [link](logs/wikitext-103_2026-05-16_21-47-17/log.txt) |
+| T3 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | NaN (step 250) | — | — | — | killed | 8,910 MiB | [link](logs/wikitext-103_2026-05-17_03-48-49/log.txt) |
 
-† Train time was highly affected by GPU. Baseline was trained on a 5090, but the other runs were on an A5000. May redo the baseline on an A5000 later for a clean comparison. 
+† Train time was highly affected by GPU. Baseline was trained on a 5090, but the other runs were on an A5000. May redo the baseline on an A5000 later for a clean comparison.
+‡ Best val achieved before NaN onset; value is from mid-warmup and not comparable to a full run. 
 
 **Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win.
 
 **What each row tests.** The N ∈ {2, 5, 10, 20}, K=1 column probes the *fixed-point dynamics* of repeatedly applying the same mixer — does it converge to a useful attractor, oscillate, or collapse? Per-step residuals (`mixer_recurrence_residuals=true`) prevent representation collapse over many steps, mirroring the design of Universal Transformers / ALBERT. The N=2, K=2 distinct cell tests whether two fully-decoupled banks (4 total apps) behave as a "deeper architecture" or just over-parameterize. The N=5, K=2 cyclic cell is the cheap diversification: one extra bank, two-state recurrent structure across 10 apps.
 
 Other recurrence approaches likely exist, but this section will only test the mixer.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Optimizer Swap (AdamW)
+
+Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step 8000 for N=5 K=1 and immediate NaN at step 250 for N=5 K=2. Root cause is Adagrad's accumulator-driven effective LR growth under repeated mixer applications, which amplifies any instability in the recurrent path. AdamW's moment-based updates and weight decay provide better gradient control for deep recurrence.
+
+**Config:** Same T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`). LR and weight decay TBD from a short sweep before the full recurrence run.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Recurrence (AdamW)
+
+Full recurrence sweep re-run under AdamW. Same N × K design as [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial); all rows queued pending optimizer LR tuning.
+
+**Sweep (1 epoch each, ordered cost-ascending; reference row = T3 baseline at N=K=1).**
+
+| Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train Time | Train VRAM | Run Log |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| T3 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | 8,065 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| T3 + recur N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
+| T3 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
+
+**Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -900,7 +933,7 @@ Two related ablations on the sparsity structure of the wavelet's detail coeffici
 The current implementation **ties** the wavelet reconstruct path to the decompose path: they share the same `predict_nets` and `update_nets` (perfect mathematical invertibility — decompose followed by reconstruct is exactly identity when no processing happens in between). The flag `untied_reconstruction` (already in config.json, currently `false`) would give the reconstruct path its **own** predict/update networks — same architecture, separate weights.
 
 **Trade-off:**
-- **Tied** (current): invertibility preserved. The structural identity `Reconstruct ∘ Decompose = I` is what enables [Recurrence (Mixer Only)](#recurrence-mixer-only) to express N-step recurrence as just N chained mixers (since adjacent Decompose-Reconstruct cycles cancel). Lower parameter count.
+- **Tied** (current): invertibility preserved. The structural identity `Reconstruct ∘ Decompose = I` is what enables [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial) to express N-step recurrence as just N chained mixers (since adjacent Decompose-Reconstruct cycles cancel). Lower parameter count.
 - **Untied**: reconstruct can apply learned transformations that aren't constrained to invert decomposition. More expressive — reconstruction can "fix up" the mixer's spectral output in ways the strict inverse would not allow. But the structural identity breaks, so the model's `x → Decompose → mixers → Reconstruct → x'` is no longer reducible to "mixers in a wavelet basis." Adds ~83.93M params per layer at T2 (matching the existing wavelet param count) — roughly +21% over T2.
 
 **Mutually exclusive with Recurrence (Mixer Only).** Untied reconstruction breaks the invariant that justifies "mixer only" recurrence. If both are pursued, the recurrence design has to be reformulated — either to fold the full `Decompose → ... → Reconstruct` cycle into the recurrent loop (multiplying compute by N), or to share recurrent updates only within the spectral basis with explicit care for the non-inverse reconstruct. Cleaner to commit to one direction first: test untied reconstruction as a standalone variant against T2 baseline (1-epoch at fixed compute), then decide whether to compose it with recurrence.
