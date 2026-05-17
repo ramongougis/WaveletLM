@@ -1013,7 +1013,7 @@ def train():
     set_seed(config['seed'])
     use_amp = config.get('use_amp', True)
     amp_dtype_str = config.get('amp_dtype', 'fp16')
-    amp_dtype = torch.float16 if amp_dtype_str == 'fp16' else torch.bfloat16
+    amp_dtype = torch.bfloat16 if amp_dtype_str == 'bf16' else torch.float16
     # Refresh dataset_name in case the run config overrode it
     dataset_name = config.get("dataset", "wikitext-103")
 
@@ -1159,7 +1159,7 @@ def train():
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
 
         # GradScaler for fp16 only
-        use_scaler = use_amp and amp_dtype_str == 'fp16'
+        use_scaler = use_amp and amp_dtype_str != 'bf16'
         scaler = torch.amp.GradScaler('cuda', enabled=use_scaler)
 
         # Training state
