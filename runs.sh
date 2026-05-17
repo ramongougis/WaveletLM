@@ -292,6 +292,7 @@ benchmark_only_run() {
 echo ""
 echo "============================================================"
 echo "=== MIXER RECURRENCE QUEUE (T3 + N x K sweep, 1ep each)"
+echo "=== (ALL RUNS COMMENTED OUT — Adagrad unstable at N>=5; pivoting to AdamW)"
 echo "==="
 echo "=== All runs build on T3 (= T2 + lr=0.015). Reference: T3 baseline"
 echo "===   best val 3.5345 (BPB 1.1362) — see New T3 Baseline section in"
@@ -307,3 +308,51 @@ echo "===   6) T3_recur_N20_K1_1ep   — N=20 K=1  (20 apps, shared)   ~21h (can
 echo "==="
 echo "=== Total budget if all run on 5090: ~66h (~2.8 days). On A5000: ~125h (~5.2 days)."
 echo "============================================================"
+
+
+# ---- AdamW LR sweep (T3 base, 1ep each) -------------------------------------
+# Adagrad became unstable at N >= 5 recurrence (NaN at step ~8000 for N=5 K=1,
+# immediate NaN at step 250 for N=5 K=2). Switching to AdamW for the full
+# recurrence sweep. This section finds the best LR before running recurrence.
+#
+# All other AdamW defaults held constant: betas=(0.9, 0.999), eps=1e-8,
+# weight_decay=0.01, amsgrad=False. T3 architecture patch applied to all runs
+# (levels=7, T2 mixer widths, wavelet_crawl=true). min_lr = lr/50 throughout.
+#
+# LRs sample a geometric sequence centred on the AdamW default (0.001) at
+# ±1 and ±2 steps of sqrt(10) spacing:
+#   A1: lr=0.0001      min_lr=2e-6      (10x below default)
+#   A2: lr=0.00031623  min_lr=6.3246e-6 (sqrt(10)x below default)
+#   A3: lr=0.001       min_lr=2e-5      (PyTorch AdamW default)
+#   A4: lr=0.0031623   min_lr=6.3246e-5 (sqrt(10)x above default)
+#   A5: lr=0.01        min_lr=2e-4      (T3/Adagrad LR, 10x above default)
+
+# Run A1: lr=0.0001 (lowest; 10x below AdamW default)
+run_ablation "AdamW_LR0.0001_1ep AdamW LR=0.0001 (T3 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0001, "min_lr": 2e-6}' \
+    "AdamW_LR0.0001_1ep: AdamW LR sweep (lr=0.0001, min_lr=2e-6, T3 base)"
+
+# Run A2: lr=0.00031623 (≈ sqrt(10)/10000; one step above A1)
+run_ablation "AdamW_LR0.00031623_1ep AdamW LR=0.00031623 (T3 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00031623, "min_lr": 6.3246e-6}' \
+    "AdamW_LR0.00031623_1ep: AdamW LR sweep (lr=0.00031623, min_lr=6.3246e-6, T3 base)"
+
+# Run A3: lr=0.001 (PyTorch AdamW default)
+run_ablation "AdamW_LR0.001_1ep AdamW LR=0.001 (T3 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.001, "min_lr": 2e-5}' \
+    "AdamW_LR0.001_1ep: AdamW LR sweep (lr=0.001, min_lr=2e-5, T3 base)"
+
+# Run A4: lr=0.0031623 (≈ sqrt(10)/1000; one step above default)
+run_ablation "AdamW_LR0.0031623_1ep AdamW LR=0.0031623 (T3 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0031623, "min_lr": 6.3246e-5}' \
+    "AdamW_LR0.0031623_1ep: AdamW LR sweep (lr=0.0031623, min_lr=6.3246e-5, T3 base)"
+
+# Run A5: lr=0.01 (matches Adagrad T3 LR; upper-bound canary)
+run_ablation "AdamW_LR0.01_1ep AdamW LR=0.01 (T3 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.01, "min_lr": 2e-4}' \
+    "AdamW_LR0.01_1ep: AdamW LR sweep (lr=0.01, min_lr=2e-4, T3 base)"

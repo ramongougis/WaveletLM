@@ -856,7 +856,20 @@ Other recurrence approaches likely exist, but this section will only test the mi
 
 Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step 8000 for N=5 K=1 and immediate NaN at step 250 for N=5 K=2. Root cause is Adagrad's accumulator-driven effective LR growth under repeated mixer applications, which amplifies any instability in the recurrent path. AdamW's moment-based updates and weight decay provide better gradient control for deep recurrence.
 
-**Config:** Same T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`). LR and weight decay TBD from a short sweep before the full recurrence run.
+**Config:** Same T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`). All non-LR AdamW hyperparameters held at PyTorch defaults: `betas=(0.9, 0.999)`, `eps=1e-8`, `weight_decay=0.01`, `amsgrad=False`. `min_lr = lr / 50` throughout (consistent with T3 Adagrad convention). LRs sample a geometric sequence centred on the AdamW default (0.001) at ±1 and ±2 steps of √10 spacing.
+
+**LR sweep (1 epoch each, T3 architecture base):**
+
+| Run | lr | min_lr | betas | eps | weight_decay | amsgrad | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T3 baseline (Adagrad ref) | 0.015 | 0.0003 | — | — | — | — | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+| AdamW A2 | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+| AdamW A3 (default) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+| AdamW A4 | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+| AdamW A5 | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | queued | queued | queued | — | queued | — |
+
+After the LR sweep, subsequent sweeps will cover `betas`, `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
