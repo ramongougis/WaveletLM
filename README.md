@@ -422,7 +422,7 @@ The high-level architectural premise, using learnable wavelets in place of self-
 - **Looped blocks (Universal Transformer-style)**: one shared block applied K times in place of L stacked blocks. Reduces BPB at fixed parameter count; compute is usually better spent on more epochs of the stacked model.
 
 <details>
-<summary><b>Additional optional features</b> (all configurable in <code>config.json</code>)</summary>
+<summary><b>Additional features</b> (all configurable in <code>config.json</code>)</summary>
 
 - Data-dependent EMA decompose-bypass (`decompose_bypass_ema`): σ-gated adaptive IIR replacement for the cumulative running mean. Promising at 1 epoch (-0.30 nats val loss), regressed at 5 epochs (BPB 1.0226 vs 1.0201 baseline). Rejected for release; investigation plan in [plans/ema_post_release.md](plans/ema_post_release.md).
 - Cross-layer decompose bypass state carry (`decompose_bypass_cross_window`)
@@ -539,7 +539,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [(Shelved on WikiText-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-WikiText-103-2d-wavelet-over-batch-token-with-sequential-training)
 - [Bisected Block Context Extension](#bisected-block-context-extension)
 - [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial)
-- [Optimizer Swap (AdamW)](#optimizer-swap-adamw)
+- [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
 - [Recurrence (AdamW)](#recurrence-adamw)
 - [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
 - [New T3 Baseline](#new-t3-baseline)
@@ -851,28 +851,36 @@ Other recurrence approaches likely exist, but this section will only test the mi
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Optimizer Swap (AdamW)
+### Optimizer Swap (AdamW) and Wavelet Norms
 
-Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step 8000 for N=5 K=1 and immediate NaN at step 250 for N=5 K=2. Root cause is Adagrad's accumulator-driven effective LR growth under repeated mixer applications, which amplifies any instability in the recurrent path. AdamW's moment-based updates and weight decay provide better gradient control for deep recurrence.
+Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step 8,000 for N=5 K=1 and immediate NaN at step 250 for N=5 K=2. Root cause is Adagrad's accumulator-driven effective LR growth under repeated mixer applications, which amplifies any instability in the recurrent path. AdamW's moment-based updates and weight decay provide better gradient control for deep recurrence.
 
-**Config:** Same T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`). All non-LR AdamW hyperparameters held at PyTorch defaults: `betas=(0.9, 0.999)`, `eps=1e-8`, `weight_decay=0.01`, `amsgrad=False`. `min_lr = lr / 50` throughout (consistent with T3 Adagrad convention). LRs sample a geometric sequence centred on the AdamW default (0.001) at ±1 and ±2 steps of √10 spacing.
+**Wavelet norms.** Running the AdamW LR sweep surfaced a more fundamental issue: the entire wavelet block path — decompose → FWHT → mixer → iFWHT → reconstruct — was completely unnormalized between `ln1` (block input) and `ln2` (MLP input). The FWHT is isometric and preserves magnitudes, but the learned lifting and the spectral mixer can scale activations freely, and the mixer's output flowed unchecked through wavelet reconstruction into the residual stream. At higher learning rates this produced gradient spikes that permanently corrupted AdamW's `v_t`, with NaN onset moving earlier as LR increased: step 19,250 at lr=0.001 (clip=1.0), step 25,250 at lr=0.001 (clip=0.5), and step 11,250 at lr=0.0031623 (clip=0.5) — showing that `grad_clip` alone delayed but could not prevent divergence.
+
+Two per-scale LayerNorms were added: `wavelet_decomp_norm` normalizes each scale's wavelet coefficients after the decompose and before the forward FWHT; `wavelet_recon_norm` normalizes the mixer's spatial output after the inverse FWHT and before wavelet reconstruction. Both use `S` independent `LayerNorm(Cp)` modules — one per scale — rather than a shared norm, preserving the distinct statistics of coarse vs. fine wavelet bands. Beyond eliminating the NaN instability, these norms visibly accelerate convergence: at step 3,250 the normed A3 run (lr=0.001) is already −0.088 nats vs. the same run without norms and −0.190 nats vs. the T3 baseline, despite AdamW still being deep in LR warmup at that point.
+
+**Config:** Same T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`). All non-LR AdamW hyperparameters held at PyTorch defaults: `betas=(0.9, 0.999)`, `eps=1e-8`, `weight_decay=0.01`, `amsgrad=False`. `min_lr = lr / 50` throughout. LRs sample a geometric sequence centred on the AdamW default (0.001) at ±1 and ±2 steps of √10 spacing. A1 ran in fp16 (stable at its low LR). A2 fp16 diverged due to activation overflow at fp16's 65,504 ceiling; switched to bf16 (fp32 exponent range, GradScaler auto-disabled) from A2 bf16 onward. `grad_clip` tightened to 0.5 for A3–A5; wavelet norms enabled for all re-runs of A3–A5.
 
 **LR sweep (1 epoch each, T3 architecture base):**
 
-**Note on precision and stability:** A1 ran in fp16 (stable). Subsequent fp16 runs diverged to NaN (A2 fp16 at step 27,250) due to activation overflow at fp16's 65,504 ceiling corrupting AdamW's `v_t`. Switched to **bf16** (fp32 exponent range, ±3.4×10³⁸; GradScaler auto-disabled) from A2 bf16 onward. bf16 eliminates overflow but introduces probabilistic instability from lower mantissa precision (7 bits): A2 bf16 and one A3 bf16 run succeeded; a second A3 bf16 run NaN'd at step 19,250 from a gradient spike at peak LR. A4–A5 use `grad_clip=0.5` (down from 1.0) to limit peak-LR update magnitude.
-
-| Run | lr | min_lr | betas | eps | weight_decay | amsgrad | amp_dtype | grad_clip | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T3 baseline (Adagrad ref) | 0.015 | 0.0003 | — | — | — | — | fp16 | 1.0 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
-| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | fp16 | 1.0 | 1.1539 | 36.77 | 3.5822 | +0.048 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_04-46-42/log.txt) |
-| AdamW A2 (fp16) | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | fp16 | 1.0 | NaN† | NaN† | 4.0270‡ | — | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_09-57-10/log.txt) |
-| AdamW A2 (bf16) | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | 1.1495 | 36.26 | 3.5725 | +0.038 | 4.6h (A5000) | [link](logs/wikitext-103_2026-05-17_13-17-31/log.txt) |
-| AdamW A3 | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | queued | queued | queued | — | queued | — |
-| AdamW A4 | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | queued | queued | queued | — | queued | — |
-| AdamW A5 | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | queued | queued | queued | — | queued | — |
+| Run | lr | min_lr | betas | eps | weight_decay | amsgrad | amp_dtype | grad_clip | wavelet_norms | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T3 baseline (Adagrad ref) | 0.015 | 0.0003 | — | — | — | — | fp16 | 1.0 | ✗ | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| AdamW A1 | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | fp16 | 1.0 | ✗ | 1.1539 | 36.77 | 3.5822 | +0.048 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_04-46-42/log.txt) |
+| AdamW A2 (fp16)† | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | fp16 | 1.0 | ✗ | NaN† | NaN† | 4.0270‡ | — | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-17_09-57-10/log.txt) |
+| AdamW A2 (bf16) | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✗ | 1.1495 | 36.26 | 3.5725 | +0.038 | 4.6h (A5000) | [link](logs/wikitext-103_2026-05-17_13-17-31/log.txt) |
+| AdamW A3 (no norms, clip=1.0)§ | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✗ | NaN§ | NaN§ | 4.4307§ | — | — | [link](logs/wikitext-103_2026-05-17_17-53-14/log.txt) |
+| AdamW A3 (no norms, clip=0.5)¶ | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✗ | NaN¶ | NaN¶ | — | — | — | [link](logs/wikitext-103_2026-05-17_23-20-31/log.txt) |
+| AdamW A4 (no norms)‖ | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✗ | NaN‖ | NaN‖ | — | — | — | [link](logs/wikitext-103_2026-05-18_03-38-58/log.txt) |
+| AdamW A3 (norms) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✓ | queued | queued | queued | — | queued | [link](logs/wikitext-103_2026-05-18_06-05-19/log.txt) |
+| AdamW A4 (norms) | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW A5 (norms) | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✓ | queued | queued | queued | — | queued | — |
 
 † Benchmark invalid — permanent NaN from step 27,250 due to fp16 overflow corrupting `v_t`.  
-‡ Best val before divergence (step 27,000); not comparable to completed runs.
+‡ Best val before divergence (step 27,000); not comparable to completed runs.  
+§ NaN from step 19,250 (gradient spike at peak LR; best pre-divergence val not comparable).  
+¶ NaN from step 25,250 (`grad_clip=0.5` delayed onset ~30% vs clip=1.0 but did not prevent it).  
+‖ NaN from step 11,250 (3.16× higher peak LR overwhelmed clip=0.5; earlier onset than A3 despite tighter clip).
 
 After the LR sweep, subsequent sweeps will cover `betas`, `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
 
