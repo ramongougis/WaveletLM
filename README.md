@@ -853,13 +853,9 @@ Other recurrence approaches likely exist, but this section will only test the mi
 
 ### Optimizer Swap (AdamW) and Wavelet Norms
 
-Adagrad became unstable at higher recurrence depths (N ≥ 5): NaN onset at step 8,000 for N=5 K=1 and immediate NaN at step 250 for N=5 K=2. Root cause is Adagrad's accumulator-driven effective LR growth under repeated mixer applications, which amplifies any instability in the recurrent path. AdamW's moment-based updates and weight decay provide better gradient control for deep recurrence.
+Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), prompting the switch to AdamW. The sweep also revealed the entire wavelet path (decompose → FWHT → mixer → iFWHT → reconstruct) was unnormalized between `ln1` and `ln2`, allowing the mixer to feed unconstrained magnitudes into reconstruction. Two per-scale `LayerNorm(Cp)` modules — `wavelet_decomp_norm` (after decompose) and `wavelet_recon_norm` (after iFWHT) — eliminate NaN onset and accelerate early convergence, but shift the effective LR landscape: A3+norms (lr=0.001) trailed the T3 baseline, suggesting the normed architecture prefers a lower LR. A1+norms and A2+norms re-run the lower LR points to find it; A3 is run at both clip values to isolate grad_clip. **All prior ablation deltas were measured on the unnormed baseline and will need re-sweeping** once the optimal normed LR is confirmed.
 
-**Wavelet norms.** Running the AdamW LR sweep surfaced a more fundamental issue: the entire wavelet block path — decompose → FWHT → mixer → iFWHT → reconstruct — was completely unnormalized between `ln1` (block input) and `ln2` (MLP input). The FWHT is isometric and preserves magnitudes, but the learned lifting and the spectral mixer can scale activations freely, and the mixer's output flowed unchecked through wavelet reconstruction into the residual stream. At higher learning rates this produced gradient spikes that permanently corrupted AdamW's `v_t`, with NaN onset moving earlier as LR increased: step 19,250 at lr=0.001 (clip=1.0), step 25,250 at lr=0.001 (clip=0.5), and step 11,250 at lr=0.0031623 (clip=0.5) — showing that `grad_clip` alone delayed but could not prevent divergence.
-
-Two per-scale LayerNorms were added: `wavelet_decomp_norm` normalizes each scale's wavelet coefficients after the decompose and before the forward FWHT; `wavelet_recon_norm` normalizes the mixer's spatial output after the inverse FWHT and before wavelet reconstruction. Both use `S` independent `LayerNorm(Cp)` modules — one per scale — rather than a shared norm, preserving the distinct statistics of coarse vs. fine wavelet bands. Beyond eliminating the NaN instability, these norms visibly accelerate convergence: at step 3,250 the normed A3 run (lr=0.001) is already −0.088 nats vs. the same run without norms and −0.190 nats vs. the T3 baseline, despite AdamW still being deep in LR warmup at that point.
-
-**Config:** Same T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`). All non-LR AdamW hyperparameters held at PyTorch defaults: `betas=(0.9, 0.999)`, `eps=1e-8`, `weight_decay=0.01`, `amsgrad=False`. `min_lr = lr / 50` throughout. LRs sample a geometric sequence centred on the AdamW default (0.001) at ±1 and ±2 steps of √10 spacing. A1 ran in fp16 (stable at its low LR). A2 fp16 diverged due to activation overflow at fp16's 65,504 ceiling; switched to bf16 (fp32 exponent range, GradScaler auto-disabled) from A2 bf16 onward. `grad_clip` tightened to 0.5 for A3–A5; wavelet norms enabled for all re-runs of A3–A5. After A3+norms trailed the Adagrad T3 baseline following warmup, the wavelet norms were found to shift the effective loss landscape sufficiently to require LR recalibration — the norms constrain activation magnitude entering the spectral mixer, changing the gradient scale throughout the block relative to the unnormalized runs. A1+norms and A2+norms re-run the lower LR points (bf16, clip=0.5) under the normalized architecture; original A1 and A2 rows are preserved above for comparison.
+**Config:** T3 base (C=2048, L=1, levels=7, T2 mixer widths, `wavelet_crawl=true`), AdamW defaults (`betas=(0.9, 0.999)`, `eps=1e-8`, `weight_decay=0.01`), `min_lr = lr / 50`, bf16 (A2 fp16 diverged from overflow); LRs span ±2 √10-steps around 0.001.
 
 **LR sweep (1 epoch each, T3 architecture base):**
 
@@ -872,9 +868,9 @@ Two per-scale LayerNorms were added: `wavelet_decomp_norm` normalizes each scale
 | AdamW A3 (no norms, clip=1.0)§ | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✗ | NaN§ | NaN§ | 4.4307§ | — | — | [link](logs/wikitext-103_2026-05-17_17-53-14/log.txt) |
 | AdamW A3 (no norms, clip=0.5)¶ | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✗ | NaN¶ | NaN¶ | — | — | — | [link](logs/wikitext-103_2026-05-17_23-20-31/log.txt) |
 | AdamW A4 (no norms)‖ | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✗ | NaN‖ | NaN‖ | — | — | — | [link](logs/wikitext-103_2026-05-18_03-38-58/log.txt) |
-| AdamW A3 (norms) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✓ | queued | queued | queued | — | queued | [link](logs/wikitext-103_2026-05-18_06-05-19/log.txt) |
-| AdamW A3 (norms) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued |  |
-| AdamW A4 (norms) | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW A3 (norms, clip=0.5) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 0.5 | ✓ | 1.1891 | 41.05 | 3.6888 | +0.154 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-18_06-05-19/log.txt) |
+| AdamW A3 (norms, clip=1.0) | 0.001 | 2e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW A4 (norms) | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 | AdamW A5 (norms) | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 | AdamW A1 (norms)★ | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 | AdamW A2 (norms)★ | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
@@ -884,7 +880,7 @@ Two per-scale LayerNorms were added: `wavelet_decomp_norm` normalizes each scale
 § NaN from step 19,250 (gradient spike at peak LR; best pre-divergence val not comparable).  
 ¶ NaN from step 25,250 (`grad_clip=0.5` delayed onset ~30% vs clip=1.0 but did not prevent it).  
 ‖ NaN from step 11,250 (3.16× higher peak LR overwhelmed clip=0.5; earlier onset than A3 despite tighter clip).  
-★ LR recalibration runs: A3+norms trailed T3 baseline after warmup, indicating the wavelet norms shift the effective loss landscape. A1+norms and A2+norms cover the lower-LR end of the sweep under the normalized architecture (bf16, clip=0.5). Original A1/A2 rows above are retained for comparison.
+★ LR recalibration runs: A3+norms trailed T3 baseline after warmup, indicating the wavelet norms shift the effective loss landscape. A1+norms and A2+norms cover the lower-LR end of the sweep under the normalized architecture (bf16, clip=1.0). Original A1/A2 rows above are retained for comparison.
 
 After the LR sweep, subsequent sweeps will cover `betas`, `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
 
