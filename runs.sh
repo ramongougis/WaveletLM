@@ -339,20 +339,20 @@ benchmark_only_run() {
 #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00031623, "min_lr": 6.3246e-6, "amp_dtype": "bf16"}' \
 #     "AdamW_LR0.00031623_1ep: AdamW LR sweep (lr=0.00031623, min_lr=6.3246e-6, T3 base)"
 
-# Run A3: lr=0.001 (PyTorch AdamW default) — bf16, tighter clip (same as A4/A5)
-run_ablation "AdamW_LR0.001_1ep AdamW LR=0.001 (T3 base, bf16, clip=0.5)" \
+# Run A3: lr=0.001 (PyTorch AdamW default) — bf16, tighter clip, wavelet norms
+run_ablation "AdamW_LR0.001_1ep AdamW LR=0.001 (T3 base, bf16, clip=0.5, wavelet_norms)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.001, "min_lr": 2e-5, "amp_dtype": "bf16", "grad_clip": 0.5}' \
-    "AdamW_LR0.001_1ep: AdamW LR sweep (lr=0.001, min_lr=2e-5, T3 base, bf16, grad_clip=0.5)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.001, "min_lr": 2e-5, "amp_dtype": "bf16", "grad_clip": 0.5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "AdamW_LR0.001_1ep: AdamW LR sweep (lr=0.001, min_lr=2e-5, T3 base, bf16, grad_clip=0.5, wavelet_decomp_norm, wavelet_recon_norm)"
 
-# Run A4: lr=0.0031623 (≈ sqrt(10)/1000; one step above default) — bf16, tighter clip
-run_ablation "AdamW_LR0.0031623_1ep AdamW LR=0.0031623 (T3 base, bf16, clip=0.5)" \
+# Run A4: lr=0.0031623 (≈ sqrt(10)/1000; one step above default) — bf16, tighter clip, wavelet norms
+run_ablation "AdamW_LR0.0031623_1ep AdamW LR=0.0031623 (T3 base, bf16, clip=0.5, wavelet_norms)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0031623, "min_lr": 6.3246e-5, "amp_dtype": "bf16", "grad_clip": 0.5}' \
-    "AdamW_LR0.0031623_1ep: AdamW LR sweep (lr=0.0031623, min_lr=6.3246e-5, T3 base, bf16, grad_clip=0.5)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0031623, "min_lr": 6.3246e-5, "amp_dtype": "bf16", "grad_clip": 0.5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "AdamW_LR0.0031623_1ep: AdamW LR sweep (lr=0.0031623, min_lr=6.3246e-5, T3 base, bf16, grad_clip=0.5, wavelet_decomp_norm, wavelet_recon_norm)"
 
-# Run A5: lr=0.01 (matches Adagrad T3 LR; upper-bound canary) — bf16, tighter clip
-run_ablation "AdamW_LR0.01_1ep AdamW LR=0.01 (T3 base, bf16, clip=0.5)" \
+# Run A5: lr=0.01 (matches Adagrad T3 LR; upper-bound canary) — bf16, tighter clip, wavelet norms
+run_ablation "AdamW_LR0.01_1ep AdamW LR=0.01 (T3 base, bf16, clip=0.5, wavelet_norms)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.01, "min_lr": 2e-4, "amp_dtype": "bf16", "grad_clip": 0.5}' \
-    "AdamW_LR0.01_1ep: AdamW LR sweep (lr=0.01, min_lr=2e-4, T3 base, bf16, grad_clip=0.5)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.01, "min_lr": 2e-4, "amp_dtype": "bf16", "grad_clip": 0.5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "AdamW_LR0.01_1ep: AdamW LR sweep (lr=0.01, min_lr=2e-4, T3 base, bf16, grad_clip=0.5, wavelet_decomp_norm, wavelet_recon_norm)"

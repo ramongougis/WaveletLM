@@ -1339,6 +1339,8 @@ class WaveletLMBlock(nn.Module):
         lifting_offdiag_density: float = 0.0,
         lifting_offdiag_mask_seed: int = 1337,
         lifting_reference_weights: Optional[Dict[Tuple[int, str, int], torch.Tensor]] = None,
+        wavelet_decomp_norm: bool = False,
+        wavelet_recon_norm: bool = False,
     ):
         super().__init__()
         self.C = C
@@ -1723,6 +1725,18 @@ class WaveletLMBlock(nn.Module):
         self.ln1 = nn.LayerNorm(self.C)
         self.ln2 = nn.LayerNorm(self.C)
 
+        self.wavelet_decomp_norm = wavelet_decomp_norm
+        self.wavelet_recon_norm = wavelet_recon_norm
+        S = self.s_effective
+        if wavelet_decomp_norm:
+            self.decomp_norms = nn.ModuleList([
+                nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
+            ])
+        if wavelet_recon_norm:
+            self.recon_norms = nn.ModuleList([
+                nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
+            ])
+
         self.use_mlp = mlp_expansion > 0
         if self.use_mlp:
             self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
@@ -1802,6 +1816,11 @@ class WaveletLMBlock(nn.Module):
         coeffs_top_down = [approx] + details[::-1]
         stacked_coeffs = torch.stack(coeffs_top_down, dim=2)  # [B, T, S, Cp]
         S = self.s_effective
+
+        if self.wavelet_decomp_norm:
+            stacked_coeffs = torch.stack(
+                [self.decomp_norms[s](stacked_coeffs[:, :, s, :]) for s in range(S)], dim=2
+            )
 
         # Add decompose bypass bias
         if self.decompose_bypass and gate_bias_scales is not None:
@@ -1896,6 +1915,11 @@ class WaveletLMBlock(nn.Module):
 
         # FHT inverse (self-inverse for orthogonal Hadamard)
         mixed_all = self.fht(mixed_spec)
+
+        if self.wavelet_recon_norm:
+            mixed_all = torch.stack(
+                [self.recon_norms[s](mixed_all[:, :, s, :]) for s in range(S)], dim=2
+            )
 
         # Apply same Thue-Morse sign flips after invFWHT. Since D² = I, this
         # restores the residual stream to canonical position-space coordinates
@@ -2277,6 +2301,8 @@ class WaveletLM(nn.Module):
                 lifting_offdiag_density=lifting_offdiag_density,
                 lifting_offdiag_mask_seed=lifting_offdiag_mask_seed,
                 lifting_reference_weights=lifting_reference_weights,
+                wavelet_decomp_norm=config.get("wavelet_decomp_norm", False),
+                wavelet_recon_norm=config.get("wavelet_recon_norm", False),
             )
             for _ in range(layer_build_count)
         ])
