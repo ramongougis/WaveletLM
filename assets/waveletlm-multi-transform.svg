@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 1100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 1184" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <defs>
     <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
@@ -51,7 +51,7 @@
   <line x1="370" y1="260" x2="370" y2="232" class="arrow" marker-end="url(#ar)"/>
 
   <!-- ===== WaveletLM Block container ===== -->
-  <rect x="30" y="260" width="680" height="666" rx="10" ry="10" class="block-bg"/>
+  <rect x="30" y="260" width="680" height="750" rx="10" ry="10" class="block-bg"/>
   <text x="370" y="284" text-anchor="middle" class="block-title">WaveletLM Block (× N layers)</text>
 
   <!-- Spine sub-boxes inside the block (output side / top of block, going down) -->
@@ -66,7 +66,7 @@
   <text x="370" y="355" text-anchor="middle" class="sub-label">Feedforward Layers (MLP)</text>
   <line x1="370" y1="380" x2="370" y2="366" class="sub-arrow" marker-end="url(#ab)"/>
 
-  <!-- LayerNorm -->
+  <!-- LayerNorm (ln2) -->
   <rect x="210" y="380" width="320" height="26" rx="4" ry="4" class="sub-box"/>
   <text x="370" y="397" text-anchor="middle" class="sub-label">LayerNorm</text>
   <line x1="370" y1="422" x2="370" y2="408" class="sub-arrow" marker-end="url(#ab)"/>
@@ -81,129 +81,139 @@
   <text x="370" y="481" text-anchor="middle" class="sub-label">Lifting Wavelet Reconstruct</text>
   <line x1="370" y1="506" x2="370" y2="492" class="sub-arrow" marker-end="url(#ab)"/>
 
-  <!-- Combine -->
+  <!-- LayerNorm (wavelet_recon_norm: per-scale, after iFWHT / Combine, before reconstruct) -->
   <rect x="210" y="506" width="320" height="26" rx="4" ry="4" class="sub-box"/>
-  <text x="370" y="523" text-anchor="middle" class="sub-label">Combine (sum or learned gate)</text>
+  <text x="370" y="523" text-anchor="middle" class="sub-label">LayerNorm</text>
+  <line x1="370" y1="548" x2="370" y2="534" class="sub-arrow" marker-end="url(#ab)"/>
+
+  <!-- Combine -->
+  <rect x="210" y="548" width="320" height="26" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="565" text-anchor="middle" class="sub-label">Combine (sum or learned gate)</text>
 
   <!-- Combiner arrows (fan-IN from each column's top to Combine bottom, going up) -->
-  <line x1="115" y1="556" x2="115" y2="548" class="sub-arrow"/>
-  <line x1="225" y1="556" x2="225" y2="548" class="sub-arrow"/>
-  <line x1="370" y1="556" x2="370" y2="548" class="sub-arrow"/>
-  <line x1="520" y1="556" x2="520" y2="548" class="sub-arrow"/>
-  <line x1="650" y1="556" x2="650" y2="548" class="sub-arrow"/>
-  <line x1="115" y1="548" x2="650" y2="548" class="sub-arrow"/>
-  <line x1="370" y1="548" x2="370" y2="532" class="sub-arrow" marker-end="url(#ab)"/>
+  <line x1="115" y1="598" x2="115" y2="590" class="sub-arrow"/>
+  <line x1="225" y1="598" x2="225" y2="590" class="sub-arrow"/>
+  <line x1="370" y1="598" x2="370" y2="590" class="sub-arrow"/>
+  <line x1="520" y1="598" x2="520" y2="590" class="sub-arrow"/>
+  <line x1="650" y1="598" x2="650" y2="590" class="sub-arrow"/>
+  <line x1="115" y1="590" x2="650" y2="590" class="sub-arrow"/>
+  <line x1="370" y1="590" x2="370" y2="574" class="sub-arrow" marker-end="url(#ab)"/>
 
   <!-- ===== Multinodal container (dashed) ===== -->
-  <rect x="50" y="556" width="640" height="246" rx="8" ry="8" class="multinodal-bg"/>
+  <rect x="50" y="598" width="640" height="246" rx="8" ry="8" class="multinodal-bg"/>
 
   <!-- ===== Node 1: FWHT (flipped: inverse on top, forward on bottom) ===== -->
-  <rect x="70" y="568" width="90" height="208" rx="6" ry="6" class="node-bg"/>
-  <text x="115" y="584" text-anchor="middle" class="node-title">Node 1</text>
-  <rect x="78" y="592" width="74" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="115" y="609" text-anchor="middle" class="mini-sub-label">FWHT</text>
-  <text x="115" y="625" text-anchor="middle" class="mini-sub-label">(inverse)</text>
-  <line x1="115" y1="646" x2="115" y2="634" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="78" y="646" width="74" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="115" y="663" text-anchor="middle" class="mini-sub-label">Gated</text>
-  <text x="115" y="679" text-anchor="middle" class="mini-sub-label">Mixer</text>
-  <line x1="115" y1="700" x2="115" y2="688" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="78" y="700" width="74" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="115" y="717" text-anchor="middle" class="mini-sub-label">FWHT</text>
-  <text x="115" y="733" text-anchor="middle" class="mini-sub-label">(forward)</text>
+  <rect x="70" y="610" width="90" height="208" rx="6" ry="6" class="node-bg"/>
+  <text x="115" y="626" text-anchor="middle" class="node-title">Node 1</text>
+  <rect x="78" y="634" width="74" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="115" y="651" text-anchor="middle" class="mini-sub-label">FWHT</text>
+  <text x="115" y="667" text-anchor="middle" class="mini-sub-label">(inverse)</text>
+  <line x1="115" y1="688" x2="115" y2="676" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="78" y="688" width="74" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="115" y="705" text-anchor="middle" class="mini-sub-label">Gated</text>
+  <text x="115" y="721" text-anchor="middle" class="mini-sub-label">Mixer</text>
+  <line x1="115" y1="742" x2="115" y2="730" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="78" y="742" width="74" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="115" y="759" text-anchor="middle" class="mini-sub-label">FWHT</text>
+  <text x="115" y="775" text-anchor="middle" class="mini-sub-label">(forward)</text>
 
   <!-- ===== Node 2: DHT (flipped) ===== -->
-  <rect x="180" y="568" width="90" height="208" rx="6" ry="6" class="node-bg"/>
-  <text x="225" y="584" text-anchor="middle" class="node-title">Node 2</text>
-  <rect x="188" y="592" width="74" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="225" y="609" text-anchor="middle" class="mini-sub-label">DHT</text>
-  <text x="225" y="625" text-anchor="middle" class="mini-sub-label">(inverse)</text>
-  <line x1="225" y1="646" x2="225" y2="634" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="188" y="646" width="74" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="225" y="663" text-anchor="middle" class="mini-sub-label">Gated</text>
-  <text x="225" y="679" text-anchor="middle" class="mini-sub-label">Mixer</text>
-  <line x1="225" y1="700" x2="225" y2="688" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="188" y="700" width="74" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="225" y="717" text-anchor="middle" class="mini-sub-label">DHT</text>
-  <text x="225" y="733" text-anchor="middle" class="mini-sub-label">(Hartley)</text>
+  <rect x="180" y="610" width="90" height="208" rx="6" ry="6" class="node-bg"/>
+  <text x="225" y="626" text-anchor="middle" class="node-title">Node 2</text>
+  <rect x="188" y="634" width="74" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="225" y="651" text-anchor="middle" class="mini-sub-label">DHT</text>
+  <text x="225" y="667" text-anchor="middle" class="mini-sub-label">(inverse)</text>
+  <line x1="225" y1="688" x2="225" y2="676" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="188" y="688" width="74" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="225" y="705" text-anchor="middle" class="mini-sub-label">Gated</text>
+  <text x="225" y="721" text-anchor="middle" class="mini-sub-label">Mixer</text>
+  <line x1="225" y1="742" x2="225" y2="730" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="188" y="742" width="74" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="225" y="759" text-anchor="middle" class="mini-sub-label">DHT</text>
+  <text x="225" y="775" text-anchor="middle" class="mini-sub-label">(Hartley)</text>
 
   <!-- ===== Node 3: DCT-II/III pair (flipped: DCT-III on top, DCT-II on bottom) ===== -->
-  <rect x="290" y="568" width="160" height="208" rx="6" ry="6" class="node-bg"/>
-  <text x="370" y="584" text-anchor="middle" class="node-title">Node 3</text>
-  <rect x="298" y="592" width="144" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="370" y="618" text-anchor="middle" class="mini-sub-label">DCT-III</text>
-  <line x1="370" y1="646" x2="370" y2="634" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="298" y="646" width="144" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="370" y="663" text-anchor="middle" class="mini-sub-label">Gated</text>
-  <text x="370" y="679" text-anchor="middle" class="mini-sub-label">Mixer</text>
-  <line x1="370" y1="700" x2="370" y2="688" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="298" y="700" width="144" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="370" y="726" text-anchor="middle" class="mini-sub-label">DCT-II</text>
+  <rect x="290" y="610" width="160" height="208" rx="6" ry="6" class="node-bg"/>
+  <text x="370" y="626" text-anchor="middle" class="node-title">Node 3</text>
+  <rect x="298" y="634" width="144" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="660" text-anchor="middle" class="mini-sub-label">DCT-III</text>
+  <line x1="370" y1="688" x2="370" y2="676" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="298" y="688" width="144" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="705" text-anchor="middle" class="mini-sub-label">Gated</text>
+  <text x="370" y="721" text-anchor="middle" class="mini-sub-label">Mixer</text>
+  <line x1="370" y1="742" x2="370" y2="730" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="298" y="742" width="144" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="768" text-anchor="middle" class="mini-sub-label">DCT-II</text>
 
   <!-- ===== Node 4: Learned 1 (flipped: W₄ᵀ on top, W₄ on bottom) ===== -->
-  <rect x="470" y="568" width="100" height="208" rx="6" ry="6" class="node-bg"/>
-  <text x="520" y="584" text-anchor="middle" class="node-title">Node 4</text>
-  <rect x="478" y="592" width="84" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="520" y="618" text-anchor="middle" class="mini-sub-label">W₄ᵀ</text>
-  <line x1="520" y1="646" x2="520" y2="634" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="478" y="646" width="84" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="520" y="663" text-anchor="middle" class="mini-sub-label">Gated</text>
-  <text x="520" y="679" text-anchor="middle" class="mini-sub-label">Mixer</text>
-  <line x1="520" y1="700" x2="520" y2="688" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="478" y="700" width="84" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="520" y="717" text-anchor="middle" class="mini-sub-label">W₄</text>
-  <text x="520" y="733" text-anchor="middle" class="mini-sub-label">(learned)</text>
+  <rect x="470" y="610" width="100" height="208" rx="6" ry="6" class="node-bg"/>
+  <text x="520" y="626" text-anchor="middle" class="node-title">Node 4</text>
+  <rect x="478" y="634" width="84" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="520" y="660" text-anchor="middle" class="mini-sub-label">W₄ᵀ</text>
+  <line x1="520" y1="688" x2="520" y2="676" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="478" y="688" width="84" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="520" y="705" text-anchor="middle" class="mini-sub-label">Gated</text>
+  <text x="520" y="721" text-anchor="middle" class="mini-sub-label">Mixer</text>
+  <line x1="520" y1="742" x2="520" y2="730" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="478" y="742" width="84" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="520" y="759" text-anchor="middle" class="mini-sub-label">W₄</text>
+  <text x="520" y="775" text-anchor="middle" class="mini-sub-label">(learned)</text>
 
   <!-- ===== Ellipsis ===== -->
-  <text x="595" y="678" text-anchor="middle" class="ellipsis">···</text>
+  <text x="595" y="720" text-anchor="middle" class="ellipsis">···</text>
 
   <!-- ===== Node N: Learned (flipped: Wₙᵀ on top, Wₙ on bottom) ===== -->
-  <rect x="620" y="568" width="60" height="208" rx="6" ry="6" class="node-bg"/>
-  <text x="650" y="584" text-anchor="middle" class="node-title">Node N</text>
-  <rect x="626" y="592" width="48" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="650" y="618" text-anchor="middle" class="mini-sub-label">Wₙᵀ</text>
-  <line x1="650" y1="646" x2="650" y2="634" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="626" y="646" width="48" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="650" y="663" text-anchor="middle" class="mini-sub-label">Gated</text>
-  <text x="650" y="679" text-anchor="middle" class="mini-sub-label">Mixer</text>
-  <line x1="650" y1="700" x2="650" y2="688" class="sub-arrow" marker-end="url(#ab)"/>
-  <rect x="626" y="700" width="48" height="42" rx="4" ry="4" class="sub-box"/>
-  <text x="650" y="717" text-anchor="middle" class="mini-sub-label">Wₙ</text>
-  <text x="650" y="733" text-anchor="middle" class="mini-sub-label">(learned)</text>
+  <rect x="620" y="610" width="60" height="208" rx="6" ry="6" class="node-bg"/>
+  <text x="650" y="626" text-anchor="middle" class="node-title">Node N</text>
+  <rect x="626" y="634" width="48" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="650" y="660" text-anchor="middle" class="mini-sub-label">Wₙᵀ</text>
+  <line x1="650" y1="688" x2="650" y2="676" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="626" y="688" width="48" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="650" y="705" text-anchor="middle" class="mini-sub-label">Gated</text>
+  <text x="650" y="721" text-anchor="middle" class="mini-sub-label">Mixer</text>
+  <line x1="650" y1="742" x2="650" y2="730" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="626" y="742" width="48" height="42" rx="4" ry="4" class="sub-box"/>
+  <text x="650" y="759" text-anchor="middle" class="mini-sub-label">Wₙ</text>
+  <text x="650" y="775" text-anchor="middle" class="mini-sub-label">(learned)</text>
 
-  <!-- Splitter arrows (fan-OUT from Decompose UP into each column's bottom) -->
-  <line x1="370" y1="824" x2="370" y2="812" class="sub-arrow"/>
-  <line x1="115" y1="812" x2="650" y2="812" class="sub-arrow"/>
-  <line x1="115" y1="812" x2="115" y2="776" class="sub-arrow" marker-end="url(#ab)"/>
-  <line x1="225" y1="812" x2="225" y2="776" class="sub-arrow" marker-end="url(#ab)"/>
-  <line x1="370" y1="812" x2="370" y2="776" class="sub-arrow" marker-end="url(#ab)"/>
-  <line x1="520" y1="812" x2="520" y2="776" class="sub-arrow" marker-end="url(#ab)"/>
-  <line x1="650" y1="812" x2="650" y2="776" class="sub-arrow" marker-end="url(#ab)"/>
+  <!-- Splitter arrows (fan-OUT from LayerNorm/decomp_norm top into each column's bottom) -->
+  <line x1="370" y1="866" x2="370" y2="854" class="sub-arrow"/>
+  <line x1="115" y1="854" x2="650" y2="854" class="sub-arrow"/>
+  <line x1="115" y1="854" x2="115" y2="818" class="sub-arrow" marker-end="url(#ab)"/>
+  <line x1="225" y1="854" x2="225" y2="818" class="sub-arrow" marker-end="url(#ab)"/>
+  <line x1="370" y1="854" x2="370" y2="818" class="sub-arrow" marker-end="url(#ab)"/>
+  <line x1="520" y1="854" x2="520" y2="818" class="sub-arrow" marker-end="url(#ab)"/>
+  <line x1="650" y1="854" x2="650" y2="818" class="sub-arrow" marker-end="url(#ab)"/>
 
   <!-- Multinodal container title (rendered after splitter arrows so the background rect masks the central arrow) -->
-  <rect x="265" y="781" width="210" height="18" fill="#f4f7fc" stroke="none"/>
-  <text x="370" y="794" text-anchor="middle" class="multinodal-title">N parallel transform paths</text>
+  <rect x="265" y="823" width="210" height="18" fill="#f4f7fc" stroke="none"/>
+  <text x="370" y="836" text-anchor="middle" class="multinodal-title">N parallel transform paths</text>
+
+  <!-- LayerNorm (wavelet_decomp_norm: per-scale, after decompose, before fan-out to transform nodes) -->
+  <rect x="210" y="866" width="320" height="26" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="883" text-anchor="middle" class="sub-label">LayerNorm</text>
+  <line x1="370" y1="908" x2="370" y2="894" class="sub-arrow" marker-end="url(#ab)"/>
 
   <!-- Lifting Wavelet Decompose -->
-  <rect x="210" y="824" width="320" height="26" rx="4" ry="4" class="sub-box"/>
-  <text x="370" y="841" text-anchor="middle" class="sub-label">Lifting Wavelet Decompose</text>
-  <line x1="370" y1="874" x2="370" y2="850" class="sub-arrow" marker-end="url(#ab)"/>
+  <rect x="210" y="908" width="320" height="26" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="925" text-anchor="middle" class="sub-label">Lifting Wavelet Decompose</text>
+  <line x1="370" y1="958" x2="370" y2="936" class="sub-arrow" marker-end="url(#ab)"/>
 
-  <!-- LayerNorm (input side, bottom of block) -->
-  <rect x="210" y="874" width="320" height="26" rx="4" ry="4" class="sub-box"/>
-  <text x="370" y="891" text-anchor="middle" class="sub-label">LayerNorm</text>
+  <!-- LayerNorm (ln1, input side, bottom of block) -->
+  <rect x="210" y="958" width="320" height="26" rx="4" ry="4" class="sub-box"/>
+  <text x="370" y="975" text-anchor="middle" class="sub-label">LayerNorm</text>
 
   <!-- arrow: Embedding -> Block (entering input side) -->
-  <line x1="370" y1="958" x2="370" y2="930" class="arrow" marker-end="url(#ar)"/>
+  <line x1="370" y1="1042" x2="370" y2="1014" class="arrow" marker-end="url(#ar)"/>
 
   <!-- ===== Learned Embedding ===== -->
-  <rect x="270" y="958" width="200" height="32" rx="6" ry="6" class="box"/>
-  <text x="370" y="978" text-anchor="middle" class="label">Learned Embedding (C)</text>
+  <rect x="270" y="1042" width="200" height="32" rx="6" ry="6" class="box"/>
+  <text x="370" y="1062" text-anchor="middle" class="label">Learned Embedding (C)</text>
 
   <!-- arrow: Input tokens -> Embedding -->
-  <line x1="370" y1="1022" x2="370" y2="994" class="arrow" marker-end="url(#ar)"/>
+  <line x1="370" y1="1106" x2="370" y2="1078" class="arrow" marker-end="url(#ar)"/>
 
   <!-- ===== Input tokens (BOTTOM) ===== -->
-  <rect x="270" y="1022" width="200" height="32" rx="6" ry="6" class="box"/>
-  <text x="370" y="1042" text-anchor="middle" class="label">Input tokens</text>
+  <rect x="270" y="1106" width="200" height="32" rx="6" ry="6" class="box"/>
+  <text x="370" y="1126" text-anchor="middle" class="label">Input tokens</text>
 </svg>
