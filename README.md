@@ -1073,6 +1073,8 @@ Standard transformer attention has no direct analog because (Q, K, V) projection
 
 The wavelet decomposition continues to handle sequence-axis multi-scale structure, and the multi-basis nodes add feature-axis multi-perspective structure, factorizing the two cleanly. We don't yet know whether this is the actual mechanism if it increases performance, but if it does, testing this hypothesis directly becomes the natural follow-up.
 
+**Normalization note:** the FWHT is an isometry (orthonormal, norm-preserving), so homogeneous multi-FWHT nodes naturally produce comparable output magnitudes and a single `wavelet_recon_norm` after the Combine step is sufficient. For heterogeneous nodes (learned butterfly orthogonals, DCT, etc.), each transform has its own equilibrium magnitude. The diagram therefore includes a **per-node output LayerNorm** (placed at the top of each node, before recombination) to equalize contributions so no single transform basis dominates the Combine step by amplitude alone. This per-node LN is a planned normalization for the heterogeneous case; it is not needed for the current homogeneous-FWHT implementation and will be added when multi-transform is implemented.
+
 See [plans/multi_transform_parallelization.md](plans/multi_transform_parallelization.md) for the full design, the four-node reference lineup, and the prerequisite ablation (per-scale mixer transform ablation in [other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation)).
 
 <p align="center">
