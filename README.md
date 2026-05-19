@@ -28,7 +28,7 @@ It uses a learned embedding and mixes tokens using causal lifting wavelet decomp
 
 Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WikiText-103 than Transformer-XL and GPT-2. 
 
-Furthermore, there is clear room for improvement in several areas: parameter reduction, regularization, more levels, recurrence, longer training, scale, and others. In particular, conversion of the learned embedding to a semantic embedding would more than half the current trainable parameter size while potentially boosting interpretability far beyond other transformer-based or hybrid models.
+Furthermore, there is clear room for improvement in several areas: parameter reduction, regularization, more levels, recurrence, longer training, scale, and others. In particular, conversion of the learned embedding to a semantic embedding would more than halve the current trainable parameter size while potentially boosting interpretability far beyond other transformer-based or hybrid models.
 
 <br>
 
