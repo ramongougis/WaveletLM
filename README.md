@@ -20,7 +20,7 @@
 WaveletLM is a generative, attention-free language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1][^2] in the following papers:
 
 - **Wavelet Logic Machines**: wavelet-based classification on fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
-- **Learnable Multi-Scale Wavelet Transformer (LMWT)**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
+- **Learnable Multi-Scale Wavelet Transformer**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
 
 WaveletLM adapts the Wavelet Logic Machine's approach to autoregressive language modeling with the components detailed in the [Architecture](#architecture) section below. Furthermore, a planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters achieved by our [benchmark results](#results) while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
 
@@ -876,7 +876,7 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 | AdamW A5 (norms)♦ | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | NaN♦ | NaN♦ | — | — | — | [link](logs/wikitext-103_2026-05-18_20-19-39/log.txt) |
 | AdamW A1 (norms)★ | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1554 | 36.94 | 3.5887 | +0.054 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-18_21-50-54/log.txt) |
 | AdamW A2 (norms)★ | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1394 | 35.15 | 3.5396 | +0.005 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-19_02-37-49/log.txt) |
-| AdamW A1.5 (norms)◆ | 0.0001778 | 3.556e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW A1.5 (norms)◆ | 0.00017783 | 3.5566e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 
 † Benchmark invalid — permanent NaN from step 27,250 due to fp16 overflow corrupting `v_t`.  
 ‡ Best val before divergence (step 27,000); not comparable to completed runs.  
@@ -884,7 +884,7 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 ¶ NaN from step 25,250 (`grad_clip=0.5` delayed onset ~30% vs clip=1.0 but did not prevent it).  
 ‖ NaN from step 11,250 (3.16× higher peak LR overwhelmed clip=0.5; earlier onset than A3 despite tighter clip).  
 ★ LR recalibration runs: A3+norms trailed T3 baseline after warmup, indicating the wavelet norms shift the effective loss landscape. A1+norms and A2+norms cover the lower-LR end of the sweep under the normalized architecture (bf16, clip=1.0). Original A1/A2 rows above are retained for comparison.  
-◆ Bisection run: geometric midpoint between A1+norms (0.0001) and A2+norms (0.00031623), the two best-performing normed runs. lr = 10^(−3.75) ≈ 0.0001778.  
+◆ Bisection run: geometric midpoint between A1+norms (0.0001) and A2+norms (0.00031623), the two best-performing normed runs. lr = 10^(−3.75) ≈ 0.00017783.  
 ♦ Divergence visible from step ~8,250 (val loss stagnant at ~5.37 while LR ramped); spike at step 15,000, NaN at step 15,250 (lr ~8.84e-3). Norms extend the stable range (A3/A4 complete cleanly) but do not eliminate instability at lr=0.01.
 
 After the LR sweep, subsequent sweeps will cover `betas`, `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
@@ -1159,7 +1159,7 @@ Apache License 2.0
 ## References
 
 [^1]: Kiruluta. "Wavelet Logic Machines: Learning and Reasoning in the Spectral Domain Without Neural Networks." [arXiv:2507.19514](https://arxiv.org/abs/2507.19514), 2025. (classification-focused with frozen pretrained embeddings.)
-[^2]: Kiruluta, Burity, and Williams. "Learnable Multi-Scale Wavelet Transformer: A Novel Alternative to Self-Attention." [arXiv:2504.08801](https://arxiv.org/abs/2504.08801), 2025. (LMWT; encoder-decoder MT model using learnable Haar wavelet coefficients in place of self-attention. Closest published prior to WaveletLM's direction.)
+[^2]: Kiruluta, Burity, and Williams. "Learnable Multi-Scale Wavelet Transformer: A Novel Alternative to Self-Attention." [arXiv:2504.08801](https://arxiv.org/abs/2504.08801), 2025.
 [^3]: Kiruluta, Raju, and Burity. "Breaking Quadratic Barriers: A Non-Attention LLM for Ultra-Long Context Horizons." [arXiv:2506.01963](https://arxiv.org/abs/2506.01963), 2025. (Non-attention LLM on WikiText-103 / Enwik8 using SSM + multi-resolution convolution + RNN supervisor + retrieval — different primitives, same task as WaveletLM.)
 
 [^4]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
