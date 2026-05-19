@@ -379,12 +379,27 @@ benchmark_only_run() {
 #     "AdamW_LR0.00031623_norms_1ep: AdamW LR sweep (lr=0.00031623, min_lr=6.3246e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
 
 # ---- LR bisection: geometric midpoints between best normed runs ------------------
-# A2+norms (lr=0.00031623) is the best normed run so far (+0.005 vs T3 baseline).
-# A1+norms (lr=0.0001) is the second best. Bisection: geometric midpoint between
-# the two best performers = 10^(-3.75) ≈ 0.0001778, min_lr = lr/50 ≈ 3.556e-6.
+# Results so far (BPB sliding, 1ep, bf16, wavelet norms, clip=1.0):
+#   A1  lr=0.0001000: BPB 1.1554  Δ+0.054
+#   A1.5 lr=0.0001778: BPB 1.1393  Δ+0.008  \  flat plateau — essentially
+#   A2  lr=0.0003162: BPB 1.1394  Δ+0.005  /  identical
+#   A3  lr=0.0010000: BPB 1.1729  Δ+0.103
+# Next: bisect below (A1↔A1.5, 10^-3.875) and above (A2↔A3, 10^-3.25).
 
-# Run A1.5+norms: lr=0.0001778 — bisection midpoint between A1 and A2 normed
-run_ablation "AdamW_LR0.00017783_norms_1ep AdamW LR=0.00017783 (T3 base, bf16, wavelet_norms)" \
+# DONE — Run A1.5+norms: lr=0.00017783 — bisection midpoint between A1 and A2 normed
+# run_ablation "AdamW_LR0.00017783_norms_1ep AdamW LR=0.00017783 (T3 base, bf16, wavelet_norms)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00017783, "min_lr": 3.5566e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "AdamW_LR0.00017783_norms_1ep: AdamW LR bisection (lr=0.00017783, min_lr=3.5566e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# Run A1.25+norms: lr=0.00013335 — bisection midpoint between A1 and A1.5 (below plateau)
+run_ablation "AdamW_LR0.00013335_norms_1ep AdamW LR=0.00013335 (T3 base, bf16, wavelet_norms)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00017783, "min_lr": 3.5566e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "AdamW_LR0.00017783_norms_1ep: AdamW LR bisection (lr=0.00017783, min_lr=3.5566e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00013335, "min_lr": 2.6670e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "AdamW_LR0.00013335_norms_1ep: AdamW LR bisection (lr=0.00013335, min_lr=2.6670e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# Run A2.5+norms: lr=0.00056234 — bisection midpoint between A2 and A3 (above plateau)
+run_ablation "AdamW_LR0.00056234_norms_1ep AdamW LR=0.00056234 (T3 base, bf16, wavelet_norms)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00056234, "min_lr": 1.1247e-5, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "AdamW_LR0.00056234_norms_1ep: AdamW LR bisection (lr=0.00056234, min_lr=1.1247e-5, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
