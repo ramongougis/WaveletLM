@@ -373,7 +373,18 @@ run_ablation "AdamW_LR0.0001_norms_1ep AdamW LR=0.0001 (T3 base, bf16, wavelet_n
     "AdamW_LR0.0001_norms_1ep: AdamW LR sweep (lr=0.0001, min_lr=2e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
 
 # Run A2+norms: lr=0.00031623 — sqrt(10)x above A1+norms
-run_ablation "AdamW_LR0.00031623_norms_1ep AdamW LR=0.00031623 (T3 base, bf16, wavelet_norms)" \
+# run_ablation "AdamW_LR0.00031623_norms_1ep AdamW LR=0.00031623 (T3 base, bf16, wavelet_norms)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00031623, "min_lr": 6.3246e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "AdamW_LR0.00031623_norms_1ep: AdamW LR sweep (lr=0.00031623, min_lr=6.3246e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# ---- LR bisection: geometric midpoints between best normed runs ------------------
+# A2+norms (lr=0.00031623) is the best normed run so far (+0.005 vs T3 baseline).
+# A1+norms (lr=0.0001) is the second best. Bisection: geometric midpoint between
+# the two best performers = 10^(-3.75) ≈ 0.0001778, min_lr = lr/50 ≈ 3.556e-6.
+
+# Run A1.5+norms: lr=0.0001778 — bisection midpoint between A1 and A2 normed
+run_ablation "AdamW_LR0.0001778_norms_1ep AdamW LR=0.0001778 (T3 base, bf16, wavelet_norms)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00031623, "min_lr": 6.3246e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "AdamW_LR0.00031623_norms_1ep: AdamW LR sweep (lr=0.00031623, min_lr=6.3246e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.0001778, "min_lr": 3.556e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "AdamW_LR0.0001778_norms_1ep: AdamW LR bisection (lr=0.0001778, min_lr=3.556e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"

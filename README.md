@@ -875,7 +875,8 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 | AdamW A4 (norms) | 0.0031623 | 6.32e-5 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.2273 | 46.24 | 3.7932 | +0.259 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-18_15-35-44/log.txt) |
 | AdamW A5 (norms)♦ | 0.01 | 2e-4 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | NaN♦ | NaN♦ | — | — | — | [link](logs/wikitext-103_2026-05-18_20-19-39/log.txt) |
 | AdamW A1 (norms)★ | 0.0001 | 2e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1554 | 36.94 | 3.5887 | +0.054 | 4.7h (A5000) | [link](logs/wikitext-103_2026-05-18_21-50-54/log.txt) |
-| AdamW A2 (norms)★ | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW A2 (norms)★ | 0.00031623 | 6.32e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1394 | 35.15 | 3.5396 | +0.005 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-19_02-37-49/log.txt) |
+| AdamW A1.5 (norms)◆ | 0.0001778 | 3.556e-6 | (0.9, 0.999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 
 † Benchmark invalid — permanent NaN from step 27,250 due to fp16 overflow corrupting `v_t`.  
 ‡ Best val before divergence (step 27,000); not comparable to completed runs.  
@@ -883,6 +884,7 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 ¶ NaN from step 25,250 (`grad_clip=0.5` delayed onset ~30% vs clip=1.0 but did not prevent it).  
 ‖ NaN from step 11,250 (3.16× higher peak LR overwhelmed clip=0.5; earlier onset than A3 despite tighter clip).  
 ★ LR recalibration runs: A3+norms trailed T3 baseline after warmup, indicating the wavelet norms shift the effective loss landscape. A1+norms and A2+norms cover the lower-LR end of the sweep under the normalized architecture (bf16, clip=1.0). Original A1/A2 rows above are retained for comparison.  
+◆ Bisection run: geometric midpoint between A1+norms (0.0001) and A2+norms (0.00031623), the two best-performing normed runs. lr = 10^(−3.75) ≈ 0.0001778.  
 ♦ Divergence visible from step ~8,250 (val loss stagnant at ~5.37 while LR ramped); spike at step 15,000, NaN at step 15,250 (lr ~8.84e-3). Norms extend the stable range (A3/A4 complete cleanly) but do not eliminate instability at lr=0.01.
 
 After the LR sweep, subsequent sweeps will cover `betas`, `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
