@@ -409,19 +409,40 @@ benchmark_only_run() {
 #     "AdamW_LR0.00056234_norms_1ep: AdamW LR bisection (lr=0.00056234, min_lr=1.1247e-5, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
 
 # Run A1.375+norms: lr=0.00015399 — lower cliff edge (midpoint A1.25↔A1.5, 10^-3.8125)
-run_ablation "AdamW_LR0.00015399_norms_1ep AdamW LR=0.00015399 (T3 base, bf16, wavelet_norms)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00015399, "min_lr": 3.0798e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "AdamW_LR0.00015399_norms_1ep: AdamW LR bisection (lr=0.00015399, min_lr=3.0798e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "AdamW_LR0.00015399_norms_1ep AdamW LR=0.00015399 (T3 base, bf16, wavelet_norms)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00015399, "min_lr": 3.0798e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "AdamW_LR0.00015399_norms_1ep: AdamW LR bisection (lr=0.00015399, min_lr=3.0798e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-# Run A1.75+norms: lr=0.00023714 — plateau interior (midpoint A1.5↔A2, 10^-3.625)
-run_ablation "AdamW_LR0.00023714_norms_1ep AdamW LR=0.00023714 (T3 base, bf16, wavelet_norms)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "AdamW_LR0.00023714_norms_1ep: AdamW LR bisection (lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+# # Run A1.75+norms: lr=0.00023714 — plateau interior (midpoint A1.5↔A2, 10^-3.625)
+# run_ablation "AdamW_LR0.00023714_norms_1ep AdamW LR=0.00023714 (T3 base, bf16, wavelet_norms)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "AdamW_LR0.00023714_norms_1ep: AdamW LR bisection (lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-# Run A2.25+norms: lr=0.00042170 — upper cliff edge (midpoint A2↔A2.5, 10^-3.375)
-run_ablation "AdamW_LR0.00042170_norms_1ep AdamW LR=0.00042170 (T3 base, bf16, wavelet_norms)" \
+# DONE — Run A2.25+norms: lr=0.00042170 — upper cliff edge (midpoint A2↔A2.5, 10^-3.375)
+# run_ablation "AdamW_LR0.00042170_norms_1ep AdamW LR=0.00042170 (T3 base, bf16, wavelet_norms)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00042170, "min_lr": 8.4340e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "AdamW_LR0.00042170_norms_1ep: AdamW LR bisection (lr=0.00042170, min_lr=8.4340e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# ---- β₂ sweep: optimal lr=0.00023714 (A1.75), baseline β₂=0.999 -----------------
+# Baseline already measured: A1.75 row (BPB 1.1393, best val 3.5435).
+
+# Run β₂=0.98: faster second-moment adaptation
+run_ablation "AdamW_B2_0.98_norms_1ep AdamW beta2=0.98 (T3 base, lr=0.00023714, bf16, wavelet_norms)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00042170, "min_lr": 8.4340e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "AdamW_LR0.00042170_norms_1ep: AdamW LR bisection (lr=0.00042170, min_lr=8.4340e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "optimizer_betas": [0.9, 0.98]}' \
+    "AdamW_B2_0.98_norms_1ep: AdamW beta2 sweep (beta2=0.98, lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# Run β₂=0.99: intermediate second-moment window
+run_ablation "AdamW_B2_0.99_norms_1ep AdamW beta2=0.99 (T3 base, lr=0.00023714, bf16, wavelet_norms)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "optimizer_betas": [0.9, 0.99]}' \
+    "AdamW_B2_0.99_norms_1ep: AdamW beta2 sweep (beta2=0.99, lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# Run β₂=0.9999: very slow second-moment EMA
+run_ablation "AdamW_B2_0.9999_norms_1ep AdamW beta2=0.9999 (T3 base, lr=0.00023714, bf16, wavelet_norms)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "optimizer_betas": [0.9, 0.9999]}' \
+    "AdamW_B2_0.9999_norms_1ep: AdamW beta2 sweep (beta2=0.9999, lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
