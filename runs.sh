@@ -430,10 +430,10 @@ benchmark_only_run() {
 # Baseline already measured: A1.75 row (BPB 1.1393, best val 3.5435).
 
 # Run β₂=0.98: faster second-moment adaptation
-run_ablation "AdamW_B2_0.98_norms_1ep AdamW beta2=0.98 (T3 base, lr=0.00023714, bf16, wavelet_norms)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "optimizer_betas": [0.9, 0.98]}' \
-    "AdamW_B2_0.98_norms_1ep: AdamW beta2 sweep (beta2=0.98, lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "AdamW_B2_0.98_norms_1ep AdamW beta2=0.98 (T3 base, lr=0.00023714, bf16, wavelet_norms)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "AdamW", "weight_decay": 0.01, "optimizer_eps": 1e-8, "lr": 0.00023714, "min_lr": 4.7428e-6, "amp_dtype": "bf16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "optimizer_betas": [0.9, 0.98]}' \
+#     "AdamW_B2_0.98_norms_1ep: AdamW beta2 sweep (beta2=0.98, lr=0.00023714, min_lr=4.7428e-6, T3 base, bf16, wavelet_decomp_norm, wavelet_recon_norm)"
 
 # Run β₂=0.99: intermediate second-moment window
 run_ablation "AdamW_B2_0.99_norms_1ep AdamW beta2=0.99 (T3 base, lr=0.00023714, bf16, wavelet_norms)" \
