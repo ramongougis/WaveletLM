@@ -538,11 +538,11 @@ Longer training time, more regularization, and parameter compression are the sur
 - [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
 - [(Shelved on WikiText-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-WikiText-103-2d-wavelet-over-batch-token-with-sequential-training)
 - [Bisected Block Context Extension](#bisected-block-context-extension)
-- [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial)
-- [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
-- [Recurrence (AdamW)](#recurrence-adamw)
 - [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
 - [New T3 Baseline](#new-t3-baseline)
+- [Recurrence with Adagrad (partial)](#recurrence-with-adagrad-partial)
+- [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
+- [Recurrence with AdamW](#recurrence-with-adamw)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Complex Wavelets](#complex-wavelets)
@@ -794,7 +794,39 @@ Full sweep tables, the `bbce_compressed_grad` toggle, and the bc=1M OOM analysis
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence (Adagrad, partial)
+### Adagrad Learning Rate Tuning
+
+T2's default `lr=0.01` was inherited from earlier baselines. Sequential block ordering surfaced that lr=0.015 recovered ~50% of the sequential-vs-random gap; the follow-up was whether this generalizes to T2 random.
+
+**Isolation test (T2 random + lr=0.015, complete).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled to 0.0003). Run log: [logs/wikitext-103_2026-05-11_15-26-31/log.txt](logs/wikitext-103_2026-05-11_15-26-31/log.txt).
+
+| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
+|---|---|---|---|---|---|---|
+| T2 baseline (lr=0.01) | 3.5881 | 1.1541 | 36.79 | 1.83h | 7,788 MiB | 3,258 MiB |
+| T2 + lr=0.015 | **3.5345** | **1.1362** | **34.79** | 1.84h | 8,065 MiB | 3,258 MiB |
+| Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
+
+Δ best val of **−0.0536 nats is ~36× the noise threshold** — unambiguous win at near-zero compute cost. **T3 = T2 + lr=0.015** is the new baseline (or **T3 = T2 + lr=0.015 + BBCE** if BBCE shows a stack-on win). A lr=0.020 canary is queued to confirm 0.015 isn't undershooting; at sufficiently high LR Adagrad's accumulator dynamics may change qualitatively. The BBCE sweep stays at lr=0.01 for apples-to-apples comparison; winners get re-run at the locked LR as part of T3 consolidation.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### New T3 Baseline
+
+Establishing a new baseline of T3 using lr = 0.015 (without the BBCE). Comparison table:
+
+| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
+|---|---|---|---|---|---|---|
+| T2 baseline (lr=0.01) | 3.5881 | 1.1541 | 36.79 | 1.83h | 7,788 MiB | 3,258 MiB |
+| T3 = T2 + lr=0.015 | **3.5345** | **1.1362** | **34.79** | 1.84h | 8,065 MiB | 3,258 MiB |
+| Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Recurrence with Adagrad (partial)
 
 Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
 
@@ -907,7 +939,7 @@ After the β₂ sweep, subsequent sweeps will cover `eps`, `weight_decay`, and `
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence (AdamW)
+### Recurrence with AdamW
 
 Full recurrence sweep re-run under AdamW. Same N × K design as [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial); all rows queued pending optimizer LR tuning.
 
@@ -924,38 +956,6 @@ Full recurrence sweep re-run under AdamW. Same N × K design as [Recurrence (Ada
 | T3 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
 
 **Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Adagrad Learning Rate Tuning
-
-T2's default `lr=0.01` was inherited from earlier baselines. Sequential block ordering surfaced that lr=0.015 recovered ~50% of the sequential-vs-random gap; the follow-up was whether this generalizes to T2 random.
-
-**Isolation test (T2 random + lr=0.015, complete).** Same configuration as T2 reference, only LR bumped from 0.01 → 0.015 (with `min_lr` scaled to 0.0003). Run log: [logs/wikitext-103_2026-05-11_15-26-31/log.txt](logs/wikitext-103_2026-05-11_15-26-31/log.txt).
-
-| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
-|---|---|---|---|---|---|---|
-| T2 baseline (lr=0.01) | 3.5881 | 1.1541 | 36.79 | 1.83h | 7,788 MiB | 3,258 MiB |
-| T2 + lr=0.015 | **3.5345** | **1.1362** | **34.79** | 1.84h | 8,065 MiB | 3,258 MiB |
-| Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
-
-Δ best val of **−0.0536 nats is ~36× the noise threshold** — unambiguous win at near-zero compute cost. **T3 = T2 + lr=0.015** is the new baseline (or **T3 = T2 + lr=0.015 + BBCE** if BBCE shows a stack-on win). A lr=0.020 canary is queued to confirm 0.015 isn't undershooting; at sufficiently high LR Adagrad's accumulator dynamics may change qualitatively. The BBCE sweep stays at lr=0.01 for apples-to-apples comparison; winners get re-run at the locked LR as part of T3 consolidation.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### New T3 Baseline
-
-Establishing a new baseline of T2 using lr = 0.015 (without the BBCE). Comparison table:
-
-| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
-|---|---|---|---|---|---|---|
-| T2 baseline (lr=0.01) | 3.5881 | 1.1541 | 36.79 | 1.83h | 7,788 MiB | 3,258 MiB |
-| T2 + lr=0.015 | **3.5345** | **1.1362** | **34.79** | 1.84h | 8,065 MiB | 3,258 MiB |
-| Δ | **−0.0536** | **−0.0179** | **−2.00** | +0.6% | +3.6% | (matched) |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
