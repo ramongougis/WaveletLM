@@ -542,6 +542,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [New T3 Baseline](#new-t3-baseline)
 - [Recurrence with Adagrad (partial)](#recurrence-with-adagrad-partial)
 - [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
+- [New T4 Baseline](#new-t4-baseline)
 - [Recurrence with AdamW](#recurrence-with-adamw)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
@@ -917,7 +918,7 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 | AdamW β₂=0.98 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.98) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.2685 | 52.59 | 3.9309 | +0.396 | 4.68h (A5000) | [link](logs/wikitext-103_2026-05-20_14-10-07/log.txt) |
 | AdamW β₂=0.99 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.99) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.2062 | 43.30 | 3.7399 | +0.205 | 4.73h (A5000) | [link](logs/wikitext-103_2026-05-20_18-53-21/log.txt) |
 | AdamW β₂=0.99986 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.99986) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1366 | 34.83 | 3.5324 | −0.002 | 4.72h (A5000) | [link](logs/wikitext-103_2026-05-21_05-08-36/log.txt) |
-| AdamW β₂=0.99988 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW β₂=0.99988 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1365 | 34.82 | 3.5323 | −0.002 | 4.70h (A5000) | [link](logs/wikitext-103_2026-05-21_09-52-27/log.txt) |
 | AdamW β₂=0.9999 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.9999) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1370 | 34.88 | 3.5310 | −0.003 | 4.71h (A5000) | [link](logs/wikitext-103_2026-05-20_23-39-18/log.txt) |
 | AdamW β₂=0.99992 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.99992) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 | AdamW β₂=0.99994 (norms)◇ | 0.00023714 | 4.7428e-6 | (0.9, 0.99994) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
@@ -939,6 +940,20 @@ After the β₂ sweep, subsequent sweeps will cover `eps`, `weight_decay`, and `
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### New T4 Baseline
+
+T4 = T3 architecture + AdamW optimizer + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters (lr, β₂). T4 row is provisional pending the β₂ fine sweep; values reflect the best β₂=0.9999 result.
+
+| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
+|---|---|---|---|---|---|---|
+| T3 (Adagrad, lr=0.015, no wavelet norms, fp16) | 3.5345 | 1.1362 | 34.79 | 1.84h | 8,065 MiB | 3,258 MiB |
+| T4 (AdamW, lr = 0.00023714, β₂ = pending, wavelet norms, bf16) | pending | pending | pending | pending | pending | pending |
+| Δ | pending | pending | pending | pending | pending | pending |
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Recurrence with AdamW
 
 Full recurrence sweep re-run under AdamW. Same N × K design as [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial); all rows queued pending optimizer LR tuning.
@@ -955,7 +970,7 @@ Full recurrence sweep re-run under AdamW. Same N × K design as [Recurrence (Ada
 | T3 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
 | T3 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
 
-**Decision rule.** A recurrence variant must clear T3 best val (3.5345) by more than the 0.0015-nat noise threshold to be considered a win.
+**Findings:**
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
