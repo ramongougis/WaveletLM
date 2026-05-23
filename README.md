@@ -928,7 +928,7 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 | AdamW β₁=0.875 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.875, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1367 | 34.85 | 3.5320 | −0.003 | 4.71h (A5000) | [link](logs/wikitext-103_2026-05-22_15-05-03/log.txt) |
 | AdamW β₁=0.925 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.925, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1372 | 34.90 | 3.5313 | −0.003 | 4.73h (A5000) | [link](logs/wikitext-103_2026-05-22_19-49-14/log.txt) |
 | AdamW β₁=0.95 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.95, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1371 | 34.89 | 3.5321 | −0.002 | 4.73h (A5000) | [link](logs/wikitext-103_2026-05-23_00-34-13/log.txt) |
-| AdamW amsgrad=True (norms)✧ | 0.00023714 | 4.7428e-6 | (0.9, 0.99988) | 1e-8 | 0.01 | True | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW amsgrad=True (norms)✧ | 0.00023714 | 4.7428e-6 | (0.9, 0.99988) | 1e-8 | 0.01 | True | bf16 | 1.0 | ✓ | 1.1367 | 34.85 | 3.5342 | +0.005 | 4.82h (A5000) | [link](logs/wikitext-103_2026-05-23_07-35-55/log.txt) |
 
 † Benchmark invalid — permanent NaN from step 27,250 due to fp16 overflow corrupting `v_t`.  
 ‡ Best val before divergence (step 27,000); not comparable to completed runs.  
@@ -943,7 +943,7 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 
 ✦ β₁ sweep: all runs at lr=0.00023714, β₂=0.99988. Reference β₁=0.9 (β₂=0.99988 row above, BPB 1.1365, val 3.5323). Sweep complete. BPB is flat from 0.875–0.95 (1.1365–1.1372); β₁=0.0 regresses on both metrics (BPB 1.1396, val 3.5358). Val-optimal is β₁=0.85 (3.5307) but BPB regresses slightly (+0.0009). **β₁=0.9 (PyTorch default) confirmed as BPB-optimal**; locked for subsequent sweeps.
 
-✧ AMSGrad probe: single run at the locked config (lr=0.00023714, β₁=0.9, β₂=0.99988, amsgrad=True). AMSGrad replaces the second-moment EMA with a running max (v̂_t = max(v̂_{t-1}, v_t)), providing stronger convergence guarantees at the cost of slower forgetting.
+✧ AMSGrad probe: single run at the locked config (lr=0.00023714, β₁=0.9, β₂=0.99988, amsgrad=True). AMSGrad replaces the second-moment EMA with a running max (v̂_t = max(v̂_{t-1}, v_t)), providing stronger convergence guarantees at the cost of slower forgetting. **Result: BPB 1.1367 — indistinguishable from T4 baseline (1.1365).** No meaningful improvement; AMSGrad discarded from further sweeps.
 
 After the amsgrad probe, `eps` and `weight_decay` sweeps follow.
 
@@ -953,22 +953,18 @@ After the amsgrad probe, `eps` and `weight_decay` sweeps follow.
 
 ### Optimizer Tuning (Adagrad) with Wavelet Norms
 
-The T3 Adagrad reference ran on the un-normed architecture. Wavelet norms shift the effective loss landscape — in the AdamW sweep, the normed optimum (lr=0.00023714) is 15× below the un-normed A3 LR (0.001). Assuming the same conversion applies, Adagrad's normed LR sweep mirrors each AdamW normed LR point × 15. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
+The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3 LR of 0.015) yields BPB 1.1332 — better than T3 (1.1362) and T4 AdamW (1.1365) with no LR retuning, showing norms help Adagrad in place. Ag1 (10× lower, lr=0.0015) collapses to BPB 1.3340, ruling out the lower end. The 15× AdamW conversion hypothesis is retired. A log-symmetric grid centred on 0.015 (×10, ×√10, ×∛10, ÷∛10, ÷√10) locates the normed Adagrad optimum. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
 
 | Run | lr | min_lr | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
 |---|---|---|---|---|---|---|---|---|
 | T3 baseline (Adagrad, no norms, ref) | 0.015000 | 3e-4 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
-| Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | queued | queued | queued | — | queued | — |
-| Adagrad Ag1 + norms (= A1 × 15) | 0.001500 | 3e-5 | queued | queued | queued | — | queued | — |
-| Adagrad Ag1.25 + norms (= A1.25 × 15) | 0.002000 | 4.0005e-5 | queued | queued | queued | — | queued | — |
-| Adagrad Ag1.375 + norms (= A1.375 × 15) | 0.002310 | 4.6197e-5 | queued | queued | queued | — | queued | — |
-| Adagrad Ag1.5 + norms (= A1.5 × 15) | 0.002668 | 5.3349e-5 | queued | queued | queued | — | queued | — |
-| Adagrad Ag1.75 + norms (= A1.75 × 15) ◆ | 0.003557 | 7.1142e-5 | queued | queued | queued | — | queued | — |
-| Adagrad Ag2 + norms (= A2 × 15) | 0.004743 | 9.4869e-5 | queued | queued | queued | — | queued | — |
-| Adagrad Ag2.25 + norms (= A2.25 × 15) | 0.006326 | 1.2651e-4 | queued | queued | queued | — | queued | — |
-| Adagrad Ag2.5 + norms (= A2.5 × 15) | 0.008435 | 1.6870e-4 | queued | queued | queued | — | queued | — |
-
-◆ Expected optimum by analogy with A1.75 in the AdamW normed sweep.
+| Adagrad Ag1 + norms (lr=0.0015, ÷ 10) | 0.001500 | 3e-5 | 1.3340 | 64.52 | 4.1472 | +0.198 | 4.77h (A5000) | [link](logs/wikitext-103_2026-05-23_17-11-47/log.txt) |
+| Adagrad Ag ÷√10 + norms (lr=0.004743) | 0.004743 | 9.486e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ÷∛10 + norms (lr=0.006963) | 0.006963 | 1.393e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | 1.1332 | 34.47 | 3.5273 | −0.003 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
+| Adagrad Ag ×∛10 + norms (lr=0.032316) | 0.032316 | 6.463e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ×√10 + norms (lr=0.047434) | 0.047434 | 9.487e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ×10 + norms (lr=0.150000) | 0.150000 | 3e-3 | queued | queued | queued | — | queued | — |
 
 **Findings:**
 
