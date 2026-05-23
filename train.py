@@ -1104,13 +1104,15 @@ def train():
             logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, eps={config.get('optimizer_eps')}{wd_str}")
         elif optimizer_name == 'AdamW':
             adamw_betas = tuple(config.get('optimizer_betas', [0.9, 0.999]))
+            adamw_amsgrad = config.get('optimizer_amsgrad', False)
             optimizers = [torch.optim.AdamW(
                 model.parameters(), lr=config['lr'],
                 betas=adamw_betas,
                 eps=config.get('optimizer_eps', 1e-8),
-                weight_decay=weight_decay)]
+                weight_decay=weight_decay,
+                amsgrad=adamw_amsgrad)]
             wd_str = f", weight_decay={weight_decay}" if weight_decay > 0 else ""
-            logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, betas={adamw_betas}, eps={config.get('optimizer_eps')}{wd_str}")
+            logger.log(f"[Optimizer] {optimizer_name}, lr={config['lr']}, betas={adamw_betas}, eps={config.get('optimizer_eps')}, amsgrad={adamw_amsgrad}{wd_str}")
         elif optimizer_name == 'Muon':
             # Hybrid Muon + AdamW. Per torch.optim.Muon docs, Muon strictly
             # requires 2D parameters; biases / norms / embeddings / LM head /

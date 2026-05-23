@@ -542,6 +542,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [New T3 Baseline](#new-t3-baseline)
 - [Recurrence with Adagrad (partial)](#recurrence-with-adagrad-partial)
 - [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
+- [Optimizer Tuning (Adagrad) with Wavelet Norms](#optimizer-tuning-adagrad-with-wavelet-norms)
 - [New T4 Baseline](#new-t4-baseline)
 - [Recurrence with AdamW](#recurrence-with-adamw)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
@@ -925,8 +926,9 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 | AdamW β₁=0.0 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.0, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1396 | 35.17 | 3.5358 | +0.001 | 4.72h (A5000) | [link](logs/wikitext-103_2026-05-22_05-38-12/log.txt) |
 | AdamW β₁=0.85 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.85, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1374 | 34.92 | 3.5307 | −0.004 | 4.69h (A5000) | [link](logs/wikitext-103_2026-05-22_10-22-19/log.txt) |
 | AdamW β₁=0.875 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.875, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1367 | 34.85 | 3.5320 | −0.003 | 4.71h (A5000) | [link](logs/wikitext-103_2026-05-22_15-05-03/log.txt) |
-| AdamW β₁=0.925 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.925, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
-| AdamW β₁=0.95 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.95, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
+| AdamW β₁=0.925 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.925, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1372 | 34.90 | 3.5313 | −0.003 | 4.73h (A5000) | [link](logs/wikitext-103_2026-05-22_19-49-14/log.txt) |
+| AdamW β₁=0.95 (norms)✦ | 0.00023714 | 4.7428e-6 | (0.95, 0.99988) | 1e-8 | 0.01 | False | bf16 | 1.0 | ✓ | 1.1371 | 34.89 | 3.5321 | −0.002 | 4.73h (A5000) | [link](logs/wikitext-103_2026-05-23_00-34-13/log.txt) |
+| AdamW amsgrad=True (norms)✧ | 0.00023714 | 4.7428e-6 | (0.9, 0.99988) | 1e-8 | 0.01 | True | bf16 | 1.0 | ✓ | queued | queued | queued | — | queued | — |
 
 † Benchmark invalid — permanent NaN from step 27,250 due to fp16 overflow corrupting `v_t`.  
 ‡ Best val before divergence (step 27,000); not comparable to completed runs.  
@@ -939,9 +941,38 @@ Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), pro
 
 ◇ β₂ sweep: all runs at lr=0.00023714 (A1.75). Baseline β₂=0.999 (A1.75 row above, BPB 1.1393, val 3.5435). Results trend monotonically: lower β₂ regresses sharply (0.98: +0.129 BPB; 0.99: +0.067 BPB), while higher β₂ improves. Fine bisection around 0.9999 (±0.00002, ±0.00004) reveals a flat BPB plateau from 0.99986–0.99992 (BPB 1.1365–1.1367); above 0.99992 performance regresses (0.99994: BPB 1.1382, val back to T3 level). Val-optimal is β₂=0.9999 (val 3.5310); BPB-optimal is β₂=0.99988 (BPB 1.1365). **β₂=0.99988 selected** as the locked value for subsequent sweeps (BPB-primary metric).
 
-✦ β₁ sweep: all runs at lr=0.00023714, β₂=0.99988. Reference β₁=0.9 (β₂=0.99988 row above, BPB 1.1365, val 3.5323). Probes cover below-default (0.875, 0.85) and above-default (0.925, 0.95) momentum, plus β₁=0.0 (collapses first moment; AdamW → RMSProp-like) as an extreme sanity check.
+✦ β₁ sweep: all runs at lr=0.00023714, β₂=0.99988. Reference β₁=0.9 (β₂=0.99988 row above, BPB 1.1365, val 3.5323). Sweep complete. BPB is flat from 0.875–0.95 (1.1365–1.1372); β₁=0.0 regresses on both metrics (BPB 1.1396, val 3.5358). Val-optimal is β₁=0.85 (3.5307) but BPB regresses slightly (+0.0009). **β₁=0.9 (PyTorch default) confirmed as BPB-optimal**; locked for subsequent sweeps.
 
-After the β₁ sweep, subsequent sweeps will cover `eps`, `weight_decay`, and `amsgrad` in order, advancing only the parameters that show signal.
+✧ AMSGrad probe: single run at the locked config (lr=0.00023714, β₁=0.9, β₂=0.99988, amsgrad=True). AMSGrad replaces the second-moment EMA with a running max (v̂_t = max(v̂_{t-1}, v_t)), providing stronger convergence guarantees at the cost of slower forgetting.
+
+After the amsgrad probe, `eps` and `weight_decay` sweeps follow.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Optimizer Tuning (Adagrad) with Wavelet Norms
+
+The T3 Adagrad reference ran on the un-normed architecture. Wavelet norms shift the effective loss landscape — in the AdamW sweep, the normed optimum (lr=0.00023714) is 15× below the un-normed A3 LR (0.001). Assuming the same conversion applies, Adagrad's normed LR sweep mirrors each AdamW normed LR point × 15. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
+
+| Run | lr | min_lr | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|
+| T3 baseline (Adagrad, no norms, ref) | 0.015000 | 3e-4 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag1 + norms (= A1 × 15) | 0.001500 | 3e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag1.25 + norms (= A1.25 × 15) | 0.002000 | 4.0005e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag1.375 + norms (= A1.375 × 15) | 0.002310 | 4.6197e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag1.5 + norms (= A1.5 × 15) | 0.002668 | 5.3349e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag1.75 + norms (= A1.75 × 15) ◆ | 0.003557 | 7.1142e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag2 + norms (= A2 × 15) | 0.004743 | 9.4869e-5 | queued | queued | queued | — | queued | — |
+| Adagrad Ag2.25 + norms (= A2.25 × 15) | 0.006326 | 1.2651e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag2.5 + norms (= A2.5 × 15) | 0.008435 | 1.6870e-4 | queued | queued | queued | — | queued | — |
+
+◆ Expected optimum by analogy with A1.75 in the AdamW normed sweep.
+
+**Findings:**
+
+(pending)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
