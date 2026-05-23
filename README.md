@@ -976,13 +976,13 @@ The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3
 
 ### New T4 Baseline
 
-T4 = T3 architecture + AdamW optimizer + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters (lr=0.00023714, β₁=0.9, β₂=0.99988). β₂ sweep complete; β₁/eps/weight_decay sweeps still in progress — T4 will be re-confirmed once all hyperparameter sweeps lock.
+T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters for the best optimizer. Updated to Adagrad (lr=0.015, fp16) after Ag0 beat the previous AdamW T4 (BPB 1.1365) by 0.003 BPB with no LR retuning. Adagrad normed LR sweep in progress — T4 will be re-confirmed once the optimum locks.
 
 | Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
 |---|---|---|---|---|---|---|
 | T3 (Adagrad, lr=0.015, no wavelet norms, fp16) | 3.5345 | 1.1362 | 34.79 | 1.84h | 8,065 MiB | 3,258 MiB |
-| T4 (AdamW, lr=0.00023714, β₂=0.99988, wavelet norms, bf16) | **3.5323** | **1.1365** | **34.82** | 4.70h | 8,118 MiB | — |
-| Δ | **−0.002** | **−0.000** | **+0.03** | +2.55× | +53 MiB | — |
+| T4 (Adagrad, lr=0.015, wavelet norms, fp16) | **3.5273** | **1.1332** | **34.47** | 4.75h (A5000) | 7,790 MiB | — |
+| Δ | **−0.007** | **−0.003** | **−0.32** | +2.58× | −275 MiB | — |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
