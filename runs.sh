@@ -608,7 +608,7 @@ run_ablation "Adagrad_wd1e4_norms_1ep Adagrad weight_decay=1e-4 (Ag0 base)" \
 
 # ---- Spectral Norm ablation (stab_spectral_norm on GatedSpectralMixer) ---------------------
 # Base: locked Ag0 config. Parametrizations API spectral_norm constrains mixer σ₁(W) ≤ 1.
-# SN1: same LR as Ag0 — measures pure effect of spectral constraint.
+# SN1: same LR as Ag0 — measures pure effect of spectral constraint. 
 # SN2: LR that NaN'd without SN (×∛10) — tests whether SN rescues it.
 # SN3: extreme LR (×10) — stress-test upper stability limit with SN enabled.
 
