@@ -29,6 +29,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.parametrizations import spectral_norm as parametrize_spectral_norm
 from typing import List, Tuple, Dict, Optional
 from torch.utils.checkpoint import checkpoint
 
@@ -829,7 +830,7 @@ class GatedSpectralMixer(nn.Module):
         if stab_spectral_norm:
             # Constrain mixer to ||W||_2 = 1 (largest singular value); prevents
             # signal amplification through the mixer that drove NaN at depth/LR.
-            self.mixer = nn.utils.spectral_norm(self.mixer)
+            self.mixer = parametrize_spectral_norm(self.mixer)
 
     def reset_parameters(self, eps=1e-3):
         with torch.no_grad():

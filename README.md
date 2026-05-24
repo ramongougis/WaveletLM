@@ -543,6 +543,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Recurrence with Adagrad (partial)](#recurrence-with-adagrad-partial)
 - [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
 - [Optimizer Tuning (Adagrad) with Wavelet Norms](#optimizer-tuning-adagrad-with-wavelet-norms)
+- [Spectral Norm](#spectral-norm)
 - [New T4 Baseline](#new-t4-baseline)
 - [Recurrence with Best Optimizer](#recurrence-with-best-optimizer)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
@@ -955,6 +956,8 @@ After the amsgrad probe, `eps` and `weight_decay` sweeps follow.
 
 The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3 LR of 0.015) yields BPB 1.1332 — better than T3 (1.1362) and T4 AdamW (1.1365) with no LR retuning, showing norms help Adagrad in place. Ag1 (10× lower, lr=0.0015) collapses to BPB 1.3340, ruling out the lower end. The 15× AdamW conversion hypothesis is retired. A log-symmetric grid centred on 0.015 (×10, ×√10, ×∛10, ÷∛10, ÷√10; or until divergence) locates the normed Adagrad optimum. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
 
+**LR tuning**
+
 | Run | lr | min_lr | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
 |---|---|---|---|---|---|---|---|---|
 | T3 baseline (Adagrad, no norms, ref) | 0.015000 | 3e-4 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
@@ -962,19 +965,18 @@ The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3
 | Adagrad Ag ÷√10 + norms (lr=0.004743) | 0.004743 | 9.486e-5 | 1.1953 | 41.85 | 3.7071 | +0.059 | 4.76h (A5000) | [link](logs/wikitext-103_2026-05-23_22-26-07/log.txt) |
 | Adagrad Ag ÷∛10 + norms (lr=0.006963) | 0.006963 | 1.393e-4 | 1.1648 | 38.04 | 3.6168 | +0.029 | 4.72h (A5000) | [link](logs/wikitext-103_2026-05-24_03-12-28/log.txt) |
 | Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | 1.1332 | 34.47 | 3.5273 | −0.003 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
+| Adagrad Ag ×1.25 + norms (lr=0.01875) | 0.01875 | 3.75e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ×1.50 + norms (lr=0.02250) | 0.02250 | 4.50e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ×1.75 + norms (lr=0.02625) | 0.02625 | 5.25e-4 | queued | queued | queued | — | queued | — |
 | Adagrad Ag ×∛10 + norms (lr=0.032316)✶ | 0.032316 | 6.463e-4 | NaN✶ | NaN✶ | 4.0763✶ | — | 4.60h (A5000) | [link](logs/wikitext-103_2026-05-24_07-57-45/log.txt) |
 
-✶ Late-training divergence: best_model.pt was saved cleanly (val 4.0763 before spike), but NaN contaminated the logits for some benchmark windows — BPB unmeasurable. Text generation remains functional from that checkpoint. Both below-baseline runs regress substantially (÷√10: +0.059; ÷∛10: +0.029). The first above-baseline run diverges (×∛10: NaN). Remaining queued: ×√10, ×10.
+✶ Late-training divergence: best_model.pt was saved cleanly (val 4.0763 before spike), but NaN contaminated the logits for some benchmark windows — BPB unmeasurable. Text generation remains functional from that checkpoint. Both below-baseline runs regress substantially (÷√10: +0.059; ÷∛10: +0.029). The first above-baseline run diverges (×∛10: NaN). Fine-grained sweep (×1.25, ×1.5, ×1.75) queued to bracket where instability begins; ×√10 and ×10 cancelled.
 
-**Findings:**
+**LR Tuning Findings:**
 
-Below-baseline LRs regress monotonically (÷10: +0.198 BPB; ÷√10: +0.059; ÷∛10: +0.029). Above-baseline at ×∛10 already diverges. **Optimum is at lr=0.015 (Ag0, BPB 1.1332)** — the T3 LR with wavelet norms added, no retuning needed. Remaining runs (×√10, ×10) are expected to diverge and serve primarily as stability probes.
+Below-baseline LRs regress monotonically (÷10: +0.198 BPB; ÷√10: +0.059; ÷∛10: +0.029). Above-baseline at ×∛10 already diverges. **Current optimum: lr=0.015 (Ag0, BPB 1.1332).** Fine-grained sweep (×1.25, ×1.5, ×1.75) queued to determine whether there is any headroom above the current optimum before the ×∛10 instability threshold.
 
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Optimizer Tuning (Adagrad) — Parameter Sweep
+**Other parameter tuning**
 
 All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 architecture). One parameter is varied per run; all others held at Ag0 defaults (eps=2e-13, initial_accumulator_value=0, weight_decay=1e-6). Δ is BPB vs Ag0 (1.1332).
 
@@ -988,7 +990,28 @@ All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet
 | Adagrad weight_decay=0 | 2e-13 | 0 | 0 | queued | queued | queued | — | queued | — |
 | Adagrad weight_decay=1e-4 | 2e-13 | 0 | 1e-4 | queued | queued | queued | — | queued | — |
 
-**Findings:**
+**Other Tuning Findings:**
+
+(pending)
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Spectral Norm
+
+Adding for stability and testing its performance.
+
+All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 architecture, Adagrad eps=2e-13, initial_acc=0, weight_decay=1e-6). `stab_spectral_norm` constrains the GatedSpectralMixer's dense routing matrix to σ₁(W) ≤ 1, preventing singular-value-driven amplitude growth. Δ is BPB vs Ag0 (1.1332).
+
+| Run | lr | stab_spectral_norm | BPB sliding | PPL sliding | Best val | Δ vs Ag0 | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|
+| Ag0 + norms (no SN, ref) | 0.015 | ✗ | 1.1332 | 34.47 | 3.5273 | (ref) | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
+| SN1: Ag0 + SN (lr=0.015) | 0.015 | ✓ | queued | queued | queued | — | queued | — |
+| SN2: Ag0 + SN (lr=0.032316, prev. NaN) | 0.032316 | ✓ | queued | queued | queued | — | queued | — |
+| SN3: Ag0 + SN (lr=0.15, extreme) | 0.15 | ✓ | queued | queued | queued | — | queued | — |
+
+**Spectral Norm Findings:**
 
 (pending)
 

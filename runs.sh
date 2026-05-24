@@ -552,6 +552,25 @@ benchmark_only_run() {
 #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.15, "min_lr": 0.003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
 #     "Adagrad_AgX10_norms_1ep: Adagrad LR sweep (lr=0.15, min_lr=0.003, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
+# ---- Fine-grained LR sweep above Ag0 (×1.25, ×1.5, ×1.75) --------------------------------
+# Ag0 (lr=0.015) is the current optimum; AgCbrt10 (lr=0.032316, ×∛10) NaN'd.
+# Three arithmetic steps probe the gap to bracket where instability begins.
+
+run_ablation "Adagrad_Ag125_norms_1ep Adagrad lr=0.01875 (+25% above Ag0)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.01875, "min_lr": 3.75e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_Ag125_norms_1ep: Adagrad fine LR sweep (lr=0.01875, min_lr=3.75e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_Ag150_norms_1ep Adagrad lr=0.02250 (+50% above Ag0)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.02250, "min_lr": 4.50e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_Ag150_norms_1ep: Adagrad fine LR sweep (lr=0.02250, min_lr=4.50e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_Ag175_norms_1ep Adagrad lr=0.02625 (+75% above Ag0)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.02625, "min_lr": 5.25e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_Ag175_norms_1ep: Adagrad fine LR sweep (lr=0.02625, min_lr=5.25e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
 # ---- Adagrad parameter sweep (eps, initial_accumulator_value, weight_decay) ---------------
 # Base: locked Ag0 config (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 arch).
 # One parameter varied per run; all others held at Ag0 defaults.
@@ -586,3 +605,24 @@ run_ablation "Adagrad_wd1e4_norms_1ep Adagrad weight_decay=1e-4 (Ag0 base)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-4, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
     "Adagrad_wd1e4_norms_1ep: Adagrad param sweep (weight_decay=1e-4, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# ---- Spectral Norm ablation (stab_spectral_norm on GatedSpectralMixer) ---------------------
+# Base: locked Ag0 config. Parametrizations API spectral_norm constrains mixer σ₁(W) ≤ 1.
+# SN1: same LR as Ag0 — measures pure effect of spectral constraint.
+# SN2: LR that NaN'd without SN (×∛10) — tests whether SN rescues it.
+# SN3: extreme LR (×10) — stress-test upper stability limit with SN enabled.
+
+run_ablation "Adagrad_SN1_norms_1ep Spectral norm + Ag0 LR (lr=0.015)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
+    "Adagrad_SN1_norms_1ep: Spectral norm ablation (lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
+
+run_ablation "Adagrad_SN2_norms_1ep Spectral norm + AgCbrt10 LR (lr=0.032316, prev. NaN)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.032316, "min_lr": 6.463e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
+    "Adagrad_SN2_norms_1ep: Spectral norm ablation (lr=0.032316, min_lr=6.463e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
+
+run_ablation "Adagrad_SN3_norms_1ep Spectral norm + extreme LR (lr=0.15)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.15, "min_lr": 0.003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
+    "Adagrad_SN3_norms_1ep: Spectral norm ablation (lr=0.15, min_lr=0.003, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
