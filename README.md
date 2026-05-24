@@ -960,15 +960,17 @@ The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3
 | T3 baseline (Adagrad, no norms, ref) | 0.015000 | 3e-4 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
 | Adagrad Ag1 + norms (lr=0.0015, ÷ 10) | 0.001500 | 3e-5 | 1.3340 | 64.52 | 4.1472 | +0.198 | 4.77h (A5000) | [link](logs/wikitext-103_2026-05-23_17-11-47/log.txt) |
 | Adagrad Ag ÷√10 + norms (lr=0.004743) | 0.004743 | 9.486e-5 | 1.1953 | 41.85 | 3.7071 | +0.059 | 4.76h (A5000) | [link](logs/wikitext-103_2026-05-23_22-26-07/log.txt) |
-| Adagrad Ag ÷∛10 + norms (lr=0.006963) | 0.006963 | 1.393e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ÷∛10 + norms (lr=0.006963) | 0.006963 | 1.393e-4 | 1.1648 | 38.04 | 3.6168 | +0.029 | 4.72h (A5000) | [link](logs/wikitext-103_2026-05-24_03-12-28/log.txt) |
 | Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | 1.1332 | 34.47 | 3.5273 | −0.003 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
-| Adagrad Ag ×∛10 + norms (lr=0.032316) | 0.032316 | 6.463e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ×∛10 + norms (lr=0.032316)✶ | 0.032316 | 6.463e-4 | NaN✶ | NaN✶ | 4.0763✶ | — | 4.60h (A5000) | [link](logs/wikitext-103_2026-05-24_07-57-45/log.txt) |
 | Adagrad Ag ×√10 + norms (lr=0.047434) | 0.047434 | 9.487e-4 | queued | queued | queued | — | queued | — |
 | Adagrad Ag ×10 + norms (lr=0.150000) | 0.150000 | 3e-3 | queued | queued | queued | — | queued | — |
 
+✶ Late-training divergence: best_model.pt was saved cleanly (val 4.0763 before spike), but NaN contaminated the logits for some benchmark windows — BPB unmeasurable. Text generation remains functional from that checkpoint. Both below-baseline runs regress substantially (÷√10: +0.059; ÷∛10: +0.029). The first above-baseline run diverges (×∛10: NaN). Remaining queued: ×√10, ×10.
+
 **Findings:**
 
-(pending)
+Below-baseline LRs regress monotonically (÷10: +0.198 BPB; ÷√10: +0.059; ÷∛10: +0.029). Above-baseline at ×∛10 already diverges. **Optimum is at lr=0.015 (Ag0, BPB 1.1332)** — the T3 LR with wavelet norms added, no retuning needed. Remaining runs (×√10, ×10) are expected to diverge and serve primarily as stability probes.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
