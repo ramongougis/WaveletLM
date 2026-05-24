@@ -23,11 +23,22 @@ from pathlib import Path
 
 
 def load_state(path: Path) -> dict:
-    ckpt = torch.load(path, map_location="cpu", weights_only=True)
+    # weights_only=False is safe here; this is a trusted local checkpoint.
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    print(f"  Checkpoint type : {type(ckpt).__name__}")
     if isinstance(ckpt, dict):
+        print(f"  Top-level keys  : {list(ckpt.keys())[:10]}")
         for key in ("model", "state_dict", "model_state_dict"):
             if key in ckpt:
-                return ckpt[key]
+                inner = ckpt[key]
+                print(f"  Unwrapping key  : '{key}'  →  {type(inner).__name__}  ({len(inner)} entries)")
+                return inner
+        # No recognised wrapper key — assume it IS the state dict
+        return ckpt
+    # Bare model object saved with torch.save(model, path)
+    if hasattr(ckpt, "state_dict"):
+        print("  Detected bare model object — extracting state_dict()")
+        return ckpt.state_dict()
     return ckpt
 
 
@@ -125,7 +136,11 @@ def main() -> None:
         if isinstance(p, torch.Tensor) and p.is_floating_point()
     )
     print(f"\n  Total floating-point params : {total_params:,}")
-    print(f"  Total NaN                   : {total_nan:,}  ({100.0*total_nan/total_params:.4f}%)")
+    if total_params > 0:
+        print(f"  Total NaN                   : {total_nan:,}  ({100.0*total_nan/total_params:.4f}%)")
+    else:
+        print("  WARNING: no floating-point params found — checkpoint format not recognised.")
+        print("  Re-run with TORCH_SHOW_CPP_STACKTRACES=1 or inspect ckpt keys manually.")
     print()
 
 

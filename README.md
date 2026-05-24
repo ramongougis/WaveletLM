@@ -544,7 +544,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
 - [Optimizer Tuning (Adagrad) with Wavelet Norms](#optimizer-tuning-adagrad-with-wavelet-norms)
 - [New T4 Baseline](#new-t4-baseline)
-- [Recurrence with AdamW](#recurrence-with-adamw)
+- [Recurrence with Best Optimizer](#recurrence-with-best-optimizer)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Complex Wavelets](#complex-wavelets)
@@ -990,9 +990,9 @@ T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_nor
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence with AdamW
+### Recurrence with Best Optimizer
 
-Full recurrence sweep re-run under AdamW. Same N × K design as [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial); all rows queued pending optimizer LR tuning.
+Full recurrence sweep using the best optimizer at optimal calibration. Same N × K design as [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial); all rows queued pending optimizer LR tuning.
 
 **Sweep (1 epoch each, ordered cost-ascending; reference row = T3 baseline at N=K=1).**
 
