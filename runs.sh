@@ -527,27 +527,62 @@ benchmark_only_run() {
 #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.0015, "min_lr": 3e-5, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
 #     "Adagrad_Ag1_norms_1ep: Adagrad LR sweep (lr=0.0015, min_lr=3e-5, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_AgDivSqrt10_norms_1ep Adagrad lr=0.004743 + wavelet_norms (÷√10 below baseline)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.004743, "min_lr": 9.486e-5, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_AgDivSqrt10_norms_1ep: Adagrad LR sweep (lr=0.004743, min_lr=9.486e-5, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_AgDivSqrt10_norms_1ep Adagrad lr=0.004743 + wavelet_norms (÷√10 below baseline)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.004743, "min_lr": 9.486e-5, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_AgDivSqrt10_norms_1ep: Adagrad LR sweep (lr=0.004743, min_lr=9.486e-5, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_AgDivCbrt10_norms_1ep Adagrad lr=0.006963 + wavelet_norms (÷∛10 below baseline)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.006963, "min_lr": 1.393e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_AgDivCbrt10_norms_1ep: Adagrad LR sweep (lr=0.006963, min_lr=1.393e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_AgDivCbrt10_norms_1ep Adagrad lr=0.006963 + wavelet_norms (÷∛10 below baseline)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.006963, "min_lr": 1.393e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_AgDivCbrt10_norms_1ep: Adagrad LR sweep (lr=0.006963, min_lr=1.393e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_AgCbrt10_norms_1ep Adagrad lr=0.032316 + wavelet_norms (×∛10 above baseline)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.032316, "min_lr": 6.463e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_AgCbrt10_norms_1ep: Adagrad LR sweep (lr=0.032316, min_lr=6.463e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_AgCbrt10_norms_1ep Adagrad lr=0.032316 + wavelet_norms (×∛10 above baseline)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.032316, "min_lr": 6.463e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_AgCbrt10_norms_1ep: Adagrad LR sweep (lr=0.032316, min_lr=6.463e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_AgSqrt10_norms_1ep Adagrad lr=0.047434 + wavelet_norms (×√10 above baseline)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.047434, "min_lr": 9.487e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_AgSqrt10_norms_1ep: Adagrad LR sweep (lr=0.047434, min_lr=9.487e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_AgSqrt10_norms_1ep Adagrad lr=0.047434 + wavelet_norms (×√10 above baseline)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.047434, "min_lr": 9.487e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_AgSqrt10_norms_1ep: Adagrad LR sweep (lr=0.047434, min_lr=9.487e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_AgX10_norms_1ep Adagrad lr=0.15 + wavelet_norms (×10 above baseline)" \
+# run_ablation "Adagrad_AgX10_norms_1ep Adagrad lr=0.15 + wavelet_norms (×10 above baseline)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.15, "min_lr": 0.003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_AgX10_norms_1ep: Adagrad LR sweep (lr=0.15, min_lr=0.003, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+# ---- Adagrad parameter sweep (eps, initial_accumulator_value, weight_decay) ---------------
+# Base: locked Ag0 config (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 arch).
+# One parameter varied per run; all others held at Ag0 defaults.
+# Order: initial_accumulator_value first (highest variance / memory-motivated), then eps, then weight_decay.
+
+run_ablation "Adagrad_Av0.1_norms_1ep Adagrad initial_accumulator_value=0.1 (Ag0 base)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.15, "min_lr": 0.003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_AgX10_norms_1ep: Adagrad LR sweep (lr=0.15, min_lr=0.003, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "optimizer_initial_accumulator_value": 0.1, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_Av0.1_norms_1ep: Adagrad param sweep (initial_accumulator_value=0.1, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_Av1.0_norms_1ep Adagrad initial_accumulator_value=1.0 (Ag0 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "optimizer_initial_accumulator_value": 1.0, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_Av1.0_norms_1ep: Adagrad param sweep (initial_accumulator_value=1.0, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_eps1e10_norms_1ep Adagrad eps=1e-10 PyTorch default (Ag0 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 1e-10, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_eps1e10_norms_1ep: Adagrad param sweep (eps=1e-10, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_eps1e8_norms_1ep Adagrad eps=1e-8 (Ag0 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 1e-8, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_eps1e8_norms_1ep: Adagrad param sweep (eps=1e-8, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_wd0_norms_1ep Adagrad weight_decay=0 (Ag0 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 0, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_wd0_norms_1ep: Adagrad param sweep (weight_decay=0, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+
+run_ablation "Adagrad_wd1e4_norms_1ep Adagrad weight_decay=1e-4 (Ag0 base)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-4, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+    "Adagrad_wd1e4_norms_1ep: Adagrad param sweep (weight_decay=1e-4, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"

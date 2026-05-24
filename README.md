@@ -953,7 +953,7 @@ After the amsgrad probe, `eps` and `weight_decay` sweeps follow.
 
 ### Optimizer Tuning (Adagrad) with Wavelet Norms
 
-The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3 LR of 0.015) yields BPB 1.1332 — better than T3 (1.1362) and T4 AdamW (1.1365) with no LR retuning, showing norms help Adagrad in place. Ag1 (10× lower, lr=0.0015) collapses to BPB 1.3340, ruling out the lower end. The 15× AdamW conversion hypothesis is retired. A log-symmetric grid centred on 0.015 (×10, ×√10, ×∛10, ÷∛10, ÷√10) locates the normed Adagrad optimum. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
+The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3 LR of 0.015) yields BPB 1.1332 — better than T3 (1.1362) and T4 AdamW (1.1365) with no LR retuning, showing norms help Adagrad in place. Ag1 (10× lower, lr=0.0015) collapses to BPB 1.3340, ruling out the lower end. The 15× AdamW conversion hypothesis is retired. A log-symmetric grid centred on 0.015 (×10, ×√10, ×∛10, ÷∛10, ÷√10; or until divergence) locates the normed Adagrad optimum. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
 
 | Run | lr | min_lr | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train time | Run log |
 |---|---|---|---|---|---|---|---|---|
@@ -963,14 +963,34 @@ The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3
 | Adagrad Ag ÷∛10 + norms (lr=0.006963) | 0.006963 | 1.393e-4 | 1.1648 | 38.04 | 3.6168 | +0.029 | 4.72h (A5000) | [link](logs/wikitext-103_2026-05-24_03-12-28/log.txt) |
 | Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | 1.1332 | 34.47 | 3.5273 | −0.003 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
 | Adagrad Ag ×∛10 + norms (lr=0.032316)✶ | 0.032316 | 6.463e-4 | NaN✶ | NaN✶ | 4.0763✶ | — | 4.60h (A5000) | [link](logs/wikitext-103_2026-05-24_07-57-45/log.txt) |
-| Adagrad Ag ×√10 + norms (lr=0.047434) | 0.047434 | 9.487e-4 | queued | queued | queued | — | queued | — |
-| Adagrad Ag ×10 + norms (lr=0.150000) | 0.150000 | 3e-3 | queued | queued | queued | — | queued | — |
 
 ✶ Late-training divergence: best_model.pt was saved cleanly (val 4.0763 before spike), but NaN contaminated the logits for some benchmark windows — BPB unmeasurable. Text generation remains functional from that checkpoint. Both below-baseline runs regress substantially (÷√10: +0.059; ÷∛10: +0.029). The first above-baseline run diverges (×∛10: NaN). Remaining queued: ×√10, ×10.
 
 **Findings:**
 
 Below-baseline LRs regress monotonically (÷10: +0.198 BPB; ÷√10: +0.059; ÷∛10: +0.029). Above-baseline at ×∛10 already diverges. **Optimum is at lr=0.015 (Ag0, BPB 1.1332)** — the T3 LR with wavelet norms added, no retuning needed. Remaining runs (×√10, ×10) are expected to diverge and serve primarily as stability probes.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Optimizer Tuning (Adagrad) — Parameter Sweep
+
+All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 architecture). One parameter is varied per run; all others held at Ag0 defaults (eps=2e-13, initial_accumulator_value=0, weight_decay=1e-6). Δ is BPB vs Ag0 (1.1332).
+
+| Run | eps | initial_acc | weight_decay | BPB sliding | PPL sliding | Best val | Δ vs Ag0 | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|---|
+| Ag0 (reference) | 2e-13 | 0 | 1e-6 | 1.1332 | 34.47 | 3.5273 | (ref) | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
+| Adagrad initial_acc=0.1 | 2e-13 | 0.1 | 1e-6 | queued | queued | queued | — | queued | — |
+| Adagrad initial_acc=1.0 | 2e-13 | 1.0 | 1e-6 | queued | queued | queued | — | queued | — |
+| Adagrad eps=1e-10 (PyTorch default) | 1e-10 | 0 | 1e-6 | queued | queued | queued | — | queued | — |
+| Adagrad eps=1e-8 | 1e-8 | 0 | 1e-6 | queued | queued | queued | — | queued | — |
+| Adagrad weight_decay=0 | 2e-13 | 0 | 0 | queued | queued | queued | — | queued | — |
+| Adagrad weight_decay=1e-4 | 2e-13 | 0 | 1e-4 | queued | queued | queued | — | queued | — |
+
+**Findings:**
+
+(pending)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

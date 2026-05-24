@@ -28,7 +28,7 @@ def load_state(path: Path) -> dict:
     print(f"  Checkpoint type : {type(ckpt).__name__}")
     if isinstance(ckpt, dict):
         print(f"  Top-level keys  : {list(ckpt.keys())[:10]}")
-        for key in ("model", "state_dict", "model_state_dict"):
+        for key in ("model_state", "model", "state_dict", "model_state_dict"):
             if key in ckpt:
                 inner = ckpt[key]
                 print(f"  Unwrapping key  : '{key}'  →  {type(inner).__name__}  ({len(inner)} entries)")
@@ -106,6 +106,35 @@ def analyze(state: dict, label: str) -> None:
             f"  {mod:<40} {s['params']:>12,}  {s['max_abs']:>10.4f}"
             f"  {nan_str:>8}  {inf_str:>8}"
         )
+
+    # fp16 overflow risk — forward-pass NaN can occur even with clean weights
+    # if activations or logits exceed fp16 max (~65504) during benchmark inference.
+    # Large weight magnitudes are the most common trigger.
+    FP16_MAX = 65504.0
+    risk_rows = []
+    for name, param in state.items():
+        if not isinstance(param, torch.Tensor) or not param.is_floating_point():
+            continue
+        finite = param.float()
+        finite = finite[torch.isfinite(finite)]
+        if not finite.numel():
+            continue
+        max_abs = finite.abs().max().item()
+        if max_abs > 100.0:
+            n_over_fp16 = (finite.abs() > FP16_MAX).sum().item()
+            n_over_1k   = (finite.abs() > 1000.0).sum().item()
+            risk_rows.append((max_abs, name, param.shape, n_over_1k, n_over_fp16, param.numel()))
+
+    if risk_rows:
+        risk_rows.sort(reverse=True)
+        print(f"\n  fp16 overflow risk (weights with max|w| > 100):")
+        print(f"  {'Parameter':<60} {'max|w|':>10}  {'>1k':>8}  {'>fp16_max':>10}")
+        print(f"  {'-'*60} {'-'*10}  {'-'*8}  {'-'*10}")
+        for max_abs, name, shape, n1k, nfp16, total in risk_rows:
+            tag = " *** FP16 OVERFLOW" if nfp16 > 0 else (" ** HIGH" if n1k > 0 else "")
+            print(f"  {name:<60} {max_abs:>10.2f}  {n1k:>8}  {nfp16:>10}{tag}")
+    else:
+        print(f"\n  fp16 overflow risk: no parameters with max|w| > 100 — weights are well-scaled.")
 
 
 def main() -> None:
