@@ -226,6 +226,18 @@ fix supersede these.
 | C — Hybrid re-rank (K=50) | 1423.57 | 2.1421 | 0.430 | −0.6111 | SVDR *regressed* (−0.11) — over-rerank? |
 | KenLM 5-gram (reference) | — | — | — | — | queued |
 
+### Evaluation Results (Phase 2b — extended compatibility: 8 positive relations)
+
+`compatibility()` now consults all 8 positive ConceptNet relations (was 3): added `IsA`, `UsedFor`, `Causes`, `ReceivesAction`, `AtLocation` alongside `CapableOf`, `HasProperty`, `RelatedTo`. Boost magnitudes 1.2–1.5, multiplicative across matched relations.
+
+| Mechanism | PPL ↓ | BPB ↓ | SVDR acc | Δ BPB vs 2a | Notes |
+|---|---|---|---|---|---|
+| A — Weighted edge walk | 1414.25 | 2.1402 | 0.730 | −0.0001 | Diagnostic null result |
+| B — Aggregated vote | 1414.24 | 2.1402 | 0.730 | −0.0001 | A still ≈ B; contradictions unchanged |
+| C — Hybrid re-rank (K=50) | 1422.67 | 2.1419 | 0.430 | −0.0002 | Same pattern |
+
+**Diagnostic outcome:** the 5 added positive relations contribute essentially zero aggregate lift. This confirms coverage (9.1% of nodes) is the binding constraint, not relation richness. The new relations require the *literal next word* to appear in the context's `IsA` / `UsedFor` / `AtLocation` / etc. lists, which almost never happens in flowing text — e.g. `fish.IsA = ["animal", "vertebrate"]` rarely matches whatever word actually follows "fish" in a sentence. Validates moving to MLP property imputation as the next step rather than further hand-curating relations.
+
 Tokens: 200,381 (down from 235,821 — spaCy's POS filter removes 15% more than the old `=-<>` heuristic). UNK: 1.1% (down from 1.7%).
 
 **Findings:**

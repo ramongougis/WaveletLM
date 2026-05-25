@@ -61,8 +61,8 @@ CONCEPTNET_RELS = frozenset({
 })
 
 # ── Prediction ─────────────────────────────────────────────────────────────
-CONTEXT_SIZE      = 5    # number of prior tokens used as context window
-HYBRID_K          = 50   # Mechanism C: candidates from A before re-ranking
+CONTEXT_SIZE      = 10    # number of prior tokens used as context window
+HYBRID_K          = 500   # Mechanism C: candidates from A before re-ranking
 MAX_EDGES_PER_SRC = 500  # max outgoing edges stored per source node (caps predict cost)
 
 # ── MLP Property Classifier (Phase 2) ──────────────────────────────────────
@@ -80,13 +80,17 @@ MAX_EDGES_PER_SRC = 500  # max outgoing edges stored per source node (caps predi
 #       as negative). Predictions in between are "unknown" and contribute
 #       nothing to compatibility(). Per-prediction noise control.
 MLP_PROPERTIES_ENABLED      = False                           # set True after training
-MLP_PROPERTY_COVERAGE_PCT   = 80                              # % of pair frequency to keep
+MLP_PROPERTY_COVERAGE_PCT   = 80                              # top-N% (per relation) of target
+                                                              # words to predict, by frequency
 MLP_PROPERTY_CONFIDENCE     = 0.7                             # sigmoid threshold at inference
 MLP_PROPERTY_PATH           = DATA_DIR / "mlp_properties.pkl" # imputed properties dict
 MLP_PROPERTY_MODEL_PATH     = DATA_DIR / "mlp_property_classifier.pt"
 MLP_PROPERTY_EMBED_DIM      = 300                             # GloVe-300 input dim
-MLP_PROPERTY_HIDDEN_DIM     = 256                             # hidden layer width
-MLP_PROPERTY_LAYERS         = 2                               # depth (excluding output)
+MLP_PROPERTY_HIDDEN_DIM     = 256                             # only used if LAYERS > 0
+MLP_PROPERTY_LAYERS         = 0                               # hidden layers; 0 = linear probe
+                                                              # (fully interpretable per-property
+                                                              # weight vector). Bump to 1 only
+                                                              # if linear demonstrably underfits.
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
 UNK_LOGPROB = -15.0  # log₂ fallback for tokens not reachable from context
