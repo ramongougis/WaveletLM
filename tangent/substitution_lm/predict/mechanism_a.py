@@ -39,16 +39,18 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
     scores: dict[int, float] = defaultdict(float)
 
     # Use the most recent CONTEXT_SIZE tokens, weighted by recency
+    has_props = bool(props)  # skip compat entirely when ConceptNet is absent
     window = context_ids[-C.CONTEXT_SIZE:]
     for rank, ctx_id in enumerate(window):
         recency_weight = 1.0 + 0.2 * rank  # more recent = higher weight
-        edges = logprob.get(ctx_id, {})
-        for cand_id, lp in edges.items():
-            compat = compat_score(ctx_id, cand_id, props)
-            if compat == 0.0:
-                continue
-            # Convert log-prob back to prob, scale by compat and recency
-            scores[cand_id] += math.exp2(lp) * compat * recency_weight
+        for cand_id, lp in logprob.get(ctx_id, {}).items():
+            if has_props:
+                compat = compat_score(ctx_id, cand_id, props)
+                if compat == 0.0:
+                    continue
+                scores[cand_id] += math.exp2(lp) * compat * recency_weight
+            else:
+                scores[cand_id] += math.exp2(lp) * recency_weight
 
     if not scores:
         # Full backoff to unigram distribution

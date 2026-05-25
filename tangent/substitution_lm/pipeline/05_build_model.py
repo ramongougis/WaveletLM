@@ -32,14 +32,18 @@ import config as C
 def _to_logprob(dag_raw: dict, min_count: int = 2) -> dict:
     """Convert raw count DAG to log2-probability DAG (row-normalised).
 
-    Edges with count < min_count are pruned — they represent a single
-    co-occurrence across the entire corpus and add noise, not signal.
+    Edges with count < min_count are pruned (noise). High-fan-out source
+    nodes are capped at MAX_EDGES_PER_SRC by keeping the most frequent edges,
+    bounding per-token prediction cost in pure Python.
     """
     logprob = {}
+    max_edges = C.MAX_EDGES_PER_SRC
     for src, dsts in dag_raw.items():
         filtered = {dst: cnt for dst, cnt in dsts.items() if cnt >= min_count}
         if not filtered:
             continue
+        if len(filtered) > max_edges:
+            filtered = dict(sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:max_edges])
         total = sum(filtered.values())
         logprob[src] = {dst: math.log2(cnt / total) for dst, cnt in filtered.items()}
     return logprob

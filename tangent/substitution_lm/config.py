@@ -61,8 +61,9 @@ CONCEPTNET_RELS = frozenset({
 })
 
 # ── Prediction ─────────────────────────────────────────────────────────────
-CONTEXT_SIZE = 5   # number of prior tokens used as context window
-HYBRID_K     = 50  # Mechanism C: candidates from A before re-ranking
+CONTEXT_SIZE      = 5    # number of prior tokens used as context window
+HYBRID_K          = 50   # Mechanism C: candidates from A before re-ranking
+MAX_EDGES_PER_SRC = 500  # max outgoing edges stored per source node (caps predict cost)
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
 UNK_LOGPROB = -15.0  # log₂ fallback for tokens not reachable from context
