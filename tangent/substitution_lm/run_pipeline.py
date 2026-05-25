@@ -47,25 +47,6 @@ STEP_OUTPUTS = {
 }
 
 
-def check_data_paths():
-    missing = [p for p in (C.TRAIN_RAW, C.TEST_RAW) if not p.exists()]
-    if missing:
-        print("ERROR: WikiText-103 raw files not found:")
-        for p in missing:
-            print(f"  {p}")
-        print(
-            "\nDownload WikiText-103 raw:\n"
-            "  wget https://s3.amazonaws.com/fast-ai-nlp/wikitext-103.tgz\n"
-            "  tar xf wikitext-103.tgz\n"
-            "\nOr via HuggingFace datasets:\n"
-            "  python -c \"from datasets import load_dataset; "
-            "load_dataset('wikitext','wikitext-103-raw-v1')\"\n"
-            "\nThen set env vars if your layout differs:\n"
-            "  export WT103_TRAIN=/path/to/wiki.train.raw\n"
-            "  export WT103_TEST=/path/to/wiki.test.raw"
-        )
-        sys.exit(1)
-
 
 def run_step(n: int):
     script = STEP_SCRIPTS[n]
@@ -101,14 +82,10 @@ def main():
     print("=" * 60)
     print("  Substitution LM Pipeline")
     print("=" * 60)
-    print(f"  Train raw : {C.TRAIN_RAW}")
-    print(f"  Test raw  : {C.TEST_RAW}")
+    print(f"  Dataset   : {C.HF_DATASET} / {C.HF_CONFIG}")
     print(f"  Data dir  : {C.DATA_DIR}")
     print(f"  Cache dir : {C.CACHE_DIR}")
     print()
-
-    if any(s in steps for s in [1, 2, 3]):
-        check_data_paths()
 
     for s in steps:
         print(f"── Step {s}: {STEP_SCRIPTS[s].name} {'─'*(45 - len(STEP_SCRIPTS[s].name))}")
