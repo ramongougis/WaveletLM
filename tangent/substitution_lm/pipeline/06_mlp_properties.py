@@ -235,30 +235,40 @@ def _impute(model, properties, id2ngram, targets, nlp, conf, max_per_node=0, bat
             vecs = np.asarray([b[1] for b in batch], dtype=np.float32)
             probs = torch.sigmoid(model(torch.from_numpy(vecs))).numpy()
 
-            # Vectorised: find positive (node, target) pairs without iterating
-            # the full (batch × K) space in Python. At label-rate ~0.01% and
-            # σ>0.7, this is ~10⁴ entries per batch vs ~10⁸ pairs scanned.
-            pos_idx = np.argwhere(probs > conf)  # (n_pos, 2)
-            per_node: dict[int, list[int]] = defaultdict(list)
-            for node_i, target_i in pos_idx:
-                per_node[int(node_i)].append(int(target_i))
-
-            for node_i, target_indices in per_node.items():
-                if max_per_node and len(target_indices) > max_per_node:
-                    # Keep only the top-N most confident predictions per node.
-                    # Linear probe + pos_weight = 100 tends to over-predict;
-                    # cap protects downstream memory and quality.
-                    target_indices = sorted(
-                        target_indices,
-                        key=lambda ti: probs[node_i, ti],
-                        reverse=True,
-                    )[:max_per_node]
-                node_props = defaultdict(list)
-                for ti in target_indices:
-                    relation, target = targets[ti]
-                    node_props[relation].append(target)
-                imputed[nids[node_i]] = dict(node_props)
-                n_pred_entries += len(target_indices)
+            n_batch = probs.shape[0]
+            if max_per_node and max_per_node > 0:
+                # Top-K per node via argpartition (O(K) in C), then filter by
+                # confidence. Avoids the per-node Python sort over all
+                # super-threshold targets — the linear probe routinely fires
+                # thousands of positives per node, and sorting them all was
+                # the per-batch bottleneck.
+                top_k_idx = np.argpartition(-probs, max_per_node - 1, axis=1)[:, :max_per_node]
+                row_idx = np.arange(n_batch)[:, None]
+                top_k_probs = probs[row_idx, top_k_idx]
+                keep_mask = top_k_probs > conf
+                for node_i in range(n_batch):
+                    kept = top_k_idx[node_i][keep_mask[node_i]]
+                    if len(kept) == 0:
+                        continue
+                    node_props = defaultdict(list)
+                    for ti in kept:
+                        relation, target = targets[ti]
+                        node_props[relation].append(target)
+                    imputed[nids[node_i]] = dict(node_props)
+                    n_pred_entries += len(kept)
+            else:
+                # No cap — find all positives via argwhere
+                pos_idx = np.argwhere(probs > conf)
+                per_node: dict[int, list[int]] = defaultdict(list)
+                for node_i, target_i in pos_idx:
+                    per_node[int(node_i)].append(int(target_i))
+                for node_i, target_indices in per_node.items():
+                    node_props = defaultdict(list)
+                    for ti in target_indices:
+                        relation, target = targets[ti]
+                        node_props[relation].append(target)
+                    imputed[nids[node_i]] = dict(node_props)
+                    n_pred_entries += len(target_indices)
 
             ibar.set_postfix(imputed=f"{len(imputed):,}")
     avg = n_pred_entries / max(len(imputed), 1)

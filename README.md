@@ -987,7 +987,7 @@ All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet
 | Ag0 (reference) | 2e-13 | 0 | 1e-6 | 1.1332 | 34.47 | 3.5273 | (ref) | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
 | Adagrad initial_acc=0.1 | 2e-13 | 0.1 | 1e-6 | 1.7136 | 211.30 | 5.3393 | +0.5804 | 4.68h (A5000) | [link](logs/wikitext-103_2026-05-25_04-56-16/log.txt) |
 | Adagrad initial_acc=1.0 | 2e-13 | 1.0 | 1e-6 | 1.9636 | 461 | 6.1071 | +0.8304 | 4.68h (A5000) | [link](logs/wikitext-103_2026-05-25_09-39-20/log.txt) |
-| Adagrad eps=1e-10 (PyTorch default) | 1e-10 | 0 | 1e-6 | queued | queued | queued | — | queued | — |
+| Adagrad eps=1e-10 (PyTorch default) | 1e-10 | 0 | 1e-6 | 1.1328 | 34.43 | 3.5277 | −0.0004 | 5.27h (A5000) | [link](logs/wikitext-103_2026-05-25_14-21-20/log.txt) |
 | Adagrad eps=1e-8 | 1e-8 | 0 | 1e-6 | queued | queued | queued | — | queued | — |
 | Adagrad weight_decay=0 | 2e-13 | 0 | 0 | queued | queued | queued | — | queued | — |
 | Adagrad weight_decay=1e-4 | 2e-13 | 0 | 1e-4 | queued | queued | queued | — | queued | — |
