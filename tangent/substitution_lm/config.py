@@ -1,7 +1,8 @@
 """
 Shared configuration for the substitution LM pipeline.
-All paths are relative to the WaveletLM repo root unless overridden by env vars.
-Edit WT103_* env vars if your data layout differs from the defaults below.
+
+WikiText-103 is loaded via HuggingFace datasets (same cache WaveletLM uses).
+No raw text files needed on disk.
 """
 import os
 from pathlib import Path
@@ -13,13 +14,12 @@ ROOT      = Path(__file__).parent
 DATA_DIR  = ROOT / "data"    # gitignored — large generated artefacts
 CACHE_DIR = ROOT / "cache"   # gitignored — intermediate parse/count caches
 
-# ── WikiText-103 raw text ──────────────────────────────────────────────────
-# Default: two directories above this file (i.e. WaveletLM/data/...)
-# Override via environment variables if your layout differs.
-_WT103 = Path(__file__).parents[2] / "data" / "wikitext-103-raw-v1"
-TRAIN_RAW = Path(os.getenv("WT103_TRAIN", str(_WT103 / "wiki.train.raw")))
-VALID_RAW = Path(os.getenv("WT103_VALID", str(_WT103 / "wiki.valid.raw")))
-TEST_RAW  = Path(os.getenv("WT103_TEST",  str(_WT103 / "wiki.test.raw")))
+# ── WikiText-103 via HuggingFace datasets ─────────────────────────────────
+# train.py already downloaded this dataset; we reuse the same HF cache.
+# load_dataset("wikitext", "wikitext-103-raw-v1") is called in 01_parse.py.
+# Each example has a "text" field; articles are separated by "= Title =" lines.
+HF_DATASET  = "wikitext"
+HF_CONFIG   = "wikitext-103-raw-v1"
 
 # ── Intermediate cache files ───────────────────────────────────────────────
 PARSE_CACHE_TRAIN = CACHE_DIR / "parse_train.jsonl"
