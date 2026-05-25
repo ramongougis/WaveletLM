@@ -31,6 +31,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
+from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import config as C
@@ -82,7 +83,10 @@ def _build_dataset(properties, id2ngram, target_to_idx, nlp):
     """
     X_list, Y_indices = [], []
     skipped = 0
-    for nid, props in properties.items():
+    bar = tqdm(properties.items(), total=len(properties),
+               desc="  Vectorising nodes", unit="node",
+               dynamic_ncols=True, smoothing=0.05)
+    for nid, props in bar:
         word = id2ngram.get(nid)
         if word is None:
             continue
@@ -173,19 +177,24 @@ def _train(model, X, Y_indices, K, epochs=20, batch_size=256, lr=1e-3, val_pct=1
     for epoch in range(1, epochs + 1):
         model.train()
         total, n_seen = 0.0, 0
-        for xb, yb in train_loader:
+        bar = tqdm(train_loader, desc=f"  Epoch {epoch:2d}/{epochs} train",
+                   leave=False, dynamic_ncols=True, smoothing=0.05)
+        for xb, yb in bar:
             optimizer.zero_grad()
             loss = criterion(model(xb), yb)
             loss.backward()
             optimizer.step()
             total += loss.item() * xb.size(0)
             n_seen += xb.size(0)
+            bar.set_postfix(loss=f"{total / n_seen:.4f}")
         train_loss = total / max(n_seen, 1)
 
         model.eval()
         total_val, n_val_seen = 0.0, 0
+        vbar = tqdm(val_loader, desc=f"  Epoch {epoch:2d}/{epochs} val  ",
+                    leave=False, dynamic_ncols=True, smoothing=0.05)
         with torch.no_grad():
-            for xb, yb in val_loader:
+            for xb, yb in vbar:
                 loss = criterion(model(xb), yb)
                 total_val += loss.item() * xb.size(0)
                 n_val_seen += xb.size(0)
@@ -199,7 +208,10 @@ def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=512):
     import torch
 
     uncovered = []
-    for nid, word in id2ngram.items():
+    bar = tqdm(id2ngram.items(), total=len(id2ngram),
+               desc="  Vectorising uncovered", unit="node",
+               dynamic_ncols=True, smoothing=0.05)
+    for nid, word in bar:
         if nid in properties:
             continue
         vec = _vec_for_phrase(nlp, word)
@@ -212,8 +224,12 @@ def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=512):
     model.eval()
     imputed = {}
     n_pred_entries = 0
+    n_batches = (len(uncovered) + batch_size - 1) // batch_size
+    ibar = tqdm(range(0, len(uncovered), batch_size), total=n_batches,
+                desc="  Predicting", unit="batch",
+                dynamic_ncols=True, smoothing=0.05)
     with torch.no_grad():
-        for i in range(0, len(uncovered), batch_size):
+        for i in ibar:
             batch = uncovered[i:i + batch_size]
             nids = [b[0] for b in batch]
             vecs = np.asarray([b[1] for b in batch], dtype=np.float32)
@@ -226,6 +242,7 @@ def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=512):
                 if node_props:
                     imputed[nid] = dict(node_props)
                     n_pred_entries += sum(len(v) for v in node_props.values())
+            ibar.set_postfix(imputed=f"{len(imputed):,}")
     avg = n_pred_entries / max(len(imputed), 1)
     print(f"  Avg entries per imputed node: {avg:.1f}")
     return imputed
