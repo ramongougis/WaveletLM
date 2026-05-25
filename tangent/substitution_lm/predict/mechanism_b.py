@@ -16,7 +16,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import config as C
-from predict import compat_score
+from predict import compat_score, compatibility
 
 
 def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
@@ -29,17 +29,22 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
 
     window = context_ids[-C.CONTEXT_SIZE:]
     for rank, ctx_id in enumerate(window):
-        activation = 1.0 + 0.2 * rank  # recency weight
-        edges = logprob.get(ctx_id, {})
-        for cand_id, lp in edges.items():
+        activation = 1.0 + 0.2 * rank
+        ctx_props = props.get(ctx_id)
+        for cand_id, lp in logprob.get(ctx_id, {}).items():
             if cand_id in contradicted:
                 continue
-            compat = compat_score(ctx_id, cand_id, props)
-            if compat == 0.0:
-                contradicted.add(cand_id)
-                scores.pop(cand_id, None)
-                continue
-            scores[cand_id] += math.exp2(lp) * compat * activation
+            if ctx_props is not None:
+                cand_props = props.get(cand_id)
+                if cand_props is not None:
+                    compat = compatibility(ctx_props, cand_props)
+                    if compat == 0.0:
+                        contradicted.add(cand_id)
+                        scores.pop(cand_id, None)
+                        continue
+                    scores[cand_id] += math.exp2(lp) * compat * activation
+                    continue
+            scores[cand_id] += math.exp2(lp) * activation
 
     if not scores:
         return {nid: lp for nid, lp in uni_lp.items()}

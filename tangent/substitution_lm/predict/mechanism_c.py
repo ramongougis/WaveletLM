@@ -16,7 +16,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import config as C
-from predict import compat_score
+from predict import compat_score, compatibility
 import predict.mechanism_a as mech_a
 
 
@@ -37,9 +37,15 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
     rerank_scores: dict[int, float] = {}
     for cand_id in top_k_ids:
         base_prob = math.exp2(a_lps[cand_id])
-        compat_sum = sum(compat_score(ctx_id, cand_id, props) for ctx_id in window)
-        # Combine: base probability × average compatibility
-        avg_compat = compat_sum / max(len(window), 1)
+        cand_props = props.get(cand_id)
+        if cand_props is not None:
+            compat_sum = 0.0
+            for ctx_id in window:
+                ctx_props = props.get(ctx_id)
+                compat_sum += compatibility(ctx_props, cand_props) if ctx_props is not None else 1.0
+            avg_compat = compat_sum / max(len(window), 1)
+        else:
+            avg_compat = 1.0
         rerank_scores[cand_id] = base_prob * avg_compat
 
     # Zero-compat candidates are already penalised through avg_compat → 0

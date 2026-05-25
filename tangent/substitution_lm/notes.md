@@ -173,22 +173,41 @@ only the prediction function differs.
 
 | Stat | Value |
 |---|---|
-| Corpus tokens | 103,227,021 |
-| Parse time | — |
-| Unique nodes (after freq filter) | — |
-| Unique edges | — |
-| ConceptNet coverage (nodes with ≥1 property) | — |
-| Build peak RAM | — |
-| Build wall time | — |
+| Corpus word-tokens (train, step 2) | 84,244,939 |
+| Collocations (PMI ≥ 3.0, freq ≥ 10) | 235,584 |
+| Unique nodes (freq ≥ 5 filter) | 1,325,573 |
+| Unique edges (after min-count=2, fan-out cap=500) | 25,647,341 |
+| ConceptNet coverage | 0.0% (properties.pkl built before CSV arrived; re-run step 4) |
+| Parse time (step 1, CPU) | 10,827s ≈ 3h 0min |
+| N-gram extraction (step 2) | 844s ≈ 14min |
+| DAG build (step 3) | 522s ≈ 8.7min |
+| Model assembly (step 5) | 41s |
+| Total pipeline wall time | ~3h 24min |
+| Test set size | 235,821 words (1.7% UNK) |
 
-### Evaluation Results
+### Evaluation Results (Phase 1 — no ConceptNet)
 
-| Mechanism | PPL ↓ | BPB ↓ | SVDR F1 ↑ | Inference time / token | Notes |
+| Mechanism | PPL ↓ | BPB ↓ | SVDR F1 ↑ | Notes |
+|---|---|---|---|---|
+| A — Weighted edge walk | 4337.53 | 2.7768 | — | No ConceptNet → compat always 1.0 |
+| B — Aggregated vote | 4337.53 | 2.7768 | — | Identical to A; contradicted set never populated |
+| C — Hybrid re-rank (K=50) | 3939.28 | **2.7449** | — | Top-50 re-normalisation concentrates mass; best mechanism |
+| KenLM 5-gram (reference) | — | — | — | queued |
+
+**Findings:**
+- **A = B** with 0% ConceptNet coverage — expected. B's multiplicative contradiction penalty never fires when all property dicts are empty. The two mechanisms are provably identical in this regime.
+- **C beats A/B by Δ −0.032 BPB** even without property signal. Restricting to top-50 candidates from A and re-normalising concentrates probability mass on likely successors; the long tail of unlikely co-occurrence edges is discarded.
+- **1.7% UNK** — excellent vocabulary coverage from the 1.3M-node table. The remaining 1.7% are rare proper nouns, numbers, and punctuation variants not seen ≥5× in training.
+- **Next step:** delete `data/properties.pkl` and `data/model.pkl`, re-run steps 4–5 with the ConceptNet CSV now present, re-evaluate. Property-based filtering should help mechanisms B and C most.
+
+### Evaluation Results (Phase 2 — with ConceptNet)
+
+| Mechanism | PPL ↓ | BPB ↓ | SVDR F1 ↑ | Δ BPB vs Phase 1 | Notes |
 |---|---|---|---|---|---|
 | A — Weighted edge walk | — | — | — | — | |
 | B — Aggregated vote | — | — | — | — | |
-| C — Hybrid re-rank (K=?) | — | — | — | — | |
-| KenLM 5-gram (baseline) | — | — | — | — | reference n-gram LM |
+| C — Hybrid re-rank (K=50) | — | — | — | — | |
+| KenLM 5-gram (reference) | — | — | — | — | |
 
 ### Phase 2 Additions (planned)
 

@@ -18,7 +18,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import config as C
-from predict import compat_score
+from predict import compat_score, compatibility
 
 
 def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
@@ -39,18 +39,20 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
     scores: dict[int, float] = defaultdict(float)
 
     # Use the most recent CONTEXT_SIZE tokens, weighted by recency
-    has_props = bool(props)  # skip compat entirely when ConceptNet is absent
     window = context_ids[-C.CONTEXT_SIZE:]
     for rank, ctx_id in enumerate(window):
-        recency_weight = 1.0 + 0.2 * rank  # more recent = higher weight
+        recency_weight = 1.0 + 0.2 * rank
+        ctx_props = props.get(ctx_id)  # None if not in ConceptNet
         for cand_id, lp in logprob.get(ctx_id, {}).items():
-            if has_props:
-                compat = compat_score(ctx_id, cand_id, props)
-                if compat == 0.0:
+            if ctx_props is not None:
+                cand_props = props.get(cand_id)
+                if cand_props is not None:
+                    compat = compatibility(ctx_props, cand_props)
+                    if compat == 0.0:
+                        continue
+                    scores[cand_id] += math.exp2(lp) * compat * recency_weight
                     continue
-                scores[cand_id] += math.exp2(lp) * compat * recency_weight
-            else:
-                scores[cand_id] += math.exp2(lp) * recency_weight
+            scores[cand_id] += math.exp2(lp) * recency_weight
 
     if not scores:
         # Full backoff to unigram distribution
