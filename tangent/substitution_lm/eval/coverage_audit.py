@@ -17,7 +17,7 @@ content-word collocations slipping through suggest tightening PMI/freq
 thresholds in step 2; etc.
 
 Usage:
-    python eval/coverage_audit.py [--max_n 3] [--top 100]
+    python eval/coverage_audit.py [--max_n 5] [--top 100]
 """
 
 import argparse
@@ -82,8 +82,8 @@ def _audit(ngram2id: dict, max_n: int):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max_n", type=int, default=3,
-                        help="Maximum n-gram length to audit (default 3)")
+    parser.add_argument("--max_n", type=int, default=5,
+                        help="Maximum n-gram length to audit (default 5)")
     parser.add_argument("--top", type=int, default=100,
                         help="Top-N tokens per length to report (default 100)")
     args = parser.parse_args()
