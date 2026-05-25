@@ -75,9 +75,12 @@ def _compute_target_schema(properties: dict, coverage_pct: int) -> dict:
 
 
 def _build_dataset(properties, id2ngram, target_to_idx, nlp):
-    """Build (X, Y) for nodes with ConceptNet data AND a spaCy vector."""
-    K = len(target_to_idx)
-    X_list, Y_list = [], []
+    """Build (X, Y_indices) for nodes with ConceptNet data AND a spaCy vector.
+
+    Y is stored sparsely as a list of positive-index lists per sample to keep
+    memory tractable at large K (a dense (120K, 76K) float32 matrix is 36 GB).
+    """
+    X_list, Y_indices = [], []
     skipped = 0
     for nid, props in properties.items():
         word = id2ngram.get(nid)
@@ -87,17 +90,16 @@ def _build_dataset(properties, id2ngram, target_to_idx, nlp):
         if vec is None:
             skipped += 1
             continue
-        y = np.zeros(K, dtype=np.float32)
+        indices = []
         for relation, target_list in props.items():
             for target in target_list:
                 idx = target_to_idx.get((relation, target))
                 if idx is not None:
-                    y[idx] = 1.0
+                    indices.append(idx)
         X_list.append(vec)
-        Y_list.append(y)
+        Y_indices.append(indices)
     X = np.asarray(X_list, dtype=np.float32)
-    Y = np.asarray(Y_list, dtype=np.float32)
-    return X, Y, skipped
+    return X, Y_indices, skipped
 
 
 def _make_model(input_dim: int, output_dim: int, hidden: int, n_hidden: int):
@@ -111,48 +113,88 @@ def _make_model(input_dim: int, output_dim: int, hidden: int, n_hidden: int):
     return nn.Sequential(*layers)
 
 
-def _train(model, X, Y, epochs=20, batch_size=1024, lr=1e-3, val_pct=10):
+def _compute_pos_weight(Y_indices, K, n_samples):
+    """Per-class neg/pos ratio capped at 100 — drives BCEWithLogitsLoss."""
+    pos = np.zeros(K, dtype=np.float32)
+    for indices in Y_indices:
+        for i in indices:
+            pos[i] += 1
+    neg = n_samples - pos
+    pw = neg / (pos + 1.0)
+    return np.minimum(pw, 100.0)
+
+
+class _SparseLabelDataset:
+    """Yields (x, y_dense) per sample; y materialised just-in-time."""
+
+    def __init__(self, X, Y_indices, K):
+        import torch
+        self.X = torch.from_numpy(X)
+        self.Y_indices = Y_indices
+        self.K = K
+
+    def __len__(self):
+        return len(self.Y_indices)
+
+    def __getitem__(self, idx):
+        import torch
+        y = torch.zeros(self.K, dtype=torch.float32)
+        for i in self.Y_indices[idx]:
+            y[i] = 1.0
+        return self.X[idx], y
+
+
+def _train(model, X, Y_indices, K, epochs=20, batch_size=256, lr=1e-3, val_pct=10):
     import torch
     import torch.nn as nn
-    from torch.utils.data import DataLoader, TensorDataset
+    from torch.utils.data import DataLoader
 
     rng = np.random.default_rng(seed=1337)
-    perm = rng.permutation(X.shape[0])
-    n_val = int(X.shape[0] * val_pct / 100)
+    n = X.shape[0]
+    perm = rng.permutation(n)
+    n_val = int(n * val_pct / 100)
     val_idx, train_idx = perm[:n_val], perm[n_val:]
 
-    X_tr = torch.from_numpy(X[train_idx])
-    Y_tr = torch.from_numpy(Y[train_idx])
-    X_va = torch.from_numpy(X[val_idx])
-    Y_va = torch.from_numpy(Y[val_idx])
+    X_tr, X_va = X[train_idx], X[val_idx]
+    Y_tr = [Y_indices[i] for i in train_idx]
+    Y_va = [Y_indices[i] for i in val_idx]
 
-    # Per-class pos_weight cap at 100 — extreme imbalance for rare features
-    # without the cap dominates the loss and destabilises training.
-    pos = Y_tr.sum(dim=0)
-    neg = Y_tr.shape[0] - pos
-    pos_weight = (neg / (pos + 1.0)).clamp(max=100.0)
+    pos_weight = torch.from_numpy(_compute_pos_weight(Y_tr, K, len(Y_tr)))
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    loader = DataLoader(TensorDataset(X_tr, Y_tr), batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(
+        _SparseLabelDataset(X_tr, Y_tr, K), batch_size=batch_size, shuffle=True,
+    )
+    val_loader = DataLoader(
+        _SparseLabelDataset(X_va, Y_va, K), batch_size=batch_size, shuffle=False,
+    )
 
     for epoch in range(1, epochs + 1):
         model.train()
-        total = 0.0
-        for xb, yb in loader:
+        total, n_seen = 0.0, 0
+        for xb, yb in train_loader:
             optimizer.zero_grad()
             loss = criterion(model(xb), yb)
             loss.backward()
             optimizer.step()
             total += loss.item() * xb.size(0)
-        train_loss = total / X_tr.shape[0]
+            n_seen += xb.size(0)
+        train_loss = total / max(n_seen, 1)
+
         model.eval()
+        total_val, n_val_seen = 0.0, 0
         with torch.no_grad():
-            val_loss = criterion(model(X_va), Y_va).item()
+            for xb, yb in val_loader:
+                loss = criterion(model(xb), yb)
+                total_val += loss.item() * xb.size(0)
+                n_val_seen += xb.size(0)
+        val_loss = total_val / max(n_val_seen, 1)
+
         print(f"  Epoch {epoch:2d}: train {train_loss:.4f}  val {val_loss:.4f}", flush=True)
 
 
-def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=4096):
+def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=512):
     """Predict properties for nodes NOT in ConceptNet; apply confidence threshold."""
     import torch
 
@@ -233,10 +275,11 @@ def run() -> None:
     print(f"  Total output dim K = {K:,}")
 
     print("[06_mlp] Building training set …")
-    X, Y, skipped = _build_dataset(properties, id2ngram, target_to_idx, nlp)
-    pos_rate = 100.0 * float(Y.mean())
+    X, Y_indices, skipped = _build_dataset(properties, id2ngram, target_to_idx, nlp)
+    n_pos = sum(len(idx) for idx in Y_indices)
+    pos_rate = 100.0 * n_pos / max(X.shape[0] * K, 1)
     print(f"  Training nodes: {X.shape[0]:,}   skipped (no vector): {skipped:,}")
-    print(f"  Positive label rate: {pos_rate:.3f}%")
+    print(f"  Positive labels: {n_pos:,}   label rate: {pos_rate:.4f}%")
 
     layers = C.MLP_PROPERTY_LAYERS
     label = "linear probe" if layers == 0 else f"{layers}-hidden-layer MLP"
@@ -245,7 +288,7 @@ def run() -> None:
     import torch
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
-    _train(model, X, Y)
+    _train(model, X, Y_indices, K)
 
     print(f"[06_mlp] Saving model + schema → {C.MLP_PROPERTY_MODEL_PATH}")
     torch.save({

@@ -238,6 +238,18 @@ fix supersede these.
 
 **Diagnostic outcome:** the 5 added positive relations contribute essentially zero aggregate lift. This confirms coverage (9.1% of nodes) is the binding constraint, not relation richness. The new relations require the *literal next word* to appear in the context's `IsA` / `UsedFor` / `AtLocation` / etc. lists, which almost never happens in flowing text — e.g. `fish.IsA = ["animal", "vertebrate"]` rarely matches whatever word actually follows "fish" in a sentence. Validates moving to MLP property imputation as the next step rather than further hand-curating relations.
 
+### Evaluation Results (Phase 2c — CONTEXT_SIZE=10, HYBRID_K=500)
+
+| Mechanism | PPL ↓ | BPB ↓ | SVDR acc | Δ BPB vs 2b | Notes |
+|---|---|---|---|---|---|
+| A — Weighted edge walk | 1401.08 | 2.1374 | 0.730 | −0.0028 | Mild lift from wider context |
+| B — Aggregated vote | 1401.07 | 2.1374 | 0.730 | −0.0028 | A still ≈ B to 0.01 PPL |
+| C — Hybrid re-rank (K=500) | **1337.43** | **2.1237** | 0.710 | **−0.0182** | Reversal: now best on PPL/BPB |
+
+**Key finding:** Mechanism C went from worst-PPL / worst-SVDR (0.43) to best-PPL / near-best-SVDR (0.71) from a single config change. Top-50 was throwing real candidates off the cliff into `UNK_LOGPROB = −15`; expanding to top-500 reclaims them. 2× runtime cost per mechanism (7:25 vs 3:45 per chunk) is the price of 10× more rerank work — acceptable for the quality jump.
+
+A vs B still in lockstep (1401.08 vs 1401.07) — contradictions essentially never fire with ConceptNet-only properties at 9.1% node coverage. This is precisely where MLP imputation is expected to break the tie: B's `contradicted` set should populate non-trivially once `NotCapableOf` predictions exist for the 90.9% gap.
+
 Tokens: 200,381 (down from 235,821 — spaCy's POS filter removes 15% more than the old `=-<>` heuristic). UNK: 1.1% (down from 1.7%).
 
 **Findings:**
