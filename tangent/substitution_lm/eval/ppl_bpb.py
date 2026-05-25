@@ -41,28 +41,61 @@ MECHANISMS = {"a": mech_a, "b": mech_b, "c": mech_c}
 _SHARED_MODEL: dict = {}
 _SHARED_WORDS: list = []  # list of (wid_or_None, byte_len)
 _MECH_MAP = {"A": mech_a, "B": mech_b, "C": mech_c}
+_NLP = None  # lazily-loaded spaCy pipeline
 
 
-def _iter_test_words():
-    """Yield lowercased words from the WT103 test split, skipping headings."""
-    from datasets import load_dataset
-    ds = load_dataset(C.HF_DATASET, C.HF_CONFIG, split="test")
-    for example in ds:
-        line = example["text"].strip()
-        if not line or line.startswith("="):
+def _get_nlp():
+    """Load spaCy with the same model the pipeline trained on, parser/ner off."""
+    global _NLP
+    if _NLP is None:
+        import spacy
+        spacy.require_cpu()
+        _NLP = spacy.load(C.SPACY_MODEL, disable=["parser", "ner"])
+    return _NLP
+
+
+def _lemmatise(text: str) -> list[tuple[str, int]]:
+    """Lemmatise + POS-filter text, matching 02_extract_ngrams.
+
+    Returns list of (lemma_lowercased, surface_byte_len) — the surface byte
+    length is what BPB normalises against, independent of any inflection.
+    """
+    nlp = _get_nlp()
+    doc = nlp(text)
+    out = []
+    for t in doc:
+        if t.pos_ in ("PUNCT", "SPACE", "SYM", "NUM"):
             continue
-        for word in line.split():
-            if word and not all(c in "=-<>" for c in word):
-                yield word.lower()
+        out.append((t.lemma_.lower(), len(t.text.encode("utf-8"))))
+    return out
 
 
 def _preprocess_words(model: dict) -> list:
-    """Pre-tokenize the full test set into (wid_or_None, byte_len) pairs."""
+    """
+    Lemmatise the WT103 test split with spaCy (matching the training pipeline),
+    look up each lemma in the node table, and return:
+        list of (wid_or_None, surface_byte_len)
+    """
+    from datasets import load_dataset
+
     ngram2id = model["ngram2id"]
+    nlp = _get_nlp()
+
+    ds = load_dataset(C.HF_DATASET, C.HF_CONFIG, split="test")
+    texts = [ex["text"] for ex in ds if ex["text"].strip()]
+
     result = []
-    for word in tqdm(_iter_test_words(), desc="  Pre-tokenizing", unit="tok",
-                     dynamic_ncols=True, smoothing=0.05):
-        result.append((ngram2id.get(word), len(word.encode("utf-8"))))
+    bar = tqdm(desc="  Lemmatising", unit="tok",
+               dynamic_ncols=True, smoothing=0.05)
+    for doc in nlp.pipe(texts, batch_size=128):
+        for t in doc:
+            if t.pos_ in ("PUNCT", "SPACE", "SYM", "NUM"):
+                continue
+            lemma = t.lemma_.lower()
+            byte_len = len(t.text.encode("utf-8"))
+            result.append((ngram2id.get(lemma), byte_len))
+            bar.update(1)
+    bar.close()
     return result
 
 
@@ -145,8 +178,11 @@ def eval_ppl_bpb(mech_module, model: dict, label: str, n_workers: int = 1) -> di
 
 
 def _eval_sequential(mech_module, model: dict, label: str) -> dict:
-    ngram2id = model["ngram2id"]
-    uni_lp   = model["unigram_logprob"]
+    global _SHARED_WORDS
+    if not _SHARED_WORDS:
+        _SHARED_WORDS = _preprocess_words(model)
+
+    uni_lp = model["unigram_logprob"]
 
     context_ids: list[int] = []
     total_log2 = 0.0
@@ -155,15 +191,13 @@ def _eval_sequential(mech_module, model: dict, label: str) -> dict:
     n_unk = 0
 
     bar = tqdm(
-        _iter_test_words(),
+        _SHARED_WORDS,
         desc=f"  Mech {label}",
         unit="tok",
         dynamic_ncols=True,
         smoothing=0.05,
     )
-    for word in bar:
-        wid = ngram2id.get(word)
-
+    for wid, byte_len in bar:
         if context_ids:
             lps = mech_module.predict_logprobs(context_ids, model)
         else:
@@ -178,7 +212,7 @@ def _eval_sequential(mech_module, model: dict, label: str) -> dict:
             n_unk += 1
 
         total_log2 += log2p
-        total_bytes += len(word.encode("utf-8"))
+        total_bytes += byte_len
         n_tokens += 1
 
         if wid is not None:
@@ -263,14 +297,20 @@ def _eval_parallel(model: dict, label: str, n_workers: int) -> dict:
 
 
 def _sentence_score(sentence: str, mech_module, model: dict) -> float:
-    """Mean log2 per-token probability for a sentence (used by SVDR)."""
-    words = sentence.lower().split()
+    """Mean log2 per-token probability for a sentence (used by SVDR).
+
+    Lemmatises through spaCy to match the lemma-keyed node table.
+    """
+    tokens = _lemmatise(sentence)
+    if not tokens:
+        return 0.0
+
     ngram2id = model["ngram2id"]
     uni_lp   = model["unigram_logprob"]
     ctx: list[int] = []
     total = 0.0
-    for word in words:
-        wid = ngram2id.get(word)
+    for lemma, _ in tokens:
+        wid = ngram2id.get(lemma)
         lps = mech_module.predict_logprobs(ctx, model) if ctx else uni_lp
         if wid is not None and wid in lps:
             total += lps[wid]
@@ -280,19 +320,27 @@ def _sentence_score(sentence: str, mech_module, model: dict) -> float:
             ctx.append(wid)
         if len(ctx) > C.CONTEXT_SIZE:
             ctx.pop(0)
-    return total / max(len(words), 1)
+    return total / max(len(tokens), 1)
 
 
 def eval_svdr(mech_module, model: dict, label: str, pairs_file: Path) -> dict | None:
     """
     SVDR evaluation from a tab-separated file: normal_sentence\tanomalous_sentence
+
+    Paired evaluation: every pair contributes either a true positive (model
+    scores the normal sentence higher than the anomalous) or a false negative
+    (model fails to). There is no false-positive case by construction, so
+    **precision is always 1.0** — the meaningful metric is recall, which equals
+    pair-classification accuracy. F1 = 2R/(1+R) is then a deterministic
+    function of recall.
+
     Returns precision, recall, F1, or None if file not found.
     """
     if not pairs_file.exists():
         print(f"  [{label}] SVDR pairs file not found: {pairs_file} — skipping")
         return None
 
-    tp = fp = fn = tn = 0
+    tp = fn = 0
     with open(pairs_file, encoding="utf-8") as f:
         for line in f:
             parts = line.strip().split("\t")
@@ -306,10 +354,16 @@ def eval_svdr(mech_module, model: dict, label: str, pairs_file: Path) -> dict | 
             else:
                 fn += 1
 
-    precision = tp / max(tp + fp, 1)
+    precision = 1.0  # by construction of paired evaluation (no FP case)
     recall    = tp / max(tp + fn, 1)
     f1        = 2 * precision * recall / max(precision + recall, 1e-9)
-    return {"mechanism": label, "precision": precision, "recall": recall, "f1": f1}
+    return {
+        "mechanism": label,
+        "precision": precision,
+        "recall":    recall,
+        "f1":        f1,
+        "accuracy":  recall,  # alias — same number, clearer interpretation
+    }
 
 
 def main():
@@ -345,7 +399,8 @@ def main():
         svdr = eval_svdr(mod, model, key.upper(), pairs_file)
         if svdr:
             print(
-                f"  SVDR  P={svdr['precision']:.3f}  R={svdr['recall']:.3f}  F1={svdr['f1']:.3f}\n"
+                f"  SVDR  accuracy={svdr['accuracy']:.3f}  "
+                f"(P={svdr['precision']:.3f} R={svdr['recall']:.3f} F1={svdr['f1']:.3f})\n"
             )
 
 

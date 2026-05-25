@@ -21,9 +21,10 @@ import predict.mechanism_a as mech_a
 
 
 def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
-    logprob = model["logprob"]
-    props   = model["properties"]
-    uni_lp  = model["unigram_logprob"]
+    logprob  = model["logprob"]
+    props    = model["properties"]
+    id2ngram = model["id2ngram"]
+    uni_lp   = model["unigram_logprob"]
 
     # Step 1: get top-K candidates from Mechanism A
     a_lps = mech_a.predict_logprobs(context_ids, model)
@@ -37,15 +38,15 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
     rerank_scores: dict[int, float] = {}
     for cand_id in top_k_ids:
         base_prob = math.exp2(a_lps[cand_id])
-        cand_props = props.get(cand_id)
-        if cand_props is not None:
-            compat_sum = 0.0
-            for ctx_id in window:
-                ctx_props = props.get(ctx_id)
-                compat_sum += compatibility(ctx_props, cand_props) if ctx_props is not None else 1.0
-            avg_compat = compat_sum / max(len(window), 1)
-        else:
-            avg_compat = 1.0
+        cand_word = id2ngram.get(cand_id, "")
+        compat_sum = 0.0
+        for ctx_id in window:
+            ctx_props = props.get(ctx_id)
+            if ctx_props is not None:
+                compat_sum += compatibility(ctx_props, cand_word)
+            else:
+                compat_sum += 1.0
+        avg_compat = compat_sum / max(len(window), 1)
         rerank_scores[cand_id] = base_prob * avg_compat
 
     # Zero-compat candidates are already penalised through avg_compat → 0

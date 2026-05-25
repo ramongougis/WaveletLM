@@ -202,17 +202,35 @@ only the prediction function differs.
 
 ### Evaluation Results (Phase 2 — with ConceptNet, 9.1% node coverage)
 
-| Mechanism | PPL ↓ | BPB ↓ | SVDR F1 ↑ | Δ BPB vs Phase 1 | Notes |
+Original Phase 2 results below were collected with three implementation bugs
+present (see "Phase 2a — eval fixes" below). Numbers re-collected after the
+fix supersede these.
+
+| Mechanism | PPL ↓ | BPB ↓ | SVDR R | Δ BPB vs Phase 1 | Notes |
 |---|---|---|---|---|---|
-| A — Weighted edge walk | 4340.75 | 2.7771 | — | +0.0003 | Δ is parallel-eval boundary artefact, not ConceptNet regression |
-| B — Aggregated vote | 4340.54 | 2.7771 | — | +0.0003 | A ≈ B: contradiction set populated but effect sub-threshold |
-| C — Hybrid re-rank (K=50) | 4039.03 | **2.7532** | — | +0.0083 | C most sensitive to context approximation at chunk seams |
+| A — Weighted edge walk | 4340.75 | 2.7771 | 0.620 | +0.0003 | pre-fix |
+| B — Aggregated vote | 4340.54 | 2.7771 | 0.620 | +0.0003 | pre-fix |
+| C — Hybrid re-rank (K=50) | 4039.03 | 2.7532 | 0.540 | +0.0083 | pre-fix |
+
+**Bugs identified (2026-05-25, after Opus 4.7 review):**
+1. **`compatibility()` was structurally wrong.** It intersected `ctx.NotCapableOf` with `cand.CapableOf` (both as lists of ConceptNet concept words). For a contradiction to fire, the *same concept word* needed to appear in both lists — e.g. `rocks.NotCapableOf=["swim"]` and `swim.CapableOf=["swim"]`. The second never happens (swim's CapableOf is "move through water", etc.), so contradictions almost never fired. ConceptNet's 9.1% coverage was effectively inert. Fixed: the function now takes `(ctx_props, cand_word: str)` and checks whether `cand_word` literally appears in `ctx.NotCapableOf` / `CapableOf` / `HasProperty` / `RelatedTo`. This is the correct polarity for "is this candidate something the context permits?"
+2. **Lemma vs surface-form mismatch.** Node table was keyed by spaCy lemma (`02_extract_ngrams`), but eval read raw surface forms — so "swam"/"is"/"fishes" never matched their nodes "swim"/"be"/"fish" and silently became UNK. Fixed: eval now lemmatises via the same spaCy pipeline (`en_core_web_lg`, parser/ner off) before lookup.
+3. **SVDR P=1.0 is structural, not informative.** Paired eval cannot produce false positives; the meaningful metric is recall = pair-classification accuracy. Output now leads with `accuracy=` and labels P/R/F1 as derived.
+
+### Evaluation Results (Phase 2a — with eval fixes)
+
+| Mechanism | PPL ↓ | BPB ↓ | SVDR acc | Δ BPB vs Phase 2 | Notes |
+|---|---|---|---|---|---|
+| A — Weighted edge walk | — | — | — | — | queued |
+| B — Aggregated vote | — | — | — | — | queued |
+| C — Hybrid re-rank (K=50) | — | — | — | — | queued |
 | KenLM 5-gram (reference) | — | — | — | — | queued |
 
-**Findings:**
-- **BPB unchanged at 4 decimal places** — expected given 9.1% coverage. Probability both a context node and a candidate both have ConceptNet data is only ~0.83% of edge pairs; of those, `NotCapableOf`/`CapableOf` contradictions are a small fraction. The effect on aggregate log-likelihood is well below 0.0001 BPB.
-- **Small positive Δ** is a parallel-eval artefact (Phase 1 was sequential; Phase 2 uses the parallel evaluator with approximate context prefixes at 3 chunk boundaries), not a real regression from adding ConceptNet.
-- **SVDR is the right metric here.** Aggregate perplexity is insensitive to rare-but-specific selectional constraints; SVDR directly probes whether property tables assign lower scores to anomalous sentences. `eval/svdr_pairs.tsv` (100 pairs, 10 violation categories) is now available.
+**Expected directional changes from the fixes:**
+- PPL/BPB should *drop* meaningfully — UNK fallbacks at -15 log2 are now replaced by real lemma matches.
+- A vs B should separate more (B's `contradicted` set will actually populate).
+- C may stay weakest on SVDR — its top-K restriction independently penalises uncommon sequences.
+- If ConceptNet adds real signal, SVDR accuracy should rise above the pre-fix 62%.
 
 ### Phase 2 Additions (planned)
 

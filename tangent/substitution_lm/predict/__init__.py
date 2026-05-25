@@ -2,10 +2,11 @@
 Shared utilities for all prediction mechanisms.
 
 Exports:
-    load_model()              — load model.pkl once and cache in memory
-    tokenize(text, model)     — text → list of node IDs (longest-match greedy)
-    compatibility(pa, pb)     — ConceptNet-based compatibility score in [0, ∞)
-    compat_score(a, b, props) — convenience wrapper using node IDs
+    load_model()                  — load model.pkl once and cache in memory
+    tokenize(text, model)         — text → list of node IDs (longest-match greedy)
+    compatibility(ctx_props, w)   — does the candidate word fit the context's
+                                    ConceptNet selectional constraints?
+    compat_score(cid, nid, model) — convenience wrapper using node IDs
 """
 
 import math
@@ -49,33 +50,41 @@ def tokenize(text: str, model: dict) -> list[int]:
     return ids
 
 
-def compatibility(props_a: dict, props_b: dict) -> float:
+def compatibility(ctx_props: dict, cand_word: str) -> float:
     """
-    Compatibility score between two property dicts.
-        0.0  — hard contradiction (NotCapableOf / NotHasProperty clash)
-        1.0  — neutral (no signal)
-        >1.0 — positive association (shared RelatedTo concepts)
+    Does the candidate word satisfy the context node's selectional constraints?
+
+    Lookup is directional: we check whether the surface form `cand_word`
+    appears in the context's ConceptNet relation lists. This is the right
+    polarity for substitution / next-token scoring — "is the candidate
+    something this context can/can't do or have?"
+
+        0.0  — hard contradiction (cand_word ∈ ctx.{NotCapableOf, NotHasProperty})
+        >1.0 — positive association (cand_word ∈ ctx.{CapableOf, HasProperty,
+               RelatedTo}); multiplicative across matched relations
+        1.0  — neutral / no signal
     """
-    if not props_a or not props_b:
+    if not ctx_props or not cand_word:
         return 1.0
 
-    a_cant    = set(props_a.get("NotCapableOf",   []))
-    b_can     = set(props_b.get("CapableOf",       []))
-    b_cant    = set(props_b.get("NotCapableOf",   []))
-    a_can     = set(props_a.get("CapableOf",       []))
-    a_not_has = set(props_a.get("NotHasProperty", []))
-    b_has     = set(props_b.get("HasProperty",     []))
-    b_not_has = set(props_b.get("NotHasProperty", []))
-    a_has     = set(props_a.get("HasProperty",     []))
-
-    if (a_cant & b_can) or (b_cant & a_can):
+    if cand_word in ctx_props.get("NotCapableOf", ()):
         return 0.0
-    if (a_not_has & b_has) or (b_not_has & a_has):
+    if cand_word in ctx_props.get("NotHasProperty", ()):
         return 0.0
 
-    shared = len(set(props_a.get("RelatedTo", [])) & set(props_b.get("RelatedTo", [])))
-    return 1.0 + 0.1 * shared
+    boost = 1.0
+    if cand_word in ctx_props.get("CapableOf", ()):
+        boost *= 1.5
+    if cand_word in ctx_props.get("HasProperty", ()):
+        boost *= 1.3
+    if cand_word in ctx_props.get("RelatedTo", ()):
+        boost *= 1.1
+    return boost
 
 
-def compat_score(nid_a: int, nid_b: int, properties: dict) -> float:
-    return compatibility(properties.get(nid_a, {}), properties.get(nid_b, {}))
+def compat_score(ctx_id: int, cand_id: int, model: dict) -> float:
+    """Convenience wrapper using node IDs."""
+    return compatibility(
+        model["properties"].get(ctx_id, {}),
+        model["id2ngram"].get(cand_id, ""),
+    )

@@ -33,6 +33,7 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
     """
     logprob   = model["logprob"]
     props     = model["properties"]
+    id2ngram  = model["id2ngram"]
     uni_lp    = model["unigram_logprob"]
 
     # Accumulate raw scores in linear space (sum of weighted edge probs)
@@ -45,14 +46,12 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
         ctx_props = props.get(ctx_id)  # None if not in ConceptNet
         for cand_id, lp in logprob.get(ctx_id, {}).items():
             if ctx_props is not None:
-                cand_props = props.get(cand_id)
-                if cand_props is not None:
-                    compat = compatibility(ctx_props, cand_props)
-                    if compat == 0.0:
-                        continue
-                    scores[cand_id] += math.exp2(lp) * compat * recency_weight
+                compat = compatibility(ctx_props, id2ngram.get(cand_id, ""))
+                if compat == 0.0:
                     continue
-            scores[cand_id] += math.exp2(lp) * recency_weight
+                scores[cand_id] += math.exp2(lp) * compat * recency_weight
+            else:
+                scores[cand_id] += math.exp2(lp) * recency_weight
 
     if not scores:
         # Full backoff to unigram distribution

@@ -20,9 +20,10 @@ from predict import compat_score, compatibility
 
 
 def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
-    logprob = model["logprob"]
-    props   = model["properties"]
-    uni_lp  = model["unigram_logprob"]
+    logprob  = model["logprob"]
+    props    = model["properties"]
+    id2ngram = model["id2ngram"]
+    uni_lp   = model["unigram_logprob"]
 
     scores:       dict[int, float] = defaultdict(float)
     contradicted: set[int]         = set()
@@ -35,16 +36,14 @@ def predict_logprobs(context_ids: list[int], model: dict) -> dict[int, float]:
             if cand_id in contradicted:
                 continue
             if ctx_props is not None:
-                cand_props = props.get(cand_id)
-                if cand_props is not None:
-                    compat = compatibility(ctx_props, cand_props)
-                    if compat == 0.0:
-                        contradicted.add(cand_id)
-                        scores.pop(cand_id, None)
-                        continue
-                    scores[cand_id] += math.exp2(lp) * compat * activation
+                compat = compatibility(ctx_props, id2ngram.get(cand_id, ""))
+                if compat == 0.0:
+                    contradicted.add(cand_id)
+                    scores.pop(cand_id, None)
                     continue
-            scores[cand_id] += math.exp2(lp) * activation
+                scores[cand_id] += math.exp2(lp) * compat * activation
+            else:
+                scores[cand_id] += math.exp2(lp) * activation
 
     if not scores:
         return {nid: lp for nid, lp in uni_lp.items()}
