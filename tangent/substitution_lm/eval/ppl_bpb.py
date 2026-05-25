@@ -381,9 +381,20 @@ def main():
     mechs = MECHANISMS if args.mechanism == "all" else {args.mechanism: MECHANISMS[args.mechanism]}
     pairs_file = Path(args.svdr_pairs)
 
+    # Property coverage diagnostic — confirms whether the loaded model.pkl was
+    # built against ConceptNet only or ConceptNet ∪ MLP-imputed properties.
+    n_nodes  = len(model["id2ngram"])
+    n_props  = len(model["properties"])
+    cov_pct  = 100.0 * n_props / max(n_nodes, 1)
+    n_entries = sum(sum(len(v) for v in p.values()) for p in model["properties"].values())
+    avg_ent   = n_entries / max(n_props, 1)
+
     print(f"\n{'='*60}")
     print("  PPL / BPB / SVDR Evaluation")
     print(f"  Test split: {C.HF_DATASET} / {C.HF_CONFIG} (test)")
+    print(f"  Nodes     : {n_nodes:,}")
+    print(f"  Properties: {n_props:,} nodes ({cov_pct:.1f}% coverage, "
+          f"avg {avg_ent:.1f} entries/node)")
     if args.workers > 1:
         print(f"  Workers   : {args.workers}")
     print(f"{'='*60}\n")

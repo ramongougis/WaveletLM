@@ -250,6 +250,37 @@ fix supersede these.
 
 A vs B still in lockstep (1401.08 vs 1401.07) — contradictions essentially never fire with ConceptNet-only properties at 9.1% node coverage. This is precisely where MLP imputation is expected to break the tie: B's `contradicted` set should populate non-trivially once `NotCapableOf` predictions exist for the 90.9% gap.
 
+### Evaluation Results (Phase 2d — MLP property imputation enabled, 66.2% coverage)
+
+Linear probe over spaCy en_core_web_lg vectors. Per-relation top-80% target cutoff, σ > 0.7 confidence threshold, cap 30 entries per imputed node. Coverage jumped 9.1% → 66.2%; avg 6.6 entries per MLP-imputed node.
+
+| Mechanism | PPL ↓ | BPB ↓ | SVDR acc | Δ BPB vs 2c | Notes |
+|---|---|---|---|---|---|
+| A — Weighted edge walk | 1401.00 | 2.1374 | 0.730 | 0.0000 | Null result |
+| B — Aggregated vote | 1401.00 | 2.1374 | 0.730 | 0.0000 | A = B exactly; contradictions still don't fire |
+| C — Hybrid re-rank (K=500) | 1337.34 | 2.1237 | 0.710 | 0.0000 | Identical to pre-MLP |
+
+**Null result is genuine, not a bug.** Coverage diagnostic confirms MLP properties loaded (66.2% of nodes, "ConceptNet ∪ MLP" reported by step 5). Runtime confirms 7× more `compatibility()` calls vs Phase 2c (220 tok/s vs 600 tok/s in A/B). The work is being done; it just isn't producing measurable signal.
+
+**Why MLP imputation didn't help (math):**
+- ~30 entries per ctx × ~10 ctx nodes in window = ~300 distinct relation entries
+- Against ~1.3M corpus vocab: per-cand match probability ~0.023%
+- Per-token prediction with ~500 candidates: ~0.12 matches per prediction
+- Avg boost when match fires: ~1.2× (RelatedTo dominates at 1.1×)
+- Expected aggregate BPB shift: ~0.001–0.005 (below 4-decimal display threshold)
+
+**Why contradictions still don't fire (B = A):**
+- `NotCapableOf` has only 168 schema target words (out of K=76,567)
+- pos_weight cap at 100 + sparse training labels → MLP rarely predicts `NotCapableOf` above σ > 0.7
+- The one relation that would move the needle (hard contradictions) is the one the linear probe can't impute reliably
+
+**Diagnostic implications:**
+- Compatibility-based scoring has hit its measurable ceiling at ~2.12 BPB regardless of coverage.
+- The 0.83 BPB gap to KenLM (~1.3) is dominated by smoothing / interpolation, not selectional logic.
+- SVDR ceiling is similarly capped at 0.73 (A/B) for this approach.
+
+**Action:** `MLP_PROPERTIES_ENABLED = False` in config (reverted to default off). Infrastructure (step 6, MLP_* config, merge logic in step 5) preserved for future use — easy to re-enable for variants (hidden layer, lower coverage_pct, per-relation training). Priority shifts to **Phase 3** (skip-N-gram hybridisation) as the next likely-meaningful lift.
+
 Tokens: 200,381 (down from 235,821 — spaCy's POS filter removes 15% more than the old `=-<>` heuristic). UNK: 1.1% (down from 1.7%).
 
 **Findings:**

@@ -79,7 +79,9 @@ MAX_EDGES_PER_SRC = 500  # max outgoing edges stored per source node (caps predi
 #       above this threshold as positive predictions (and below 1−threshold
 #       as negative). Predictions in between are "unknown" and contribute
 #       nothing to compatibility(). Per-prediction noise control.
-MLP_PROPERTIES_ENABLED      = True                           # set True after training
+MLP_PROPERTIES_ENABLED      = False                           # set True after training
+                                                              # (default off — Phase 2d showed
+                                                              # zero measurable effect; see notes)
 MLP_PROPERTY_COVERAGE_PCT   = 80                              # top-N% (per relation) of target
                                                               # words to predict, by frequency
 MLP_PROPERTY_CONFIDENCE     = 0.7                             # sigmoid threshold at inference
