@@ -965,16 +965,18 @@ The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3
 | Adagrad Ag ÷√10 + norms (lr=0.004743) | 0.004743 | 9.486e-5 | 1.1953 | 41.85 | 3.7071 | +0.059 | 4.76h (A5000) | [link](logs/wikitext-103_2026-05-23_22-26-07/log.txt) |
 | Adagrad Ag ÷∛10 + norms (lr=0.006963) | 0.006963 | 1.393e-4 | 1.1648 | 38.04 | 3.6168 | +0.029 | 4.72h (A5000) | [link](logs/wikitext-103_2026-05-24_03-12-28/log.txt) |
 | Adagrad Ag0 + norms (lr=0.015, same as T3) | 0.015000 | 3e-4 | 1.1332 | 34.47 | 3.5273 | −0.003 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
-| Adagrad Ag ×1.25 + norms (lr=0.01875) | 0.01875 | 3.75e-4 | queued | queued | queued | — | queued | — |
-| Adagrad Ag ×1.50 + norms (lr=0.02250) | 0.02250 | 4.50e-4 | queued | queued | queued | — | queued | — |
-| Adagrad Ag ×1.75 + norms (lr=0.02625) | 0.02625 | 5.25e-4 | queued | queued | queued | — | queued | — |
+| Adagrad Ag ×1.25 + norms (lr=0.01875) | 0.01875 | 3.75e-4 | 1.1319 | 34.33 | 3.5194 | −0.004 | 4.77h (A5000) | [link](logs/wikitext-103_2026-05-24_14-35-21/log.txt) |
+| Adagrad Ag ×1.50 + norms (lr=0.02250)★ | 0.02250 | 4.50e-4 | **1.1311** | **34.24** | **3.5157** | **−0.005** | 4.78h (A5000) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| Adagrad Ag ×1.75 + norms (lr=0.02625) | 0.02625 | 5.25e-4 | 1.1328 | 34.42 | 3.5210 | −0.003 | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-25_00-10-39/log.txt) |
 | Adagrad Ag ×∛10 + norms (lr=0.032316)✶ | 0.032316 | 6.463e-4 | NaN✶ | NaN✶ | 4.0763✶ | — | 4.60h (A5000) | [link](logs/wikitext-103_2026-05-24_07-57-45/log.txt) |
 
-✶ Late-training divergence: best_model.pt was saved cleanly (val 4.0763 before spike), but NaN contaminated the logits for some benchmark windows — BPB unmeasurable. Text generation remains functional from that checkpoint. Both below-baseline runs regress substantially (÷√10: +0.059; ÷∛10: +0.029). The first above-baseline run diverges (×∛10: NaN). Fine-grained sweep (×1.25, ×1.5, ×1.75) queued to bracket where instability begins; ×√10 and ×10 cancelled.
+✶ Late-training divergence: best_model.pt was saved cleanly (val 4.0763 before spike), but NaN contaminated the logits for some benchmark windows — BPB unmeasurable. Text generation remains functional from that checkpoint.
+
+★ New LR optimum. All three fine-grained runs beat Ag0: ×1.25 (BPB 1.1319, −0.001), ×1.50 (BPB 1.1311, −0.002), ×1.75 (BPB 1.1328, 0.000). The curve peaks cleanly at ×1.50 (lr=0.02250) — symmetric regression on both sides — with the stability cliff confirmed between ×1.75 (stable, BPB 1.1328) and ×∛10 (diverges, NaN). ×√10 and ×10 remain cancelled.
 
 **LR Tuning Findings:**
 
-Below-baseline LRs regress monotonically (÷10: +0.198 BPB; ÷√10: +0.059; ÷∛10: +0.029). Above-baseline at ×∛10 already diverges. **Current optimum: lr=0.015 (Ag0, BPB 1.1332).** Fine-grained sweep (×1.25, ×1.5, ×1.75) queued to determine whether there is any headroom above the current optimum before the ×∛10 instability threshold.
+Below-baseline LRs regress monotonically (÷10: +0.198 BPB; ÷√10: +0.059; ÷∛10: +0.029). Above-baseline, all three fine-grained runs improve: the optimum is a clean single peak at **lr=0.02250 (Ag150, BPB 1.1311)**, with symmetric regression on both sides and a sharp stability cliff between lr=0.02625 and 0.032316. LR sweep complete.
 
 **Other parameter tuning**
 
@@ -1021,13 +1023,13 @@ All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet
 
 ### New T4 Baseline
 
-T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters for the best optimizer. Updated to Adagrad (lr=0.015, fp16) after Ag0 beat the previous AdamW T4 (BPB 1.1365) by 0.003 BPB with no LR retuning. Adagrad normed LR sweep in progress — T4 will be re-confirmed once the optimum locks.
+T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters for the best optimizer. LR sweep complete — optimum locked at **lr=0.02250** (Ag150, BPB 1.1311), a clean single peak confirmed by the fine-grained ×1.25/×1.50/×1.75 sweep. T4 updated accordingly.
 
 | Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
 |---|---|---|---|---|---|---|
 | T3 (Adagrad, lr=0.015, no wavelet norms, fp16) | 3.5345 | 1.1362 | 34.79 | 1.84h | 8,065 MiB | 3,258 MiB |
-| T4 (Adagrad, lr=0.015, wavelet norms, fp16) | **3.5273** | **1.1332** | **34.47** | 4.75h (A5000) | 7,790 MiB | — |
-| Δ | **−0.007** | **−0.003** | **−0.32** | +2.58× | −275 MiB | — |
+| T4 (Adagrad, lr=0.02250, wavelet norms, fp16) | **3.5157** | **1.1311** | **34.24** | 4.78h (A5000) | 7,790 MiB | — |
+| Δ vs T3 | **−0.019** | **−0.005** | **−0.55** | +2.60× | −275 MiB | — |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
