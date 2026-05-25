@@ -60,9 +60,18 @@ def compatibility(ctx_props: dict, cand_word: str) -> float:
     something this context can/can't do or have?"
 
         0.0  — hard contradiction (cand_word ∈ ctx.{NotCapableOf, NotHasProperty})
-        >1.0 — positive association (cand_word ∈ ctx.{CapableOf, HasProperty,
-               RelatedTo}); multiplicative across matched relations
+        >1.0 — positive association; multiplicative across matched relations
         1.0  — neutral / no signal
+
+    Relation → boost mapping reflects approximate signal strength:
+        CapableOf       1.5   — strong selectional fit (verb after agent)
+        HasProperty     1.3   — attribute after subject
+        IsA             1.3   — taxonomic link
+        UsedFor         1.3   — instrument → action / object → purpose
+        Causes          1.2   — causal consequence
+        ReceivesAction  1.2   — passive-role link (food ReceivesAction eat)
+        AtLocation      1.2   — locational co-occurrence
+        RelatedTo       1.1   — generic broad association (weakest)
     """
     if not ctx_props or not cand_word:
         return 1.0
@@ -77,6 +86,16 @@ def compatibility(ctx_props: dict, cand_word: str) -> float:
         boost *= 1.5
     if cand_word in ctx_props.get("HasProperty", ()):
         boost *= 1.3
+    if cand_word in ctx_props.get("IsA", ()):
+        boost *= 1.3
+    if cand_word in ctx_props.get("UsedFor", ()):
+        boost *= 1.3
+    if cand_word in ctx_props.get("Causes", ()):
+        boost *= 1.2
+    if cand_word in ctx_props.get("ReceivesAction", ()):
+        boost *= 1.2
+    if cand_word in ctx_props.get("AtLocation", ()):
+        boost *= 1.2
     if cand_word in ctx_props.get("RelatedTo", ()):
         boost *= 1.1
     return boost

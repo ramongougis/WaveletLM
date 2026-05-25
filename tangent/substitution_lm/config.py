@@ -65,5 +65,28 @@ CONTEXT_SIZE      = 5    # number of prior tokens used as context window
 HYBRID_K          = 50   # Mechanism C: candidates from A before re-ranking
 MAX_EDGES_PER_SRC = 500  # max outgoing edges stored per source node (caps predict cost)
 
+# ── MLP Property Classifier (Phase 2) ──────────────────────────────────────
+# When enabled, fills gaps in ConceptNet coverage by imputing properties from
+# word embeddings. ConceptNet entries always override MLP predictions
+# (Reiter-style exceptions override the default classifier).
+#
+# Two noise-control levers (see design notes — both can be combined):
+#   MLP_PROPERTY_COVERAGE_PCT: train/predict only the top-N% of (relation,
+#       target_word) pairs by frequency in ConceptNet. Rare targets without
+#       enough training labels are dropped entirely; MLP capacity concentrates
+#       on well-supported features. Lower N → less noise, more sparsity.
+#   MLP_PROPERTY_CONFIDENCE:   at inference, only treat MLP sigmoid outputs
+#       above this threshold as positive predictions (and below 1−threshold
+#       as negative). Predictions in between are "unknown" and contribute
+#       nothing to compatibility(). Per-prediction noise control.
+MLP_PROPERTIES_ENABLED      = False                           # set True after training
+MLP_PROPERTY_COVERAGE_PCT   = 80                              # % of pair frequency to keep
+MLP_PROPERTY_CONFIDENCE     = 0.7                             # sigmoid threshold at inference
+MLP_PROPERTY_PATH           = DATA_DIR / "mlp_properties.pkl" # imputed properties dict
+MLP_PROPERTY_MODEL_PATH     = DATA_DIR / "mlp_property_classifier.pt"
+MLP_PROPERTY_EMBED_DIM      = 300                             # GloVe-300 input dim
+MLP_PROPERTY_HIDDEN_DIM     = 256                             # hidden layer width
+MLP_PROPERTY_LAYERS         = 2                               # depth (excluding output)
+
 # ── Evaluation ─────────────────────────────────────────────────────────────
 UNK_LOGPROB = -15.0  # log₂ fallback for tokens not reachable from context

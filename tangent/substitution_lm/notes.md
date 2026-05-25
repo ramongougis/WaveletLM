@@ -221,16 +221,19 @@ fix supersede these.
 
 | Mechanism | PPL ↓ | BPB ↓ | SVDR acc | Δ BPB vs Phase 2 | Notes |
 |---|---|---|---|---|---|
-| A — Weighted edge walk | — | — | — | — | queued |
-| B — Aggregated vote | — | — | — | — | queued |
-| C — Hybrid re-rank (K=50) | — | — | — | — | queued |
+| A — Weighted edge walk | 1414.98 | **2.1403** | **0.730** | **−0.6368** | Major lift from lemmatisation |
+| B — Aggregated vote | 1414.97 | **2.1403** | **0.730** | **−0.6368** | A ≈ B even with fixed `compatibility()` |
+| C — Hybrid re-rank (K=50) | 1423.57 | 2.1421 | 0.430 | −0.6111 | SVDR *regressed* (−0.11) — over-rerank? |
 | KenLM 5-gram (reference) | — | — | — | — | queued |
 
-**Expected directional changes from the fixes:**
-- PPL/BPB should *drop* meaningfully — UNK fallbacks at -15 log2 are now replaced by real lemma matches.
-- A vs B should separate more (B's `contradicted` set will actually populate).
-- C may stay weakest on SVDR — its top-K restriction independently penalises uncommon sequences.
-- If ConceptNet adds real signal, SVDR accuracy should rise above the pre-fix 62%.
+Tokens: 200,381 (down from 235,821 — spaCy's POS filter removes 15% more than the old `=-<>` heuristic). UNK: 1.1% (down from 1.7%).
+
+**Findings:**
+- **Lemmatisation was almost the entire win.** A −0.64 BPB drop is bigger than the entire remaining gap to KenLM (~0.84). Inflected verbs and irregulars previously falling to UNK=−15 log₂ now score against the real lemma node. Total per-token CE dropped from ~12.5 bits to ~9.6 bits.
+- **A ≈ B to 4 decimals.** Even with the corrected compatibility function, hard contradictions (`cand_word ∈ ctx.NotCapableOf`) fire so rarely that B's `contradicted` set barely populates. The 0.01 PPL gap between A and B suggests contradiction fires for <0.01% of (ctx, cand) pairs across the whole test set. ConceptNet's `NotCapableOf` is simply too sparse for this scoring approach to bite at WT103 scale.
+- **C regressed on SVDR (0.540 → 0.430).** With stronger compat boosts (1.5x for CapableOf hits, 1.3x for HasProperty), C's re-ranking now actively shifts the top-50 ordering — but in directions that don't align with anomaly detection. A candidate that matches one context node's CapableOf gets a ~10% avg-compat boost, which can override A's base ordering. For SVDR pairs where the anomalous subject happens to match some loose CapableOf entry, C now mis-ranks. C's structural weakness (top-50 restriction) compounds with this.
+- **SVDR accuracy up 0.62 → 0.73 (A/B).** Part of this is lemmatisation alone (more accurate word-level scoring for inflected forms in the pairs). Some is likely ConceptNet contribution on common verbs (eat, fly, swim, etc.) where CapableOf/NotCapableOf entries now correctly modulate scores. Hard to isolate without an ablation.
+- **Headroom toward KenLM (~1.3 BPB) is 0.84 BPB.** Most of that gap is fundamental — KN smoothing and continuous interpolation aren't reachable with hard property filtering. Realistic Phase 2 ceiling is probably 1.8–2.0 BPB with MLP + WSD + exception tables.
 
 ### Phase 2 Additions (planned)
 
