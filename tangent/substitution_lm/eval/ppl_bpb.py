@@ -35,16 +35,17 @@ import predict.mechanism_c as mech_c
 MECHANISMS = {"a": mech_a, "b": mech_b, "c": mech_c}
 
 
-def _iter_test_words(path: Path):
-    """Yield lowercased words from the WT103 raw test file, skipping headings."""
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("="):
-                continue
-            for word in line.split():
-                if word and not all(c in "=-<>" for c in word):
-                    yield word.lower()
+def _iter_test_words():
+    """Yield lowercased words from the WT103 test split, skipping headings."""
+    from datasets import load_dataset
+    ds = load_dataset(C.HF_DATASET, C.HF_CONFIG, split="test")
+    for example in ds:
+        line = example["text"].strip()
+        if not line or line.startswith("="):
+            continue
+        for word in line.split():
+            if word and not all(c in "=-<>" for c in word):
+                yield word.lower()
 
 
 def eval_ppl_bpb(mech_module, model: dict, label: str) -> dict:
@@ -58,7 +59,7 @@ def eval_ppl_bpb(mech_module, model: dict, label: str) -> dict:
     n_tokens = 0
     n_unk = 0
 
-    for word in _iter_test_words(C.TEST_RAW):
+    for word in _iter_test_words():
         wid = ngram2id.get(word)
 
         # Get distribution over next token
@@ -165,7 +166,7 @@ def main():
 
     print(f"\n{'='*60}")
     print("  PPL / BPB / SVDR Evaluation")
-    print(f"  Test file : {C.TEST_RAW}")
+    print(f"  Test split: {C.HF_DATASET} / {C.HF_CONFIG} (test)")
     print(f"{'='*60}\n")
 
     for key, mod in mechs.items():
