@@ -12,12 +12,11 @@ Model dict structure:
       "freq":        dict[int, int],          # raw corpus frequency per node
       "collocations": set[str],
       "logprob":     dict[int, dict[int, float]], # log2 P(dst | src)
-      "dag_raw":     dict[int, dict[int, int]],   # raw co-occurrence counts
       "properties":  dict[int, dict[str, list]],  # ConceptNet properties
       "unigram_logprob": dict[int, float],         # fallback unigram log2 probs
     }
 
-VRAM: none.  RAM: dominated by logprob dict; typically 1–3 GB.
+VRAM: none.  RAM: dominated by logprob dict.
 """
 
 import math
@@ -30,14 +29,19 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 import config as C
 
 
-def _to_logprob(dag_raw: dict) -> dict:
-    """Convert raw count DAG to log2-probability DAG (row-normalised)."""
+def _to_logprob(dag_raw: dict, min_count: int = 2) -> dict:
+    """Convert raw count DAG to log2-probability DAG (row-normalised).
+
+    Edges with count < min_count are pruned — they represent a single
+    co-occurrence across the entire corpus and add noise, not signal.
+    """
     logprob = {}
     for src, dsts in dag_raw.items():
-        total = sum(dsts.values())
-        if total == 0:
+        filtered = {dst: cnt for dst, cnt in dsts.items() if cnt >= min_count}
+        if not filtered:
             continue
-        logprob[src] = {dst: math.log2(cnt / total) for dst, cnt in dsts.items()}
+        total = sum(filtered.values())
+        logprob[src] = {dst: math.log2(cnt / total) for dst, cnt in filtered.items()}
     return logprob
 
 
@@ -63,6 +67,7 @@ def run() -> None:
 
     print("  Computing log-probability DAG …")
     logprob = _to_logprob(dag_raw)
+    del dag_raw  # free raw counts — not stored in model, not used by predictors
 
     # Unigram fallback: log2(freq / total_freq)
     total_freq = sum(table["freq"].values())
@@ -77,7 +82,6 @@ def run() -> None:
         "freq":             table["freq"],
         "collocations":     table["collocations"],
         "logprob":          logprob,
-        "dag_raw":          dag_raw,
         "properties":       properties,
         "unigram_logprob":  unigram_logprob,
     }
