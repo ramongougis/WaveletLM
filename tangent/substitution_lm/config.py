@@ -35,9 +35,21 @@ MODEL_PATH        = DATA_DIR / "model.pkl"
 
 # ── Extraction parameters ──────────────────────────────────────────────────
 MAX_NGRAM    = 5    # maximum n-gram length (tokens); keep ≤5 to control memory
-MIN_FREQ     = 5    # minimum corpus occurrences to admit a node
+MIN_FREQ     = 2    # minimum corpus occurrences to admit a node
 PMI_MIN      = 3.0  # minimum PMI to treat a phrase as an atomic collocation
 COLLOC_FREQ  = 10   # minimum raw frequency for collocation candidates
+
+# When True, step 2 emits every n-gram (length 2..MAX_NGRAM) from the
+# POS-filtered sentence lemma stream — not just NP-chunk sub-n-grams. This
+# captures cross-boundary patterns (function-word + content-word, VP+PP
+# spans, subordinate-clause beginnings, etc.) which the audit identified as
+# the dominant source of unaccounted n-grams.
+#
+# Cost: peak step-2 Counter memory ~10–15 GB instead of ~2 GB; node table
+# grows ~10–20× (1.3M → 15–25M nodes); model.pkl scales accordingly.
+# Singleton pruning during extraction bounds peak RAM but may slightly
+# undercount very rare n-grams at MIN_FREQ=2 (bounded loss).
+EXTRACT_SENTENCE_NGRAMS = True
 
 # ── SpaCy ──────────────────────────────────────────────────────────────────
 SPACY_MODEL     = "en_core_web_lg"

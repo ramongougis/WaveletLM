@@ -7,9 +7,14 @@ Pass A — count unigrams and bigrams to compute PMI for collocation detection.
           Common collocations (PMI ≥ PMI_MIN, freq ≥ COLLOC_FREQ) are promoted
           to atomic phrase nodes.
 
-Pass B — extract NP chunk sub-n-grams (all contiguous sub-sequences up to
-          MAX_NGRAM tokens) and collocation phrase nodes. Assign integer IDs to
-          all nodes that meet MIN_FREQ.
+Pass B — extract candidate n-gram nodes. Two modes (config.EXTRACT_SENTENCE_NGRAMS):
+          True  — every n-gram of length 2..MAX_NGRAM from POS-filtered
+                  sentence lemma streams. Subsumes NP-chunk extraction; also
+                  captures cross-boundary patterns (function-word + content-word,
+                  VP / PP / subordinate-clause spans) which dominate the
+                  unaccounted n-gram distribution.
+          False — collocation bigrams + NP-chunk sub-n-grams only (original
+                  behaviour).
 
 Writes: NODE_TABLE_PATH — dict with:
     {
@@ -19,8 +24,13 @@ Writes: NODE_TABLE_PATH — dict with:
       "collocations": set[str],   # atomic phrase strings
     }
 
-VRAM: none.  RAM: O(unique n-grams × ~200 bytes) ≈ 2–4 GB unfiltered;
-      after MIN_FREQ pruning, typically < 500 MB.
+VRAM: none.
+RAM:
+    EXTRACT_SENTENCE_NGRAMS=False: O(unique n-grams × ~200 bytes) ≈ 2–4 GB
+                                   unfiltered; < 500 MB after MIN_FREQ pruning.
+    EXTRACT_SENTENCE_NGRAMS=True:  10–15 GB peak (bounded by periodic
+                                   singleton pruning when Counter exceeds
+                                   ~40M entries); 1–4 GB after MIN_FREQ.
 """
 
 import json
@@ -82,29 +92,74 @@ def _ngrams_from_chunk(chunk_text: str, collocations: set) -> list:
     return results
 
 
-def _extract_pass(cache_path: Path, collocations: set) -> tuple[Counter, set]:
-    """Count all candidate n-gram nodes; return (node_freq, collocation_set)."""
-    node_freq: Counter = Counter()
+def _extract_pass(cache_path: Path, collocations: set) -> Counter:
+    """Count all candidate n-gram nodes; dispatches by EXTRACT_SENTENCE_NGRAMS."""
+    if C.EXTRACT_SENTENCE_NGRAMS:
+        return _extract_pass_sentence_stream(cache_path)
+    return _extract_pass_np_chunks(cache_path, collocations)
 
+
+def _extract_pass_np_chunks(cache_path: Path, collocations: set) -> Counter:
+    """Original behaviour: unigrams + collocation bigrams + NP-chunk sub-n-grams."""
+    node_freq: Counter = Counter()
     with open(cache_path, encoding="utf-8") as f:
         for line in f:
             doc = json.loads(line)
-
-            # Collocation phrases from sentences
             for sent in doc["sentences"]:
-                lemmas = [t["lemma"] for t in sent["tokens"] if t["pos"] not in ("PUNCT", "SPACE", "SYM", "NUM")]
+                lemmas = [t["lemma"] for t in sent["tokens"]
+                          if t["pos"] not in ("PUNCT", "SPACE", "SYM", "NUM")]
                 for a, b in zip(lemmas, lemmas[1:]):
                     phrase = f"{a} {b}"
                     if phrase in collocations:
                         node_freq[phrase] += 1
-                # Unigrams
                 for lem in lemmas:
                     node_freq[lem] += 1
-
-            # NP chunk sub-n-grams
             for chunk in doc["chunks"]:
                 for ngram in _ngrams_from_chunk(chunk["text"], collocations):
                     node_freq[ngram] += 1
+    return node_freq
+
+
+def _extract_pass_sentence_stream(cache_path: Path) -> Counter:
+    """Every n-gram of length 1..MAX_NGRAM from POS-filtered sentence streams.
+
+    Memory-bounded by periodic singleton pruning: when the Counter exceeds
+    ~40M entries, drop everything with count==1. Bounded loss for very-rare
+    n-grams at MIN_FREQ=2 (a true-count-2 n-gram could be lost if its two
+    occurrences straddle a prune event; this is rare).
+    """
+    PRUNE_EVERY   = 500_000      # docs between memory checks
+    PRUNE_AT_SIZE = 40_000_000   # Counter entries threshold
+    max_n = C.MAX_NGRAM
+
+    node_freq: Counter = Counter()
+    n_docs = 0
+
+    with open(cache_path, encoding="utf-8") as f:
+        for line in f:
+            doc = json.loads(line)
+            for sent in doc["sentences"]:
+                lemmas = [t["lemma"] for t in sent["tokens"]
+                          if t["pos"] not in ("PUNCT", "SPACE", "SYM", "NUM")]
+                L = len(lemmas)
+                if not L:
+                    continue
+                # Unigrams
+                for lem in lemmas:
+                    node_freq[lem] += 1
+                # All sentence-stream n-grams 2..MAX_NGRAM
+                for n in range(2, max_n + 1):
+                    if L < n:
+                        break
+                    for i in range(L - n + 1):
+                        node_freq[" ".join(lemmas[i:i + n])] += 1
+
+            n_docs += 1
+            if n_docs % PRUNE_EVERY == 0 and len(node_freq) > PRUNE_AT_SIZE:
+                pre = len(node_freq)
+                node_freq = Counter({k: v for k, v in node_freq.items() if v >= 2})
+                print(f"  [{n_docs:,} docs] singleton prune: "
+                      f"{pre:,} → {len(node_freq):,}", flush=True)
 
     return node_freq
 
@@ -139,7 +194,8 @@ def run() -> None:
         pickle.dump(bigrams, f)
 
     # ── Pass B ────────────────────────────────────────────────────────────
-    print("[02_extract] Pass B: extracting n-gram nodes …")
+    mode = "sentence-stream (all n-grams)" if C.EXTRACT_SENTENCE_NGRAMS else "NP-chunks only"
+    print(f"[02_extract] Pass B: extracting n-gram nodes — mode: {mode} …")
     t0 = time.time()
     node_freq = _extract_pass(C.PARSE_CACHE_TRAIN, collocations)
     print(f"  Raw candidates: {len(node_freq):,}  ({time.time()-t0:.0f}s)")
