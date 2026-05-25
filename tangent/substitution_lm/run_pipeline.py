@@ -13,6 +13,10 @@ Steps:
     3  Build co-occurrence DAG → data/dag.pkl
     4  ConceptNet properties   → data/properties.pkl
     5  Assemble model          → data/model.pkl
+    6  (optional) MLP property imputation → data/mlp_properties.pkl
+        Only runs when config.MLP_PROPERTIES_ENABLED is True. Re-run step 5
+        afterwards (delete data/model.pkl) to rebuild the model against
+        merged ConceptNet ∪ MLP properties.
 
 --eval : run PPL/BPB/SVDR evaluation after build (requires step 5 complete)
 """
@@ -36,6 +40,7 @@ STEP_SCRIPTS = {
     3: ROOT / "pipeline" / "03_build_dag.py",
     4: ROOT / "pipeline" / "04_property_lookup.py",
     5: ROOT / "pipeline" / "05_build_model.py",
+    6: ROOT / "pipeline" / "06_mlp_properties.py",
 }
 
 STEP_OUTPUTS = {
@@ -44,6 +49,7 @@ STEP_OUTPUTS = {
     3: C.DAG_PATH,
     4: C.PROPERTIES_PATH,
     5: C.MODEL_PATH,
+    6: C.MLP_PROPERTY_PATH,
 }
 
 

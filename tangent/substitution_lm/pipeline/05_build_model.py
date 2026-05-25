@@ -54,19 +54,24 @@ def run() -> None:
         print(f"[05_build_model] Model already exists: {C.MODEL_PATH}  (delete to rebuild)")
         return
 
-    for dep in (C.NODE_TABLE_PATH, C.DAG_PATH, C.PROPERTIES_PATH):
+    use_mlp = C.MLP_PROPERTIES_ENABLED and C.MLP_PROPERTY_PATH.exists()
+    props_path = C.MLP_PROPERTY_PATH if use_mlp else C.PROPERTIES_PATH
+
+    for dep in (C.NODE_TABLE_PATH, C.DAG_PATH, props_path):
         if not dep.exists():
             print(f"[05_build_model] Missing: {dep} — run earlier steps first.")
             sys.exit(1)
 
     t0 = time.time()
     print("[05_build_model] Loading components …")
+    print(f"  Properties source: {props_path.name}"
+          + (" (ConceptNet ∪ MLP)" if use_mlp else " (ConceptNet only)"))
 
     with open(C.NODE_TABLE_PATH, "rb") as f:
         table = pickle.load(f)
     with open(C.DAG_PATH, "rb") as f:
         dag_raw = pickle.load(f)
-    with open(C.PROPERTIES_PATH, "rb") as f:
+    with open(props_path, "rb") as f:
         properties = pickle.load(f)
 
     print("  Computing log-probability DAG …")

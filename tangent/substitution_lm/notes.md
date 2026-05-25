@@ -249,12 +249,29 @@ Tokens: 200,381 (down from 235,821 — spaCy's POS filter removes 15% more than 
 
 ### Phase 2 Additions (planned)
 
-| Variant | Change vs. MVP | PPL ↓ | BPB ↓ | SVDR F1 ↑ | Notes |
+| Variant | Change vs. MVP | PPL ↓ | BPB ↓ | SVDR acc | Notes |
 |---|---|---|---|---|---|
 | + WSD (coarse) | Sense-disambiguated token IDs | — | — | — | |
 | + WSD (fine) | WordNet synset IDs | — | — | — | |
-| + MLP properties | Replace ConceptNet lookup | — | — | — | |
+| + MLP properties | Imputed ConceptNet via linear probe on spaCy vectors | — | — | — | implemented; awaiting run |
 | + Exception tables | Manual + auto-detected overrides | — | — | — | |
+
+**MLP property classifier (step 6)** — Linear probe (`Linear(300, K)`) over
+spaCy `en_core_web_lg` word vectors, BCE loss with per-class `pos_weight`
+capped at 100. Per-relation top-N% target word cutoff plus inference-time
+confidence threshold (both configurable). ConceptNet entries override MLP
+imputations where present (Reiter exception-override). To enable:
+```
+# config.py
+MLP_PROPERTIES_ENABLED = True
+# defaults: COVERAGE_PCT=80, CONFIDENCE=0.7, LAYERS=0 (linear probe)
+```
+```
+# pod
+rm tangent/substitution_lm/data/mlp_properties.pkl tangent/substitution_lm/data/model.pkl
+python tangent/substitution_lm/run_pipeline.py --steps 6,5
+python tangent/substitution_lm/eval/ppl_bpb.py --mechanism all --workers 4
+```
 
 ---
 
