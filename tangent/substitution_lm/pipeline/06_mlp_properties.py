@@ -234,14 +234,23 @@ def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=1024):
             nids = [b[0] for b in batch]
             vecs = np.asarray([b[1] for b in batch], dtype=np.float32)
             probs = torch.sigmoid(model(torch.from_numpy(vecs))).numpy()
-            for nid, p_vec in zip(nids, probs):
+
+            # Vectorised: find positive (node, target) pairs without iterating
+            # the full (batch × K) space in Python. At label-rate ~0.01% and
+            # σ>0.7, this is ~10⁴ entries per batch vs ~10⁸ pairs scanned.
+            pos_idx = np.argwhere(probs > conf)  # (n_pos, 2)
+            per_node: dict[int, list[int]] = defaultdict(list)
+            for node_i, target_i in pos_idx:
+                per_node[int(node_i)].append(int(target_i))
+
+            for node_i, target_indices in per_node.items():
                 node_props = defaultdict(list)
-                for (relation, target), p in zip(targets, p_vec):
-                    if p > conf:
-                        node_props[relation].append(target)
-                if node_props:
-                    imputed[nid] = dict(node_props)
-                    n_pred_entries += sum(len(v) for v in node_props.values())
+                for ti in target_indices:
+                    relation, target = targets[ti]
+                    node_props[relation].append(target)
+                imputed[nids[node_i]] = dict(node_props)
+                n_pred_entries += len(target_indices)
+
             ibar.set_postfix(imputed=f"{len(imputed):,}")
     avg = n_pred_entries / max(len(imputed), 1)
     print(f"  Avg entries per imputed node: {avg:.1f}")
@@ -291,33 +300,45 @@ def run() -> None:
         print(f"  {rel:18s}: {len(schema[rel]):,} target words")
     print(f"  Total output dim K = {K:,}")
 
-    print("[06_mlp] Building training set …")
-    X, Y_indices, skipped = _build_dataset(properties, id2ngram, target_to_idx, nlp)
-    n_pos = sum(len(idx) for idx in Y_indices)
-    pos_rate = 100.0 * n_pos / max(X.shape[0] * K, 1)
-    print(f"  Training nodes: {X.shape[0]:,}   skipped (no vector): {skipped:,}")
-    print(f"  Positive labels: {n_pos:,}   label rate: {pos_rate:.4f}%")
+    import torch
 
     layers = C.MLP_PROPERTY_LAYERS
     label = "linear probe" if layers == 0 else f"{layers}-hidden-layer MLP"
-    print(f"[06_mlp] Training {label} …")
     model = _make_model(C.MLP_PROPERTY_EMBED_DIM, K, C.MLP_PROPERTY_HIDDEN_DIM, layers)
-    import torch
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  Parameters: {n_params:,}")
-    print(f"  Epochs: {C.MLP_PROPERTY_EPOCHS}   Batch size: {C.MLP_PROPERTY_BATCH_SIZE}")
-    _train(model, X, Y_indices, K,
-           epochs=C.MLP_PROPERTY_EPOCHS,
-           batch_size=C.MLP_PROPERTY_BATCH_SIZE)
 
-    print(f"[06_mlp] Saving model + schema → {C.MLP_PROPERTY_MODEL_PATH}")
-    torch.save({
-        "state_dict": model.state_dict(),
-        "targets":    targets,
-        "layers":     layers,
-        "hidden":     C.MLP_PROPERTY_HIDDEN_DIM,
-        "input_dim":  C.MLP_PROPERTY_EMBED_DIM,
-    }, C.MLP_PROPERTY_MODEL_PATH)
+    if C.MLP_PROPERTY_MODEL_PATH.exists():
+        print(f"[06_mlp] Loading existing checkpoint → {C.MLP_PROPERTY_MODEL_PATH}")
+        ckpt = torch.load(C.MLP_PROPERTY_MODEL_PATH, weights_only=False)
+        if ckpt.get("targets") != targets or ckpt.get("layers") != layers:
+            print("  Schema / architecture mismatch — re-training from scratch")
+            print("  (delete mlp_property_classifier.pt to silence this and proceed cleanly)")
+            sys.exit(1)
+        model.load_state_dict(ckpt["state_dict"])
+        print(f"  Loaded {n_params:,} parameters — skipping training")
+    else:
+        print("[06_mlp] Building training set …")
+        X, Y_indices, skipped = _build_dataset(properties, id2ngram, target_to_idx, nlp)
+        n_pos = sum(len(idx) for idx in Y_indices)
+        pos_rate = 100.0 * n_pos / max(X.shape[0] * K, 1)
+        print(f"  Training nodes: {X.shape[0]:,}   skipped (no vector): {skipped:,}")
+        print(f"  Positive labels: {n_pos:,}   label rate: {pos_rate:.4f}%")
+
+        print(f"[06_mlp] Training {label} …")
+        print(f"  Parameters: {n_params:,}")
+        print(f"  Epochs: {C.MLP_PROPERTY_EPOCHS}   Batch size: {C.MLP_PROPERTY_BATCH_SIZE}")
+        _train(model, X, Y_indices, K,
+               epochs=C.MLP_PROPERTY_EPOCHS,
+               batch_size=C.MLP_PROPERTY_BATCH_SIZE)
+
+        print(f"[06_mlp] Saving model + schema → {C.MLP_PROPERTY_MODEL_PATH}")
+        torch.save({
+            "state_dict": model.state_dict(),
+            "targets":    targets,
+            "layers":     layers,
+            "hidden":     C.MLP_PROPERTY_HIDDEN_DIM,
+            "input_dim":  C.MLP_PROPERTY_EMBED_DIM,
+        }, C.MLP_PROPERTY_MODEL_PATH)
 
     print(f"[06_mlp] Imputing properties for uncovered nodes (σ > {C.MLP_PROPERTY_CONFIDENCE}) …")
     imputed = _impute(model, properties, id2ngram, targets, nlp,

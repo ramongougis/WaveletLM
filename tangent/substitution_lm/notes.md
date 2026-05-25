@@ -287,6 +287,110 @@ python tangent/substitution_lm/eval/ppl_bpb.py --mechanism all --workers 4
 
 ---
 
+## Phase 3 — Skip-N-Gram Hybridisation (EXARCH augmentation)
+
+The substitution structure handles local consistency well but has no mechanism
+for long-range topical / referential signal — `CONTEXT_SIZE` is bounded by the
+recency-weighted window, and pushing it much past 10 trades signal for noise.
+The natural complement is the skip-N-gram primitive from the EXARCH design
+(see [private/explicit_lm_design.md](../../private/explicit_lm_design.md)):
+a distant anchor token `A` modulates the local bigram-conditioned prediction
+`P(D | B,C)`, capturing exactly what a one-layer attention-only transformer's
+skip-trigram circuit computes (per Elhage et al.). The two architectures aren't
+competitors — the anchor lookup augments substitution without replacing any
+component. **N=3 (`A...BCD`) is the practical instantiation**; higher-order
+skip-N-grams subsume lower orders via marginalisation but the local bigram
+is already enough disambiguation for our use case.
+
+The substitution LM's existing iterative-subtraction pipeline (collocations
+→ clausal parse → nested NPs → residual) gives us the lattice for both
+integration paths below "for free" — the node table already separates
+content-bearing multi-token units (NPs, collocations) from the residual
+function-word / discourse-marker stream.
+
+### Reading A — Anchor pool (complementary, secondary)
+
+Reuse the NP-head and named-entity nodes from the node table as the *anchor*
+pool. Each prediction looks up skip-3-gram contributions from every anchor
+present in the recent context window, in addition to the local substitution
+prediction. Conceptually:
+
+```
+P(D | context) ∝ P_substitution(D | local) × Σ_{A ∈ anchors} P_skip(D | A, BC)
+```
+
+- Anchors are already extracted (NP nodes in `node_table.pkl`, ~50–100K)
+- Integrates as a Mechanism-C-style re-rank: substitution gives top-K, skip
+  lookup re-weights by anchor agreement
+- Modulates *all* predictions, not just specific token classes
+- More expensive — every prediction pays the anchor-lookup cost
+
+### Reading B — Specialist routing (primary, larger expected lift)
+
+Skip-3-grams predict *only* for the residual class — function words and
+discourse markers that the substitution machinery handles poorly. Content
+words inside NPs continue to use substitution + properties; only the
+"connective tissue" gets routed to skip-N-grams.
+
+Why this is the cleaner division of labour:
+
+- **Function words carry discourse state, not local semantics.** `"the"` vs
+  `"a"` depends on whether a referent has been introduced; `"however"` vs
+  `"therefore"` depends on the rhetorical stance of preceding clauses.
+  Local bigram context is uninformative; distant anchor is exactly the
+  right signal.
+- **Content words carry local syntactic / semantic signal.** Co-occurrence
+  + property compatibility already get strong predictions for the head of
+  an NP; routing them to skip-N-grams would dilute, not improve.
+- **Mirrors human language structure.** Content words are locally predictable
+  from semantic priming; function words encode broader discourse state. The
+  split isn't arbitrary — it tracks a real cleavage in how language works.
+
+Gated routing rather than score fusion: at predict time, classify the
+target-token slot (function-word / discourse-marker vs. content); route to
+the appropriate mechanism; no need for the two distributions to be combined
+arithmetically.
+
+### Feasibility / sizing (Reading B specifically)
+
+| Set | Approximate size | Source |
+|---|---|---|
+| Anchor pool `A` (NP heads, named entities) | ~50K–100K | existing node table |
+| Residual prediction targets `D` (function words + discourse markers) | ~5K | POS-filter the lemma vocab |
+| Local bigrams `BC` (top-frequency, observed) | ~50K–100K | derivable from existing bigram cache |
+| Sparse observed `(A, BC, D)` triples in WT103 | ~10–50M | empirical, to measure |
+| Storage (int32 sparse) | ~0.5–2 GB | comparable to existing DAG |
+
+Tractable. The dense `V^3` worst case never materialises because we're
+sparse and the prediction set is narrow.
+
+### Open implementation questions
+
+- **Residual identification:** POS-based (closed-class tags: `DET`, `ADP`,
+  `CCONJ`, `SCONJ`, `PART`, `AUX`, common adverbs) or frequency-based
+  (top-K most common lemmas in the corpus)? POS is more principled; the
+  spaCy parse cache already has the tags.
+- **Multi-anchor handling:** when CONTEXT_SIZE=10 holds ~5–10 anchors, how
+  to aggregate their skip-3-gram contributions — sum (independent
+  evidence), max (most-confident anchor wins), or recency-weighted? EXARCH
+  defaults to binary anchor-presence; recency-weighted is a soft alternative.
+- **Backoff:** what happens when `(A, BC)` has no observed `D` distribution
+  in the table? Fall through to substitution, or to a marginalised
+  skip-bigram?
+- **Anchor decay window:** does `A` count if it appeared in the last 5
+  tokens, the last 20, the whole clause, the whole paragraph? Different
+  windows likely matter for different anchor types (entities = long;
+  sentiment = short).
+- **Pipeline integration:** is skip-N-gram extraction a new pipeline step 7
+  (built once from parse cache) or computed on-the-fly from the existing
+  DAG? The latter is simpler but slower per prediction.
+
+Position in roadmap: **after Phase 2 results land** (MLP + WSD + exception
+tables). Phase 3 builds on a stable substitution baseline rather than
+chasing improvements in parallel.
+
+---
+
 ## Open Questions
 
 - Does property-based edge filtering improve PPL, or is raw co-occurrence already
