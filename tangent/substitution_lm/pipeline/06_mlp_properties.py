@@ -148,7 +148,7 @@ class _SparseLabelDataset:
         return self.X[idx], y
 
 
-def _train(model, X, Y_indices, K, epochs=20, batch_size=256, lr=1e-3, val_pct=10):
+def _train(model, X, Y_indices, K, epochs=5, batch_size=1024, lr=1e-3, val_pct=10):
     import torch
     import torch.nn as nn
     from torch.utils.data import DataLoader
@@ -203,7 +203,7 @@ def _train(model, X, Y_indices, K, epochs=20, batch_size=256, lr=1e-3, val_pct=1
         print(f"  Epoch {epoch:2d}: train {train_loss:.4f}  val {val_loss:.4f}", flush=True)
 
 
-def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=512):
+def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=1024):
     """Predict properties for nodes NOT in ConceptNet; apply confidence threshold."""
     import torch
 
@@ -305,7 +305,10 @@ def run() -> None:
     import torch
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
-    _train(model, X, Y_indices, K)
+    print(f"  Epochs: {C.MLP_PROPERTY_EPOCHS}   Batch size: {C.MLP_PROPERTY_BATCH_SIZE}")
+    _train(model, X, Y_indices, K,
+           epochs=C.MLP_PROPERTY_EPOCHS,
+           batch_size=C.MLP_PROPERTY_BATCH_SIZE)
 
     print(f"[06_mlp] Saving model + schema → {C.MLP_PROPERTY_MODEL_PATH}")
     torch.save({
@@ -317,7 +320,9 @@ def run() -> None:
     }, C.MLP_PROPERTY_MODEL_PATH)
 
     print(f"[06_mlp] Imputing properties for uncovered nodes (σ > {C.MLP_PROPERTY_CONFIDENCE}) …")
-    imputed = _impute(model, properties, id2ngram, targets, nlp, C.MLP_PROPERTY_CONFIDENCE)
+    imputed = _impute(model, properties, id2ngram, targets, nlp,
+                      C.MLP_PROPERTY_CONFIDENCE,
+                      batch_size=C.MLP_PROPERTY_BATCH_SIZE)
     imp_pct = 100.0 * len(imputed) / max(n_nodes, 1)
     print(f"  Imputed: {len(imputed):,} nodes ({imp_pct:.1f}% of total)")
 

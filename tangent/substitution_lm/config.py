@@ -91,6 +91,12 @@ MLP_PROPERTY_LAYERS         = 0                               # hidden layers; 0
                                                               # (fully interpretable per-property
                                                               # weight vector). Bump to 1 only
                                                               # if linear demonstrably underfits.
+MLP_PROPERTY_EPOCHS         = 5                               # 5 is usually enough for a linear
+                                                              # probe on ~100K samples; loss
+                                                              # plateaus by epoch 3–5
+MLP_PROPERTY_BATCH_SIZE     = 1024                            # larger = fewer iterations, less
+                                                              # per-iter Python/BLAS overhead;
+                                                              # ~313 MB per-batch dense Y at K=76K
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
 UNK_LOGPROB = -15.0  # log₂ fallback for tokens not reachable from context
