@@ -986,7 +986,7 @@ All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet
 |---|---|---|---|---|---|---|---|---|---|
 | Ag0 (reference) | 2e-13 | 0 | 1e-6 | 1.1332 | 34.47 | 3.5273 | (ref) | 4.75h (A5000) | [link](logs/wikitext-103_2026-05-23_12-25-37/log.txt) |
 | Adagrad initial_acc=0.1 | 2e-13 | 0.1 | 1e-6 | 1.7136 | 211.30 | 5.3393 | +0.5804 | 4.68h (A5000) | [link](logs/wikitext-103_2026-05-25_04-56-16/log.txt) |
-| Adagrad initial_acc=1.0 | 2e-13 | 1.0 | 1e-6 | queued | queued | queued | — | queued | — |
+| Adagrad initial_acc=1.0 | 2e-13 | 1.0 | 1e-6 | 1.9636 | 461 | 6.1071 | +0.8304 | 4.68h (A5000) | [link](logs/wikitext-103_2026-05-25_09-39-20/log.txt) |
 | Adagrad eps=1e-10 (PyTorch default) | 1e-10 | 0 | 1e-6 | queued | queued | queued | — | queued | — |
 | Adagrad eps=1e-8 | 1e-8 | 0 | 1e-6 | queued | queued | queued | — | queued | — |
 | Adagrad weight_decay=0 | 2e-13 | 0 | 0 | queued | queued | queued | — | queued | — |
@@ -994,7 +994,7 @@ All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet
 
 **Other Tuning Findings:**
 
-`initial_acc=0.1` with `eps=2e-13` is catastrophic (+0.58 BPB). With essentially-zero epsilon, Ag0's initial accumulator=0 allows an effectively unbounded first-step learning rate (bounded only by the warmup schedule), enabling rapid early adaptation. Setting initial_acc=0.1 caps the effective LR to `lr/√0.1 ≈ 3.16×lr` regardless of gradient history, breaking Adagrad's adaptive advantage precisely in the phase where it matters most. Rule: **never use initial_acc > 0 with eps < 1e-8**.
+`initial_acc` degrades monotonically: 0.1 → +0.58 BPB, 1.0 → +0.83 BPB. With essentially-zero epsilon, Ag0's initial accumulator=0 allows an effectively unbounded first-step learning rate (bounded only by the warmup schedule), enabling rapid early adaptation. Any positive initial_acc pre-fills the denominator, capping the effective LR to `lr/√initial_acc` from the start and suppressing the adaptive advantage precisely where it matters most. Rule: **never use initial_acc > 0 with eps < 1e-8**.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
