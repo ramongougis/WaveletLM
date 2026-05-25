@@ -203,7 +203,7 @@ def _train(model, X, Y_indices, K, epochs=5, batch_size=1024, lr=1e-3, val_pct=1
         print(f"  Epoch {epoch:2d}: train {train_loss:.4f}  val {val_loss:.4f}", flush=True)
 
 
-def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=1024):
+def _impute(model, properties, id2ngram, targets, nlp, conf, max_per_node=0, batch_size=1024):
     """Predict properties for nodes NOT in ConceptNet; apply confidence threshold."""
     import torch
 
@@ -244,6 +244,15 @@ def _impute(model, properties, id2ngram, targets, nlp, conf, batch_size=1024):
                 per_node[int(node_i)].append(int(target_i))
 
             for node_i, target_indices in per_node.items():
+                if max_per_node and len(target_indices) > max_per_node:
+                    # Keep only the top-N most confident predictions per node.
+                    # Linear probe + pos_weight = 100 tends to over-predict;
+                    # cap protects downstream memory and quality.
+                    target_indices = sorted(
+                        target_indices,
+                        key=lambda ti: probs[node_i, ti],
+                        reverse=True,
+                    )[:max_per_node]
                 node_props = defaultdict(list)
                 for ti in target_indices:
                     relation, target = targets[ti]
@@ -340,9 +349,11 @@ def run() -> None:
             "input_dim":  C.MLP_PROPERTY_EMBED_DIM,
         }, C.MLP_PROPERTY_MODEL_PATH)
 
-    print(f"[06_mlp] Imputing properties for uncovered nodes (σ > {C.MLP_PROPERTY_CONFIDENCE}) …")
+    print(f"[06_mlp] Imputing properties for uncovered nodes "
+          f"(σ > {C.MLP_PROPERTY_CONFIDENCE}, ≤ {C.MLP_PROPERTY_MAX_PER_NODE}/node) …")
     imputed = _impute(model, properties, id2ngram, targets, nlp,
                       C.MLP_PROPERTY_CONFIDENCE,
+                      max_per_node=C.MLP_PROPERTY_MAX_PER_NODE,
                       batch_size=C.MLP_PROPERTY_BATCH_SIZE)
     imp_pct = 100.0 * len(imputed) / max(n_nodes, 1)
     print(f"  Imputed: {len(imputed):,} nodes ({imp_pct:.1f}% of total)")

@@ -97,6 +97,12 @@ MLP_PROPERTY_EPOCHS         = 5                               # 5 is usually eno
 MLP_PROPERTY_BATCH_SIZE     = 1024                            # larger = fewer iterations, less
                                                               # per-iter Python/BLAS overhead;
                                                               # ~313 MB per-batch dense Y at K=76K
+MLP_PROPERTY_MAX_PER_NODE   = 30                              # cap imputed entries per node
+                                                              # (top-N by sigmoid prob). Without
+                                                              # this the linear probe over-predicts:
+                                                              # ConceptNet averages ~50/node; cap
+                                                              # protects step 5 from OOM on the
+                                                              # merged properties dict
 
 # ── Evaluation ─────────────────────────────────────────────────────────────
 UNK_LOGPROB = -15.0  # log₂ fallback for tokens not reachable from context
