@@ -68,11 +68,11 @@ def _preprocess_words(model: dict) -> list:
 
 def _chunk_worker(args):
     """
-    Process one slice of _SHARED_WORDS sequentially.
-    args = (start, end, ctx_prefix, mech_label)
+    Process one slice of _SHARED_WORDS sequentially with its own tqdm bar.
+    args = (start, end, ctx_prefix, mech_label, chunk_idx)
     Returns (total_log2, total_bytes, n_tokens, n_unk).
     """
-    start, end, ctx_prefix, mech_label = args
+    start, end, ctx_prefix, mech_label, chunk_idx = args
     mech_module = _MECH_MAP[mech_label]
     model   = _SHARED_MODEL
     uni_lp  = model["unigram_logprob"]
@@ -82,6 +82,17 @@ def _chunk_worker(args):
     total_bytes = 0
     n_tokens    = 0
     n_unk       = 0
+
+    bar = tqdm(
+        total=end - start,
+        desc=f"  Chunk {chunk_idx + 1}",
+        position=chunk_idx,
+        unit="tok",
+        leave=True,
+        dynamic_ncols=True,
+        smoothing=0.05,
+    )
+    pending = 0
 
     for wid, byte_len in _SHARED_WORDS[start:end]:
         lps = (mech_module.predict_logprobs(context_ids, model)
@@ -98,11 +109,20 @@ def _chunk_worker(args):
         total_log2  += log2p
         total_bytes += byte_len
         n_tokens    += 1
+        pending     += 1
 
         if wid is not None:
             context_ids.append(wid)
         if len(context_ids) > C.CONTEXT_SIZE:
             context_ids.pop(0)
+
+        if pending >= 500:
+            bar.update(500)
+            pending -= 500
+
+    if pending:
+        bar.update(pending)
+    bar.close()
 
     return total_log2, total_bytes, n_tokens, n_unk
 
@@ -207,17 +227,20 @@ def _eval_parallel(model: dict, label: str, n_workers: int) -> dict:
         # Context prefix: last CONTEXT_SIZE IDs preceding this chunk
         prior = _SHARED_WORDS[max(0, start - C.CONTEXT_SIZE * 5): start]
         ctx_prefix = [wid for wid, _ in prior if wid is not None][-C.CONTEXT_SIZE:]
-        chunks.append((start, end, ctx_prefix, label))
+        chunks.append((start, end, ctx_prefix, label, i))
 
     ctx = multiprocessing.get_context("fork")
-    with ctx.Pool(n_workers) as pool:
-        results = list(tqdm(
-            pool.imap(_chunk_worker, chunks),
-            total=len(chunks),
-            desc=f"  Mech {label}",
-            unit="chunk",
-            dynamic_ncols=True,
-        ))
+    lock = ctx.RLock()
+    tqdm.set_lock(lock)
+
+    with ctx.Pool(n_workers, initializer=tqdm.set_lock, initargs=(lock,)) as pool:
+        async_results = [pool.apply_async(_chunk_worker, (chunk,)) for chunk in chunks]
+        for r in async_results:
+            r.wait()
+        results = [r.get() for r in async_results]
+
+    sys.stderr.write("\n" * len(chunks))
+    sys.stderr.flush()
 
     total_log2  = sum(r[0] for r in results)
     total_bytes = sum(r[1] for r in results)
