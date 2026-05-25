@@ -25,6 +25,8 @@ import math
 import sys
 from pathlib import Path
 
+from tqdm import tqdm
+
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import config as C
 from predict import load_model, tokenize
@@ -59,7 +61,14 @@ def eval_ppl_bpb(mech_module, model: dict, label: str) -> dict:
     n_tokens = 0
     n_unk = 0
 
-    for word in _iter_test_words():
+    bar = tqdm(
+        _iter_test_words(),
+        desc=f"  Mech {label}",
+        unit="tok",
+        dynamic_ncols=True,
+        smoothing=0.05,
+    )
+    for word in bar:
         wid = ngram2id.get(word)
 
         # Get distribution over next token
@@ -85,9 +94,11 @@ def eval_ppl_bpb(mech_module, model: dict, label: str) -> dict:
         if len(context_ids) > C.CONTEXT_SIZE:
             context_ids.pop(0)
 
-        if n_tokens % 10_000 == 0:
-            cur_bpb = -total_log2 / max(total_bytes, 1)
-            print(f"  [{label}] {n_tokens:,} tokens  BPB so far: {cur_bpb:.4f}", flush=True)
+        if n_tokens % 500 == 0:
+            bar.set_postfix(
+                BPB=f"{-total_log2 / max(total_bytes, 1):.4f}",
+                UNK=f"{100 * n_unk / n_tokens:.1f}%",
+            )
 
     mean_ce_bits = -total_log2 / n_tokens          # bits per token
     mean_ce_nats = mean_ce_bits * math.log(2)      # nats per token
