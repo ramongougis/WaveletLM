@@ -1052,16 +1052,20 @@ Full recurrence sweep using the locked T4 baseline (Adagrad, lr=0.02250, min_lr=
 | Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T4 | Train Time | Train VRAM | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | T4 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1311 | 34.24 | 3.5157 | (ref) | 4.78h (A5000) | 7,790 MiB | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| T4 + recur N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | queued | queued | queued |
-| T4 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=2 K=1 | 2 | 1 | shared | 2 | **1.1284** | **33.95** | **3.5079** | **−0.0027** | 5.35h (A5000) | 7,790 MiB | [link](logs/wikitext-103_2026-05-27_06-08-43/log.txt) |
+| T4 + recur N=2 K=2 | 2 | 2 | shared | 4 | queued | queued | queued | — | queued | queued | queued |
 | T4 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
-| T4 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=5 K=2 | 5 | 2 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
 | T4 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
 | T4 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
 
-**Wall-clock estimates (A5000, multiplying T4's 4.78h by mixer-applications factor `1 + (N*K − 1) × 0.55`):** N=2 K=1 ≈ 7.4h; N=2 K=2 ≈ 12.7h; N=5 K=1 ≈ 15.3h; N=5 K=2 ≈ 28.4h; N=10 K=1 ≈ 28.4h; N=20 K=1 ≈ 54.7h. Full queue ≈ 147h (~6 days continuous); cancellable midstream if early canaries plateau or regress.
+**K > 1 stabilization (auto).** The initial N=2 K=2 canary ([log](logs/wikitext-103_2026-05-27_11-32-58/log.txt)) NaN'd by step 750 in warmup — distinct mixer banks alternating without per-step magnitude control diverge during early training. The fix is a per-scale `LayerNorm(Cp)` applied **between** mixer steps inside the recurrent loop (N×K − 1 invocations per forward pass; the final step is *not* normalized so `wavelet_recon_norm` after iFWHT remains the single boundary norm on the way out). **Auto-instantiated when K > 1** — no config flag, since K > 1 is non-functional without it. K = 1 behaviour is unchanged. K > 1 rows below are now re-queued under this stabilization.
+
+**Wall-clock estimates (re-calibrated from measured N=2 K=1 = 5.35h):** per-mixer-application overhead is ~12% of T4's base time (factor `T4_time × (1 + (N*K − 1) × 0.12)`). Queue: N=2 K=1 = 5.35h (measured); N=2 K=2 ≈ 6.5h; N=5 K=1 ≈ 7.1h; N=5 K=2 ≈ 9.9h; N=10 K=1 ≈ 9.9h; N=20 K=1 ≈ 15.7h. Full remaining queue ≈ 49h (~2 days). Post-canary: N=50 K=1 ≈ 33h, N=100 K=1 ≈ 62h.
 
 **Findings:**
+
+- **N=2 K=1 is a real win.** Best val 3.5157 → 3.5079 (Δ −0.0078 nats, ~5× the 0.0015 noise threshold); BPB 1.1311 → 1.1284. Shared-bank recurrence at N=2 with wavelet norms is both stable and informative — recurrence provides genuine capacity beyond a single mixer pass, which the partial pre-norm Adagrad sweep could not demonstrate.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

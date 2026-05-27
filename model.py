@@ -1738,6 +1738,23 @@ class WaveletLMBlock(nn.Module):
                 nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
             ])
 
+        # Per-step normalization *between* distinct mixer banks (K > 1 only).
+        # Without it, chaining independently-initialized mixers without
+        # per-step magnitude control diverges in warmup (empirically: N=2
+        # K=2 NaN'd by step 750). Auto-enabled when K > 1 — no config flag,
+        # since K > 1 is non-functional without it. Same per-scale
+        # LayerNorm(Cp) pattern as the wavelet norms above. Applied between
+        # each pair of mixer applications (i.e. N*K − 1 invocations per
+        # forward pass); the final mixer step is *not* normalized here, so
+        # the canonical wavelet_recon_norm (after iFWHT) remains the single
+        # boundary norm on the way out.
+        if self.mixer_recurrence_distinct_mixer_count > 1:
+            self.mixer_step_norms = nn.ModuleList([
+                nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
+            ])
+        else:
+            self.mixer_step_norms = None
+
         self.use_mlp = mlp_expansion > 0
         if self.use_mlp:
             self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
@@ -1858,7 +1875,7 @@ class WaveletLMBlock(nn.Module):
             apply_residual = self.mixer_recurrence_residuals and (N * K > 1)
             # Outer loop: repeat the K-bank cycle N times.
             # Inner loop: apply each of the K distinct banks once per cycle.
-            for _ in range(N):
+            for n_idx in range(N):
                 for bank_idx in range(K):
                     if bank_idx == 0:
                         step_mixers = self.scale_mixers
@@ -1878,6 +1895,16 @@ class WaveletLMBlock(nn.Module):
                         Ys = step_mixers[s](Xs, gate_input=Gs)
                         mixed_by_scale.append(Xs + Ys if apply_residual else Ys)
                     current_spec = torch.stack(mixed_by_scale, dim=2)
+                    # Per-step LayerNorm — K > 1 only, applied *between*
+                    # mixer steps. Skipped on the final step so the canonical
+                    # wavelet_recon_norm (after iFWHT) remains the boundary
+                    # norm on the way out.
+                    is_final_step = (n_idx == N - 1) and (bank_idx == K - 1)
+                    if self.mixer_step_norms is not None and not is_final_step:
+                        current_spec = torch.stack(
+                            [self.mixer_step_norms[s](current_spec[:, :, s, :])
+                             for s in range(S)], dim=2
+                        )
             mixed_spec = current_spec
         else:
             # Depth > 1: the entire depth cascade is the unit that recurs.

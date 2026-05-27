@@ -259,12 +259,12 @@ benchmark_only_run() {
 #   lr=0.02250, min_lr=4.50e-4
 
 # Run R1: N=2, K=1 (shared) — cheapest canary.
-run_ablation "T4_recur_N2_K1_1ep T4 + mixer recurrence N=2 K=1 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
-    "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
+# run_ablation "T4_recur_N2_K1_1ep T4 + mixer recurrence N=2 K=1 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
+#     "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
 
-# Run R2: N=2, K=2 (full distinct at N=2).
+Run R2: N=2, K=2 (full distinct at N=2).
 run_ablation "T4_recur_N2_K2_1ep T4 + mixer recurrence N=2 K=2 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2}' \
@@ -277,7 +277,7 @@ run_ablation "T4_recur_N5_K1_1ep T4 + mixer recurrence N=5 K=1 (1ep)" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1}' \
     "T4_recur_N5_K1_1ep: T4 + mixer recurrence (N=5 steps, K=1 shared bank; ~3.2x wall-clock, ~15.3h on A5000)"
 
-# Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
+Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
 run_ablation "T4_recur_N5_K2_1ep T4 + mixer recurrence N=5 K=2 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2}' \
