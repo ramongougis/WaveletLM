@@ -1752,17 +1752,24 @@ class WaveletLMBlock(nn.Module):
                 nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
             ])
 
-        # Per-step normalization *between* distinct mixer banks (K > 1 only).
-        # Without it, chaining independently-initialized mixers without
-        # per-step magnitude control diverges in warmup (empirically: N=2
-        # K=2 NaN'd by step 750). Auto-enabled when K > 1 — no config flag,
-        # since K > 1 is non-functional without it. Same per-scale
-        # LayerNorm(Cp) pattern as the wavelet norms above. Applied between
-        # each pair of mixer applications (i.e. N*K − 1 invocations per
-        # forward pass); the final mixer step is *not* normalized here, so
-        # the canonical wavelet_recon_norm (after iFWHT) remains the single
-        # boundary norm on the way out.
-        if self.mixer_recurrence_distinct_mixer_count > 1:
+        # Per-step normalization *between* mixer applications during any
+        # recurrence (N*K > 1). The recurrence runs inside the FWHT/iFWHT span,
+        # where coefficients are ~sqrt(Cp) amplified; chaining residual-mixer
+        # steps unnormalized lets magnitude grow until fp16 overflows. Two
+        # failure modes observed, both fixed by this norm:
+        #   - K > 1 (distinct banks): N=2 K=2 NaN'd by step 750.
+        #   - high N (shared bank): N=5 K=1 overflowed at step 1 (loss=nan at
+        #     lr=0, forward-pass overflow) and then diverged (loss climbing).
+        # N=2 K=1 survived without it only because 2 steps don't accumulate
+        # enough magnitude — not a guarantee. Scoped to N*K > 1 so it covers
+        # both depth and bank-diversity; auto-enabled, no config flag.
+        # Same per-scale LayerNorm(Cp) as the wavelet norms above; applied
+        # between each pair of applications (N*K − 1 invocations), with the
+        # final step left unnormalized so wavelet_recon_norm (after iFWHT)
+        # remains the single boundary norm on the way out.
+        total_mixer_apps = (self.mixer_recurrence_steps
+                            * self.mixer_recurrence_distinct_mixer_count)
+        if total_mixer_apps > 1:
             self.mixer_step_norms = nn.ModuleList([
                 nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
             ])

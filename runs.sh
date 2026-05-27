@@ -258,11 +258,21 @@ benchmark_only_run() {
 #   wavelet_decomp_norm=true, wavelet_recon_norm=true,
 #   lr=0.02250, min_lr=4.50e-4
 
+# Run R2b: N=1, K=2 (diversity at depth 1 — clean ablation). Two distinct
+# banks, 2 apps, +58.85M params. Paired with N=2 K=1 (2 apps, shared bank,
+# +0 params): the BPB gap between them is the pure value of parameter
+# diversity at fixed compute. All three (N=2 K=1, N=2 K=2, N=1 K=2) now run
+# under the N*K>1 inter-step norm, so the comparison is apples-to-apples.
+run_ablation "T4_recur_N1_K2_1ep T4 + mixer recurrence N=1 K=2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 1, "mixer_recurrence_distinct_mixer_count": 2}' \
+    "T4_recur_N1_K2_1ep: 2 distinct banks at depth 1 (2 apps, +58.85M params); vs N=2 K=1 isolates parameter diversity at fixed compute (~5.35h)"
+
 # Run R1: N=2, K=1 (shared) — cheapest canary.
-# run_ablation "T4_recur_N2_K1_1ep T4 + mixer recurrence N=2 K=1 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
-#     "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
+run_ablation "T4_recur_N2_K1_1ep T4 + mixer recurrence N=2 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
 
 # Run R2: N=2, K=2 (full distinct at N=2).
 run_ablation "T4_recur_N2_K2_1ep T4 + mixer recurrence N=2 K=2 (1ep)" \
@@ -277,7 +287,7 @@ run_ablation "T4_recur_N5_K1_1ep T4 + mixer recurrence N=5 K=1 (1ep)" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1}' \
     "T4_recur_N5_K1_1ep: T4 + mixer recurrence (N=5 steps, K=1 shared bank; ~3.2x wall-clock, ~15.3h on A5000)"
 
-Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
+# Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
 run_ablation "T4_recur_N5_K2_1ep T4 + mixer recurrence N=5 K=2 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2}' \

@@ -1054,20 +1054,21 @@ Full recurrence sweep using the locked T4 baseline (Adagrad, lr=0.02250, min_lr=
 | Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T4 | Train Time | Train VRAM | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | T4 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1311 | 34.24 | 3.5157 | (ref) | 4.78h (A5000) | 7,790 MiB | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| T4 + recur N=2 K=1 | 2 | 1 | shared | 2 | **1.1284** | **33.95** | **3.5079** | **−0.0027** | 5.35h (A5000) | 7,790 MiB | [link](logs/wikitext-103_2026-05-27_06-08-43/log.txt) |
-| T4 + recur N=2 K=2 | 2 | 2 | shared | 4 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=1 K=2 | 1 | 2 | distinct | 2 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
 | T4 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
-| T4 + recur N=5 K=2 | 5 | 2 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
 | T4 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
 | T4 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
 
-**K > 1 stabilization (auto).** The initial N=2 K=2 canary ([log](logs/wikitext-103_2026-05-27_11-32-58/log.txt)) NaN'd by step 750 in warmup — distinct mixer banks alternating without per-step magnitude control diverge during early training. The fix is a per-scale `LayerNorm(Cp)` applied **between** mixer steps inside the recurrent loop (N×K − 1 invocations per forward pass; the final step is *not* normalized so `wavelet_recon_norm` after iFWHT remains the single boundary norm on the way out). **Auto-instantiated when K > 1** — no config flag, since K > 1 is non-functional without it. K = 1 behaviour is unchanged. K > 1 rows below are now re-queued under this stabilization.
+**Inter-step stabilization (auto, N·K > 1).** A per-scale `LayerNorm(Cp)` is applied **between** mixer applications inside the recurrent loop (N·K − 1 invocations per forward; the final step is left unnormalized so `wavelet_recon_norm` after iFWHT stays the sole boundary norm). It prevents fp16 overflow / divergence in the recurrence — observed in two modes before the fix: distinct banks (N=2 K=2) NaN'd at step 750, and depth (N=5 K=1) overflowed at step 1 (loss=nan at lr=0) then diverged. Five residual-mixer steps on ~√Cp-amplified post-FWHT coefficients exceed fp16's 65504 ceiling without it. Originally scoped to K>1; broadened to **N·K > 1** after the N=5 K=1 divergence showed depth needs it too. Auto-instantiated, no config flag; the N=1 K=1 baseline is unaffected. Compute cost is negligible (memory-bound LayerNorm).
 
-**Wall-clock estimates (re-calibrated from measured N=2 K=1 = 5.35h):** per-mixer-application overhead is ~12% of T4's base time (factor `T4_time × (1 + (N*K − 1) × 0.12)`). Queue: N=2 K=1 = 5.35h (measured); N=2 K=2 ≈ 6.5h; N=5 K=1 ≈ 7.1h; N=5 K=2 ≈ 9.9h; N=10 K=1 ≈ 9.9h; N=20 K=1 ≈ 15.7h. Full remaining queue ≈ 49h (~2 days). Post-canary: N=50 K=1 ≈ 33h, N=100 K=1 ≈ 62h.
+**Re-running under the consistent norm regime.** All earlier recurrence numbers predate the final norm scope, so every row is being re-run with the same N·K>1 inter-step norm for an apples-to-apples comparison. The factor-isolation design at fixed compute (2 mixer applications): **N=2 K=1** (shared bank, +0 params) vs **N=1 K=2** (two distinct banks, +58.85M params) — the BPB gap between them is the pure value of parameter diversity; **N=2 K=2** then adds depth×diversity. Decision rule: a variant must clear T4 best val (3.5157) by > 0.0015 (noise threshold) to count as a win.
 
 **Findings:**
 
-- **N=2 K=1 is a real win.** Best val 3.5157 → 3.5079 (Δ −0.0078 nats, ~5× the 0.0015 noise threshold); BPB 1.1311 → 1.1284. Shared-bank recurrence at N=2 with wavelet norms is both stable and informative — recurrence provides genuine capacity beyond a single mixer pass, which the partial pre-norm Adagrad sweep could not demonstrate.
+(pending re-runs)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
