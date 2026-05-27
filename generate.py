@@ -595,10 +595,30 @@ class GPUMemoryMonitor:
         self.interval_s = interval_s
         self.gpu_index = gpu_index
         self.my_pid = os.getpid()
+        # In container envs (Docker, RunPod) PID namespaces remap process IDs:
+        # os.getpid() returns the container-namespace PID, but nvidia-smi
+        # reports host-namespace PIDs. Read NSpid from /proc/self/status to
+        # recover the host PID so the filter actually matches.
+        self.host_pid = self._resolve_host_pid()
         self.baseline_mib = 0
         self.peak_mib = 0
         self._running = False
         self._thread = None
+
+    def _resolve_host_pid(self) -> int:
+        """Return the outermost-namespace PID from /proc/self/status NSpid line,
+        or os.getpid() if NSpid isn't available (non-Linux, or no PID-namespace
+        isolation in use)."""
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("NSpid:"):
+                        pids = line.split()[1:]
+                        if pids:
+                            return int(pids[0])  # first = outermost (host) namespace
+        except (OSError, ValueError, IndexError):
+            pass
+        return self.my_pid
 
     def _read_once(self) -> int:
         """Return MiB used by this PID on the target GPU, or 0 if unknown."""
@@ -614,11 +634,13 @@ class GPUMemoryMonitor:
             return 0
         for line in out.strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 2 and parts[0].isdigit() and int(parts[0]) == self.my_pid:
-                try:
-                    return int(parts[1])
-                except ValueError:
-                    return 0
+            if len(parts) >= 2 and parts[0].isdigit():
+                pid = int(parts[0])
+                if pid == self.my_pid or pid == self.host_pid:
+                    try:
+                        return int(parts[1])
+                    except ValueError:
+                        return 0
         return 0
 
     def _loop(self):
@@ -904,14 +926,29 @@ def main():
             log(f"Metrics: {format_metrics(metrics)}")
 
     if device.type == 'cuda':
-        # User-facing number: process VRAM delta from baseline to peak via
-        # nvidia-smi polling (filtered to this PID). Captures the full process
-        # memory footprint -- CUDA context, cuDNN/cuBLAS workspaces, allocator
-        # headroom, torch.compile cache, model weights, and activations -- so
-        # this is what the user actually sees in nvidia-smi when running
-        # generate.py and what they need to budget for on their GPU.
+        # Primary: process VRAM delta from baseline to peak via nvidia-smi
+        # polling (filtered to this PID, with host-namespace PID fallback for
+        # containers). Captures the full process memory footprint -- CUDA
+        # context, cuDNN/cuBLAS workspaces, allocator headroom, torch.compile
+        # cache, model weights, and activations -- so this is what the user
+        # actually sees in nvidia-smi when running generate.py.
         delta_mib, _peak_mib, _baseline_mib = gpu_monitor.stop()
-        log(f"\nPeak GPU memory: {delta_mib} MiB")
+
+        if delta_mib == 0:
+            # nvidia-smi PID filter couldn't see our process even after the
+            # host-PID fallback. Likely a container env with stricter GPU
+            # process visibility. Fall back to PyTorch's tensor-allocation
+            # peak plus an estimated CUDA-context overhead (~750 MiB is
+            # typical for our model shape on Ampere; bump to ~1 GB on Hopper).
+            torch_peak_mib = int(torch.cuda.max_memory_allocated() / (1024 ** 2))
+            CUDA_CONTEXT_ESTIMATE_MIB = 750
+            delta_mib = torch_peak_mib + CUDA_CONTEXT_ESTIMATE_MIB
+            log(f"\nPeak GPU memory: {delta_mib} MiB "
+                f"(estimated: torch tensors {torch_peak_mib} MiB "
+                f"+ ~{CUDA_CONTEXT_ESTIMATE_MIB} MiB CUDA context; "
+                f"nvidia-smi PID-tracking unavailable in this environment)")
+        else:
+            log(f"\nPeak GPU memory: {delta_mib} MiB")
 
     logger.close()
     print(f"Saved to {gen_file_path}")

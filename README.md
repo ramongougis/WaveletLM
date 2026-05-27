@@ -1033,11 +1033,11 @@ But the achieved BPB at SN2 (1.1337) is *worse* than Ag0's baseline (1.1332). Pu
 
 T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters for the best optimizer. LR sweep complete — optimum locked at **lr=0.02250** (Ag150, BPB 1.1311), a clean single peak confirmed by the fine-grained ×1.25/×1.50/×1.75 sweep. T4 updated accordingly.
 
-| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM |
-|---|---|---|---|---|---|---|
-| T3 (Adagrad, lr=0.015, no wavelet norms, fp16) | 3.5345 | 1.1362 | 34.79 | 1.84h | 8,065 MiB | 3,258 MiB |
-| T4 (Adagrad, lr=0.02250, wavelet norms, fp16) | **3.5157** | **1.1311** | **34.24** | 4.78h (A5000) | 7,790 MiB | — |
-| Δ vs T3 | **−0.019** | **−0.005** | **−0.55** | +2.60× | −275 MiB | — |
+| Variant | Best val | BPB sliding | PPL sliding | Train time | Train VRAM | Inference VRAM | Run log |
+|---|---|---|---|---|---|---|---|
+| T3 (Adagrad, lr=0.015, no wavelet norms, fp16) | 3.5345 | 1.1362 | 34.79 | 1.84h | 8,065 MiB | 3,258 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
+| T4 (Adagrad, lr=0.02250, wavelet norms, fp16) | **3.5157** | **1.1311** | **34.24** | 4.78h (A5000) | 7,790 MiB | — | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| Δ vs T3 | **−0.019** | **−0.005** | **−0.55** | +2.60× | −275 MiB | — | — |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
