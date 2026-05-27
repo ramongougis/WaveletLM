@@ -208,7 +208,7 @@ benchmark_only_run() {
 }
 
 
-# ---- Mixer recurrence sweep (T3 + N x K) ------------------------------------
+# ---- Mixer recurrence sweep (T4 + N x K) ------------------------------------
 # Tests the "mixer-only recurrence" architectural feature: apply the per-scale
 # mixer stack N times in a row inside one wavelet+FWHT pipeline before
 # reconstruction. Wavelet decompose/reconstruct and FWHT/iFWHT are inverses,
@@ -229,69 +229,96 @@ benchmark_only_run() {
 # K > 1: K independent banks, sequence repeats N times (K-1 extra mixer
 #        banks allocated). Requires mixer_depth == 1.
 
-# All runs build on T3 (= T2 + lr=0.015 + min_lr=0.0003). Reference row in
-# the README "Recurrence (Mixer Only)" section is the T3 baseline at N=K=1
-# (best val 3.5345). Decision rule: a recurrence variant must clear T3 best
-# val (3.5345) by > 0.0015 (noise threshold) to be considered a win.
+# All runs build on T4 (= T3 + wavelet_decomp_norm + wavelet_recon_norm
+# + lr=0.02250 + min_lr=4.50e-4, Adagrad, eps=2e-13, weight_decay=1e-6).
+# T4 supersedes T3 here: the earlier Adagrad recurrence (without wavelet
+# norms) NaN'd at N >= 5; wavelet norms restored stability and the tuned LR
+# gives a better baseline (T4: BPB 1.1311 vs T3: 1.1362). Reference row in
+# the README "Recurrence with Best Optimizer (Adagrad)" section is the T4
+# baseline at N=K=1 (best val 3.5157). Decision rule: a recurrence variant
+# must clear T4 best val (3.5157) by > 0.0015 (noise threshold) to win.
 
-# Wall-clock estimate (mixer is ~55% of per-block forward+backward at T2):
-# total_factor ≈ 1 + (N*K - 1) * 0.55, multiplied by T3 baseline ~1.84h.
-#   N=2  K=1  (2 apps):  ~1.55x  = ~2.8h
-#   N=2  K=2  (4 apps):  ~2.65x  = ~4.9h
-#   N=5  K=1  (5 apps):  ~3.20x  = ~5.9h
-#   N=5  K=2  (10 apps): ~5.95x  = ~10.9h
-#   N=5  K=5  (25 apps): ~14.2x  = ~26h
-#   N=10 K=1  (10 apps): ~5.95x  = ~10.9h
-#   N=20 K=1  (20 apps): ~11.45x = ~21h
+# Wall-clock estimate on A5000 (mixer is ~55% of per-block forward+backward at
+# T4 architecture): total_factor ~= 1 + (N*K - 1) * 0.55, multiplied by T4
+# baseline of ~4.78h on A5000.
+#   N=2  K=1  (2 apps):  ~1.55x  = ~7.4h
+#   N=2  K=2  (4 apps):  ~2.65x  = ~12.7h
+#   N=5  K=1  (5 apps):  ~3.20x  = ~15.3h
+#   N=5  K=2  (10 apps): ~5.95x  = ~28.4h
+#   N=10 K=1  (10 apps): ~5.95x  = ~28.4h
+#   N=20 K=1  (20 apps): ~11.45x = ~54.7h
 # K multiplies the mixer-only param subset by K (other params unchanged).
-# T2 mixer-only is ~40-80M params, so K=5 adds ~160-320M.
-
-# On A5000 multiply each wall-clock by roughly 1.9x.
+# T4 mixer-only is ~58.8M params, so K=2 adds ~58.8M.
 
 # Sweep ordered cost-ascending so the schedule can be cancelled midstream if
 # early canaries (N=2) already diverge or plateau.
 
-# # Run R1: N=2, K=1 (shared) — cheapest canary.
-# run_ablation "T3_recur_N2_K1_1ep T3 + mixer recurrence N=2 K=1 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
-#     "T3_recur_N2_K1_1ep: T3 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock)"
+# Common T4 overrides (added to every per-run patch below):
+#   levels=7, per_scale_mixer_widths=T4 layout, wavelet_crawl=true,
+#   wavelet_decomp_norm=true, wavelet_recon_norm=true,
+#   lr=0.02250, min_lr=4.50e-4
 
-# # Run R2: N=2, K=2 (full distinct at N=2).
-# run_ablation "T3_recur_N2_K2_1ep T3 + mixer recurrence N=2 K=2 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2}' \
-#     "T3_recur_N2_K2_1ep: T3 + mixer recurrence (N=2 outer x K=2 banks = 4 apps, +1x mixer params vs T3)"
+# Run R1: N=2, K=1 (shared) — cheapest canary.
+run_ablation "T4_recur_N2_K1_1ep T4 + mixer recurrence N=2 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
 
-# # Run R3: N=5, K=1 (shared).
-# run_ablation "T3_recur_N5_K1_1ep T3 + mixer recurrence N=5 K=1 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1}' \
-#     "T3_recur_N5_K1_1ep: T3 + mixer recurrence (N=5 steps, K=1 shared bank; ~3.2x wall-clock)"
+# Run R2: N=2, K=2 (full distinct at N=2).
+run_ablation "T4_recur_N2_K2_1ep T4 + mixer recurrence N=2 K=2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2}' \
+    "T4_recur_N2_K2_1ep: T4 + mixer recurrence (N=2 outer x K=2 banks = 4 apps, +1x mixer params vs T4; ~12.7h on A5000)"
 
-# # Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
-# run_ablation "T3_recur_N5_K2_1ep T3 + mixer recurrence N=5 K=2 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2}' \
-#     "T3_recur_N5_K2_1ep: T3 + mixer recurrence (N=5 outer x K=2 banks = 10 apps, cyclic m0,m1 repeated 5x; +1x mixer params)"
+# Run R3: N=5, K=1 (shared) — first depth canary; check that wavelet norms
+# actually rescue what NaN'd in the partial Adagrad sweep.
+run_ablation "T4_recur_N5_K1_1ep T4 + mixer recurrence N=5 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T4_recur_N5_K1_1ep: T4 + mixer recurrence (N=5 steps, K=1 shared bank; ~3.2x wall-clock, ~15.3h on A5000)"
 
-# # Run R6: N=10, K=1 (shared, substantive depth).
-# run_ablation "T3_recur_N10_K1_1ep T3 + mixer recurrence N=10 K=1 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1}' \
-#     "T3_recur_N10_K1_1ep: T3 + mixer recurrence (N=10 steps, K=1 shared bank; ~5.95x wall-clock)"
+# Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
+run_ablation "T4_recur_N5_K2_1ep T4 + mixer recurrence N=5 K=2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2}' \
+    "T4_recur_N5_K2_1ep: T4 + mixer recurrence (N=5 outer x K=2 banks = 10 apps, cyclic m0,m1 repeated 5x; +1x mixer params; ~28.4h on A5000)"
 
-# # Run R7: N=20, K=1 (shared, deep). Conditional canary for "does it keep
-# # climbing?"; if N=10 already plateaus/regresses, skip.
-# run_ablation "T3_recur_N20_K1_1ep T3 + mixer recurrence N=20 K=1 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "lr": 0.015, "min_lr": 0.0003, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1}' \
-#     "T3_recur_N20_K1_1ep: T3 + mixer recurrence (N=20 steps, K=1 shared bank; ~11.45x wall-clock, ~21h)"
+# Run R6: N=10, K=1 (shared, substantive depth).
+run_ablation "T4_recur_N10_K1_1ep T4 + mixer recurrence N=10 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T4_recur_N10_K1_1ep: T4 + mixer recurrence (N=10 steps, K=1 shared bank; ~5.95x wall-clock, ~28.4h on A5000)"
+
+# Run R7: N=20, K=1 (shared, deep). Conditional canary for "does it keep
+# climbing?"; if N=10 already plateaus/regresses, skip this one (~54.7h).
+run_ablation "T4_recur_N20_K1_1ep T4 + mixer recurrence N=20 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1}' \
+    "T4_recur_N20_K1_1ep: T4 + mixer recurrence (N=20 steps, K=1 shared bank; ~11.45x wall-clock, ~54.7h on A5000 — skip if N=10 plateaus)"
 
 
-# echo ""
-# echo "============================================================"
-# echo "=== MIXER RECURRENCE QUEUE (T3 + N x K sweep, 1ep each)"
+echo ""
+echo "============================================================"
+echo "=== MIXER RECURRENCE QUEUE (T4 + N x K sweep, 1ep each)"
+echo "==="
+echo "=== All runs build on T4 (= T3 + wavelet norms + lr=0.02250)."
+echo "===   Reference: T4 baseline best val 3.5157 (BPB 1.1311) — see"
+echo "===   'Recurrence with Best Optimizer (Adagrad)' section in README."
+echo "===   Decision rule: > 0.0015 nat improvement on best val."
+echo "==="
+echo "=== Queue (cost-ascending on A5000):"
+echo "===   1) T4_recur_N2_K1_1ep    — N=2  K=1  (2 apps,  shared)    ~7.4h"
+echo "===   2) T4_recur_N2_K2_1ep    — N=2  K=2  (4 apps,  distinct)  ~12.7h, +1x mixer params"
+echo "===   3) T4_recur_N5_K1_1ep    — N=5  K=1  (5 apps,  shared)    ~15.3h"
+echo "===   4) T4_recur_N5_K2_1ep    — N=5  K=2  (10 apps, cyclic)    ~28.4h, +1x mixer params"
+echo "===   5) T4_recur_N10_K1_1ep   — N=10 K=1  (10 apps, shared)    ~28.4h"
+echo "===   6) T4_recur_N20_K1_1ep   — N=20 K=1  (20 apps, shared)    ~54.7h (cancel if N=10 plateaus)"
+echo "==="
+echo "=== Total budget on A5000: ~147h (~6.1 days continuous)."
+echo "============================================================"
+
+# # === Legacy (commented-out) version =========================================
+# # Prior MIXER RECURRENCE QUEUE block (T3 + N x K sweep, 1ep each)
 # echo "=== (ALL RUNS COMMENTED OUT — Adagrad unstable at N>=5; pivoting to AdamW)"
 # echo "==="
 # echo "=== All runs build on T3 (= T2 + lr=0.015). Reference: T3 baseline"
@@ -556,73 +583,73 @@ benchmark_only_run() {
 # Ag0 (lr=0.015) is the current optimum; AgCbrt10 (lr=0.032316, ×∛10) NaN'd.
 # Three arithmetic steps probe the gap to bracket where instability begins.
 
-run_ablation "Adagrad_Ag125_norms_1ep Adagrad lr=0.01875 (+25% above Ag0)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.01875, "min_lr": 3.75e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_Ag125_norms_1ep: Adagrad fine LR sweep (lr=0.01875, min_lr=3.75e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_Ag125_norms_1ep Adagrad lr=0.01875 (+25% above Ag0)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.01875, "min_lr": 3.75e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_Ag125_norms_1ep: Adagrad fine LR sweep (lr=0.01875, min_lr=3.75e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_Ag150_norms_1ep Adagrad lr=0.02250 (+50% above Ag0)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.02250, "min_lr": 4.50e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_Ag150_norms_1ep: Adagrad fine LR sweep (lr=0.02250, min_lr=4.50e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_Ag150_norms_1ep Adagrad lr=0.02250 (+50% above Ag0)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.02250, "min_lr": 4.50e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_Ag150_norms_1ep: Adagrad fine LR sweep (lr=0.02250, min_lr=4.50e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_Ag175_norms_1ep Adagrad lr=0.02625 (+75% above Ag0)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.02625, "min_lr": 5.25e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_Ag175_norms_1ep: Adagrad fine LR sweep (lr=0.02625, min_lr=5.25e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_Ag175_norms_1ep Adagrad lr=0.02625 (+75% above Ag0)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.02625, "min_lr": 5.25e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_Ag175_norms_1ep: Adagrad fine LR sweep (lr=0.02625, min_lr=5.25e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-# ---- Adagrad parameter sweep (eps, initial_accumulator_value, weight_decay) ---------------
-# Base: locked Ag0 config (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 arch).
-# One parameter varied per run; all others held at Ag0 defaults.
-# Order: initial_accumulator_value first (highest variance / memory-motivated), then eps, then weight_decay.
+# # ---- Adagrad parameter sweep (eps, initial_accumulator_value, weight_decay) ---------------
+# # Base: locked Ag0 config (lr=0.015, min_lr=3e-4, fp16, wavelet norms, T3 arch).
+# # One parameter varied per run; all others held at Ag0 defaults.
+# # Order: initial_accumulator_value first (highest variance / memory-motivated), then eps, then weight_decay.
 
-run_ablation "Adagrad_Av0.1_norms_1ep Adagrad initial_accumulator_value=0.1 (Ag0 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "optimizer_initial_accumulator_value": 0.1, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_Av0.1_norms_1ep: Adagrad param sweep (initial_accumulator_value=0.1, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_Av0.1_norms_1ep Adagrad initial_accumulator_value=0.1 (Ag0 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "optimizer_initial_accumulator_value": 0.1, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_Av0.1_norms_1ep: Adagrad param sweep (initial_accumulator_value=0.1, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_Av1.0_norms_1ep Adagrad initial_accumulator_value=1.0 (Ag0 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "optimizer_initial_accumulator_value": 1.0, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_Av1.0_norms_1ep: Adagrad param sweep (initial_accumulator_value=1.0, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_Av1.0_norms_1ep Adagrad initial_accumulator_value=1.0 (Ag0 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "optimizer_initial_accumulator_value": 1.0, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_Av1.0_norms_1ep: Adagrad param sweep (initial_accumulator_value=1.0, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_eps1e10_norms_1ep Adagrad eps=1e-10 PyTorch default (Ag0 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 1e-10, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_eps1e10_norms_1ep: Adagrad param sweep (eps=1e-10, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_eps1e10_norms_1ep Adagrad eps=1e-10 PyTorch default (Ag0 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 1e-10, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_eps1e10_norms_1ep: Adagrad param sweep (eps=1e-10, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_eps1e8_norms_1ep Adagrad eps=1e-8 (Ag0 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 1e-8, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_eps1e8_norms_1ep: Adagrad param sweep (eps=1e-8, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_eps1e8_norms_1ep Adagrad eps=1e-8 (Ag0 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 1e-8, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_eps1e8_norms_1ep: Adagrad param sweep (eps=1e-8, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_wd0_norms_1ep Adagrad weight_decay=0 (Ag0 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 0, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_wd0_norms_1ep: Adagrad param sweep (weight_decay=0, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_wd0_norms_1ep Adagrad weight_decay=0 (Ag0 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 0, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_wd0_norms_1ep: Adagrad param sweep (weight_decay=0, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-run_ablation "Adagrad_wd1e4_norms_1ep Adagrad weight_decay=1e-4 (Ag0 base)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-4, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
-    "Adagrad_wd1e4_norms_1ep: Adagrad param sweep (weight_decay=1e-4, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
+# run_ablation "Adagrad_wd1e4_norms_1ep Adagrad weight_decay=1e-4 (Ag0 base)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-4, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true}' \
+#     "Adagrad_wd1e4_norms_1ep: Adagrad param sweep (weight_decay=1e-4, lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm)"
 
-# ---- Spectral Norm ablation (stab_spectral_norm on GatedSpectralMixer) ---------------------
-# Base: locked Ag0 config. Parametrizations API spectral_norm constrains mixer σ₁(W) ≤ 1.
-# SN1: same LR as Ag0 — measures pure effect of spectral constraint. 
-# SN2: LR that NaN'd without SN (×∛10) — tests whether SN rescues it.
-# SN3: extreme LR (×10) — stress-test upper stability limit with SN enabled.
+# # ---- Spectral Norm ablation (stab_spectral_norm on GatedSpectralMixer) ---------------------
+# # Base: locked Ag0 config. Parametrizations API spectral_norm constrains mixer σ₁(W) ≤ 1.
+# # SN1: same LR as Ag0 — measures pure effect of spectral constraint. 
+# # SN2: LR that NaN'd without SN (×∛10) — tests whether SN rescues it.
+# # SN3: extreme LR (×10) — stress-test upper stability limit with SN enabled.
 
-run_ablation "Adagrad_SN1_norms_1ep Spectral norm + Ag0 LR (lr=0.015)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
-    "Adagrad_SN1_norms_1ep: Spectral norm ablation (lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
+# run_ablation "Adagrad_SN1_norms_1ep Spectral norm + Ag0 LR (lr=0.015)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.015, "min_lr": 0.0003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
+#     "Adagrad_SN1_norms_1ep: Spectral norm ablation (lr=0.015, min_lr=3e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
 
-run_ablation "Adagrad_SN2_norms_1ep Spectral norm + AgCbrt10 LR (lr=0.032316, prev. NaN)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.032316, "min_lr": 6.463e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
-    "Adagrad_SN2_norms_1ep: Spectral norm ablation (lr=0.032316, min_lr=6.463e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
+# run_ablation "Adagrad_SN2_norms_1ep Spectral norm + AgCbrt10 LR (lr=0.032316, prev. NaN)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.032316, "min_lr": 6.463e-4, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
+#     "Adagrad_SN2_norms_1ep: Spectral norm ablation (lr=0.032316, min_lr=6.463e-4, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
 
-run_ablation "Adagrad_SN3_norms_1ep Spectral norm + extreme LR (lr=0.15)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.15, "min_lr": 0.003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
-    "Adagrad_SN3_norms_1ep: Spectral norm ablation (lr=0.15, min_lr=0.003, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"
+# run_ablation "Adagrad_SN3_norms_1ep Spectral norm + extreme LR (lr=0.15)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "optimizer": "Adagrad", "weight_decay": 1e-6, "optimizer_eps": 2e-13, "lr": 0.15, "min_lr": 0.003, "amp_dtype": "fp16", "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "stab_spectral_norm": true}' \
+#     "Adagrad_SN3_norms_1ep: Spectral norm ablation (lr=0.15, min_lr=0.003, T3 base, fp16, wavelet_decomp_norm, wavelet_recon_norm, stab_spectral_norm)"

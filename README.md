@@ -545,7 +545,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Optimizer Tuning (Adagrad) with Wavelet Norms](#optimizer-tuning-adagrad-with-wavelet-norms)
 - [Spectral Norm](#spectral-norm)
 - [New T4 Baseline](#new-t4-baseline)
-- [Recurrence with Best Optimizer](#recurrence-with-best-optimizer)
+- [Recurrence with Best Optimizer (Adagrad)](#recurrence-with-best-optimizer-adagrad)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Complex Wavelets](#complex-wavelets)
@@ -1043,21 +1043,23 @@ T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_nor
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence with Best Optimizer
+### Recurrence with Best Optimizer (Adagrad)
 
-Full recurrence sweep using the best optimizer at optimal calibration. Same N × K design as [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial); all rows queued pending optimizer LR tuning.
+Full recurrence sweep using the locked T4 baseline (Adagrad, lr=0.02250, min_lr=4.50e-4, wavelet norms enabled, eps=2e-13, initial_acc=0, weight_decay=1e-6, fp16). T4 supersedes T3 as the reference here because the earlier [Recurrence (Adagrad, partial)](#recurrence-adagrad-partial) attempts NaN'd at N ≥ 5 — wavelet norms extend the stable range, and the tuned LR is materially better than T3 (Δ −0.005 BPB at N=K=1). Stability headroom is the prerequisite for pushing N deep; SN is available as an optional add-on if any specific cell diverges, but is **off** for the canonical sweep so results stay comparable to the T4 reference.
 
-**Sweep (1 epoch each, ordered cost-ascending; reference row = T3 baseline at N=K=1).**
+**Sweep (1 epoch each, ordered cost-ascending; reference row = T4 baseline at N=K=1). Decision rule: a recurrence variant must clear T4 best val (3.5157) by > 0.0015 (noise threshold) to be a win.**
 
-| Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T3 | Train Time | Train VRAM | Run Log |
+| Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T4 | Train Time | Train VRAM | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| T3 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1362 | 34.79 | 3.5345 | (ref) | 1.84h (5090) | 8,065 MiB | [link](logs/wikitext-103_2026-05-11_15-26-31/log.txt) |
-| T3 + recur N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
-| T3 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
+| T4 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1311 | 34.24 | 3.5157 | (ref) | 4.78h (A5000) | 7,790 MiB | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| T4 + recur N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | queued | queued | queued |
+| T4 + recur N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | queued | queued | queued |
+
+**Wall-clock estimates (A5000, multiplying T4's 4.78h by mixer-applications factor `1 + (N*K − 1) × 0.55`):** N=2 K=1 ≈ 7.4h; N=2 K=2 ≈ 12.7h; N=5 K=1 ≈ 15.3h; N=5 K=2 ≈ 28.4h; N=10 K=1 ≈ 28.4h; N=20 K=1 ≈ 54.7h. Full queue ≈ 147h (~6 days continuous); cancellable midstream if early canaries plateau or regress.
 
 **Findings:**
 
