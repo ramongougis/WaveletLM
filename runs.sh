@@ -264,7 +264,7 @@ benchmark_only_run() {
 #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
 #     "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
 
-Run R2: N=2, K=2 (full distinct at N=2).
+# Run R2: N=2, K=2 (full distinct at N=2).
 run_ablation "T4_recur_N2_K2_1ep T4 + mixer recurrence N=2 K=2 (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2}' \
