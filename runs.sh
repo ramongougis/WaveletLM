@@ -317,6 +317,34 @@ echo "==="
 echo "=== Total budget on A5000: ~147h (~6.1 days continuous)."
 echo "============================================================"
 
+
+# ---- Recurrence efficiency: gate caching ------------------------------------
+# Approximation that computes the cross-scale gate once on the first recurrence
+# cycle and reuses it for cycles 2..N (mixer_recurrence_cache_gate=true),
+# eliminating the W_gate matmul + routing einsum on all but the first cycle.
+# Roughly halves per-step matmul cost at K=1.
+#
+# Baseline for comparison is the queued T4_recur_N5_K1_1ep (cache off). This
+# run is identical except cache_gate=true — isolates the approximation's
+# quality cost and runtime saving. Decision: if best val stays within 0.0015
+# of the no-cache N=5 K=1 run AND wall-clock drops meaningfully, caching is a
+# free win and should be enabled for deeper-N runs.
+
+run_ablation "T4_recur_N5_K1_cachegate_1ep T4 + recurrence N=5 K=1 + gate cache (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_cache_gate": true}' \
+    "T4_recur_N5_K1_cachegate_1ep: gate cached after cycle 1, reused for cycles 2-5; vs T4_recur_N5_K1_1ep baseline"
+
+echo ""
+echo "============================================================"
+echo "=== RECURRENCE GATE-CACHE TEST (1ep)"
+echo "==="
+echo "=== Compares against T4_recur_N5_K1_1ep (cache off). Same config,"
+echo "===   mixer_recurrence_cache_gate=true. Expect lower wall-clock;"
+echo "===   watch best val stays within 0.0015 of the no-cache run."
+echo "============================================================"
+
+
 # # === Legacy (commented-out) version =========================================
 # # Prior MIXER RECURRENCE QUEUE block (T3 + N x K sweep, 1ep each)
 # echo "=== (ALL RUNS COMMENTED OUT — Adagrad unstable at N>=5; pivoting to AdamW)"

@@ -1073,6 +1073,31 @@ Full recurrence sweep using the locked T4 baseline (Adagrad, lr=0.02250, min_lr=
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Recurrence Efficiency: Gate Caching
+
+Recurrence multiplies the per-step mixer cost by N. Each step's dominant cost is two `C'×C'` matmuls — the signal projection `W_mix·X` and the gate projection `W_gate·(R·X)` (cross-scale routed). The **gate caching** approximation (`mixer_recurrence_cache_gate`) computes the gate `φ(W_gate·R·X)` once on the first recurrence cycle and reuses it for cycles 2..N, eliminating the `W_gate` matmul + routing einsum on all but the first cycle — roughly halving per-step matmul cost at K=1. The trade-off: the gate no longer tracks the evolving spectral state past cycle 1.
+
+**Hypothesis:** the cross-scale gate stabilizes quickly across recurrence steps, so re-gating each step is wasted compute. If true, caching is a near-free runtime win; if the gate is load-bearing per-step, quality regresses and we keep recomputing.
+
+Auto-conditions: active only when `N > 1` (needs cycles to amortize over) and `use_mixer_gate=True`. Exact-equivalent to the baseline at N=1 (no caching possible). Baseline = the queued N=5 K=1 run (cache off); the test is identical except `cache_gate=true`.
+
+| Run | N | K | cache_gate | BPB sliding | PPL sliding | Best val | Δ val vs base | Train time | Δ time | Run log |
+|---|---|---|---|---|---|---|---|---|---|---|
+| N=5 K=1 (baseline) | 5 | 1 | ✗ | queued | queued | queued | (ref) | queued | — | queued |
+| N=5 K=1 + gate cache | 5 | 1 | ✓ | queued | queued | queued | — | queued | — | queued |
+
+**Decision rule:** if Δ best val < 0.0015 (within noise) **and** wall-clock drops meaningfully, caching is a free win — enable for all deeper-N runs (N=10, N=20, N=50). If best val regresses past noise, the per-step re-gating is load-bearing and caching is rejected.
+
+**Findings:**
+
+(pending — runs after the N=5 K=1 baseline lands so the comparison is apples-to-apples)
+
+> **GEMM fusion (deferred):** an alternative exact optimization — fusing `W_mix` and `W_gate` into one `2C'×C'` matmul — was considered but not implemented. With `cross_scale_gating=True` it requires moving the routing out of the mixer (invasive), `torch.compile` likely already fuses the adjacent GEMMs, and gate caching *eliminates* the `W_gate` matmul on cached steps rather than merely fusing it (strictly better for the recurrence case). Revisit only if profiling after caching shows the step-1 / K=1-base gate projection is still a bottleneck.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Wavelet Sparsity Probe & Wavelet Shrinkage
 
 Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.

@@ -842,11 +842,17 @@ class GatedSpectralMixer(nn.Module):
                 nn.init.normal_(self.U, std=0.01)
                 nn.init.normal_(self.V, std=0.01)
 
-    def forward(self, X_spec: torch.Tensor, gate_input: torch.Tensor = None):
+    def forward(self, X_spec: torch.Tensor, gate_input: torch.Tensor = None,
+                cached_gate: torch.Tensor = None, return_gate: bool = False):
         signal = self.mixer(X_spec)
+        gate = None
         if self.use_mixer_gate:
-            gi = gate_input if gate_input is not None else X_spec
-            out = signal * self.gate_activation(self.gate(gi))
+            if cached_gate is not None:
+                gate = cached_gate  # reuse a gate computed on an earlier step
+            else:
+                gi = gate_input if gate_input is not None else X_spec
+                gate = self.gate_activation(self.gate(gi))
+            out = signal * gate
         else:
             out = signal
         if self.U is not None:
@@ -854,6 +860,8 @@ class GatedSpectralMixer(nn.Module):
             out = out + torch.matmul(mid, self.U.t())
         if self.bias is not None:
             out = out + self.bias
+        if return_gate:
+            return out, gate
         return out
 
 class PerScaleMixer(nn.Module):
@@ -1321,6 +1329,7 @@ class WaveletLMBlock(nn.Module):
         mixer_recurrence_steps: int = 1,
         mixer_recurrence_distinct_mixer_count: int = 1,
         mixer_recurrence_residuals: bool = True,
+        mixer_recurrence_cache_gate: bool = False,
         per_layer_embedding: bool = False,
         fht_input_cap_enabled: bool = False,
         fht_input_cap_value: float = 1000.0,
@@ -1534,6 +1543,11 @@ class WaveletLMBlock(nn.Module):
         self.mixer_recurrence_steps = int(mixer_recurrence_steps)
         self.mixer_recurrence_distinct_mixer_count = int(mixer_recurrence_distinct_mixer_count)
         self.mixer_recurrence_residuals = bool(mixer_recurrence_residuals)
+        # Approximation: compute the (cross-scale) gate once on the first
+        # recurrence cycle and reuse it for cycles 2..N, eliminating the
+        # W_gate matmul + routing einsum on all but the first cycle. Halves
+        # per-step matmul cost at K=1. Only meaningful when N*K > 1.
+        self.mixer_recurrence_cache_gate = bool(mixer_recurrence_cache_gate)
         if self.mixer_recurrence_steps < 1:
             raise ValueError(
                 f"mixer_recurrence_steps must be >= 1, got {self.mixer_recurrence_steps}"
@@ -1873,6 +1887,14 @@ class WaveletLMBlock(nn.Module):
             # layers can cause representation collapse over many steps.
             # Preserves baseline (N=K=1) behavior when no recurrence is active.
             apply_residual = self.mixer_recurrence_residuals and (N * K > 1)
+            # Gate caching: compute each bank's gate once on the first cycle
+            # (n_idx == 0) and reuse it for cycles 2..N, skipping the W_gate
+            # matmul + routing einsum thereafter. Approximation — the gate no
+            # longer tracks the evolving state past cycle 1. Only active when
+            # there is more than one cycle to amortize over (N > 1).
+            cache_gate = (self.mixer_recurrence_cache_gate
+                          and self.use_mixer_gate and N > 1 and (N * K > 1))
+            gate_cache = [[None] * S for _ in range(K)] if cache_gate else None
             # Outer loop: repeat the K-bank cycle N times.
             # Inner loop: apply each of the K distinct banks once per cycle.
             for n_idx in range(N):
@@ -1881,9 +1903,10 @@ class WaveletLMBlock(nn.Module):
                         step_mixers = self.scale_mixers
                     else:
                         step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
-                    # Recompute gate routing from the current spectral state
-                    # so each step gates on its own input.
-                    if self.cross_scale_gating:
+                    # Reuse cached gates on cycles after the first; otherwise
+                    # recompute gate routing from the current spectral state.
+                    reuse_cache = cache_gate and n_idx > 0
+                    if self.cross_scale_gating and not reuse_cache:
                         routed_gate_input = torch.einsum(
                             'rs,btsd->btrd', self.scale_routing, current_spec)
                     else:
@@ -1891,8 +1914,15 @@ class WaveletLMBlock(nn.Module):
                     mixed_by_scale = []
                     for s in range(S):
                         Xs = current_spec[:, :, s, :]
-                        Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
-                        Ys = step_mixers[s](Xs, gate_input=Gs)
+                        if reuse_cache:
+                            Ys = step_mixers[s](Xs, cached_gate=gate_cache[bank_idx][s])
+                        elif cache_gate:
+                            Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
+                            Ys, g = step_mixers[s](Xs, gate_input=Gs, return_gate=True)
+                            gate_cache[bank_idx][s] = g
+                        else:
+                            Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
+                            Ys = step_mixers[s](Xs, gate_input=Gs)
                         mixed_by_scale.append(Xs + Ys if apply_residual else Ys)
                     current_spec = torch.stack(mixed_by_scale, dim=2)
                     # Per-step LayerNorm — K > 1 only, applied *between*
@@ -2309,6 +2339,9 @@ class WaveletLM(nn.Module):
                 ),
                 mixer_recurrence_residuals=config.get(
                     "mixer_recurrence_residuals", True
+                ),
+                mixer_recurrence_cache_gate=config.get(
+                    "mixer_recurrence_cache_gate", False
                 ),
                 per_layer_embedding=config.get("per_layer_embedding", False),
                 fht_input_cap_enabled=config.get("fht_input_cap_enabled", False),
