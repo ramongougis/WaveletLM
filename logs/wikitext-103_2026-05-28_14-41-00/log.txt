@@ -1,0 +1,594 @@
+[2026-05-28 14:41:00] Starting WaveletLM Training on WIKITEXT-103
+[2026-05-28 14:41:00] Device: cuda, AMP: True (fp16)
+[2026-05-28 14:41:00] 
+[2026-05-28 14:41:00] 	dataset                               : wikitext-103
+[2026-05-28 14:41:00] 	tokenizer                             : auto
+[2026-05-28 14:41:00] 	out_dir                               : logs
+[2026-05-28 14:41:00] 	compile                               : True
+[2026-05-28 14:41:00] 	compile_mode                          : default
+[2026-05-28 14:41:00] 	seed                                  : 1337
+[2026-05-28 14:41:00] 	epochs                                : 1
+[2026-05-28 14:41:00] 	micro_batch_size                      : 8
+[2026-05-28 14:41:00] 	grad_accum                            : 1
+[2026-05-28 14:41:00] 	block_size                            : 256
+[2026-05-28 14:41:00] 	eval_interval                         : 250
+[2026-05-28 14:41:00] 	skip_warmup_saves                     : True
+[2026-05-28 14:41:00] 	C                                     : 2048
+[2026-05-28 14:41:00] 	layers                                : 1
+[2026-05-28 14:41:00] 	levels                                : 7
+[2026-05-28 14:41:00] 	low_rank                              : 4
+[2026-05-28 14:41:00] 	mlp_expansion                         : 10
+[2026-05-28 14:41:00] 	mlp_layers                            : 2
+[2026-05-28 14:41:00] 	pkm_enabled                           : False
+[2026-05-28 14:41:00] 	pkm_num_keys                          : 16384
+[2026-05-28 14:41:00] 	pkm_top_k                             : 32
+[2026-05-28 14:41:00] 	pkm_heads                             : 1
+[2026-05-28 14:41:00] 	fwpkm_enabled                         : True
+[2026-05-28 14:41:00] 	fwpkm_num_keys                        : 8281
+[2026-05-28 14:41:00] 	fwpkm_top_k                           : 32
+[2026-05-28 14:41:00] 	fwpkm_heads                           : 1
+[2026-05-28 14:41:00] 	fwpkm_inference_updates               : False
+[2026-05-28 14:41:00] 	fwpkm_update_lr                       : 0.01
+[2026-05-28 14:41:00] 	fwpkm_chunk_size                      : 64
+[2026-05-28 14:41:00] 	wavelet_mode                          : lifting
+[2026-05-28 14:41:00] 	shared_lifting_weights                : True
+[2026-05-28 14:41:00] 	untied_reconstruction                 : False
+[2026-05-28 14:41:00] 	multi_basis_lifting                   : False
+[2026-05-28 14:41:00] 	multi_basis_inits                     : ['haar', 'random']
+[2026-05-28 14:41:00] 	cross_scale_gating                    : True
+[2026-05-28 14:41:00] 	per_scale_mixer_widths                : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-05-28 14:41:00] 	stable_parametrization                : False
+[2026-05-28 14:41:00] 	stab_spectral_norm                    : False
+[2026-05-28 14:41:00] 	stab_ff_scaling                       : False
+[2026-05-28 14:41:00] 	stab_embed_scaling                    : False
+[2026-05-28 14:41:00] 	stab_proj_out_scaling                 : False
+[2026-05-28 14:41:00] 	stab_mixer_eps_scaling                : False
+[2026-05-28 14:41:00] 	stab_lifting_level_scaling            : False
+[2026-05-28 14:41:00] 	looped_blocks                         : False
+[2026-05-28 14:41:00] 	looped_blocks_count                   : 8
+[2026-05-28 14:41:00] 	wavelet_crawl                         : True
+[2026-05-28 14:41:00] 	wavelet_crawl_k                       : 3
+[2026-05-28 14:41:00] 	lifting_linear_only                   : False
+[2026-05-28 14:41:00] 	lifting_hidden_mult                   : 1
+[2026-05-28 14:41:00] 	lifting_init                          : haar
+[2026-05-28 14:41:00] 	lifting_dropout                       : 0.0
+[2026-05-28 14:41:00] 	lifting_diaglowrank                   : False
+[2026-05-28 14:41:00] 	lifting_level_sharing                 : False
+[2026-05-28 14:41:00] 	lifting_offdiag_structure             : none
+[2026-05-28 14:41:00] 	lifting_block_size                    : 64
+[2026-05-28 14:41:00] 	lifting_band_width                    : 64
+[2026-05-28 14:41:00] 	lifting_monarch_blocks                : 32
+[2026-05-28 14:41:00] 	lifting_offdiag_density               : 0.0
+[2026-05-28 14:41:00] 	lifting_offdiag_mask_seed             : 1337
+[2026-05-28 14:41:00] 	lifting_offdiag_mask_checkpoint       : 
+[2026-05-28 14:41:00] 	mlp_offdiag_structure                 : none
+[2026-05-28 14:41:00] 	mlp_block_size                        : 64
+[2026-05-28 14:41:00] 	mlp_band_width                        : 64
+[2026-05-28 14:41:00] 	mlp_pq_density                        : 0.1
+[2026-05-28 14:41:00] 	mlp_pq_mode                           : structural
+[2026-05-28 14:41:00] 	sparse_pq_embedding_enabled           : False
+[2026-05-28 14:41:00] 	sparse_pq_embedding_density           : 0.1
+[2026-05-28 14:41:00] 	sparse_pq_embedding_mode              : structural
+[2026-05-28 14:41:00] 	sparse_pq_embedding_epsilon           : 1e-06
+[2026-05-28 14:41:00] 	sparse_encoder_decoder_embedding      : False
+[2026-05-28 14:41:00] 	sparse_encoder_decoder_embedding_C    : 512
+[2026-05-28 14:41:00] 	use_mixer_gate                        : True
+[2026-05-28 14:41:00] 	mixer_gate_activation                 : silu
+[2026-05-28 14:41:00] 	mixer_depth                           : 1
+[2026-05-28 14:41:00] 	mixer_depth_stabilizers               : False
+[2026-05-28 14:41:00] 	mixer_depth_residuals                 : False
+[2026-05-28 14:41:00] 	mixer_recurrence_steps                : 5
+[2026-05-28 14:41:00] 	mixer_recurrence_distinct_mixer_count : 1
+[2026-05-28 14:41:00] 	mixer_recurrence_residuals            : True
+[2026-05-28 14:41:00] 	mixer_recurrence_cache_gate           : False
+[2026-05-28 14:41:00] 	decompose_bypass                      : True
+[2026-05-28 14:41:00] 	decompose_bypass_cross_window         : True
+[2026-05-28 14:41:00] 	decompose_bypass_ema                  : False
+[2026-05-28 14:41:00] 	learned_residual                      : True
+[2026-05-28 14:41:00] 	skip_proj_out                         : False
+[2026-05-28 14:41:00] 	stochastic_depth_rate                 : 0.0
+[2026-05-28 14:41:00] 	dropout_embedding                     : 0.2
+[2026-05-28 14:41:00] 	dropout_projection                    : 0.1
+[2026-05-28 14:41:00] 	dropout_mixer                         : 0.1
+[2026-05-28 14:41:00] 	dropout_mlp                           : 0.1
+[2026-05-28 14:41:00] 	dropout_lm_head                       : 0.24
+[2026-05-28 14:41:00] 	optimizer                             : Adagrad
+[2026-05-28 14:41:00] 	optimizer_eps                         : 2e-13
+[2026-05-28 14:41:00] 	wavelet_2d_mode                       : off
+[2026-05-28 14:41:00] 	wavelet_2d_b_levels                   : -1
+[2026-05-28 14:41:00] 	wavelet_2d_init_zero                  : True
+[2026-05-28 14:41:00] 	wavelet_2d_state_passing              : False
+[2026-05-28 14:41:00] 	bbce_enabled                          : False
+[2026-05-28 14:41:00] 	block_size_compressed                 : 65536
+[2026-05-28 14:41:00] 	bbce_compressed_grad                  : True
+[2026-05-28 14:41:00] 	lr                                    : 0.0225
+[2026-05-28 14:41:00] 	min_lr                                : 0.00045
+[2026-05-28 14:41:00] 	warmup_fraction                       : 0.3
+[2026-05-28 14:41:00] 	grad_clip                             : 1.0
+[2026-05-28 14:41:00] 	tie_embedding_to_lm_head              : True
+[2026-05-28 14:41:00] 	gradient_checkpointing                : False
+[2026-05-28 14:41:00] 	use_amp                               : True
+[2026-05-28 14:41:00] 	amp_dtype                             : fp16
+[2026-05-28 14:41:00] 	allow_tf32                            : True
+[2026-05-28 14:41:00] 	generation_prompt                     : The history of
+[2026-05-28 14:41:00] 	temperature                           : 1.0
+[2026-05-28 14:41:00] 	num_new_tokens                        : 512
+[2026-05-28 14:41:00] 	top_p                                 : 0.95
+[2026-05-28 14:41:00] 	repetition_penalty                    : 1.1
+[2026-05-28 14:41:00] 	benchmark_only                        : False
+[2026-05-28 14:41:00] 	benchmark_run_dir                     : 
+[2026-05-28 14:41:00] 	multinodal_enabled                    : False
+[2026-05-28 14:41:00] 	multinodal_num_cells                  : 2
+[2026-05-28 14:41:00] 	multinodal_cell_dim                   : 512
+[2026-05-28 14:41:00] 	multinodal_seeds                      : [42, 137]
+[2026-05-28 14:41:00] 	multinodal_combination                : average
+[2026-05-28 14:41:00] 	multinodal_cross_cell_gating          : False
+[2026-05-28 14:41:00] 	multinodal_cross_cell_gate_interval   : 1
+[2026-05-28 14:41:00] 	multinodal_features_per_cell          : -1
+[2026-05-28 14:41:00] 	multinodal_bagged_eps                 : 1e-06
+[2026-05-28 14:41:00] 	quantize_enabled                      : False
+[2026-05-28 14:41:00] 	quantize_mixer_coarse_bits            : 8
+[2026-05-28 14:41:00] 	quantize_mixer_mid_bits               : 4
+[2026-05-28 14:41:00] 	quantize_mixer_fine_bits              : 2
+[2026-05-28 14:41:00] 	quantize_mlp_bits                     : 4
+[2026-05-28 14:41:00] 	quantize_lifting_bits                 : 16
+[2026-05-28 14:41:00] 	quantize_embedding_bits               : 8
+[2026-05-28 14:41:00] 	per_layer_embedding                   : True
+[2026-05-28 14:41:00] 	loop_iterations                       : 1
+[2026-05-28 14:41:00] 	weight_decay                          : 1e-06
+[2026-05-28 14:41:00] 	wavelet_decomp_norm                   : True
+[2026-05-28 14:41:00] 	wavelet_recon_norm                    : True
+[2026-05-28 14:41:00] 
+[2026-05-28 14:41:00] [GPU] NVIDIA RTX A5000
+[2026-05-28 14:41:01] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-05-28 14:41:01] [Dataset] Loading wikitext-103 from cache...
+[2026-05-28 14:41:02] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-05-28 14:41:02] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-05-28 14:41:02] [Dataset] Vocab size: 50257
+[2026-05-28 14:41:02] [Schedule] 58457 steps/epoch, 58457 total steps
+[2026-05-28 14:41:02] [Schedule] Warmup: 17537 steps (30%)
+[2026-05-28 14:41:05] [Run Folder] logs/wikitext-103_2026-05-28_14-41-00
+[2026-05-28 14:41:05] 
+============================================================
+[2026-05-28 14:41:05] PARAMETER BREAKDOWN
+[2026-05-28 14:41:05] ============================================================
+[2026-05-28 14:41:05] Total parameters:             393,011,297 (393.01M)
+[2026-05-28 14:41:05]   Wavelets:                   117,497,877 (117.50M)
+[2026-05-28 14:41:05]   Token embedding:            102,926,336 (102.93M)
+[2026-05-28 14:41:05]   Layers (total):             172,582,988 (172.58M)
+[2026-05-28 14:41:05]     Mixer/layer:               58,818,560 (58.82M)
+[2026-05-28 14:41:05]     MLP/layer:                 83,908,608 (83.91M)
+[2026-05-28 14:41:05]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-05-28 14:41:05]   LM head (shared):                     0 additional
+[2026-05-28 14:41:05]   Final LayerNorm:                  4,096 (0.00M)
+[2026-05-28 14:41:05] ============================================================
+
+[2026-05-28 14:41:05] [Model] 393.01M parameters (393.01M trainable)
+[2026-05-28 14:41:05] [Compile] torch.compile enabled (mode=default)
+[2026-05-28 14:41:05] [Optimizer] Adagrad, lr=0.0225, eps=2e-13, initial_accumulator_value=0, lr_decay=0, weight_decay=1e-06
+[2026-05-28 14:41:05] 
+=== EPOCH 1/1 ===
+[2026-05-28 14:46:11] Step 250: train loss 6.6736, val loss 6.6557		lr=3.19e-04
+[2026-05-28 14:46:11] New Best Val: 6.6557 (skipping save during warmup)
+[2026-05-28 14:48:01] Step 500: train loss 6.3806, val loss 6.3451		lr=6.40e-04
+[2026-05-28 14:48:01] New Best Val: 6.3451 (skipping save during warmup)
+[2026-05-28 14:49:52] Step 750: train loss 6.1974, val loss 6.1428		lr=9.61e-04
+[2026-05-28 14:49:52] New Best Val: 6.1428 (skipping save during warmup)
+[2026-05-28 14:51:43] Step 1000: train loss 6.0792, val loss 6.0483		lr=1.28e-03
+[2026-05-28 14:51:43] New Best Val: 6.0483 (skipping save during warmup)
+[2026-05-28 14:53:33] Step 1250: train loss 5.8786, val loss 5.8571		lr=1.60e-03
+[2026-05-28 14:53:33] New Best Val: 5.8571 (skipping save during warmup)
+[2026-05-28 14:55:23] Step 1500: train loss 5.7808, val loss 5.7325		lr=1.92e-03
+[2026-05-28 14:55:23] New Best Val: 5.7325 (skipping save during warmup)
+[2026-05-28 14:57:14] Step 1750: train loss 5.6864, val loss 5.6404		lr=2.24e-03
+[2026-05-28 14:57:14] New Best Val: 5.6404 (skipping save during warmup)
+[2026-05-28 14:59:04] Step 2000: train loss 5.6088, val loss 5.5382		lr=2.56e-03
+[2026-05-28 14:59:04] New Best Val: 5.5382 (skipping save during warmup)
+[2026-05-28 15:00:55] Step 2250: train loss 5.4904, val loss 5.4847		lr=2.89e-03
+[2026-05-28 15:00:55] New Best Val: 5.4847 (skipping save during warmup)
+[2026-05-28 15:02:45] Step 2500: train loss 5.4550, val loss 5.4075		lr=3.21e-03
+[2026-05-28 15:02:45] New Best Val: 5.4075 (skipping save during warmup)
+[2026-05-28 15:04:36] Step 2750: train loss 5.3880, val loss 5.3673		lr=3.53e-03
+[2026-05-28 15:04:36] New Best Val: 5.3673 (skipping save during warmup)
+[2026-05-28 15:06:26] Step 3000: train loss 5.3185, val loss 5.2778		lr=3.85e-03
+[2026-05-28 15:06:26] New Best Val: 5.2778 (skipping save during warmup)
+[2026-05-28 15:08:17] Step 3250: train loss 5.2559, val loss 5.2458		lr=4.17e-03
+[2026-05-28 15:08:17] New Best Val: 5.2458 (skipping save during warmup)
+[2026-05-28 15:10:07] Step 3500: train loss 5.1906, val loss 5.1430		lr=4.49e-03
+[2026-05-28 15:10:07] New Best Val: 5.1430 (skipping save during warmup)
+[2026-05-28 15:11:57] Step 3750: train loss 5.1447, val loss 5.1200		lr=4.81e-03
+[2026-05-28 15:11:57] New Best Val: 5.1200 (skipping save during warmup)
+[2026-05-28 15:13:47] Step 4000: train loss 5.1235, val loss 5.0743		lr=5.13e-03
+[2026-05-28 15:13:47] New Best Val: 5.0743 (skipping save during warmup)
+[2026-05-28 15:15:38] Step 4250: train loss 5.0643, val loss 5.0348		lr=5.45e-03
+[2026-05-28 15:15:38] New Best Val: 5.0348 (skipping save during warmup)
+[2026-05-28 15:17:28] Step 4500: train loss 5.0130, val loss 4.9940		lr=5.77e-03
+[2026-05-28 15:17:28] New Best Val: 4.9940 (skipping save during warmup)
+[2026-05-28 15:19:18] Step 4750: train loss 4.9660, val loss 4.9266		lr=6.09e-03
+[2026-05-28 15:19:18] New Best Val: 4.9266 (skipping save during warmup)
+[2026-05-28 15:21:09] Step 5000: train loss 4.9770, val loss 4.9355		lr=6.41e-03
+[2026-05-28 15:23:00] Step 5250: train loss 4.9082, val loss 4.9053		lr=6.73e-03
+[2026-05-28 15:23:00] New Best Val: 4.9053 (skipping save during warmup)
+[2026-05-28 15:24:50] Step 5500: train loss 4.8703, val loss 4.8402		lr=7.06e-03
+[2026-05-28 15:24:50] New Best Val: 4.8402 (skipping save during warmup)
+[2026-05-28 15:26:41] Step 5750: train loss 4.8861, val loss 4.8555		lr=7.38e-03
+[2026-05-28 15:28:31] Step 6000: train loss 4.8253, val loss 4.8172		lr=7.70e-03
+[2026-05-28 15:28:31] New Best Val: 4.8172 (skipping save during warmup)
+[2026-05-28 15:30:22] Step 6250: train loss 4.8275, val loss 4.7986		lr=8.02e-03
+[2026-05-28 15:30:22] New Best Val: 4.7986 (skipping save during warmup)
+[2026-05-28 15:32:12] Step 6500: train loss 4.7982, val loss 4.7528		lr=8.34e-03
+[2026-05-28 15:32:12] New Best Val: 4.7528 (skipping save during warmup)
+[2026-05-28 15:34:03] Step 6750: train loss 4.7555, val loss 4.7118		lr=8.66e-03
+[2026-05-28 15:34:03] New Best Val: 4.7118 (skipping save during warmup)
+[2026-05-28 15:35:53] Step 7000: train loss 4.7517, val loss 4.7012		lr=8.98e-03
+[2026-05-28 15:35:53] New Best Val: 4.7012 (skipping save during warmup)
+[2026-05-28 15:37:44] Step 7250: train loss 4.6750, val loss 4.6694		lr=9.30e-03
+[2026-05-28 15:37:44] New Best Val: 4.6694 (skipping save during warmup)
+[2026-05-28 15:39:35] Step 7500: train loss 4.7034, val loss 4.6465		lr=9.62e-03
+[2026-05-28 15:39:35] New Best Val: 4.6465 (skipping save during warmup)
+[2026-05-28 15:41:25] Step 7750: train loss 4.6611, val loss 4.6363		lr=9.94e-03
+[2026-05-28 15:41:25] New Best Val: 4.6363 (skipping save during warmup)
+[2026-05-28 15:43:16] Step 8000: train loss 4.6609, val loss 4.6187		lr=1.03e-02
+[2026-05-28 15:43:16] New Best Val: 4.6187 (skipping save during warmup)
+[2026-05-28 15:45:06] Step 8250: train loss 4.6288, val loss 4.6115		lr=1.06e-02
+[2026-05-28 15:45:06] New Best Val: 4.6115 (skipping save during warmup)
+[2026-05-28 15:46:57] Step 8500: train loss 4.5948, val loss 4.5835		lr=1.09e-02
+[2026-05-28 15:46:57] New Best Val: 4.5835 (skipping save during warmup)
+[2026-05-28 15:48:48] Step 8750: train loss 4.5774, val loss 4.5798		lr=1.12e-02
+[2026-05-28 15:48:48] New Best Val: 4.5798 (skipping save during warmup)
+[2026-05-28 15:50:38] Step 9000: train loss 4.5739, val loss 4.5581		lr=1.15e-02
+[2026-05-28 15:50:38] New Best Val: 4.5581 (skipping save during warmup)
+[2026-05-28 15:52:29] Step 9250: train loss 4.5267, val loss 4.5173		lr=1.19e-02
+[2026-05-28 15:52:29] New Best Val: 4.5173 (skipping save during warmup)
+[2026-05-28 15:54:19] Step 9500: train loss 4.5471, val loss 4.5246		lr=1.22e-02
+[2026-05-28 15:56:10] Step 9750: train loss 4.5371, val loss 4.5257		lr=1.25e-02
+[2026-05-28 15:58:00] Step 10000: train loss 4.5114, val loss 4.4950		lr=1.28e-02
+[2026-05-28 15:58:00] New Best Val: 4.4950 (skipping save during warmup)
+[2026-05-28 15:59:51] Step 10250: train loss 4.4982, val loss 4.5035		lr=1.31e-02
+[2026-05-28 16:01:43] Step 10500: train loss 4.4583, val loss 4.4572		lr=1.35e-02
+[2026-05-28 16:01:43] New Best Val: 4.4572 (skipping save during warmup)
+[2026-05-28 16:03:33] Step 10750: train loss 4.4602, val loss 4.4438		lr=1.38e-02
+[2026-05-28 16:03:33] New Best Val: 4.4438 (skipping save during warmup)
+[2026-05-28 16:05:24] Step 11000: train loss 4.4593, val loss 4.4660		lr=1.41e-02
+[2026-05-28 16:07:15] Step 11250: train loss 4.4114, val loss 4.4116		lr=1.44e-02
+[2026-05-28 16:07:15] New Best Val: 4.4116 (skipping save during warmup)
+[2026-05-28 16:09:06] Step 11500: train loss 4.4314, val loss 4.3895		lr=1.48e-02
+[2026-05-28 16:09:06] New Best Val: 4.3895 (skipping save during warmup)
+[2026-05-28 16:10:57] Step 11750: train loss 4.4285, val loss 4.3842		lr=1.51e-02
+[2026-05-28 16:10:57] New Best Val: 4.3842 (skipping save during warmup)
+[2026-05-28 16:12:48] Step 12000: train loss 4.4238, val loss 4.3872		lr=1.54e-02
+[2026-05-28 16:14:38] Step 12250: train loss 4.4122, val loss 4.3909		lr=1.57e-02
+[2026-05-28 16:16:29] Step 12500: train loss 4.3583, val loss 4.3420		lr=1.60e-02
+[2026-05-28 16:16:29] New Best Val: 4.3420 (skipping save during warmup)
+[2026-05-28 16:18:20] Step 12750: train loss 4.3552, val loss 4.3496		lr=1.64e-02
+[2026-05-28 16:20:11] Step 13000: train loss 4.3673, val loss 4.3282		lr=1.67e-02
+[2026-05-28 16:20:11] New Best Val: 4.3282 (skipping save during warmup)
+[2026-05-28 16:22:01] Step 13250: train loss 4.3607, val loss 4.3308		lr=1.70e-02
+[2026-05-28 16:23:52] Step 13500: train loss 4.3270, val loss 4.3257		lr=1.73e-02
+[2026-05-28 16:23:52] New Best Val: 4.3257 (skipping save during warmup)
+[2026-05-28 16:25:43] Step 13750: train loss 4.3388, val loss 4.3253		lr=1.76e-02
+[2026-05-28 16:25:43] New Best Val: 4.3253 (skipping save during warmup)
+[2026-05-28 16:27:34] Step 14000: train loss 4.3154, val loss 4.3217		lr=1.80e-02
+[2026-05-28 16:27:34] New Best Val: 4.3217 (skipping save during warmup)
+[2026-05-28 16:29:25] Step 14250: train loss 4.3011, val loss 4.3035		lr=1.83e-02
+[2026-05-28 16:29:25] New Best Val: 4.3035 (skipping save during warmup)
+[2026-05-28 16:31:16] Step 14500: train loss 4.3040, val loss 4.3006		lr=1.86e-02
+[2026-05-28 16:31:16] New Best Val: 4.3006 (skipping save during warmup)
+[2026-05-28 16:33:06] Step 14750: train loss 4.3105, val loss 4.2637		lr=1.89e-02
+[2026-05-28 16:33:06] New Best Val: 4.2637 (skipping save during warmup)
+[2026-05-28 16:34:57] Step 15000: train loss 4.2957, val loss 4.2576		lr=1.92e-02
+[2026-05-28 16:34:57] New Best Val: 4.2576 (skipping save during warmup)
+[2026-05-28 16:36:48] Step 15250: train loss 4.2623, val loss 4.2591		lr=1.96e-02
+[2026-05-28 16:38:39] Step 15500: train loss 4.2554, val loss 4.2554		lr=1.99e-02
+[2026-05-28 16:38:39] New Best Val: 4.2554 (skipping save during warmup)
+[2026-05-28 16:40:30] Step 15750: train loss 4.2434, val loss 4.2537		lr=2.02e-02
+[2026-05-28 16:40:30] New Best Val: 4.2537 (skipping save during warmup)
+[2026-05-28 16:42:21] Step 16000: train loss 4.2157, val loss 4.2173		lr=2.05e-02
+[2026-05-28 16:42:21] New Best Val: 4.2173 (skipping save during warmup)
+[2026-05-28 16:44:12] Step 16250: train loss 4.2292, val loss 4.2341		lr=2.08e-02
+[2026-05-28 16:46:03] Step 16500: train loss 4.2378, val loss 4.2217		lr=2.12e-02
+[2026-05-28 16:47:54] Step 16750: train loss 4.2459, val loss 4.2279		lr=2.15e-02
+[2026-05-28 16:49:44] Step 17000: train loss 4.2257, val loss 4.2452		lr=2.18e-02
+[2026-05-28 16:51:35] Step 17250: train loss 4.2215, val loss 4.1924		lr=2.21e-02
+[2026-05-28 16:51:35] New Best Val: 4.1924 (skipping save during warmup)
+[2026-05-28 16:53:26] Step 17500: train loss 4.2017, val loss 4.2287		lr=2.25e-02
+[2026-05-28 16:55:17] Step 17750: train loss 4.2189, val loss 4.1937		lr=2.25e-02
+[2026-05-28 16:57:08] Step 18000: train loss 4.1771, val loss 4.1811		lr=2.25e-02
+[2026-05-28 16:57:08] New Best Val: 4.1811. Saving...
+[2026-05-28 16:59:02] Step 18250: train loss 4.1616, val loss 4.1618		lr=2.25e-02
+[2026-05-28 16:59:02] New Best Val: 4.1618. Saving...
+[2026-05-28 17:00:56] Step 18500: train loss 4.1747, val loss 4.1560		lr=2.25e-02
+[2026-05-28 17:00:56] New Best Val: 4.1560. Saving...
+[2026-05-28 17:02:49] Step 18750: train loss 4.1675, val loss 4.1432		lr=2.25e-02
+[2026-05-28 17:02:49] New Best Val: 4.1432. Saving...
+[2026-05-28 17:04:43] Step 19000: train loss 4.1491, val loss 4.1570		lr=2.24e-02
+[2026-05-28 17:06:34] Step 19250: train loss 4.1402, val loss 4.1362		lr=2.24e-02
+[2026-05-28 17:06:34] New Best Val: 4.1362. Saving...
+[2026-05-28 17:08:28] Step 19500: train loss 4.1142, val loss 4.1301		lr=2.24e-02
+[2026-05-28 17:08:28] New Best Val: 4.1301. Saving...
+[2026-05-28 17:10:22] Step 19750: train loss 4.1153, val loss 4.1211		lr=2.23e-02
+[2026-05-28 17:10:22] New Best Val: 4.1211. Saving...
+[2026-05-28 17:12:16] Step 20000: train loss 4.1011, val loss 4.0972		lr=2.23e-02
+[2026-05-28 17:12:16] New Best Val: 4.0972. Saving...
+[2026-05-28 17:14:10] Step 20250: train loss 4.0971, val loss 4.0916		lr=2.23e-02
+[2026-05-28 17:14:10] New Best Val: 4.0916. Saving...
+[2026-05-28 17:16:04] Step 20500: train loss 4.0874, val loss 4.0925		lr=2.22e-02
+[2026-05-28 17:17:55] Step 20750: train loss 4.0773, val loss 4.0738		lr=2.22e-02
+[2026-05-28 17:17:55] New Best Val: 4.0738. Saving...
+[2026-05-28 17:19:49] Step 21000: train loss 4.0415, val loss 4.0567		lr=2.21e-02
+[2026-05-28 17:19:49] New Best Val: 4.0567. Saving...
+[2026-05-28 17:21:43] Step 21250: train loss 4.0593, val loss 4.0575		lr=2.21e-02
+[2026-05-28 17:23:33] Step 21500: train loss 4.0386, val loss 4.0591		lr=2.20e-02
+[2026-05-28 17:25:24] Step 21750: train loss 4.0472, val loss 4.0542		lr=2.19e-02
+[2026-05-28 17:25:24] New Best Val: 4.0542. Saving...
+[2026-05-28 17:27:18] Step 22000: train loss 4.0222, val loss 4.0578		lr=2.19e-02
+[2026-05-28 17:29:08] Step 22250: train loss 4.0161, val loss 4.0087		lr=2.18e-02
+[2026-05-28 17:29:08] New Best Val: 4.0087. Saving...
+[2026-05-28 17:31:02] Step 22500: train loss 3.9973, val loss 4.0159		lr=2.17e-02
+[2026-05-28 17:32:52] Step 22750: train loss 4.0151, val loss 4.0391		lr=2.16e-02
+[2026-05-28 17:34:42] Step 23000: train loss 4.0159, val loss 4.0311		lr=2.15e-02
+[2026-05-28 17:36:33] Step 23250: train loss 3.9773, val loss 3.9806		lr=2.15e-02
+[2026-05-28 17:36:33] New Best Val: 3.9806. Saving...
+[2026-05-28 17:38:26] Step 23500: train loss 3.9795, val loss 3.9859		lr=2.14e-02
+[2026-05-28 17:40:17] Step 23750: train loss 3.9649, val loss 3.9626		lr=2.13e-02
+[2026-05-28 17:40:17] New Best Val: 3.9626. Saving...
+[2026-05-28 17:42:10] Step 24000: train loss 3.9754, val loss 3.9396		lr=2.12e-02
+[2026-05-28 17:42:10] New Best Val: 3.9396. Saving...
+[2026-05-28 17:44:04] Step 24250: train loss 3.9629, val loss 3.9545		lr=2.11e-02
+[2026-05-28 17:45:55] Step 24500: train loss 3.9290, val loss 3.9520		lr=2.10e-02
+[2026-05-28 17:47:46] Step 24750: train loss 3.9624, val loss 3.9538		lr=2.09e-02
+[2026-05-28 17:49:36] Step 25000: train loss 3.9333, val loss 3.9563		lr=2.07e-02
+[2026-05-28 17:51:27] Step 25250: train loss 3.9104, val loss 3.9383		lr=2.06e-02
+[2026-05-28 17:51:27] New Best Val: 3.9383. Saving...
+[2026-05-28 17:53:20] Step 25500: train loss 3.9442, val loss 3.9432		lr=2.05e-02
+[2026-05-28 17:55:11] Step 25750: train loss 3.9131, val loss 3.9366		lr=2.04e-02
+[2026-05-28 17:55:11] New Best Val: 3.9366. Saving...
+[2026-05-28 17:57:04] Step 26000: train loss 3.9144, val loss 3.9184		lr=2.03e-02
+[2026-05-28 17:57:04] New Best Val: 3.9184. Saving...
+[2026-05-28 17:58:58] Step 26250: train loss 3.8962, val loss 3.9264		lr=2.01e-02
+[2026-05-28 18:00:49] Step 26500: train loss 3.9079, val loss 3.9190		lr=2.00e-02
+[2026-05-28 18:02:40] Step 26750: train loss 3.8943, val loss 3.9288		lr=1.99e-02
+[2026-05-28 18:04:30] Step 27000: train loss 3.8649, val loss 3.8768		lr=1.97e-02
+[2026-05-28 18:04:30] New Best Val: 3.8768. Saving...
+[2026-05-28 18:06:24] Step 27250: train loss 3.8728, val loss 3.8845		lr=1.96e-02
+[2026-05-28 18:08:15] Step 27500: train loss 3.8526, val loss 3.9008		lr=1.94e-02
+[2026-05-28 18:10:06] Step 27750: train loss 3.8509, val loss 3.8698		lr=1.93e-02
+[2026-05-28 18:10:06] New Best Val: 3.8698. Saving...
+[2026-05-28 18:12:00] Step 28000: train loss 3.8728, val loss 3.8832		lr=1.91e-02
+[2026-05-28 18:13:50] Step 28250: train loss 3.8379, val loss 3.8723		lr=1.90e-02
+[2026-05-28 18:15:41] Step 28500: train loss 3.8254, val loss 3.8708		lr=1.88e-02
+[2026-05-28 18:17:32] Step 28750: train loss 3.8296, val loss 3.8418		lr=1.87e-02
+[2026-05-28 18:17:32] New Best Val: 3.8418. Saving...
+[2026-05-28 18:19:26] Step 29000: train loss 3.8198, val loss 3.8351		lr=1.85e-02
+[2026-05-28 18:19:26] New Best Val: 3.8351. Saving...
+[2026-05-28 18:21:20] Step 29250: train loss 3.7955, val loss 3.8379		lr=1.83e-02
+[2026-05-28 18:23:11] Step 29500: train loss 3.8001, val loss 3.8341		lr=1.82e-02
+[2026-05-28 18:23:11] New Best Val: 3.8341. Saving...
+[2026-05-28 18:25:05] Step 29750: train loss 3.8161, val loss 3.8200		lr=1.80e-02
+[2026-05-28 18:25:05] New Best Val: 3.8200. Saving...
+[2026-05-28 18:26:59] Step 30000: train loss 3.8061, val loss 3.8245		lr=1.78e-02
+[2026-05-28 18:28:50] Step 30250: train loss 3.7831, val loss 3.8143		lr=1.77e-02
+[2026-05-28 18:28:50] New Best Val: 3.8143. Saving...
+[2026-05-28 18:30:44] Step 30500: train loss 3.7862, val loss 3.8204		lr=1.75e-02
+[2026-05-28 18:32:35] Step 30750: train loss 3.7493, val loss 3.8360		lr=1.73e-02
+[2026-05-28 18:34:27] Step 31000: train loss 3.7793, val loss 3.8009		lr=1.71e-02
+[2026-05-28 18:34:27] New Best Val: 3.8009. Saving...
+[2026-05-28 18:36:20] Step 31250: train loss 3.7575, val loss 3.8277		lr=1.69e-02
+[2026-05-28 18:38:11] Step 31500: train loss 3.7576, val loss 3.7859		lr=1.67e-02
+[2026-05-28 18:38:11] New Best Val: 3.7859. Saving...
+[2026-05-28 18:40:05] Step 31750: train loss 3.7509, val loss 3.8085		lr=1.66e-02
+[2026-05-28 18:41:56] Step 32000: train loss 3.7322, val loss 3.7621		lr=1.64e-02
+[2026-05-28 18:41:56] New Best Val: 3.7621. Saving...
+[2026-05-28 18:43:50] Step 32250: train loss 3.7219, val loss 3.7810		lr=1.62e-02
+[2026-05-28 18:45:41] Step 32500: train loss 3.7463, val loss 3.7929		lr=1.60e-02
+[2026-05-28 18:47:32] Step 32750: train loss 3.7107, val loss 3.7775		lr=1.58e-02
+[2026-05-28 18:49:23] Step 33000: train loss 3.7261, val loss 3.7905		lr=1.56e-02
+[2026-05-28 18:51:14] Step 33250: train loss 3.7398, val loss 3.7725		lr=1.54e-02
+[2026-05-28 18:53:05] Step 33500: train loss 3.7086, val loss 3.7984		lr=1.52e-02
+[2026-05-28 18:54:55] Step 33750: train loss 3.7093, val loss 3.7765		lr=1.50e-02
+[2026-05-28 18:56:47] Step 34000: train loss 3.7238, val loss 3.7699		lr=1.48e-02
+[2026-05-28 18:58:38] Step 34250: train loss 3.6897, val loss 3.7400		lr=1.46e-02
+[2026-05-28 18:58:38] New Best Val: 3.7400. Saving...
+[2026-05-28 19:00:32] Step 34500: train loss 3.7096, val loss 3.7557		lr=1.44e-02
+[2026-05-28 19:02:23] Step 34750: train loss 3.6755, val loss 3.7427		lr=1.42e-02
+[2026-05-28 19:04:14] Step 35000: train loss 3.6766, val loss 3.7166		lr=1.40e-02
+[2026-05-28 19:04:14] New Best Val: 3.7166. Saving...
+[2026-05-28 19:06:08] Step 35250: train loss 3.6597, val loss 3.7474		lr=1.38e-02
+[2026-05-28 19:08:00] Step 35500: train loss 3.6670, val loss 3.7537		lr=1.36e-02
+[2026-05-28 19:09:51] Step 35750: train loss 3.6604, val loss 3.7300		lr=1.34e-02
+[2026-05-28 19:11:42] Step 36000: train loss 3.6602, val loss 3.7181		lr=1.32e-02
+[2026-05-28 19:13:33] Step 36250: train loss 3.6334, val loss 3.7357		lr=1.30e-02
+[2026-05-28 19:15:25] Step 36500: train loss 3.6520, val loss 3.7113		lr=1.27e-02
+[2026-05-28 19:15:25] New Best Val: 3.7113. Saving...
+[2026-05-28 19:17:19] Step 36750: train loss 3.6558, val loss 3.7129		lr=1.25e-02
+[2026-05-28 19:19:10] Step 37000: train loss 3.6211, val loss 3.7324		lr=1.23e-02
+[2026-05-28 19:21:01] Step 37250: train loss 3.6474, val loss 3.7011		lr=1.21e-02
+[2026-05-28 19:21:01] New Best Val: 3.7011. Saving...
+[2026-05-28 19:22:56] Step 37500: train loss 3.5985, val loss 3.7126		lr=1.19e-02
+[2026-05-28 19:24:47] Step 37750: train loss 3.6420, val loss 3.6945		lr=1.17e-02
+[2026-05-28 19:24:47] New Best Val: 3.6945. Saving...
+[2026-05-28 19:26:41] Step 38000: train loss 3.6182, val loss 3.6792		lr=1.15e-02
+[2026-05-28 19:26:41] New Best Val: 3.6792. Saving...
+[2026-05-28 19:28:36] Step 38250: train loss 3.6099, val loss 3.6921		lr=1.13e-02
+[2026-05-28 19:30:27] Step 38500: train loss 3.6123, val loss 3.6952		lr=1.11e-02
+[2026-05-28 19:32:18] Step 38750: train loss 3.5989, val loss 3.6839		lr=1.08e-02
+[2026-05-28 19:34:09] Step 39000: train loss 3.5938, val loss 3.6668		lr=1.06e-02
+[2026-05-28 19:34:09] New Best Val: 3.6668. Saving...
+[2026-05-28 19:36:04] Step 39250: train loss 3.6036, val loss 3.6843		lr=1.04e-02
+[2026-05-28 19:37:55] Step 39500: train loss 3.6001, val loss 3.6750		lr=1.02e-02
+[2026-05-28 19:39:46] Step 39750: train loss 3.5763, val loss 3.6507		lr=1.00e-02
+[2026-05-28 19:39:46] New Best Val: 3.6507. Saving...
+[2026-05-28 19:41:40] Step 40000: train loss 3.5830, val loss 3.6689		lr=9.79e-03
+[2026-05-28 19:43:32] Step 40250: train loss 3.5741, val loss 3.6687		lr=9.58e-03
+[2026-05-28 19:45:23] Step 40500: train loss 3.5702, val loss 3.6404		lr=9.37e-03
+[2026-05-28 19:45:23] New Best Val: 3.6404. Saving...
+[2026-05-28 19:47:17] Step 40750: train loss 3.5591, val loss 3.6707		lr=9.16e-03
+[2026-05-28 19:49:09] Step 41000: train loss 3.5836, val loss 3.6374		lr=8.96e-03
+[2026-05-28 19:49:09] New Best Val: 3.6374. Saving...
+[2026-05-28 19:51:03] Step 41250: train loss 3.5440, val loss 3.6720		lr=8.75e-03
+[2026-05-28 19:52:54] Step 41500: train loss 3.5640, val loss 3.6749		lr=8.55e-03
+[2026-05-28 19:54:45] Step 41750: train loss 3.5460, val loss 3.6401		lr=8.34e-03
+[2026-05-28 19:56:36] Step 42000: train loss 3.5236, val loss 3.6392		lr=8.14e-03
+[2026-05-28 19:58:28] Step 42250: train loss 3.5539, val loss 3.6506		lr=7.94e-03
+[2026-05-28 20:00:19] Step 42500: train loss 3.5521, val loss 3.6542		lr=7.74e-03
+[2026-05-28 20:02:10] Step 42750: train loss 3.5441, val loss 3.6305		lr=7.54e-03
+[2026-05-28 20:02:10] New Best Val: 3.6305. Saving...
+[2026-05-28 20:04:04] Step 43000: train loss 3.5337, val loss 3.6121		lr=7.34e-03
+[2026-05-28 20:04:04] New Best Val: 3.6121. Saving...
+[2026-05-28 20:05:59] Step 43250: train loss 3.5360, val loss 3.6242		lr=7.15e-03
+[2026-05-28 20:07:50] Step 43500: train loss 3.5120, val loss 3.6075		lr=6.96e-03
+[2026-05-28 20:07:50] New Best Val: 3.6075. Saving...
+[2026-05-28 20:09:44] Step 43750: train loss 3.5142, val loss 3.5829		lr=6.76e-03
+[2026-05-28 20:09:44] New Best Val: 3.5829. Saving...
+[2026-05-28 20:11:39] Step 44000: train loss 3.5134, val loss 3.6070		lr=6.57e-03
+[2026-05-28 20:13:30] Step 44250: train loss 3.4996, val loss 3.5890		lr=6.38e-03
+[2026-05-28 20:15:21] Step 44500: train loss 3.5145, val loss 3.5792		lr=6.20e-03
+[2026-05-28 20:15:21] New Best Val: 3.5792. Saving...
+[2026-05-28 20:17:16] Step 44750: train loss 3.5055, val loss 3.5875		lr=6.01e-03
+[2026-05-28 20:19:07] Step 45000: train loss 3.4802, val loss 3.5805		lr=5.83e-03
+[2026-05-28 20:20:58] Step 45250: train loss 3.4786, val loss 3.5900		lr=5.65e-03
+[2026-05-28 20:22:49] Step 45500: train loss 3.4635, val loss 3.5864		lr=5.47e-03
+[2026-05-28 20:24:41] Step 45750: train loss 3.5273, val loss 3.5847		lr=5.29e-03
+[2026-05-28 20:26:32] Step 46000: train loss 3.4845, val loss 3.5919		lr=5.12e-03
+[2026-05-28 20:28:23] Step 46250: train loss 3.4931, val loss 3.6027		lr=4.95e-03
+[2026-05-28 20:30:14] Step 46500: train loss 3.4937, val loss 3.5982		lr=4.78e-03
+[2026-05-28 20:32:05] Step 46750: train loss 3.4629, val loss 3.5815		lr=4.61e-03
+[2026-05-28 20:33:57] Step 47000: train loss 3.4581, val loss 3.5965		lr=4.45e-03
+[2026-05-28 20:35:48] Step 47250: train loss 3.4821, val loss 3.5949		lr=4.29e-03
+[2026-05-28 20:37:39] Step 47500: train loss 3.4800, val loss 3.5748		lr=4.13e-03
+[2026-05-28 20:37:39] New Best Val: 3.5748. Saving...
+[2026-05-28 20:39:34] Step 47750: train loss 3.4715, val loss 3.5624		lr=3.97e-03
+[2026-05-28 20:39:34] New Best Val: 3.5624. Saving...
+[2026-05-28 20:41:28] Step 48000: train loss 3.4610, val loss 3.5773		lr=3.82e-03
+[2026-05-28 20:43:19] Step 48250: train loss 3.4662, val loss 3.5541		lr=3.67e-03
+[2026-05-28 20:43:19] New Best Val: 3.5541. Saving...
+[2026-05-28 20:45:14] Step 48500: train loss 3.4605, val loss 3.5591		lr=3.52e-03
+[2026-05-28 20:47:06] Step 48750: train loss 3.4782, val loss 3.5640		lr=3.37e-03
+[2026-05-28 20:48:57] Step 49000: train loss 3.4495, val loss 3.5720		lr=3.23e-03
+[2026-05-28 20:50:48] Step 49250: train loss 3.4540, val loss 3.5712		lr=3.09e-03
+[2026-05-28 20:52:39] Step 49500: train loss 3.4646, val loss 3.5543		lr=2.96e-03
+[2026-05-28 20:54:31] Step 49750: train loss 3.4538, val loss 3.5541		lr=2.82e-03
+[2026-05-28 20:56:22] Step 50000: train loss 3.4212, val loss 3.5646		lr=2.69e-03
+[2026-05-28 20:58:13] Step 50250: train loss 3.4301, val loss 3.5715		lr=2.57e-03
+[2026-05-28 21:00:05] Step 50500: train loss 3.4499, val loss 3.5453		lr=2.44e-03
+[2026-05-28 21:00:05] New Best Val: 3.5453. Saving...
+[2026-05-28 21:01:59] Step 50750: train loss 3.4414, val loss 3.5395		lr=2.32e-03
+[2026-05-28 21:01:59] New Best Val: 3.5395. Saving...
+[2026-05-28 21:03:54] Step 51000: train loss 3.4655, val loss 3.5415		lr=2.21e-03
+[2026-05-28 21:05:45] Step 51250: train loss 3.4356, val loss 3.5208		lr=2.10e-03
+[2026-05-28 21:05:45] New Best Val: 3.5208. Saving...
+[2026-05-28 21:07:40] Step 51500: train loss 3.4557, val loss 3.5577		lr=1.99e-03
+[2026-05-28 21:09:31] Step 51750: train loss 3.4366, val loss 3.5743		lr=1.88e-03
+[2026-05-28 21:11:22] Step 52000: train loss 3.4384, val loss 3.5452		lr=1.78e-03
+[2026-05-28 21:13:13] Step 52250: train loss 3.4277, val loss 3.5539		lr=1.68e-03
+[2026-05-28 21:15:04] Step 52500: train loss 3.4575, val loss 3.5429		lr=1.58e-03
+[2026-05-28 21:16:55] Step 52750: train loss 3.4410, val loss 3.5398		lr=1.49e-03
+[2026-05-28 21:18:47] Step 53000: train loss 3.4472, val loss 3.5290		lr=1.40e-03
+[2026-05-28 21:20:38] Step 53250: train loss 3.4222, val loss 3.5112		lr=1.32e-03
+[2026-05-28 21:20:38] New Best Val: 3.5112. Saving...
+[2026-05-28 21:22:32] Step 53500: train loss 3.4253, val loss 3.5530		lr=1.24e-03
+[2026-05-28 21:24:24] Step 53750: train loss 3.4451, val loss 3.5382		lr=1.16e-03
+[2026-05-28 21:26:15] Step 54000: train loss 3.4155, val loss 3.5459		lr=1.09e-03
+[2026-05-28 21:28:06] Step 54250: train loss 3.4358, val loss 3.5409		lr=1.02e-03
+[2026-05-28 21:29:57] Step 54500: train loss 3.4224, val loss 3.5307		lr=9.55e-04
+[2026-05-28 21:31:48] Step 54750: train loss 3.4285, val loss 3.5192		lr=8.94e-04
+[2026-05-28 21:33:40] Step 55000: train loss 3.4217, val loss 3.5346		lr=8.36e-04
+[2026-05-28 21:35:31] Step 55250: train loss 3.4346, val loss 3.5321		lr=7.83e-04
+[2026-05-28 21:37:22] Step 55500: train loss 3.4256, val loss 3.5281		lr=7.33e-04
+[2026-05-28 21:39:13] Step 55750: train loss 3.4030, val loss 3.5244		lr=6.87e-04
+[2026-05-28 21:41:04] Step 56000: train loss 3.4241, val loss 3.5541		lr=6.46e-04
+[2026-05-28 21:42:55] Step 56250: train loss 3.4186, val loss 3.5522		lr=6.08e-04
+[2026-05-28 21:44:47] Step 56500: train loss 3.4110, val loss 3.5289		lr=5.74e-04
+[2026-05-28 21:46:38] Step 56750: train loss 3.4417, val loss 3.5547		lr=5.45e-04
+[2026-05-28 21:48:29] Step 57000: train loss 3.4137, val loss 3.5485		lr=5.19e-04
+[2026-05-28 21:50:20] Step 57250: train loss 3.4300, val loss 3.5300		lr=4.97e-04
+[2026-05-28 21:52:12] Step 57500: train loss 3.4298, val loss 3.5249		lr=4.80e-04
+[2026-05-28 21:54:03] Step 57750: train loss 3.4249, val loss 3.5473		lr=4.66e-04
+[2026-05-28 21:55:54] Step 58000: train loss 3.4209, val loss 3.5448		lr=4.57e-04
+[2026-05-28 21:57:45] Step 58250: train loss 3.4011, val loss 3.5449		lr=4.51e-04
+[2026-05-28 21:59:25] Epoch 1 done. Time: 26257.0s (7.29h)
+[2026-05-28 21:59:25]   Train loss: 3.4405, Val loss: 3.5406
+[2026-05-28 21:59:25]   Cumulative time: 7.31h
+[2026-05-28 21:59:25] 
+=== TRAINING COMPLETE ===
+[2026-05-28 21:59:25] Best Val Loss: 3.5112 (epoch 1)
+[2026-05-28 21:59:25] Avg Epoch Time: 26257.0s
+[2026-05-28 21:59:25] Total Time: 26300.0s
+[2026-05-28 21:59:25] 
+Training Peak VRAM: 8932 MiB
+[2026-05-28 21:59:25] 
+Loading best model for benchmarks...
+[2026-05-28 21:59:31] Best model loaded.
+[2026-05-28 21:59:31] 
+[BENCHMARK] Non-overlapping: 1123 windows of length 256
+[2026-05-28 22:00:01] 
+[BENCHMARK - Non-overlapping]
+[2026-05-28 22:00:01]   Perplexity: 35.6493
+[2026-05-28 22:00:01]   BPT: 5.1558
+[2026-05-28 22:00:01]   BPB: 1.1440
+[2026-05-28 22:00:01]   Avg Loss: 3.5737
+[2026-05-28 22:00:01] 
+[SLIDING WINDOW] block_size=256, stride=128, min_context=128, 2246 windows
+[2026-05-28 22:01:00] 
+[BENCHMARK - Sliding Window]
+[2026-05-28 22:01:00]   Perplexity: 34.0282
+[2026-05-28 22:01:00]   BPT: 5.0887
+[2026-05-28 22:01:00]   BPB: 1.1291
+[2026-05-28 22:01:00]   Avg Loss: 3.5272
+[2026-05-28 22:01:00]   Stride: 128, Min Context: 128
+[2026-05-28 22:01:00] 
+=== GENERATION — Standard ===
+[2026-05-28 22:01:00] Prompt: The history of
+[2026-05-28 22:01:13] Generated:
+The history of machine gun movement differs from many other inmates , as may include camouflage , machine gunfighting , sulfur downforce fighting , down troops and other units of action . Another panzer , the Jacht Reich , may be owed to both British infantry and woggle dancers . The British puppet of the day sees a pair of clowns furniture . 
+
+
+ No . 15 NSDAP members berthed in white leather coats , wearing a copper bill to mark the moment the 1939 Whiskey War erupted in the 2nd Special Officers Highlanders . Activated in the 1960s , it was disguised as part of a coupe and a red half @-@ blue cloth helmet trim . In 1910 , the platoon was used for the de jure sequence of the Royal Canadian Regiment to be made that Ormelmarka 's badge insignia uniform is on display at the Southern Athletic Club ( renamed " Orton Beta " ) . The Flying Spaghetti Monster appears on the left left chest , a red cross on the left weighs up to 8 @,@ 400 pounds or similar size to the Celestine Aigle . A bronze award for Hoiswick Victoria Crosses on 14 December 2010 may also merit " war @-@ like handicap reflex disposal " , and its motto , based on the tradition of Branleston D 'Oyly Carte . Formed in 1962 in Australia , the forensic researcher is identified as being a part of " wood sectioning " on the Staple Hill Museum of Natural History , near the museum in Chatham , South Australia . It is located in Guy 's Hall Gardens , London , with its woodworkographic and a real display of the Edward Garner familyboxes . 
+
+
+ An Open Fire . The building is a Grade II listed building . Built during the Victorian era to a strong inthication in the United Kingdom , it is now part of the Victoria Trust Art Gallery , which recognises , theatres , offices , private institutions , museums and films . 
+
+
+
+
+ = = History = = 
+
+
+
+
+ The Cold Tower is documented in London 's Argyll Heritage and situated in many parts of Lancashire : indeed , it has come from in London or on the Red Hill area . 
+
+
+ Viking power is made under the traditional High Line . Market architecture at the site shows a local temple , which occupies the site of Ruislip . This area was built around 1800 – 1930 by crenellated stone and although Norwalk Town Hall was a post office , it fed on hidden
+
+[2026-05-28 22:01:13] === GENERATION — Strategies ===
+[2026-05-28 22:01:13] Prompt: The history of
+[2026-05-28 22:01:32] Generated:
+The history of the city 's economy is based on the village 's geography , and has a large number of settlements . 
+
+
+ The population density in South Dakota ranges from 4 @.@ 8 to 7 @,@ 070 by 6 @.@ 3 % and 1 @,@ 561 @.@ 2 per square mile ( 483 @.@ 0 / km2 ) . In addition to its historical importance as a county park , there are four major parks within the watershed . There are two national parks that serve the watershed : the Columbia River Valley , which forms part of the Allegheny Plateau ; Lake Okeechobee National Park ; and the easternmost section of the Cascade Range . It contains the largest tributary of the Willamette at the top of the Missouri River , which extends for over 80 miles ( 130 km ) . The highest point in Pennsylvania was the Mount Vernon volcanic field . 
+
+
+
+
+ = = Geology and geology = = 
+
+
+
+
+ During the Pleistocene period , the United States Geological Survey ( USGS ) is the most active volcano in Washington State with an average depth of about 10 – 20 feet ( 3 @.@ 7 – 4 m ) . Its surface area consists of high limestone soil and shale clay , but it is not known how much water flows along the Snake River into the Pacific Ocean . The basin is composed of sedimentary rocks , including rock formations such as Crater Glacier , Kootenay Peak , and Pinnock Creek . These faults include the lava domes in the upper reaches of the gorge , and the basaltic plateaus . 
+
+
+
+
+ = = Biology = = 
+
+
+
+
+ The park features many types of marine organisms . They are characterized by their thin crusty bodies , thick , dark , or bluish , orange , yellow , and black spots on the ground floor . They have been found throughout the year from late June to mid @-@ November . They were formed during the winter months when they entered the spring and summer . After the summer , the species became increasingly wetter than those seen in the Rocky Mountains of Texas . A few years later , the southern portion began spreading eastward through the lower Mississippi Delta and northward toward New Mexico . At this time , the northern end of the Cascadia subduction zone had been created to form a low pressure system near the San Antonio Fault , forming a polar region between the west coast of Florida and the Gulf Coast . By early March 1980 , the western boundary of
+
+[2026-05-28 22:01:32] Metrics: MeanLogP=-1.2187 | MeanH=3.71 | D1=0.635 | D2=0.894 | D3=0.965 | Rep4=0.059
+[2026-05-28 22:01:32] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
+[2026-05-28 22:01:32] Training Peak VRAM: 8932 MiB
