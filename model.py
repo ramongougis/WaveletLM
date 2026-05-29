@@ -1896,9 +1896,10 @@ class WaveletLMBlock(nn.Module):
             apply_residual = self.mixer_recurrence_residuals and (N * K > 1)
             # Input injection ("memory channel"): when the recurrence residual
             # is active, re-add the initial post-FWHT spectrum X0 at the input
-            # of every mixer application (every N and every K), in addition to
-            # the running state. This anchors the iteration to the input —
-            #     X^t = LN( (X^{t-1} + X0) + m(X^{t-1} + X0) )
+            # of every mixer application *after the first*, in addition to the
+            # running state. This anchors the iteration to the input —
+            #     step 1:   X^1 = LN( X0 + m(X0) )              (no injection)
+            #     step t>1: X^t = LN( (X^{t-1}+X0) + m(X^{t-1}+X0) )
             # turning a shared-weight residual stack (which drifts and
             # regresses past N=2) into an input-anchored iteration toward a
             # fixed point. X0 accumulates in the stream as a persistent memory
@@ -1925,9 +1926,16 @@ class WaveletLMBlock(nn.Module):
                         step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
                     # Inject the initial spectrum X0 into this step's input —
                     # feeds the mixer, the gate routing, and the residual base.
+                    # Skipped on the very first mixer application: there the
+                    # running state already equals X0, so adding it again would
+                    # double-count (2·X0). Injection therefore starts at step 2.
                     # When residual is off (apply_residual False), step_spec is
                     # just the running state, preserving baseline behavior.
-                    step_spec = current_spec + input_spec if apply_residual else current_spec
+                    is_first_step = (n_idx == 0 and bank_idx == 0)
+                    if apply_residual and not is_first_step:
+                        step_spec = current_spec + input_spec
+                    else:
+                        step_spec = current_spec
                     # Reuse cached gates on cycles after the first; otherwise
                     # recompute gate routing from this step's (injected) input.
                     reuse_cache = cache_gate and n_idx > 0
