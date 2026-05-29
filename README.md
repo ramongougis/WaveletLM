@@ -1144,6 +1144,37 @@ Auto-conditions: active only when `N > 1` (needs cycles to amortize over) and `u
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Long-Range Context: Multi-Pole SSM + Truncated BPTT
+
+Two attention-free upgrades targeting **cross-window** long-range dependency — the architecture's thin spot. Within a 256-token block the lifting wavelet already couples tokens ~128 apart (multi-scale, O(n log n)); beyond the block, the only carrier is the decompose-bypass cross-window state, which today is (a) a first-moment causal mean, (b) `.detach()`ed so it's never trained across windows, (c) a single per-channel vector. Plan: [plans/long_range_ssm_bptt.md](plans/long_range_ssm_bptt.md). Both default off; `false` = byte-identical to T4.
+
+**#1 — Multi-pole diagonal SSM (`decompose_bypass_ssm`).** Replaces the cumulative-mean context summary with a bank of P parallel EMAs at learned per-channel decay rates (S4D-style diagonal SSM) — the existing single-EMA path (`decompose_bypass_ema`) is the P=1 case. Decays `a = exp(-softplus(θ))`, init spanning timescales τ ∈ [1, 256]; output `o = Σ_p G·h_p`, init `G=1/P` so it starts ≈ the multi-scale mean it replaces. ~2·C·P ≈ 16K params at P=4. By default the scan is **within-window**.
+
+**#1b — Cross-window SSM carry (`decompose_bypass_ssm_cross_window`).** Carries the final pole state `h_{T-1} ∈ [B,C,P]` across block boundaries so the long poles integrate beyond the 256-token window — the genuine cross-block long-range mechanism. (The within-window SSM is a *confounded* proxy for it: within a block the SSM competes with the wavelet's own multi-scale mixing, so a flat within-window result is ambiguous; cross-block, nothing else reaches.) Block-local carry, **forward-only in v1** — detached each window, so it propagates multi-timescale memory but isn't BPTT-trained through the pole state (that's a follow-up). Requires sequential batching + gradient checkpointing off.
+
+**#2 — Truncated BPTT across windows (`decompose_bypass_bptt`).** Stops detaching the cross-window [B,C] state every window; retains the graph across the grad-accum span (consecutive windows) and backprops once, so the model is *trained* to write useful long-range info into the carried state. Sequential-mode only (random windows are unrelated → auto-disabled with a log line). Memory ~span× (holds the span's activations at once).
+
+**Ablation (T4 base, 1 epoch, sequential, `grad_accum=2`, MBS=8, eff. batch 16; decision rule clear T4 best val 3.5157 by > 0.0015).** All six share the batch config so only the SSM/x-window/BPTT flags vary — `grad_accum=2` is required because BPTT's span = grad_accum, so the default GA=1 would make BPTT a single-window no-op. The reference is the sequential GA=2 baseline (LR0), not the random-batched T4.
+
+| Variant | SSM | x-win | BPTT | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run Log |
+|---|---|---|---|---|---|---|---|---|
+| T4 baseline (sequential) | ✗ | ✗ | ✗ | queued | queued | queued | (ref) | queued |
+| + SSM (within-window) | ✓ | ✗ | ✗ | queued | queued | queued | — | queued |
+| + BPTT | ✗ | ✗ | ✓ | queued | queued | queued | — | queued |
+| + SSM + BPTT | ✓ | ✗ | ✓ | queued | queued | queued | — | queued |
+| + SSM cross-window | ✓ | ✓ | ✗ | queued | queued | queued | — | queued |
+| + SSM cross-window + BPTT | ✓ | ✓ | ✓ | queued | queued | queued | — | queued |
+
+**What each tests:** within-window SSM — does a multi-timescale summary beat the first moment (confounded by wavelet redundancy)? BPTT — does *training* the mean cross-window state help? cross-window SSM — does carrying multi-timescale memory across blocks help (the non-redundant long-range test)? The stacked rows probe whether the axes compound. If even the full stack is flat, cross-window dependency isn't where WT103 perplexity lives at this scale (a clean negative result). The reference is a **sequential** T4 (the cross-window state only does anything in sequential mode), not the random-batched T4 number.
+
+**Findings:**
+
+(pending runs)
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Wavelet Sparsity Probe & Wavelet Shrinkage
 
 Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.

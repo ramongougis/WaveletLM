@@ -1273,6 +1273,59 @@ def _compute_data_dependent_ema(x: torch.Tensor,
 
     return B_out.to(x.dtype)
 
+@torch.compiler.disable
+def _compute_multipole_ssm(x: torch.Tensor,
+                           decay: torch.Tensor,
+                           mix: torch.Tensor,
+                           prev_state: torch.Tensor = None):
+    """Multi-pole diagonal SSM summary (S4D-style) for the decompose-bypass
+    context. P parallel EMAs with learned, time-invariant per-channel decay
+    rates, combined per channel — a strict generalization of
+    `_compute_data_dependent_ema` (which is the P=1, data-dependent case) to a
+    bank of poles spanning multiple timescales:
+
+        a_{c,p}   = decay[c, p]                         in (0, 1)
+        h_{t,c,p} = a * h_{t-1,c,p} + (1 - a) * x_{t,c}  (unit-DC-gain EMA)
+        o_{t,c}   = sum_p mix[c, p] * h_{t,c,p}
+
+    Args:
+        x:     [B, T, C]
+        decay: [C, P] per-channel per-pole decay in (0, 1)
+        mix:   [C, P] per-channel per-pole output weights
+        prev_state: optional [B, C, P] carried pole state h_{-1} (cross-window).
+    Returns:
+        (out [B, T, C], last_state [B, C, P]).
+
+    Same log-depth associative scan and fp32 accumulation as the single-pole
+    EMA; batched over the pole axis P. Decays are time-invariant, so the scan's
+    A factor is constant over time (a special case of the general scan).
+    """
+    B, T, C = x.shape
+    P = decay.shape[1]
+    x_f32 = x.float()
+    a = decay.to(torch.float32).view(1, 1, C, P)            # [1,1,C,P]
+    Bo = (1.0 - a) * x_f32.unsqueeze(-1)                     # [B,T,C,P]
+    A = a.expand(B, T, C, P).clone()
+    if prev_state is not None:
+        Bo = Bo.clone()
+        Bo[:, 0] = Bo[:, 0] + a[:, 0] * prev_state.float()  # h_0 = a*h_{-1} + (1-a)x_0
+
+    step = 1
+    while step < T:
+        new_A = A.clone()
+        new_B = Bo.clone()
+        A_shifted = A[:, :T - step]
+        B_shifted = Bo[:, :T - step]
+        new_A[:, step:] = A[:, step:] * A_shifted
+        new_B[:, step:] = A[:, step:] * B_shifted + Bo[:, step:]
+        A = new_A
+        Bo = new_B
+        step *= 2
+
+    out = torch.einsum('btcp,cp->btc', Bo, mix.to(torch.float32))
+    last_state = Bo[:, -1]                                   # [B,C,P]
+    return out.to(x.dtype), last_state
+
 # ==============================================================================
 # 7. WaveletLM BLOCK
 # ==============================================================================
@@ -1292,6 +1345,9 @@ class WaveletLMBlock(nn.Module):
         dtype=None,
         decompose_bypass: bool = True,
         decompose_bypass_ema: bool = False,
+        decompose_bypass_ssm: bool = False,
+        decompose_bypass_ssm_poles: int = 4,
+        decompose_bypass_ssm_cross_window: bool = False,
         wavelet_mode: str = "lifting",
         lifting_hidden_mult: int = 1,
         lifting_init: str = "haar",
@@ -1515,6 +1571,44 @@ class WaveletLMBlock(nn.Module):
                 with torch.no_grad():
                     self.ema_gate.weight.zero_()   # start with α = σ(b) = σ(0) = 0.5
                     self.ema_gate.bias.zero_()
+
+            # Multi-pole diagonal SSM: P parallel EMAs at learned per-channel
+            # decay rates, replacing the cumulative-mean / single-EMA summary.
+            # decay a = exp(-softplus(theta)) in (0,1); output o = sum_p G·h_p.
+            self.decompose_bypass_ssm = decompose_bypass_ssm
+            if self.decompose_bypass_ssm:
+                P = int(decompose_bypass_ssm_poles)
+                self.ssm_poles = P
+                # Init P poles at geometrically-spaced timescales tau in [1, T~256]
+                # via decay a = exp(-1/tau); theta = softplus^{-1}(-ln a).
+                taus = torch.logspace(0, math.log10(256.0), P)
+                a_targets = torch.exp(-1.0 / taus).clamp(1e-4, 1 - 1e-4)
+                theta_per_pole = torch.log(torch.expm1(-torch.log(a_targets)))
+                self.ssm_theta = nn.Parameter(
+                    theta_per_pole.view(1, P).expand(self.C, P).contiguous().to(device=device, dtype=dtype)
+                )
+                # Output mix init uniform (1/P): start as an average of the
+                # pole states ≈ the multi-scale running mean it replaces.
+                self.ssm_G = nn.Parameter(
+                    torch.full((self.C, P), 1.0 / P, device=device, dtype=dtype)
+                )
+                # Cross-window pole-state carry: when on, the final pole state
+                # h_{T-1} [B,C,P] is carried across window boundaries so the
+                # long poles integrate beyond the 256-token block. v1 carry is
+                # forward-only (detached each window) — a multi-timescale
+                # recurrent memory that propagates information but isn't trained
+                # across windows via BPTT (that's a follow-up). Requires
+                # sequential batching to be meaningful, and gradient
+                # checkpointing OFF (the carry is mutated inside forward, which
+                # a checkpoint recompute would corrupt).
+                self.decompose_bypass_ssm_cross_window = decompose_bypass_ssm_cross_window
+            else:
+                self.decompose_bypass_ssm_cross_window = False
+        else:
+            self.decompose_bypass_ssm = False
+            self.decompose_bypass_ssm_cross_window = False
+        # Block-local cross-window SSM pole-state carry [B,C,P] (None until set).
+        self._ssm_carry = None
 
         # Spectral mixers: one per scale, optionally stacked with mixer_depth.
         # In subband mode, S = 3*b_levels + (L - b_levels) + 1 (more sub-bands
@@ -1820,7 +1914,27 @@ class WaveletLMBlock(nn.Module):
         gate_bias_scales = None
 
         if self.decompose_bypass:
-            if self.decompose_bypass_ema:
+            if self.decompose_bypass_ssm:
+                # Multi-pole diagonal SSM summary: P EMAs at learned timescales,
+                # combined per channel. With cross-window carry off, the scan is
+                # seeded from zero each window (cross-window memory then flows
+                # through the prev_state / cross_layer_mix path below). With it
+                # on, the scan is seeded from the previous window's final pole
+                # state so the long poles integrate across block boundaries.
+                decay = torch.exp(-F.softplus(self.ssm_theta))  # [C,P] in (0,1)
+                seed = None
+                if (self.decompose_bypass_ssm_cross_window
+                        and self._ssm_carry is not None
+                        and self._ssm_carry.shape[0] == x.shape[0]):
+                    seed = self._ssm_carry
+                current_running_mean, ssm_last = _compute_multipole_ssm(
+                    x, decay, self.ssm_G, prev_state=seed,
+                )
+                if self.decompose_bypass_ssm_cross_window:
+                    # Forward-only carry (detached): propagates multi-timescale
+                    # memory across windows without cross-window BPTT.
+                    self._ssm_carry = ssm_last.detach()
+            elif self.decompose_bypass_ema:
                 current_running_mean = _compute_data_dependent_ema(
                     x, self.ema_gate.weight, self.ema_gate.bias,
                 )
@@ -2332,6 +2446,9 @@ class WaveletLM(nn.Module):
                 device=device,
                 decompose_bypass=config.get("decompose_bypass", True),
                 decompose_bypass_ema=config.get("decompose_bypass_ema", False),
+                decompose_bypass_ssm=config.get("decompose_bypass_ssm", False),
+                decompose_bypass_ssm_poles=config.get("decompose_bypass_ssm_poles", 4),
+                decompose_bypass_ssm_cross_window=config.get("decompose_bypass_ssm_cross_window", False),
                 wavelet_mode=wavelet_mode,
                 lifting_hidden_mult=lifting_hidden_mult,
                 lifting_init=lifting_init,
@@ -2440,11 +2557,22 @@ class WaveletLM(nn.Module):
         self.decompose_bypass_cross_window = config.get("decompose_bypass_cross_window", True)
         self._persistent_semantic_state = None
         self._persistent_token_count = 0
+        # Truncated BPTT across windows: when _semantic_keep_graph is True, the
+        # carried cross-window state is NOT detached, so gradient flows back
+        # through prior windows. The training loop sets this within a BPTT span
+        # (sequential mode only) and detaches at the span boundary. Default
+        # False = identical to before (detach every window).
+        self.decompose_bypass_bptt = config.get("decompose_bypass_bptt", False)
+        self._semantic_keep_graph = False
 
     def reset_semantic_state(self):
         """Reset cross-window semantic state (call at start of new document/sequence)."""
         self._persistent_semantic_state = None
         self._persistent_token_count = 0
+        # Also clear any block-local cross-window SSM pole-state carry.
+        for layer in self.layers:
+            if getattr(layer, '_ssm_carry', None) is not None:
+                layer._ssm_carry = None
 
     def reset_fast_weights(self):
         """Reset FwPKM deltas across all layers."""
@@ -2551,9 +2679,15 @@ class WaveletLM(nn.Module):
                 logits_t = self.lm_head(self.dropout_lm(x_ln))
                 all_logits.append(logits_t)
 
-        # Update persistent state for next window
+        # Update persistent state for next window. Detach by default so the
+        # graph doesn't span windows; under truncated BPTT (_semantic_keep_graph
+        # set by the training loop within a span), retain the graph so gradient
+        # flows back through prior windows, and detach only at the span boundary.
         if self.decompose_bypass_cross_window and current_state is not None:
-            self._persistent_semantic_state = current_state[:, -1, :].detach()
+            carried = current_state[:, -1, :]
+            if not (self.decompose_bypass_bptt and self._semantic_keep_graph):
+                carried = carried.detach()
+            self._persistent_semantic_state = carried
             self._persistent_token_count += T
 
         # Final logits (always from last iteration)

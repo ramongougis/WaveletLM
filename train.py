@@ -1179,6 +1179,25 @@ def train():
         epoch_times = []
         overall_start_time = time.time()
 
+        # Truncated BPTT across windows (decompose-bypass cross-window state).
+        # Only meaningful in sequential mode — random batching links unrelated
+        # windows, so BPTT through them is noise. Span = grad_accum consecutive
+        # windows (the accumulation cycle); graph is retained across the span
+        # and truncated at each optimizer step.
+        _base_model = model.module if hasattr(model, 'module') else model
+        bptt_enabled = config.get('decompose_bypass_bptt', False)
+        if bptt_enabled and not config.get('sequential_blocks', False):
+            logger.log("[BPTT] decompose_bypass_bptt=true requires sequential_blocks=true "
+                       "— disabling BPTT (random windows are unrelated).")
+            bptt_enabled = False
+        _bptt_span_cfg = config.get('decompose_bypass_bptt_span', 0)
+        if bptt_enabled and _bptt_span_cfg not in (0, config.get('grad_accum', 1)):
+            logger.log(f"[BPTT] decompose_bypass_bptt_span={_bptt_span_cfg} unsupported in v1 "
+                       f"(span is tied to grad_accum={config.get('grad_accum', 1)}); using grad_accum.")
+        if bptt_enabled:
+            logger.log(f"[BPTT] Truncated BPTT enabled: span = grad_accum "
+                       f"({config.get('grad_accum', 1)} windows x block_size).")
+
         if device == 'cuda':
             torch.cuda.reset_peak_memory_stats()
 
@@ -1200,20 +1219,47 @@ def train():
                 for opt in optimizers:
                     opt.zero_grad(set_to_none=True)
                 loss_accum = 0.0
+                ga = config.get('grad_accum', 1)
 
-                for micro in range(config.get('grad_accum', 1)):
-                    xb, yb = get_batch('train')
-
-                    with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
-                        _, loss = model(xb, yb)
-                        loss = loss / config.get('grad_accum', 1)
-
-                    loss_accum += loss.detach().item()
-
+                if bptt_enabled:
+                    # Truncated BPTT: retain the cross-window state's graph
+                    # across the grad_accum span, sum the (scaled) losses, and
+                    # backward once so gradient flows back through prior windows.
+                    # Then truncate (detach) at the optimizer-step boundary.
+                    # Holds ga windows' activations at once (memory ~ga x).
+                    _base_model._semantic_keep_graph = True
+                    span_losses = []
+                    for micro in range(ga):
+                        xb, yb = get_batch('train')
+                        with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
+                            _, loss = model(xb, yb)
+                            loss = loss / ga
+                        span_losses.append(loss)
+                        loss_accum += loss.detach().item()
+                    total_loss = sum(span_losses)
                     if scaler.is_enabled():
-                        scaler.scale(loss).backward()
+                        scaler.scale(total_loss).backward()
                     else:
-                        loss.backward()
+                        total_loss.backward()
+                    # Truncate the graph immediately after the span's backward.
+                    _base_model._semantic_keep_graph = False
+                    if _base_model._persistent_semantic_state is not None:
+                        _base_model._persistent_semantic_state = \
+                            _base_model._persistent_semantic_state.detach()
+                else:
+                    for micro in range(ga):
+                        xb, yb = get_batch('train')
+
+                        with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
+                            _, loss = model(xb, yb)
+                            loss = loss / ga
+
+                        loss_accum += loss.detach().item()
+
+                        if scaler.is_enabled():
+                            scaler.scale(loss).backward()
+                        else:
+                            loss.backward()
 
                 # Gradient clipping
                 if scaler.is_enabled():

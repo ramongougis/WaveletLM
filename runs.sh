@@ -363,6 +363,75 @@ echo "===   watch best val stays within 0.0015 of the no-cache run."
 echo "============================================================"
 
 
+# ---- Long-range context: multi-pole SSM + truncated BPTT --------------------
+# Two attention-free upgrades to the cross-window decompose-bypass context.
+# All four runs use sequential_blocks=true — the cross-window state (and BPTT
+# through it) is only meaningful in corpus order. The reference is therefore a
+# SEQUENTIAL T4, NOT the random-batched T4 from the recurrence sections.
+#   #1 decompose_bypass_ssm   : multi-pole diagonal SSM summary (P EMAs)
+#   #2 decompose_bypass_bptt  : retain cross-window graph across grad_accum span
+# Ablation order: SSM vs baseline, BPTT vs baseline, then both. Decision rule:
+# clear T4 best val 3.5157 by > 0.0015.
+
+# All four use grad_accum=2 (so BPTT span = 2 windows = one trained
+# cross-window link per step; with the BASE grad_accum=1 the span would be a
+# single window and BPTT a no-op). All four share this batch config so only the
+# SSM/BPTT flags vary. Effective batch = MBS(8) x GA(2) = 16.
+
+# LR0: sequential T4 baseline — the honest reference for this section.
+run_ablation "T4_seq_baseline_1ep T4 sequential baseline for long-range (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true}' \
+    "T4_seq_baseline_1ep: T4 sequential, GA=2 (no SSM, no BPTT); reference for the long-range ablations"
+
+# LR1: + multi-pole SSM summary (P=4).
+run_ablation "T4_seq_ssm_1ep T4 sequential + multi-pole SSM (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4}' \
+    "T4_seq_ssm_1ep: + multi-pole diagonal SSM (P=4) replacing the cumulative-mean context summary"
+
+# LR2: + truncated BPTT across windows (span = grad_accum = 2).
+run_ablation "T4_seq_bptt_1ep T4 sequential + truncated BPTT (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_bptt": true}' \
+    "T4_seq_bptt_1ep: + truncated BPTT (span=2 windows; trains the mean cross-window state)"
+
+# LR3: + both SSM and BPTT — richer state, trained to be useful.
+run_ablation "T4_seq_ssm_bptt_1ep T4 sequential + SSM + BPTT (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_bptt": true}' \
+    "T4_seq_ssm_bptt_1ep: + multi-pole SSM AND truncated BPTT (span=2; the full long-range bet)"
+
+# LR4: + cross-window SSM — carry the pole state across block boundaries so the
+# long poles integrate beyond 256 tokens (forward-only carry in v1). Tests the
+# genuine cross-block long-range mechanism that the within-window SSM (LR1) is
+# only a confounded proxy for (within-window competes with the wavelet).
+run_ablation "T4_seq_ssm_xwin_1ep T4 sequential + cross-window SSM (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_ssm_cross_window": true}' \
+    "T4_seq_ssm_xwin_1ep: + multi-pole SSM with cross-window pole-state carry (multi-timescale memory across blocks)"
+
+# LR5: + cross-window SSM AND BPTT — the full long-range stack.
+run_ablation "T4_seq_ssm_xwin_bptt_1ep T4 sequential + cross-window SSM + BPTT (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_ssm_cross_window": true, "decompose_bypass_bptt": true}' \
+    "T4_seq_ssm_xwin_bptt_1ep: + cross-window SSM AND truncated BPTT (full long-range stack)"
+
+echo ""
+echo "============================================================"
+echo "=== LONG-RANGE CONTEXT QUEUE (SSM + BPTT, 1ep each, sequential)"
+echo "==="
+echo "=== Reference: T4_seq_baseline_1ep (sequential T4, no SSM/BPTT)."
+echo "===   1) T4_seq_baseline_1ep      — sequential T4 reference"
+echo "===   2) T4_seq_ssm_1ep           — + within-window multi-pole SSM (P=4)"
+echo "===   3) T4_seq_bptt_1ep          — + truncated BPTT"
+echo "===   4) T4_seq_ssm_bptt_1ep      — + within-window SSM + BPTT"
+echo "===   5) T4_seq_ssm_xwin_1ep      — + cross-window SSM (pole-state carry)"
+echo "===   6) T4_seq_ssm_xwin_bptt_1ep — + cross-window SSM + BPTT (full stack)"
+echo "=== Decision rule: > 0.0015 nat improvement on best val vs sequential T4."
+echo "============================================================"
+
+
 # # === Legacy (commented-out) version =========================================
 # # Prior MIXER RECURRENCE QUEUE block (T3 + N x K sweep, 1ep each)
 # echo "=== (ALL RUNS COMMENTED OUT — Adagrad unstable at N>=5; pivoting to AdamW)"
