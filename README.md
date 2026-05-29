@@ -1098,7 +1098,7 @@ The first step is the plain residual (the running state already equals X⁰ ther
 | Run | N | K | Mode | Total apps | BPB sliding | PPL sliding | Best val | Δ vs T4 | no-resid BPB | Δ resid | Run Log |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | T4 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1311 | 34.24 | 3.5157 | (ref) | 1.1311 | — | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| + resid N=1 K=2 | 1 | 2 | distinct | 2 | queued | queued | queued | — | 1.1249 | queued | queued |
+| + resid N=1 K=2 | 1 | 2 | distinct | 2 | 1.1262 | 33.72 | 3.4966 | −0.0049 | 1.1249 | +0.0013 | [link](logs/wikitext-103_2026-05-29_09-36-18/log.txt) |
 | + resid N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | 1.1279 | queued | queued |
 | + resid N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | 1.1227 | queued | queued |
 | + resid N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | 1.1291 | queued | queued |
