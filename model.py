@@ -1894,6 +1894,19 @@ class WaveletLMBlock(nn.Module):
             # layers can cause representation collapse over many steps.
             # Preserves baseline (N=K=1) behavior when no recurrence is active.
             apply_residual = self.mixer_recurrence_residuals and (N * K > 1)
+            # Input injection ("memory channel"): when the recurrence residual
+            # is active, re-add the initial post-FWHT spectrum X0 at the input
+            # of every mixer application (every N and every K), in addition to
+            # the running state. This anchors the iteration to the input —
+            #     X^t = LN( (X^{t-1} + X0) + m(X^{t-1} + X0) )
+            # turning a shared-weight residual stack (which drifts and
+            # regresses past N=2) into an input-anchored iteration toward a
+            # fixed point. X0 accumulates in the stream as a persistent memory
+            # channel; the per-step LayerNorm rescales the magnitude. Folded
+            # into apply_residual (no separate flag): "residual on" now means
+            # the full input-anchored residual. Earlier runs had residual on
+            # but lacked this injection — see README "Recurrence (no residual)".
+            input_spec = stacked_spec if apply_residual else None
             # Gate caching: compute each bank's gate once on the first cycle
             # (n_idx == 0) and reuse it for cycles 2..N, skipping the W_gate
             # matmul + routing einsum thereafter. Approximation — the gate no
@@ -1910,17 +1923,22 @@ class WaveletLMBlock(nn.Module):
                         step_mixers = self.scale_mixers
                     else:
                         step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
+                    # Inject the initial spectrum X0 into this step's input —
+                    # feeds the mixer, the gate routing, and the residual base.
+                    # When residual is off (apply_residual False), step_spec is
+                    # just the running state, preserving baseline behavior.
+                    step_spec = current_spec + input_spec if apply_residual else current_spec
                     # Reuse cached gates on cycles after the first; otherwise
-                    # recompute gate routing from the current spectral state.
+                    # recompute gate routing from this step's (injected) input.
                     reuse_cache = cache_gate and n_idx > 0
                     if self.cross_scale_gating and not reuse_cache:
                         routed_gate_input = torch.einsum(
-                            'rs,btsd->btrd', self.scale_routing, current_spec)
+                            'rs,btsd->btrd', self.scale_routing, step_spec)
                     else:
                         routed_gate_input = None
                     mixed_by_scale = []
                     for s in range(S):
-                        Xs = current_spec[:, :, s, :]
+                        Xs = step_spec[:, :, s, :]
                         if reuse_cache:
                             Ys = step_mixers[s](Xs, cached_gate=gate_cache[bank_idx][s])
                         elif cache_gate:

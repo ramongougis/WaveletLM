@@ -258,73 +258,81 @@ benchmark_only_run() {
 #   wavelet_decomp_norm=true, wavelet_recon_norm=true,
 #   lr=0.02250, min_lr=4.50e-4
 
-# Run R2b: N=1, K=2 (diversity at depth 1 — clean ablation). Two distinct
-# banks, 2 apps, +58.85M params. Paired with N=2 K=1 (2 apps, shared bank,
-# +0 params): the BPB gap between them is the pure value of parameter
-# diversity at fixed compute. All three (N=2 K=1, N=2 K=2, N=1 K=2) now run
-# under the N*K>1 inter-step norm, so the comparison is apples-to-apples.
-run_ablation "T4_recur_N1_K2_1ep T4 + mixer recurrence N=1 K=2 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 1, "mixer_recurrence_distinct_mixer_count": 2}' \
-    "T4_recur_N1_K2_1ep: 2 distinct banks at depth 1 (2 apps, +58.85M params); vs N=2 K=1 isolates parameter diversity at fixed compute (~5.35h)"
+# === WITH-RESIDUAL (input-anchored) sweep ===================================
+# These re-run the recurrence configs under the corrected residual: the
+# initial post-FWHT spectrum X0 is re-injected at every mixer step's input
+# (model.py — folded into mixer_recurrence_residuals, which is already true),
+#     X^t = LN( (X^{t-1} + X0) + m(X^{t-1} + X0) )
+# anchoring the iteration to the input instead of letting a shared-weight
+# residual stack drift. The earlier (no-residual) sweep showed depth N>2
+# REGRESSES; the hypothesis here is that input anchoring rescues depth, so
+# N=5/10/20 are back in scope (not cancelled). Renamed _resid so logs don't
+# conflate with the historical no-injection runs. mixer_recurrence_residuals
+# set explicitly (= true) to mark intent though it is the config default.
 
-# Run R1: N=2, K=1 (shared) — cheapest canary.
-run_ablation "T4_recur_N2_K1_1ep T4 + mixer recurrence N=2 K=1 (1ep)" \
+# Run F0: N=1, K=2 (diversity at depth 1) — re-run with input injection.
+run_ablation "T4_recur_resid_N1_K2_1ep T4 recurrence N=1 K=2 + input-anchored residual (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1}' \
-    "T4_recur_N2_K1_1ep: T4 + mixer recurrence (N=2 steps, K=1 shared bank; cheapest canary at ~1.55x wall-clock, ~7.4h on A5000)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 1, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N1_K2_1ep: N=1 K=2 with input-anchored residual; vs no-residual N=1 K=2 (1.1249) (~5.7h)"
 
-# Run R2: N=2, K=2 (full distinct at N=2).
-run_ablation "T4_recur_N2_K2_1ep T4 + mixer recurrence N=2 K=2 (1ep)" \
+# Run F1: N=2, K=1 (shared) — re-run with input injection.
+run_ablation "T4_recur_resid_N2_K1_1ep T4 recurrence N=2 K=1 + input-anchored residual (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2}' \
-    "T4_recur_N2_K2_1ep: T4 + mixer recurrence (N=2 outer x K=2 banks = 4 apps, +1x mixer params vs T4; ~12.7h on A5000)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N2_K1_1ep: N=2 K=1 with input-anchored residual; vs no-residual N=2 K=1 (1.1279) (~5.5h)"
 
-# Run R3: N=5, K=1 (shared) — first depth canary; check that wavelet norms
-# actually rescue what NaN'd in the partial Adagrad sweep.
-run_ablation "T4_recur_N5_K1_1ep T4 + mixer recurrence N=5 K=1 (1ep)" \
+# Run F2: N=2, K=2 — re-run with input injection.
+run_ablation "T4_recur_resid_N2_K2_1ep T4 recurrence N=2 K=2 + input-anchored residual (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1}' \
-    "T4_recur_N5_K1_1ep: T4 + mixer recurrence (N=5 steps, K=1 shared bank; ~3.2x wall-clock, ~15.3h on A5000)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N2_K2_1ep: N=2 K=2 with input-anchored residual; vs no-residual N=2 K=2 (1.1227, current best) (~6.8h)"
 
-# Run R4: N=5, K=2 (cyclic — 2 banks rotating across 5 steps).
-run_ablation "T4_recur_N5_K2_1ep T4 + mixer recurrence N=5 K=2 (1ep)" \
+# Run F3: N=5, K=1 — depth-rescue test. No-residual N=5 K=1 regressed to 1.1291
+# (worse than N=2 K=1); does input anchoring let depth help instead of hurt?
+run_ablation "T4_recur_resid_N5_K1_1ep T4 recurrence N=5 K=1 + input-anchored residual (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2}' \
-    "T4_recur_N5_K2_1ep: T4 + mixer recurrence (N=5 outer x K=2 banks = 10 apps, cyclic m0,m1 repeated 5x; +1x mixer params; ~28.4h on A5000)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N5_K1_1ep: N=5 K=1 with input-anchored residual; depth-rescue test vs no-residual N=5 K=1 (1.1291) (~7.3h)"
 
-# Run R6: N=10, K=1 (shared, substantive depth).
-run_ablation "T4_recur_N10_K1_1ep T4 + mixer recurrence N=10 K=1 (1ep)" \
+# Run F4: N=5, K=2 (cyclic) — re-run with input injection.
+run_ablation "T4_recur_resid_N5_K2_1ep T4 recurrence N=5 K=2 + input-anchored residual (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1}' \
-    "T4_recur_N10_K1_1ep: T4 + mixer recurrence (N=10 steps, K=1 shared bank; ~5.95x wall-clock, ~28.4h on A5000)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N5_K2_1ep: N=5 K=2 with input-anchored residual; vs no-residual N=5 K=2 (1.1275) (~10.4h)"
 
-# Run R7: N=20, K=1 (shared, deep). Conditional canary for "does it keep
-# climbing?"; if N=10 already plateaus/regresses, skip this one (~54.7h).
-run_ablation "T4_recur_N20_K1_1ep T4 + mixer recurrence N=20 K=1 (1ep)" \
+# Run F5: N=10, K=1 — deep-rescue probe. Only worth it if F3 (N=5) shows depth
+# now helps under anchoring; otherwise cancel.
+run_ablation "T4_recur_resid_N10_K1_1ep T4 recurrence N=10 K=1 + input-anchored residual (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1}' \
-    "T4_recur_N20_K1_1ep: T4 + mixer recurrence (N=20 steps, K=1 shared bank; ~11.45x wall-clock, ~54.7h on A5000 — skip if N=10 plateaus)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N10_K1_1ep: N=10 K=1 with input-anchored residual; deep-rescue probe (~9.9h, cancel if N=5 anchored still regresses)"
+
+# Run F6: N=20, K=1 — deepest probe. Only if F5 keeps improving.
+run_ablation "T4_recur_resid_N20_K1_1ep T4 recurrence N=20 K=1 + input-anchored residual (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+    "T4_recur_resid_N20_K1_1ep: N=20 K=1 with input-anchored residual; deepest probe (~15.7h, cancel if N=10 anchored plateaus)"
 
 
 echo ""
 echo "============================================================"
-echo "=== MIXER RECURRENCE QUEUE (T4 + N x K sweep, 1ep each)"
+echo "=== MIXER RECURRENCE QUEUE — WITH INPUT-ANCHORED RESIDUAL (1ep each)"
 echo "==="
-echo "=== All runs build on T4 (= T3 + wavelet norms + lr=0.02250)."
-echo "===   Reference: T4 baseline best val 3.5157 (BPB 1.1311) — see"
-echo "===   'Recurrence with Best Optimizer (Adagrad)' section in README."
-echo "===   Decision rule: > 0.0015 nat improvement on best val."
+echo "=== Re-runs the N x K sweep under the corrected residual that"
+echo "===   re-injects X0 at every mixer step. Tests whether input"
+echo "===   anchoring rescues depth (no-residual sweep regressed past N=2)."
+echo "===   Reference: T4 baseline best val 3.5157 (BPB 1.1311)."
+echo "===   Compare each to its no-residual twin in the README."
 echo "==="
 echo "=== Queue (cost-ascending on A5000):"
-echo "===   1) T4_recur_N2_K1_1ep    — N=2  K=1  (2 apps,  shared)    ~7.4h"
-echo "===   2) T4_recur_N2_K2_1ep    — N=2  K=2  (4 apps,  distinct)  ~12.7h, +1x mixer params"
-echo "===   3) T4_recur_N5_K1_1ep    — N=5  K=1  (5 apps,  shared)    ~15.3h"
-echo "===   4) T4_recur_N5_K2_1ep    — N=5  K=2  (10 apps, cyclic)    ~28.4h, +1x mixer params"
-echo "===   5) T4_recur_N10_K1_1ep   — N=10 K=1  (10 apps, shared)    ~28.4h"
-echo "===   6) T4_recur_N20_K1_1ep   — N=20 K=1  (20 apps, shared)    ~54.7h (cancel if N=10 plateaus)"
-echo "==="
-echo "=== Total budget on A5000: ~147h (~6.1 days continuous)."
+echo "===   1) T4_recur_resid_N1_K2_1ep   — N=1  K=2  (2 apps)   ~5.7h"
+echo "===   2) T4_recur_resid_N2_K1_1ep   — N=2  K=1  (2 apps)   ~5.5h"
+echo "===   3) T4_recur_resid_N2_K2_1ep   — N=2  K=2  (4 apps)   ~6.8h"
+echo "===   4) T4_recur_resid_N5_K1_1ep   — N=5  K=1  (5 apps)   ~7.3h  [depth-rescue test]"
+echo "===   5) T4_recur_resid_N5_K2_1ep   — N=5  K=2  (10 apps)  ~10.4h"
+echo "===   6) T4_recur_resid_N10_K1_1ep  — N=10 K=1  (10 apps)  ~9.9h  [cancel if N=5 regresses]"
+echo "===   7) T4_recur_resid_N20_K1_1ep  — N=20 K=1  (20 apps)  ~15.7h [cancel if N=10 plateaus]"
 echo "============================================================"
 
 
