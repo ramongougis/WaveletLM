@@ -290,10 +290,10 @@ benchmark_only_run() {
 
 # Run F3: N=5, K=1 — depth-rescue test. No-residual N=5 K=1 regressed to 1.1291
 # (worse than N=2 K=1); does input anchoring let depth help instead of hurt?
-run_ablation "T4_recur_resid_N5_K1_1ep T4 recurrence N=5 K=1 + input-anchored residual (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
-    "T4_recur_resid_N5_K1_1ep: N=5 K=1 with input-anchored residual; depth-rescue test vs no-residual N=5 K=1 (1.1291) (~7.3h)"
+# run_ablation "T4_recur_resid_N5_K1_1ep T4 recurrence N=5 K=1 + input-anchored residual (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+#     "T4_recur_resid_N5_K1_1ep: N=5 K=1 with input-anchored residual; depth-rescue test vs no-residual N=5 K=1 (1.1291) (~7.3h)"
 
 # Run F4: N=5, K=2 (cyclic) — re-run with input injection.
 run_ablation "T4_recur_resid_N5_K2_1ep T4 recurrence N=5 K=2 + input-anchored residual (1ep)" \
