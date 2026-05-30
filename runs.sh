@@ -277,16 +277,16 @@ benchmark_only_run() {
 #     "T4_recur_resid_N1_K2_1ep: N=1 K=2 with input-anchored residual; vs no-residual N=1 K=2 (1.1249) (~5.7h)"
 
 # Run F1: N=2, K=1 (shared) — re-run with input injection.
-run_ablation "T4_recur_resid_N2_K1_1ep T4 recurrence N=2 K=1 + input-anchored residual (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
-    "T4_recur_resid_N2_K1_1ep: N=2 K=1 with input-anchored residual; vs no-residual N=2 K=1 (1.1279) (~5.5h)"
+# run_ablation "T4_recur_resid_N2_K1_1ep T4 recurrence N=2 K=1 + input-anchored residual (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+#     "T4_recur_resid_N2_K1_1ep: N=2 K=1 with input-anchored residual; vs no-residual N=2 K=1 (1.1279) (~5.5h)"
 
-# Run F2: N=2, K=2 — re-run with input injection.
-run_ablation "T4_recur_resid_N2_K2_1ep T4 recurrence N=2 K=2 + input-anchored residual (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
-    "T4_recur_resid_N2_K2_1ep: N=2 K=2 with input-anchored residual; vs no-residual N=2 K=2 (1.1227, current best) (~6.8h)"
+# # Run F2: N=2, K=2 — re-run with input injection.
+# run_ablation "T4_recur_resid_N2_K2_1ep T4 recurrence N=2 K=2 + input-anchored residual (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 2, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
+#     "T4_recur_resid_N2_K2_1ep: N=2 K=2 with input-anchored residual; vs no-residual N=2 K=2 (1.1227, current best) (~6.8h)"
 
 # Run F3: N=5, K=1 — depth-rescue test. No-residual N=5 K=1 regressed to 1.1291
 # (worse than N=2 K=1); does input anchoring let depth help instead of hurt?
