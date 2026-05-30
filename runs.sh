@@ -432,6 +432,50 @@ echo "=== Decision rule: > 0.0015 nat improvement on best val vs sequential T4."
 echo "============================================================"
 
 
+# ---- Dense recurrence (DenseNet-style depth-weighted averaging) -------------
+# Each recurrence step's input is a learned weighted combination of ALL prior
+# step outputs (mixer_recurrence_dense=true), not just latest+X0. The M x M
+# lower-triangular weight matrix A is init to reproduce the input-anchored
+# residual exactly (verified bit-identical at init), so these are strict
+# generalizations of the with-residual recurrence runs. ~M^2/2 extra params
+# (~15 at N=5) — negligible. Thesis: routing over a SHARED bank (K=1) may
+# approach DISTINCT-bank (K=2, +58.85M params) quality → parameter efficiency.
+# Rank by BPB sliding (val understates context configs); compare each to its
+# input-anchored twin in the recurrence with-residual table.
+
+# DR1: dense N=5 K=1 (raw weights). Headline param-efficiency test vs K=2.
+run_ablation "T4_recur_dense_N5_K1_1ep T4 dense recurrence N=5 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true}' \
+    "T4_recur_dense_N5_K1_1ep: dense depth-weighted averaging over 5 steps (shared bank); vs input-anchored N=5 K=1 and vs K=2 (param efficiency)"
+
+# DR2: dense N=5 K=1, normalized (softmax/convex rows) — interpretability-max.
+run_ablation "T4_recur_dense_norm_N5_K1_1ep T4 dense recurrence N=5 K=1 normalized (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true, "mixer_recurrence_dense_normalize": true}' \
+    "T4_recur_dense_norm_N5_K1_1ep: softmax rows (per-step distribution over depths); interpretability variant vs raw DR1"
+
+# DR3: dense N=10 K=1 — does dense routing let depth scale past where
+# input-anchoring plateaus? Run only if DR1 shows promise.
+run_ablation "T4_recur_dense_N10_K1_1ep T4 dense recurrence N=10 K=1 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true}' \
+    "T4_recur_dense_N10_K1_1ep: dense routing at depth 10; tests whether dense scales depth past the anchored plateau"
+
+echo ""
+echo "============================================================"
+echo "=== DENSE RECURRENCE QUEUE (depth-weighted averaging, 1ep each)"
+echo "==="
+echo "=== A init reproduces input-anchored exactly; these generalize it."
+echo "===   1) T4_recur_dense_N5_K1_1ep       — dense N=5 K=1 (raw)"
+echo "===   2) T4_recur_dense_norm_N5_K1_1ep  — dense N=5 K=1 (softmax rows)"
+echo "===   3) T4_recur_dense_N10_K1_1ep      — dense N=10 K=1 (depth-scale test)"
+echo "=== Rank by BPB sliding (~0.0010 threshold). Headline: dense N=5 K=1"
+echo "===   (~15 params) vs K=2 (+58.85M) — does routing replace parameters?"
+echo "=== Report the learned A matrix per run for interpretability."
+echo "============================================================"
+
+
 # # === Legacy (commented-out) version =========================================
 # # Prior MIXER RECURRENCE QUEUE block (T3 + N x K sweep, 1ep each)
 # echo "=== (ALL RUNS COMMENTED OUT — Adagrad unstable at N>=5; pivoting to AdamW)"

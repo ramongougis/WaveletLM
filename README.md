@@ -1099,8 +1099,8 @@ The first step is the plain residual (the running state already equals X⁰ ther
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | T4 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1311 | 34.24 | 3.5157 | (ref) | 1.1311 | — | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
 | + resid N=1 K=2 | 1 | 2 | distinct | 2 | 1.1262 | 33.72 | 3.4966 | −0.0049 | 1.1249 | +0.0013 | [link](logs/wikitext-103_2026-05-29_09-36-18/log.txt) |
-| + resid N=2 K=1 | 2 | 1 | shared | 2 | queued | queued | queued | — | 1.1279 | queued | queued |
-| + resid N=2 K=2 | 2 | 2 | distinct | 4 | queued | queued | queued | — | 1.1227 | queued | queued |
+| + resid N=2 K=1 | 2 | 1 | shared | 2 | 1.1272 | 33.83 | 3.5094 | −0.0039 | 1.1279 | −0.0007 | [link](logs/wikitext-103_2026-05-29_16-13-40/log.txt) |
+| + resid N=2 K=2 | 2 | 2 | distinct | 4 | **1.1219** | **33.28** | **3.4906** | **−0.0092** | 1.1227 | −0.0008 | [link](logs/wikitext-103_2026-05-29_21-45-14/log.txt) |
 | + resid N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | 1.1291 | queued | queued |
 | + resid N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | 1.1275 | queued | queued |
 | + resid N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | — | queued | queued |
@@ -1166,6 +1166,35 @@ Two attention-free upgrades targeting **cross-window** long-range dependency —
 | + SSM cross-window + BPTT | ✓ | ✓ | ✓ | queued | queued | queued | — | queued |
 
 **What each tests:** within-window SSM — does a multi-timescale summary beat the first moment (confounded by wavelet redundancy)? BPTT — does *training* the mean cross-window state help? cross-window SSM — does carrying multi-timescale memory across blocks help (the non-redundant long-range test)? The stacked rows probe whether the axes compound. If even the full stack is flat, cross-window dependency isn't where WT103 perplexity lives at this scale (a clean negative result). The reference is a **sequential** T4 (the cross-window state only does anything in sequential mode), not the random-batched T4 number.
+
+**Findings:**
+
+(pending runs)
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Dense Recurrence
+
+DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseFormer](https://arxiv.org/abs/2402.02622), Pagliardini et al. 2024, applied to the recurrence depth axis). Instead of each step's input being just `latest + X⁰` (the input-anchored residual), it becomes a **learned weighted combination of all prior step outputs**: with M = N·K applications and states `[X⁰, X⁽¹⁾, …]`, step *t*'s input is `inpₜ = Σ_{k≤t} A[t,k]·stateₖ`, where `A` is an M×M lower-triangular learnable matrix. Plan: [plans/dense_recurrence.md](plans/dense_recurrence.md). Config: `mixer_recurrence_dense` (+ `mixer_recurrence_dense_normalize` for softmax/convex rows). Default off = identical to today.
+
+`A` is **initialized to reproduce the input-anchored residual exactly** (`A[t,t]=1`, `A[t,0]=1` for t≥1) — verified bit-identical at init — so dense starts from the current best and learns away from it. Cost is ~M²/2 scalars (≈15 at N=5 K=1) and the intermediate states are already in the autograd graph, so memory is marginal.
+
+**The thesis is parameter efficiency.** The recurrence sweep showed diversity (K>1, distinct banks) beats depth — but K>1 costs +58.85M params per bank. Dense routing over a *shared* bank (K=1) costs ~15 params. The headline test: can dense N=5 K=1 approach the quality of distinct-bank K=2? If so, routing substitutes for parameters. Secondary: dense routing may let depth scale where input-anchoring plateaus (each step sees the whole trajectory, not just t−1 + X⁰).
+
+**Interpretability:** `A` is a legible depth-routing table — it shows whether the model uses its full trajectory or collapses back to "latest + X⁰", and how much it leans on the X⁰ anchor. The normalized variant gives a per-step distribution over depths. This *adds* inspectable structure rather than opaque mixing, aligning with the project's legibility thesis.
+
+**Ablation (T4 base, 1 epoch; rank by BPB sliding — val loss understates context-exploiting configs; ~0.0010 BPB threshold). Report the learned `A` matrix per run.**
+
+| Run | N | K | dense | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run Log |
+|---|---|---|---|---|---|---|---|---|
+| input-anchored N=5 K=1 (ref) | 5 | 1 | ✗ | (from recurrence §) | — | — | (ref) | — |
+| dense N=5 K=1 (raw) | 5 | 1 | ✓ | queued | queued | queued | — | queued |
+| dense N=5 K=1 (normalized) | 5 | 1 | ✓ softmax | queued | queued | queued | — | queued |
+| dense N=10 K=1 | 10 | 1 | ✓ | queued | queued | queued | — | queued |
+
+**Key comparison — dense N=5 K=1 (≈15 params) vs no-dense K=2 (+58.85M params):** if dense approaches K=2's BPB, routing buys diversity-like gains for free. That's the parameter-efficiency result this section exists to find.
 
 **Findings:**
 

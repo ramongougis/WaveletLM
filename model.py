@@ -1386,6 +1386,8 @@ class WaveletLMBlock(nn.Module):
         mixer_recurrence_distinct_mixer_count: int = 1,
         mixer_recurrence_residuals: bool = True,
         mixer_recurrence_cache_gate: bool = False,
+        mixer_recurrence_dense: bool = False,
+        mixer_recurrence_dense_normalize: bool = False,
         per_layer_embedding: bool = False,
         fht_input_cap_enabled: bool = False,
         fht_input_cap_value: float = 1000.0,
@@ -1870,6 +1872,29 @@ class WaveletLMBlock(nn.Module):
         else:
             self.mixer_step_norms = None
 
+        # DenseNet-style recurrence (depth-weighted averaging over steps): each
+        # application's input is a learned weighted combination of all prior
+        # states rather than just "latest + X0". The state list starts as [X0]
+        # and grows by one per application, so at application t (0..M-1) it holds
+        # states 0..t (state 0 = X0, state j = X^(j)). A is M x M lower-
+        # triangular; row t weights states 0..t. Init reproduces the input-
+        # anchored residual exactly — A[t, t]=1 (latest = old current_spec) and
+        # A[t, 0]=1 for t>=1 (the X0 anchor; for t=0 latest and anchor coincide
+        # at index 0, weight 1) — so dense at init is byte-identical to the
+        # anchored loop and learns away from there. See plans/dense_recurrence.md.
+        self.mixer_recurrence_dense = bool(mixer_recurrence_dense)
+        self.mixer_recurrence_dense_normalize = bool(mixer_recurrence_dense_normalize)
+        if self.mixer_recurrence_dense and total_mixer_apps > 1:
+            M = total_mixer_apps
+            A0 = torch.zeros(M, M, device=device, dtype=dtype)
+            for t in range(M):
+                A0[t, t] = 1.0              # latest state X^(t) (= old current_spec)
+                if t >= 1:
+                    A0[t, 0] = 1.0          # the initial input X0 (anchor)
+            self.recur_dense_A = nn.Parameter(A0)
+        else:
+            self.recur_dense_A = None
+
         self.use_mlp = mlp_expansion > 0
         if self.use_mlp:
             self.ffwd = FeedForward(self.C, expansion=mlp_expansion,
@@ -2022,6 +2047,11 @@ class WaveletLMBlock(nn.Module):
             # the full input-anchored residual. Earlier runs had residual on
             # but lacked this injection — see README "Recurrence (no residual)".
             input_spec = stacked_spec if apply_residual else None
+            # DenseNet-style recurrence: keep the full list of step outputs for
+            # depth-weighted averaging (states[0]=X0; each application appends
+            # its output). Active only when dense is enabled and recurrence runs.
+            dense = (self.recur_dense_A is not None) and (N * K > 1)
+            states = [stacked_spec] if dense else None
             # Gate caching: compute each bank's gate once on the first cycle
             # (n_idx == 0) and reuse it for cycles 2..N, skipping the W_gate
             # matmul + routing einsum thereafter. Approximation — the gate no
@@ -2046,7 +2076,19 @@ class WaveletLMBlock(nn.Module):
                     # When residual is off (apply_residual False), step_spec is
                     # just the running state, preserving baseline behavior.
                     is_first_step = (n_idx == 0 and bank_idx == 0)
-                    if apply_residual and not is_first_step:
+                    if dense:
+                        # Depth-weighted average over all states so far:
+                        # inp_t = sum_{k<=t} A[t,k]*states[k]. A's init makes
+                        # this exactly (latest + X0) — the input-anchored
+                        # residual — so dense at init == the anchored loop.
+                        t_app = n_idx * K + bank_idx
+                        row = self.recur_dense_A[t_app, :t_app + 1]
+                        if self.mixer_recurrence_dense_normalize:
+                            row = torch.softmax(row.float(), dim=0).to(states[0].dtype)
+                        step_spec = states[0] * row[0]
+                        for k in range(1, t_app + 1):
+                            step_spec = step_spec + states[k] * row[k]
+                    elif apply_residual and not is_first_step:
                         step_spec = current_spec + input_spec
                     else:
                         step_spec = current_spec
@@ -2082,6 +2124,8 @@ class WaveletLMBlock(nn.Module):
                             [self.mixer_step_norms[s](current_spec[:, :, s, :])
                              for s in range(S)], dim=2
                         )
+                    if dense:
+                        states.append(current_spec)
             mixed_spec = current_spec
         else:
             # Depth > 1: the entire depth cascade is the unit that recurs.
@@ -2492,6 +2536,12 @@ class WaveletLM(nn.Module):
                 ),
                 mixer_recurrence_cache_gate=config.get(
                     "mixer_recurrence_cache_gate", False
+                ),
+                mixer_recurrence_dense=config.get(
+                    "mixer_recurrence_dense", False
+                ),
+                mixer_recurrence_dense_normalize=config.get(
+                    "mixer_recurrence_dense_normalize", False
                 ),
                 per_layer_embedding=config.get("per_layer_embedding", False),
                 fht_input_cap_enabled=config.get("fht_input_cap_enabled", False),
