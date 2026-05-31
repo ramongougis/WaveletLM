@@ -547,6 +547,10 @@ Longer training time, more regularization, and parameter compression are the sur
 - [New T4 Baseline](#new-t4-baseline)
 - [Recurrence with Adagrad (no residual)](#recurrence-with-adagrad-no-residual)
 - [Recurrence with Adagrad (with residual)](#recurrence-with-adagrad-with-residual)
+- [Recurrence Efficiency: Gate Caching](#recurrence-efficiency-gate-caching)
+- [Long-Range Context: Multi-Pole SSM + Truncated BPTT](#long-range-context-multi-pole-ssm--truncated-bptt)
+- [Dense Recurrence](#dense-recurrence)
+- [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Complex Wavelets](#complex-wavelets)
@@ -1100,9 +1104,9 @@ The first step is the plain residual (the running state already equals X⁰ ther
 | T4 baseline (N=1, K=1) | 1 | 1 | — | 1 | 1.1311 | 34.24 | 3.5157 | (ref) | 1.1311 | — | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
 | + resid N=1 K=2 | 1 | 2 | distinct | 2 | 1.1262 | 33.72 | 3.4966 | −0.0049 | 1.1249 | +0.0013 | [link](logs/wikitext-103_2026-05-29_09-36-18/log.txt) |
 | + resid N=2 K=1 | 2 | 1 | shared | 2 | 1.1272 | 33.83 | 3.5094 | −0.0039 | 1.1279 | −0.0007 | [link](logs/wikitext-103_2026-05-29_16-13-40/log.txt) |
-| + resid N=2 K=2 | 2 | 2 | distinct | 4 | **1.1219** | **33.28** | **3.4906** | **−0.0092** | 1.1227 | −0.0008 | [link](logs/wikitext-103_2026-05-29_21-45-14/log.txt) |
-| + resid N=5 K=1 | 5 | 1 | shared | 5 | queued | queued | queued | — | 1.1291 | queued | queued |
-| + resid N=5 K=2 | 5 | 2 | cyclic | 10 | queued | queued | queued | — | 1.1275 | queued | queued |
+| + resid N=2 K=2 | 2 | 2 | distinct | 4 | 1.1219 | 33.28 | 3.4906 | −0.0092 | 1.1227 | −0.0008 | [link](logs/wikitext-103_2026-05-29_21-45-14/log.txt) |
+| + resid N=5 K=1 | 5 | 1 | shared | 5 | 1.1240 | 33.51 | 3.4986 | −0.0071 | 1.1291 | −0.0051 | [link](logs/wikitext-103_2026-05-30_04-52-42/log.txt) |
+| + resid N=5 K=2 | 5 | 2 | cyclic | 10 | **1.1215** | **33.23** | **3.4852** | **−0.0096** | 1.1275 | −0.0060 | [link](logs/wikitext-103_2026-05-30_12-37-15/log.txt) |
 | + resid N=10 K=1 | 10 | 1 | shared | 10 | queued | queued | queued | — | — | queued | queued |
 | + resid N=20 K=1 | 20 | 1 | shared | 20 | queued | queued | queued | — | — | queued | queued |
 
@@ -1113,7 +1117,11 @@ The first step is the plain residual (the running state already equals X⁰ ther
 
 **Findings:**
 
-(pending with-residual runs)
+- **Depth rescued — the headline result.** No-residual N=5 K=1 *regressed* to 1.1291 (worse than N=2 K=1's 1.1279); with input anchoring it improves to **1.1240 (Δ resid −0.0051)** and now *beats* anchored N=2 K=1 (1.1272). Anchoring flips depth from harmful to helpful: where the shared-weight stack drifted, the input-anchored iteration converges. Confirms the hypothesis — the no-residual depth regression was a missing-input-anchor problem, not a fundamental depth ceiling.
+- **Partial parameter-efficiency win — depth closes most of the gap to diversity, but doesn't overtake it.** Anchored N=5 K=1 (1.1240, **+0 params** vs T4) lands within ~0.002 of the K=2 plateau — near the noise floor. So shared-bank depth is now *competitive* with expensive distinct-bank diversity, but the best results still carry the +58.85M K=2 bank. This is exactly the gap the [Dense Recurrence](#dense-recurrence) experiments target: can learned trajectory routing over the shared bank close that last ~0.002 for free?
+- **K=2 saturates with depth; N=5 K=2 (1.1215) is the marginal new best.** Adding depth on top of diversity barely moves anything: N=2 K=2 (1.1219) → N=5 K=2 (1.1215) is only −0.0004 (within noise), for 2.5× the apps (10 vs 4, 10.6h vs 6.8h). The best recurrence results plateau at **~1.1215–1.1219** regardless of N once K=2 is present. Anchoring still helped N=5 K=2 (Δ resid −0.0060), consistent with the depth-dependent anchoring benefit — but depth and diversity don't compound. Diversity (K) sets the ceiling; depth (N) just reaches it faster or, once there, adds nothing.
+- **Anchoring is neutral at low depth, decisive at higher depth.** Δ resid: N=1 K=2 +0.0013, N=2 K=1 −0.0007, N=2 K=2 −0.0008 (all within noise) → N=5 K=1 **−0.0051** (clearly real). At N·K ≤ 4 there's little iteration to stabilize; at N=5 the anchor earns its keep — the depth-dependent pattern the mechanism predicts.
+- **Reopens the deep sweep.** N=10 / N=20 K=1 with anchoring are now worth running (the no-residual sweep had ruled them out as regressive) — they test whether anchored depth keeps closing on (or overtakes) diversity as N grows.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1189,16 +1197,38 @@ DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseF
 
 | Run | N | K | dense | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run Log |
 |---|---|---|---|---|---|---|---|---|
-| input-anchored N=5 K=1 (ref) | 5 | 1 | ✗ | (from recurrence §) | — | — | (ref) | — |
+| input-anchored N=5 K=1 (ref) | 5 | 1 | ✗ | 1.1240 | 33.51 | 3.4986 | (ref) | [link](logs/wikitext-103_2026-05-30_04-52-42/log.txt) |
 | dense N=5 K=1 (raw) | 5 | 1 | ✓ | queued | queued | queued | — | queued |
 | dense N=5 K=1 (normalized) | 5 | 1 | ✓ softmax | queued | queued | queued | — | queued |
 | dense N=10 K=1 | 10 | 1 | ✓ | queued | queued | queued | — | queued |
 
-**Key comparison — dense N=5 K=1 (≈15 params) vs no-dense K=2 (+58.85M params):** if dense approaches K=2's BPB, routing buys diversity-like gains for free. That's the parameter-efficiency result this section exists to find.
+**What dense has to beat.** Input-anchored N=5 K=1 (+0 params) reached **1.1240** — competitive with distinct-bank K=2 (1.1219, +58.85M) but not beating it (gap 0.0021). Dense's job is to close that last gap *for free*: does learned trajectory routing extract more from the same shared-bank depth than the fixed "latest + X⁰" anchor? If dense N=5 K=1 reaches ~1.1219 or below, routing has bought diversity-grade quality at ~15 params instead of +58.85M — the parameter-efficiency result this section exists to find. Since dense's `A` init *is* the anchored loop (1.1240), it can only match-or-beat that unless training moves `A` somewhere worse — so the question is purely whether the off-anchor routing weights find anything. A flat result (A stays near init) would say "latest + X⁰ is all the trajectory routing the model wants."
 
 **Findings:**
 
 (pending runs)
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Inference-Depth Flexibility (Train Deep, Infer Shallow)
+
+Recurrence multiplies inference latency, not just training cost: N=5 K=2 generates at ~18 tok/s vs T4's ~34 tok/s, because every token pays N× the mixer. This section pursues **decoupling inference depth N′ from training depth N** — keeping the deep-trained quality while recovering speed. Two routes, gated on whichever final N the [recurrence](#recurrence-with-adagrad-with-residual) / [dense](#dense-recurrence) sweeps settle on.
+
+**Route 1 — N′ convergence sweep (no retraining, cheap, run first).** The input-anchored recurrence iterates toward a fixed point `X* = LN(X⁰ + m(X*+X⁰))`, so its output should *plateau* at some N′ ≤ N. On a trained checkpoint, cap the forward loop at N′ and measure BPB(N′): if quality saturates by, say, N′=3 of 5, infer there for a free ~1.7× speedup at no quality cost. Requires a `mixer_recurrence_inference_steps` override that changes only the loop bound (the model is still *constructed* at the trained N so the per-step norms / extra banks match the checkpoint; inference reuses the first N′−1 norms). **Expected shape:** N′=1 likely *worse than T4* (the intermediate `X⁽¹⁾` was never a trained LM-head input, and the mixer is a refinement step, not a one-shot transform), with a plateau somewhere around N′=2–4. The deliverable is the quality/latency frontier, so report **BPB(N′) and tok/s(N′) together.**
+
+| N′ (infer steps) | BPB sliding | tok/s | Notes |
+|---|---|---|---|
+| 1 | queued | ~34 | likely worse than T4 (out-of-distribution head input) |
+| 2 | queued | queued | |
+| 3 | queued | queued | |
+| … | queued | queued | |
+| N (= trained) | (trained BPB) | ~18 (N=5 K=2) | reference: full depth |
+
+**Route 2 — per-step deep supervision (train-for-it, fallback).** If Route 1 shows convergence is too slow to yield a speedup (plateau ≈ N), train so that *every* intermediate is a valid prediction: apply the shared LM-head loss at each recurrence step (deep supervision / "anytime" inference), or randomize N during training (stochastic depth on N). Either makes inference depth a free knob — enabling aggressive early exit, even N′=1 — at the cost of extra training compute and a possible small quality trade at full N. Plan-doc-and-implement only if Route 1's curve justifies it.
+
+**Decision logic:** run Route 1 first (it's free — no retraining, just the loop-bound override on an existing checkpoint). Only invest in Route 2 if the free sweep can't recover meaningful speed. Both are deferred until a final N is chosen.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
