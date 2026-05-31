@@ -558,6 +558,8 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Weight Decay](#weight-decay)
 - [Mixer Transform Ablation](#mixer-transform-ablation)
 - [Step-Time Speedups](#step-time-speedups)
+- [T5 Baseline](#t5-baseline)
+- [More Layers](#more-layers)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
 - [Model Comparisons](#model-comparisons)
@@ -1314,6 +1316,22 @@ Test the contribution of the FWHT slot in the per-scale mixer versus having no t
 ### Step-Time Speedups
 
 Throughput per token of context flattens past `bs≈1024` despite linear-in-N theoretical scaling — a memory-bandwidth wall, not algorithmic. Use [`profile_step.py`](profile_step.py) to attribute step time across architectural components at `bs ∈ {256, 1024, 4096, 16384}`, then target whichever crosses 25% at `bs=16384`. Candidate quick wins: fused SwiGLU kernel (Liger / Unsloth / xformers — drop-in for the MLP block), `torch.compile(mode='reduce-overhead')` for CUDA Graphs capture, fused Adagrad, and (architectural) low-rank lifting predict/update networks. See [plans/other_post_release_plans.md §12](plans/other_post_release_plans.md#12-step-time-speedup-quick-wins-informed-by-profiler) for the full menu and decision rule.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### T5 Baseline
+
+Time to establish a new baseline. Here, we'll incorporate the best features performance-wise so far and roll them all together.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### More Layers
+
+Adding layers again after most of the tuning and architectural test ablations. Aim to identify low and high layer variants to work with.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
