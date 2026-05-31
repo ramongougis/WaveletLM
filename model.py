@@ -1644,6 +1644,10 @@ class WaveletLMBlock(nn.Module):
         # W_gate matmul + routing einsum on all but the first cycle. Halves
         # per-step matmul cost at K=1. Only meaningful when N*K > 1.
         self.mixer_recurrence_cache_gate = bool(mixer_recurrence_cache_gate)
+        # Needed by the gate-cache guard in forward() (only read when
+        # mixer_recurrence_cache_gate is True; short-circuiting hid the
+        # missing attribute until the first cache-gate run).
+        self.use_mixer_gate = bool(use_mixer_gate)
         if self.mixer_recurrence_steps < 1:
             raise ValueError(
                 f"mixer_recurrence_steps must be >= 1, got {self.mixer_recurrence_steps}"

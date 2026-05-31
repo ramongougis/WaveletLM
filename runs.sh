@@ -296,23 +296,23 @@ benchmark_only_run() {
 #     "T4_recur_resid_N5_K1_1ep: N=5 K=1 with input-anchored residual; depth-rescue test vs no-residual N=5 K=1 (1.1291) (~7.3h)"
 
 # Run F4: N=5, K=2 (cyclic) — re-run with input injection.
-run_ablation "T4_recur_resid_N5_K2_1ep T4 recurrence N=5 K=2 + input-anchored residual (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
-    "T4_recur_resid_N5_K2_1ep: N=5 K=2 with input-anchored residual; vs no-residual N=5 K=2 (1.1275) (~10.4h)"
+# run_ablation "T4_recur_resid_N5_K2_1ep T4 recurrence N=5 K=2 + input-anchored residual (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 2, "mixer_recurrence_residuals": true}' \
+#     "T4_recur_resid_N5_K2_1ep: N=5 K=2 with input-anchored residual; vs no-residual N=5 K=2 (1.1275) (~10.4h)"
 
-# Run F5: N=10, K=1 — deep-rescue probe. Only worth it if F3 (N=5) shows depth
-# now helps under anchoring; otherwise cancel.
-run_ablation "T4_recur_resid_N10_K1_1ep T4 recurrence N=10 K=1 + input-anchored residual (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
-    "T4_recur_resid_N10_K1_1ep: N=10 K=1 with input-anchored residual; deep-rescue probe (~9.9h, cancel if N=5 anchored still regresses)"
+# # Run F5: N=10, K=1 — deep-rescue probe. Only worth it if F3 (N=5) shows depth
+# # now helps under anchoring; otherwise cancel.
+# run_ablation "T4_recur_resid_N10_K1_1ep T4 recurrence N=10 K=1 + input-anchored residual (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+#     "T4_recur_resid_N10_K1_1ep: N=10 K=1 with input-anchored residual; deep-rescue probe (~9.9h, cancel if N=5 anchored still regresses)"
 
-# Run F6: N=20, K=1 — deepest probe. Only if F5 keeps improving.
-run_ablation "T4_recur_resid_N20_K1_1ep T4 recurrence N=20 K=1 + input-anchored residual (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
-    "T4_recur_resid_N20_K1_1ep: N=20 K=1 with input-anchored residual; deepest probe (~15.7h, cancel if N=10 anchored plateaus)"
+# # Run F6: N=20, K=1 — deepest probe. Only if F5 keeps improving.
+# run_ablation "T4_recur_resid_N20_K1_1ep T4 recurrence N=20 K=1 + input-anchored residual (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+#     "T4_recur_resid_N20_K1_1ep: N=20 K=1 with input-anchored residual; deepest probe (~15.7h, cancel if N=10 anchored plateaus)"
 
 
 echo ""
