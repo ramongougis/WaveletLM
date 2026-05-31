@@ -1142,15 +1142,13 @@ Auto-conditions: active only when `N > 1` (needs cycles to amortize over) and `u
 | Run | N | K | cache_gate | BPB sliding | PPL sliding | Best val | Δ val vs base | Train time | Δ time | Run log |
 |---|---|---|---|---|---|---|---|---|---|---|
 | N=5 K=1 (baseline) | 5 | 1 | ✗ | 1.1240 | 33.51 | 3.4986 | (ref) | — | — | [link](logs/wikitext-103_2026-05-30_04-52-42/log.txt) |
-| N=5 K=1 + gate cache | 5 | 1 | ✓ | queued | queued | queued | — | queued | — | queued |
+| N=5 K=1 + gate cache | 5 | 1 | ✓ | 1.1268 | 33.79 | 3.5041 | +0.0055 | 6.38h | — | [link](logs/wikitext-103_2026-05-31_13-38-53/log.txt) |
 
-**Decision rule:** if Δ best val < 0.0015 (within noise) **and** wall-clock drops meaningfully, caching is a free win — enable for all deeper-N runs (N=10, N=20, N=50). If best val regresses past noise, the per-step re-gating is load-bearing and caching is rejected.
+**Decision rule:** if Δ best val < 0.0015 (within noise) **and** wall-clock drops meaningfully, caching is a free win: enable for all deeper-N runs (N=10, N=20, N=50). If best val regresses past noise, the per-step re-gating is load-bearing and caching is rejected.
 
 **Findings:**
 
-(pending — runs after the N=5 K=1 baseline lands so the comparison is apples-to-apples)
-
-> **GEMM fusion (deferred):** an alternative exact optimization — fusing `W_mix` and `W_gate` into one `2C'×C'` matmul — was considered but not implemented. With `cross_scale_gating=True` it requires moving the routing out of the mixer (invasive), `torch.compile` likely already fuses the adjacent GEMMs, and gate caching *eliminates* the `W_gate` matmul on cached steps rather than merely fusing it (strictly better for the recurrence case). Revisit only if profiling after caching shows the step-1 / K=1-base gate projection is still a bottleneck.
+**Gate caching rejected.** Δ best val = **+0.0055** (nearly 4× the 0.0015 noise threshold) — the per-step re-gating is load-bearing and the approximation degrades quality. BPB sliding improved by −0.0028 (1.1268 vs 1.1240), but this falls within the architecture's known val/BPB non-correlation band and does not override the val signal. The gate is not a redundant computation; it carries meaningful information about the evolving recurrent state at each step. Gate caching is **not enabled** for deeper-N runs.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
