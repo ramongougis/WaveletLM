@@ -348,10 +348,10 @@ echo "============================================================"
 # of the no-cache N=5 K=1 run AND wall-clock drops meaningfully, caching is a
 # free win and should be enabled for deeper-N runs.
 
-run_ablation "T4_recur_N5_K1_cachegate_1ep T4 + recurrence N=5 K=1 + gate cache (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_cache_gate": true}' \
-    "T4_recur_N5_K1_cachegate_1ep: gate cached after cycle 1, reused for cycles 2-5; vs T4_recur_N5_K1_1ep baseline"
+# run_ablation "T4_recur_N5_K1_cachegate_1ep T4 + recurrence N=5 K=1 + gate cache (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_cache_gate": true}' \
+#     "T4_recur_N5_K1_cachegate_1ep: gate cached after cycle 1, reused for cycles 2-5; vs T4_recur_N5_K1_1ep baseline"
 
 echo ""
 echo "============================================================"
