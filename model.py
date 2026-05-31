@@ -894,15 +894,22 @@ class PerScaleMixer(nn.Module):
             stab_mixer_eps_scaling=stab_mixer_eps_scaling,
         )
 
-    def forward(self, X: torch.Tensor, gate_input: torch.Tensor = None):
+    def forward(self, X: torch.Tensor, gate_input: torch.Tensor = None,
+                cached_gate: torch.Tensor = None, return_gate: bool = False):
         if self.proj_in is not None:
             X = self.proj_in(X)
             if gate_input is not None:
                 gate_input = self.proj_in(gate_input)
-        Y = self.mixer(X, gate_input=gate_input)
+        out = self.mixer(X, gate_input=gate_input,
+                         cached_gate=cached_gate, return_gate=return_gate)
+        if return_gate:
+            Y, gate = out
+            if self.proj_out is not None:
+                Y = self.proj_out(Y)
+            return Y, gate
         if self.proj_out is not None:
-            Y = self.proj_out(Y)
-        return Y
+            out = self.proj_out(out)
+        return out
 
 # ==============================================================================
 # 5. FEED-FORWARD (MLP)

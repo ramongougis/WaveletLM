@@ -1170,7 +1170,7 @@ Two attention-free upgrades targeting **cross-window** long-range dependency —
 
 | Variant | SSM | x-win | BPTT | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run Log |
 |---|---|---|---|---|---|---|---|---|
-| T4 baseline (sequential) | ✗ | ✗ | ✗ | queued | queued | queued | (ref) | queued |
+| T4 baseline (sequential) | ✗ | ✗ | ✗ | 1.1499 | 36.31 | 3.6043 | (ref) | [link](logs/wikitext-103_2026-05-31_09-51-52/log.txt) |
 | + SSM (within-window) | ✓ | ✗ | ✗ | queued | queued | queued | — | queued |
 | + BPTT | ✗ | ✗ | ✓ | queued | queued | queued | — | queued |
 | + SSM + BPTT | ✓ | ✗ | ✓ | queued | queued | queued | — | queued |
