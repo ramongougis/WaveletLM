@@ -379,10 +379,10 @@ echo "============================================================"
 # SSM/BPTT flags vary. Effective batch = MBS(8) x GA(2) = 16.
 
 # LR0: sequential T4 baseline — the honest reference for this section.
-run_ablation "T4_seq_baseline_1ep T4 sequential baseline for long-range (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true}' \
-    "T4_seq_baseline_1ep: T4 sequential, GA=2 (no SSM, no BPTT); reference for the long-range ablations"
+# run_ablation "T4_seq_baseline_1ep T4 sequential baseline for long-range (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true}' \
+#     "T4_seq_baseline_1ep: T4 sequential, GA=2 (no SSM, no BPTT); reference for the long-range ablations"
 
 # LR1: + multi-pole SSM summary (P=4).
 run_ablation "T4_seq_ssm_1ep T4 sequential + multi-pole SSM (1ep)" \
