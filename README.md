@@ -1158,7 +1158,7 @@ Auto-conditions: active only when `N > 1` (needs cycles to amortize over) and `u
 
 ### Long-Range Context: Multi-Pole SSM + Truncated BPTT
 
-Two attention-free upgrades targeting **cross-window** long-range dependency — the architecture's thin spot. Within a 256-token block the lifting wavelet already couples tokens ~128 apart (multi-scale, O(n log n)); beyond the block, the only carrier is the decompose-bypass cross-window state, which today is (a) a first-moment causal mean, (b) `.detach()`ed so it's never trained across windows, (c) a single per-channel vector. Plan: [plans/long_range_ssm_bptt.md](plans/long_range_ssm_bptt.md). Both default off; `false` = byte-identical to T4.
+Two attention-free upgrades targeting **cross-window** long-range dependency. Within a 256-token block, the lifting wavelet already couples tokens ~128 apart (multi-scale, O(n log n)); beyond the block, the only carrier is the decompose-bypass cross-window state, which today is (a) a first-moment causal mean, (b) `.detach()`ed so it's never trained across windows, (c) a single per-channel vector. Plan: [plans/long_range_ssm_bptt.md](plans/long_range_ssm_bptt.md). Both default off; `false` = byte-identical to T4.
 
 **#1 — Multi-pole diagonal SSM (`decompose_bypass_ssm`).** Replaces the cumulative-mean context summary with a bank of P parallel EMAs at learned per-channel decay rates (S4D-style diagonal SSM) — the existing single-EMA path (`decompose_bypass_ema`) is the P=1 case. Decays `a = exp(-softplus(θ))`, init spanning timescales τ ∈ [1, 256]; output `o = Σ_p G·h_p`, init `G=1/P` so it starts ≈ the multi-scale mean it replaces. ~2·C·P ≈ 16K params at P=4. By default the scan is **within-window**.
 
@@ -1171,9 +1171,9 @@ Two attention-free upgrades targeting **cross-window** long-range dependency —
 | Variant | SSM | x-win | BPTT | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run Log |
 |---|---|---|---|---|---|---|---|---|
 | T4 baseline (sequential) | ✗ | ✗ | ✗ | 1.1499 | 36.31 | 3.6043 | (ref) | [link](logs/wikitext-103_2026-05-31_09-51-52/log.txt) |
-| + SSM (within-window) | ✓ | ✗ | ✗ | queued | queued | queued | — | queued |
-| + BPTT | ✗ | ✗ | ✓ | queued | queued | queued | — | queued |
-| + SSM + BPTT | ✓ | ✗ | ✓ | queued | queued | queued | — | queued |
+| + SSM (within-window) | ✓ | ✗ | ✗ | 1.1464 | 35.92 | 3.5511 | −0.0035 | [link](logs/wikitext-103_2026-05-31_20-08-12/log.txt) |
+| + BPTT | ✗ | ✗ | ✓ | 1.1497 | 36.30 | 3.6179 | −0.0002 | [link](logs/wikitext-103_2026-06-01_00-49-00/log.txt) |
+| + SSM + BPTT | ✓ | ✗ | ✓ | 1.1466 | 35.94 | 3.5633 | −0.0033 | [link](logs/wikitext-103_2026-06-01_04-25-04/log.txt) |
 | + SSM cross-window | ✓ | ✓ | ✗ | queued | queued | queued | — | queued |
 | + SSM cross-window + BPTT | ✓ | ✓ | ✓ | queued | queued | queued | — | queued |
 
