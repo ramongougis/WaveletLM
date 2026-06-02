@@ -550,10 +550,10 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Recurrence Efficiency: Gate Caching](#recurrence-efficiency-gate-caching)
 - [Long-Range Context: Multi-Pole SSM + Truncated BPTT](#long-range-context-multi-pole-ssm--truncated-bptt)
 - [Dense Recurrence](#dense-recurrence)
-- [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Complex Wavelets](#complex-wavelets)
+- [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
 - [Dropout](#dropout)
 - [Weight Decay](#weight-decay)
 - [Mixer Transform Ablation](#mixer-transform-ablation)
@@ -1216,30 +1216,6 @@ DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseF
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Inference-Depth Flexibility (Train Deep, Infer Shallow)
-
-Recurrence multiplies inference latency, not just training cost: every token pays N× the mixer (N=5 K=2 generates at ~18 tok/s vs T4's ~34 tok/s). This section pursues **decoupling inference depth N′ from training depth N** — keeping the deep-trained quality while recovering speed. **Target checkpoint: the recurrence sweep settled on N=5 K=1** (BPB 1.1240, best val 3.4986, +0 params over T4 — the depth-ladder winner; N=10 regressed, so N=5 is the chosen depth). K=1 is also the clean case for Route 1's fixed-point argument (a single shared bank converges to one point; K>1 would converge to a K-cycle).
-
-**Route 1 — N′ convergence sweep (no retraining, cheap, run first).** The input-anchored recurrence iterates toward a fixed point `X* = LN(X⁰ + m(X*+X⁰))`, so its output should *plateau* at some N′ ≤ N. On the N=5 K=1 checkpoint, cap the forward loop at N′ and measure BPB(N′): if quality saturates by, say, N′=3 of 5, infer there for a free ~1.7× speedup at no quality cost. Requires a `mixer_recurrence_inference_steps` override that changes only the loop bound (the model is still *constructed* at the trained N=5 so the per-step norms match the checkpoint; inference reuses the first N′−1 norms). **Expected shape:** N′=1 likely *worse than T4* (the intermediate `X⁽¹⁾` was never a trained LM-head input, and the mixer is a refinement step, not a one-shot transform), with a plateau somewhere around N′=2–4. The deliverable is the quality/latency frontier, so report **BPB(N′) and tok/s(N′) together.**
-
-Checkpoint: N=5 K=1 ([log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)), trained BPB 1.1240. Each row caps the recurrence loop at N′ at inference only.
-
-| N′ (infer steps) | BPB sliding | tok/s | Notes |
-|---|---|---|---|
-| 1 | queued | queued | likely worse than T4 (out-of-distribution head input) |
-| 2 | queued | queued | |
-| 3 | queued | queued | |
-| 4 | queued | queued | |
-| 5 (= trained N) | 1.1240 | queued | reference: full depth |
-
-**Route 2 — per-step deep supervision (train-for-it, fallback).** If Route 1 shows convergence is too slow to yield a speedup (plateau ≈ N), train so that *every* intermediate is a valid prediction: apply the shared LM-head loss at each recurrence step (deep supervision / "anytime" inference), or randomize N during training (stochastic depth on N). Either makes inference depth a free knob — enabling aggressive early exit, even N′=1 — at the cost of extra training compute and a possible small quality trade at full N. Plan-doc-and-implement only if Route 1's curve justifies it.
-
-**Decision logic:** run Route 1 first (it's free — no retraining, just the loop-bound override on an existing checkpoint). Only invest in Route 2 if the free sweep can't recover meaningful speed. Both are deferred until a final N is chosen.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
 ### Wavelet Sparsity Probe & Wavelet Shrinkage
 
 Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.
@@ -1282,6 +1258,30 @@ Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree
 **Implementation surface.** Moderate. A new `LiftingWaveletComplex` class in `tools/complex_wavelets.py` mirroring the structure of `LiftingWavelet2D` (selectable via a `wavelet_basis: "real" | "complex"` config flag). Real/imag interleaving keeps `model.py` integration minimal. ~300-500 lines for the wavelet module plus minor model.py changes.
 
 **Empirical question worth flagging upfront.** Most "phase matters for language" intuitions come from signal-processing analogies that may not transfer cleanly. Text isn't a sinusoidal signal; the wavelet basis we use is already learned (not fixed Haar/Daubechies). The learned real-valued predict/update networks may already implicitly capture phase-equivalent information via their shape. Test design needs to disambiguate: does complex outperform real *at matched parameter count* (so we know it's the phase, not the extra params)?
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Inference-Depth Flexibility (Train Deep, Infer Shallow)
+
+Recurrence multiplies inference latency, not just training cost: every token pays N× the mixer (N=5 K=2 generates at ~18 tok/s vs T4's ~34 tok/s). This section pursues **decoupling inference depth N′ from training depth N** — keeping the deep-trained quality while recovering speed. **Target checkpoint: the recurrence sweep settled on N=5 K=1** (BPB 1.1240, best val 3.4986, +0 params over T4 — the depth-ladder winner; N=10 regressed, so N=5 is the chosen depth). K=1 is also the clean case for Route 1's fixed-point argument (a single shared bank converges to one point; K>1 would converge to a K-cycle).
+
+**Route 1 — N′ convergence sweep (no retraining, cheap, run first).** The input-anchored recurrence iterates toward a fixed point `X* = LN(X⁰ + m(X*+X⁰))`, so its output should *plateau* at some N′ ≤ N. On the N=5 K=1 checkpoint, cap the forward loop at N′ and measure BPB(N′): if quality saturates by, say, N′=3 of 5, infer there for a free ~1.7× speedup at no quality cost. Requires a `mixer_recurrence_inference_steps` override that changes only the loop bound (the model is still *constructed* at the trained N=5 so the per-step norms match the checkpoint; inference reuses the first N′−1 norms). **Expected shape:** N′=1 likely *worse than T4* (the intermediate `X⁽¹⁾` was never a trained LM-head input, and the mixer is a refinement step, not a one-shot transform), with a plateau somewhere around N′=2–4. The deliverable is the quality/latency frontier, so report **BPB(N′) and tok/s(N′) together.**
+
+Checkpoint: N=5 K=1 ([log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)), trained BPB 1.1240. Each row caps the recurrence loop at N′ at inference only.
+
+| N′ (infer steps) | BPB sliding | tok/s | Notes |
+|---|---|---|---|
+| 1 | queued | queued | likely worse than T4 (out-of-distribution head input) |
+| 2 | queued | queued | |
+| 3 | queued | queued | |
+| 4 | queued | queued | |
+| 5 (= trained N) | 1.1240 | queued | reference: full depth |
+
+**Route 2 — per-step deep supervision (train-for-it, fallback).** If Route 1 shows convergence is too slow to yield a speedup (plateau ≈ N), train so that *every* intermediate is a valid prediction: apply the shared LM-head loss at each recurrence step (deep supervision / "anytime" inference), or randomize N during training (stochastic depth on N). Either makes inference depth a free knob — enabling aggressive early exit, even N′=1 — at the cost of extra training compute and a possible small quality trade at full N. Plan-doc-and-implement only if Route 1's curve justifies it.
+
+**Decision logic:** run Route 1 first (it's free — no retraining, just the loop-bound override on an existing checkpoint). Only invest in Route 2 if the free sweep can't recover meaningful speed. Both are deferred until a final N is chosen.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
