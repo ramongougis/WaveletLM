@@ -475,4 +475,108 @@ benchmark_only_run() {
 # echo "=== Report the learned A matrix per run for interpretability."
 # echo "============================================================"
 
+# ---- Untied Wavelet Reconstruction ------------------------------------------
+# Tests whether giving the reconstruct path its own predict/update networks
+# (separate weights from decompose) improves expressivity enough to justify
+# +~84M params. Mutually exclusive with mixer-only recurrence (breaks the
+# Reconstruct∘Decompose=I invariant). Tested standalone at T4, random batching.
+
+echo ""
+echo "============================================================"
+echo "=== Ablation: T4_untied_recon_1ep T4 + untied reconstruction (1ep)"
+echo "============================================================"
+
+run_ablation "T4_untied_recon_1ep T4 + untied wavelet reconstruction (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "untied_reconstruction": true}' \
+    "T4_untied_recon_1ep: untied reconstruct path (+~84M params); standalone expressivity test vs T4 baseline"
+
+# ---- Dropout sweep -----------------------------------------------------------
+# Vary each of the 5 dropout quantities individually ±10% from T4 defaults,
+# all others held at baseline. Final combined run uses the better value from
+# each pair (or baseline if neither improved). Reference: T4 BPB 1.1311.
+# T4 defaults: emb=0.20, proj=0.10, mix=0.10, mlp=0.10, lm_head=0.24.
+
+# D1: dropout_embedding low (0.18)
+run_ablation "T4_dropout_emb_low_1ep T4 dropout_embedding=0.18 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_embedding": 0.18}' \
+    "T4_dropout_emb_low_1ep: dropout_embedding 0.20 -> 0.18 (-10%); all others at T4 defaults"
+
+# D2: dropout_embedding high (0.22)
+run_ablation "T4_dropout_emb_high_1ep T4 dropout_embedding=0.22 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_embedding": 0.22}' \
+    "T4_dropout_emb_high_1ep: dropout_embedding 0.20 -> 0.22 (+10%); all others at T4 defaults"
+
+# D3: dropout_projection low (0.09)
+run_ablation "T4_dropout_proj_low_1ep T4 dropout_projection=0.09 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_projection": 0.09}' \
+    "T4_dropout_proj_low_1ep: dropout_projection 0.10 -> 0.09 (-10%); all others at T4 defaults"
+
+# D4: dropout_projection high (0.11)
+run_ablation "T4_dropout_proj_high_1ep T4 dropout_projection=0.11 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_projection": 0.11}' \
+    "T4_dropout_proj_high_1ep: dropout_projection 0.10 -> 0.11 (+10%); all others at T4 defaults"
+
+# D5: dropout_mixer low (0.09)
+run_ablation "T4_dropout_mix_low_1ep T4 dropout_mixer=0.09 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mixer": 0.09}' \
+    "T4_dropout_mix_low_1ep: dropout_mixer 0.10 -> 0.09 (-10%); all others at T4 defaults"
+
+# D6: dropout_mixer high (0.11)
+run_ablation "T4_dropout_mix_high_1ep T4 dropout_mixer=0.11 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mixer": 0.11}' \
+    "T4_dropout_mix_high_1ep: dropout_mixer 0.10 -> 0.11 (+10%); all others at T4 defaults"
+
+# D7: dropout_mlp low (0.09)
+run_ablation "T4_dropout_mlp_low_1ep T4 dropout_mlp=0.09 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mlp": 0.09}' \
+    "T4_dropout_mlp_low_1ep: dropout_mlp 0.10 -> 0.09 (-10%); all others at T4 defaults"
+
+# D8: dropout_mlp high (0.11)
+run_ablation "T4_dropout_mlp_high_1ep T4 dropout_mlp=0.11 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mlp": 0.11}' \
+    "T4_dropout_mlp_high_1ep: dropout_mlp 0.10 -> 0.11 (+10%); all others at T4 defaults"
+
+# D9: dropout_lm_head low (0.216)
+run_ablation "T4_dropout_lmh_low_1ep T4 dropout_lm_head=0.216 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_lm_head": 0.216}' \
+    "T4_dropout_lmh_low_1ep: dropout_lm_head 0.24 -> 0.216 (-10%); all others at T4 defaults"
+
+# D10: dropout_lm_head high (0.264)
+run_ablation "T4_dropout_lmh_high_1ep T4 dropout_lm_head=0.264 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_lm_head": 0.264}' \
+    "T4_dropout_lmh_high_1ep: dropout_lm_head 0.24 -> 0.264 (+10%); all others at T4 defaults"
+
+# D11: optimal combined dropout — fill in best value from each pair above.
+# Values below are placeholders; replace each TBD with the better of the two
+# values tested for that quantity (or the T4 default if neither improved).
+# run_ablation "T4_dropout_optimal_1ep T4 optimal combined dropout (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_embedding": TBD, "dropout_projection": TBD, "dropout_mixer": TBD, "dropout_mlp": TBD, "dropout_lm_head": TBD}' \
+#     "T4_dropout_optimal_1ep: best dropout value per type from individual sweeps; combined optimum"
+
+# ---- Weight decay sweep ------------------------------------------------------
+# Two flanking values around the T4 default (1e-6). Reference: T4 BPB 1.1311.
+
+# WD1: lower weight decay (5e-7)
+run_ablation "T4_wd_5e7_1ep T4 weight_decay=5e-7 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 5e-7}' \
+    "T4_wd_5e7_1ep: weight_decay 1e-6 -> 5e-7 (halved); vs T4 baseline"
+
+# WD2: higher weight decay (2e-6)
+run_ablation "T4_wd_2e6_1ep T4 weight_decay=2e-6 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 2e-6}' \
+    "T4_wd_2e6_1ep: weight_decay 1e-6 -> 2e-6 (doubled); vs T4 baseline"
 

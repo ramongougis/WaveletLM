@@ -550,12 +550,12 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Recurrence Efficiency: Gate Caching](#recurrence-efficiency-gate-caching)
 - [Long-Range Context: Multi-Pole SSM + Truncated BPTT](#long-range-context-multi-pole-ssm--truncated-bptt)
 - [Dense Recurrence](#dense-recurrence)
-- [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Complex Wavelets](#complex-wavelets)
-- [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
 - [Dropout](#dropout)
 - [Weight Decay](#weight-decay)
+- [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
+- [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
 - [Mixer Transform Ablation](#mixer-transform-ablation)
 - [Step-Time Speedups](#step-time-speedups)
 - [T5 Baseline](#t5-baseline)
@@ -1216,18 +1216,6 @@ DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseF
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Wavelet Sparsity Probe & Wavelet Shrinkage
-
-Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.
-
-**Sparsity probe (diagnostic, ~30 minutes).** Run a trained T2 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (quantiles, fraction below 1% of max). If ~80%+ are near zero (typical for natural signals), several optimization directions open: sparse mixer compute (top-k mixing per scale), low-bit detail quantization (details at fp8/int8, approximation at fp16), sparse activation storage for long-context, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High info-per-compute; run this first.
-
-**Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients in forward: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` with `λ ~ 0.1` and `σ_scale` a per-scale running EMA. One config flag (`wavelet_shrinkage_lambda`), ~10 lines. **Helps** → effective regularization (model was using detail coefficients indiscriminately); **Hurts** → coefficients aren't redundant, the learned wavelet lacks JPEG-style sparsity (itself informative). Combine: run probe first, calibrate `λ` from the 25th percentile per scale, then test shrinkage at 1ep on T2/Adagrad.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
 ### Untied Wavelet Reconstruction
 
 The current implementation **ties** the wavelet reconstruct path to the decompose path: they share the same `predict_nets` and `update_nets` (perfect mathematical invertibility — decompose followed by reconstruct is exactly identity when no processing happens in between). The flag `untied_reconstruction` (already in config.json, currently `false`) would give the reconstruct path its **own** predict/update networks — same architecture, separate weights.
@@ -1238,7 +1226,12 @@ The current implementation **ties** the wavelet reconstruct path to the decompos
 
 **Mutually exclusive with Recurrence (Mixer Only).** Untied reconstruction breaks the invariant that justifies "mixer only" recurrence. If both are pursued, the recurrence design has to be reformulated — either to fold the full `Decompose → ... → Reconstruct` cycle into the recurrent loop (multiplying compute by N), or to share recurrent updates only within the spectral basis with explicit care for the non-inverse reconstruct. Cleaner to commit to one direction first: test untied reconstruction as a standalone variant against T2 baseline (1-epoch at fixed compute), then decide whether to compose it with recurrence.
 
-**Test plan:** single-flag flip (`untied_reconstruction: true`) on T2 + 1ep + sequential? + random? — both sampling modes worth measuring since the wavelet's role differs between them. Compare BPB sliding and best val to T2 reference at matched compute.
+**Test plan:** single-flag flip (`untied_reconstruction: true`) on T4 + 1ep (random batching). Compare BPB sliding and best val to T4 reference.
+
+| Variant | Params | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
+|---|---|---|---|---|---|---|
+| T4 baseline (tied, ref) | 393.01M | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| + untied reconstruction | ~476.94M | queued | queued | queued | — | queued |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1263,6 +1256,59 @@ Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Dropout
+
+Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
+
+Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regularization signal). The resulting optimal values will then be retroactively applied to L=2 (and any other higher-layer formulations) for performance measurement and benchmarking to verify whether L=2's (or higher level's) val loss also improves under the L=1-tuned regularization recipe. Headline numbers accordingly.
+
+**Sweep (1ep each; T4 baseline, one value varied at a time; reference = T4 at current defaults).**
+
+| Run | drop_emb | drop_proj | drop_mix | drop_mlp | drop_lm | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
+|---|---|---|---|---|---|---|---|---|---|---|
+| T4 baseline | 0.20 | 0.10 | 0.10 | 0.10 | 0.240 | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| emb −10% | **0.18** | 0.10 | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| emb +10% | **0.22** | 0.10 | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| proj −10% | 0.20 | **0.09** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| proj +10% | 0.20 | **0.11** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| mix −10% | 0.20 | 0.10 | **0.09** | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| mix +10% | 0.20 | 0.10 | **0.11** | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| mlp −10% | 0.20 | 0.10 | 0.10 | **0.09** | 0.240 | queued | queued | queued | — | queued |
+| mlp +10% | 0.20 | 0.10 | 0.10 | **0.11** | 0.240 | queued | queued | queued | — | queued |
+| lm_head −10% | 0.20 | 0.10 | 0.10 | 0.10 | **0.216** | queued | queued | queued | — | queued |
+| lm_head +10% | 0.20 | 0.10 | 0.10 | 0.10 | **0.264** | queued | queued | queued | — | queued |
+| **Optimal combo** | TBD | TBD | TBD | TBD | TBD | queued | queued | queued | — | queued |
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Weight Decay
+
+Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. More values must to be attempted (likely slightly higher is best).
+
+| weight_decay | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
+|---|---|---|---|---|---|
+| 1e-06 (T4 baseline) | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| 5e-07 (lower) | queued | queued | queued | — | queued |
+| 2e-06 (higher) | queued | queued | queued | — | queued |
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Wavelet Sparsity Probe & Wavelet Shrinkage
+
+Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.
+
+**Sparsity probe (diagnostic, ~30 minutes).** Run a trained T2 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (quantiles, fraction below 1% of max). If ~80%+ are near zero (typical for natural signals), several optimization directions open: sparse mixer compute (top-k mixing per scale), low-bit detail quantization (details at fp8/int8, approximation at fp16), sparse activation storage for long-context, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High info-per-compute; run this first.
+
+**Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients in forward: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` with `λ ~ 0.1` and `σ_scale` a per-scale running EMA. One config flag (`wavelet_shrinkage_lambda`), ~10 lines. **Helps** → effective regularization (model was using detail coefficients indiscriminately); **Hurts** → coefficients aren't redundant, the learned wavelet lacks JPEG-style sparsity (itself informative). Combine: run probe first, calibrate `λ` from the 25th percentile per scale, then test shrinkage at 1ep on T2/Adagrad.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Inference-Depth Flexibility (Train Deep, Infer Shallow)
 
 Recurrence multiplies inference latency, not just training cost: every token pays N× the mixer (N=5 K=2 generates at ~18 tok/s vs T4's ~34 tok/s). This section pursues **decoupling inference depth N′ from training depth N** — keeping the deep-trained quality while recovering speed. **Target checkpoint: the recurrence sweep settled on N=5 K=1** (BPB 1.1240, best val 3.4986, +0 params over T4 — the depth-ladder winner; N=10 regressed, so N=5 is the chosen depth). K=1 is also the clean case for Route 1's fixed-point argument (a single shared bank converges to one point; K>1 would converge to a K-cycle).
@@ -1282,24 +1328,6 @@ Checkpoint: N=5 K=1 ([log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)), trai
 **Route 2 — per-step deep supervision (train-for-it, fallback).** If Route 1 shows convergence is too slow to yield a speedup (plateau ≈ N), train so that *every* intermediate is a valid prediction: apply the shared LM-head loss at each recurrence step (deep supervision / "anytime" inference), or randomize N during training (stochastic depth on N). Either makes inference depth a free knob — enabling aggressive early exit, even N′=1 — at the cost of extra training compute and a possible small quality trade at full N. Plan-doc-and-implement only if Route 1's curve justifies it.
 
 **Decision logic:** run Route 1 first (it's free — no retraining, just the loop-bound override on an existing checkpoint). Only invest in Route 2 if the free sweep can't recover meaningful speed. Both are deferred until a final N is chosen.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Dropout
-
-Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
-
-Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regularization signal). The resulting optimal values will then be retroactively applied to L=2 (and any other higher-layer formulations) for performance measurement and benchmarking to verify whether L=2's (or higher level's) val loss also improves under the L=1-tuned regularization recipe. Headline numbers accordingly.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Weight Decay
-
-Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. More values must to be attempted (likely slightly higher is best).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
