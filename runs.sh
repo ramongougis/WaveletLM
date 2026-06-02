@@ -311,168 +311,168 @@ benchmark_only_run() {
 # # Run F6: N=20, K=1 — deepest probe. Only if F5 keeps improving.
 # run_ablation "T4_recur_resid_N20_K1_1ep T4 recurrence N=20 K=1 + input-anchored residual (1ep)" \
 #     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
-#     "T4_recur_resid_N20_K1_1ep: N=20 K=1 with input-anchored residual; deepest probe (~15.7h, cancel if N=10 anchored plateaus)"
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 20, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true}' \
+# #     "T4_recur_resid_N20_K1_1ep: N=20 K=1 with input-anchored residual; deepest probe (~15.7h, cancel if N=10 anchored plateaus)"
 
 
-echo ""
-echo "============================================================"
-echo "=== MIXER RECURRENCE QUEUE — WITH INPUT-ANCHORED RESIDUAL (1ep each)"
-echo "==="
-echo "=== Re-runs the N x K sweep under the corrected residual that"
-echo "===   re-injects X0 at every mixer step. Tests whether input"
-echo "===   anchoring rescues depth (no-residual sweep regressed past N=2)."
-echo "===   Reference: T4 baseline best val 3.5157 (BPB 1.1311)."
-echo "===   Compare each to its no-residual twin in the README."
-echo "==="
-echo "=== Queue (cost-ascending on A5000):"
-echo "===   1) T4_recur_resid_N1_K2_1ep   — N=1  K=2  (2 apps)   ~5.7h"
-echo "===   2) T4_recur_resid_N2_K1_1ep   — N=2  K=1  (2 apps)   ~5.5h"
-echo "===   3) T4_recur_resid_N2_K2_1ep   — N=2  K=2  (4 apps)   ~6.8h"
-echo "===   4) T4_recur_resid_N5_K1_1ep   — N=5  K=1  (5 apps)   ~7.3h  [depth-rescue test]"
-echo "===   5) T4_recur_resid_N5_K2_1ep   — N=5  K=2  (10 apps)  ~10.4h"
-echo "===   6) T4_recur_resid_N10_K1_1ep  — N=10 K=1  (10 apps)  ~9.9h  [cancel if N=5 regresses]"
-echo "===   7) T4_recur_resid_N20_K1_1ep  — N=20 K=1  (20 apps)  ~15.7h [cancel if N=10 plateaus]"
-echo "============================================================"
+# echo ""
+# echo "============================================================"
+# echo "=== MIXER RECURRENCE QUEUE — WITH INPUT-ANCHORED RESIDUAL (1ep each)"
+# echo "==="
+# echo "=== Re-runs the N x K sweep under the corrected residual that"
+# echo "===   re-injects X0 at every mixer step. Tests whether input"
+# echo "===   anchoring rescues depth (no-residual sweep regressed past N=2)."
+# echo "===   Reference: T4 baseline best val 3.5157 (BPB 1.1311)."
+# echo "===   Compare each to its no-residual twin in the README."
+# echo "==="
+# echo "=== Queue (cost-ascending on A5000):"
+# echo "===   1) T4_recur_resid_N1_K2_1ep   — N=1  K=2  (2 apps)   ~5.7h"
+# echo "===   2) T4_recur_resid_N2_K1_1ep   — N=2  K=1  (2 apps)   ~5.5h"
+# echo "===   3) T4_recur_resid_N2_K2_1ep   — N=2  K=2  (4 apps)   ~6.8h"
+# echo "===   4) T4_recur_resid_N5_K1_1ep   — N=5  K=1  (5 apps)   ~7.3h  [depth-rescue test]"
+# echo "===   5) T4_recur_resid_N5_K2_1ep   — N=5  K=2  (10 apps)  ~10.4h"
+# echo "===   6) T4_recur_resid_N10_K1_1ep  — N=10 K=1  (10 apps)  ~9.9h  [cancel if N=5 regresses]"
+# echo "===   7) T4_recur_resid_N20_K1_1ep  — N=20 K=1  (20 apps)  ~15.7h [cancel if N=10 plateaus]"
+# echo "============================================================"
 
 
-# ---- Recurrence efficiency: gate caching ------------------------------------
-# Approximation that computes the cross-scale gate once on the first recurrence
-# cycle and reuses it for cycles 2..N (mixer_recurrence_cache_gate=true),
-# eliminating the W_gate matmul + routing einsum on all but the first cycle.
-# Roughly halves per-step matmul cost at K=1.
-#
-# Baseline for comparison is the queued T4_recur_N5_K1_1ep (cache off). This
-# run is identical except cache_gate=true — isolates the approximation's
-# quality cost and runtime saving. Decision: if best val stays within 0.0015
-# of the no-cache N=5 K=1 run AND wall-clock drops meaningfully, caching is a
-# free win and should be enabled for deeper-N runs.
+# # ---- Recurrence efficiency: gate caching ------------------------------------
+# # Approximation that computes the cross-scale gate once on the first recurrence
+# # cycle and reuses it for cycles 2..N (mixer_recurrence_cache_gate=true),
+# # eliminating the W_gate matmul + routing einsum on all but the first cycle.
+# # Roughly halves per-step matmul cost at K=1.
+# #
+# # Baseline for comparison is the queued T4_recur_N5_K1_1ep (cache off). This
+# # run is identical except cache_gate=true — isolates the approximation's
+# # quality cost and runtime saving. Decision: if best val stays within 0.0015
+# # of the no-cache N=5 K=1 run AND wall-clock drops meaningfully, caching is a
+# # free win and should be enabled for deeper-N runs.
 
-# run_ablation "T4_recur_N5_K1_cachegate_1ep T4 + recurrence N=5 K=1 + gate cache (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_cache_gate": true}' \
-#     "T4_recur_N5_K1_cachegate_1ep: gate cached after cycle 1, reused for cycles 2-5; vs T4_recur_N5_K1_1ep baseline"
+# # run_ablation "T4_recur_N5_K1_cachegate_1ep T4 + recurrence N=5 K=1 + gate cache (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_cache_gate": true}' \
+# #     "T4_recur_N5_K1_cachegate_1ep: gate cached after cycle 1, reused for cycles 2-5; vs T4_recur_N5_K1_1ep baseline"
 
-echo ""
-echo "============================================================"
-echo "=== RECURRENCE GATE-CACHE TEST (1ep)"
-echo "==="
-echo "=== Compares against T4_recur_N5_K1_1ep (cache off). Same config,"
-echo "===   mixer_recurrence_cache_gate=true. Expect lower wall-clock;"
-echo "===   watch best val stays within 0.0015 of the no-cache run."
-echo "============================================================"
-
-
-# ---- Long-range context: multi-pole SSM + truncated BPTT --------------------
-# Two attention-free upgrades to the cross-window decompose-bypass context.
-# All four runs use sequential_blocks=true — the cross-window state (and BPTT
-# through it) is only meaningful in corpus order. The reference is therefore a
-# SEQUENTIAL T4, NOT the random-batched T4 from the recurrence sections.
-#   #1 decompose_bypass_ssm   : multi-pole diagonal SSM summary (P EMAs)
-#   #2 decompose_bypass_bptt  : retain cross-window graph across grad_accum span
-# Ablation order: SSM vs baseline, BPTT vs baseline, then both. Decision rule:
-# clear T4 best val 3.5157 by > 0.0015.
-
-# All four use grad_accum=2 (so BPTT span = 2 windows = one trained
-# cross-window link per step; with the BASE grad_accum=1 the span would be a
-# single window and BPTT a no-op). All four share this batch config so only the
-# SSM/BPTT flags vary. Effective batch = MBS(8) x GA(2) = 16.
-
-# LR0: sequential T4 baseline — the honest reference for this section.
-# run_ablation "T4_seq_baseline_1ep T4 sequential baseline for long-range (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true}' \
-#     "T4_seq_baseline_1ep: T4 sequential, GA=2 (no SSM, no BPTT); reference for the long-range ablations"
-
-# LR1: + multi-pole SSM summary (P=4).
-# run_ablation "T4_seq_ssm_1ep T4 sequential + multi-pole SSM (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4}' \
-#     "T4_seq_ssm_1ep: + multi-pole diagonal SSM (P=4) replacing the cumulative-mean context summary"
-
-# # LR2: + truncated BPTT across windows (span = grad_accum = 2).
-# run_ablation "T4_seq_bptt_1ep T4 sequential + truncated BPTT (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_bptt": true}' \
-#     "T4_seq_bptt_1ep: + truncated BPTT (span=2 windows; trains the mean cross-window state)"
-
-# LR3: + both SSM and BPTT — richer state, trained to be useful.
-# run_ablation "T4_seq_ssm_bptt_1ep T4 sequential + SSM + BPTT (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_bptt": true}' \
-#     "T4_seq_ssm_bptt_1ep: + multi-pole SSM AND truncated BPTT (span=2; the full long-range bet)"
-
-# LR4: + cross-window SSM — carry the pole state across block boundaries so the
-# long poles integrate beyond 256 tokens (forward-only carry in v1). Tests the
-# genuine cross-block long-range mechanism that the within-window SSM (LR1) is
-# only a confounded proxy for (within-window competes with the wavelet).
-run_ablation "T4_seq_ssm_xwin_1ep T4 sequential + cross-window SSM (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_ssm_cross_window": true}' \
-    "T4_seq_ssm_xwin_1ep: + multi-pole SSM with cross-window pole-state carry (multi-timescale memory across blocks)"
-
-# LR5: + cross-window SSM AND BPTT — the full long-range stack.
-run_ablation "T4_seq_ssm_xwin_bptt_1ep T4 sequential + cross-window SSM + BPTT (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_ssm_cross_window": true, "decompose_bypass_bptt": true}' \
-    "T4_seq_ssm_xwin_bptt_1ep: + cross-window SSM AND truncated BPTT (full long-range stack)"
-
-echo ""
-echo "============================================================"
-echo "=== LONG-RANGE CONTEXT QUEUE (SSM + BPTT, 1ep each, sequential)"
-echo "==="
-echo "=== Reference: T4_seq_baseline_1ep (sequential T4, no SSM/BPTT)."
-echo "===   1) T4_seq_baseline_1ep      — sequential T4 reference"
-echo "===   2) T4_seq_ssm_1ep           — + within-window multi-pole SSM (P=4)"
-echo "===   3) T4_seq_bptt_1ep          — + truncated BPTT"
-echo "===   4) T4_seq_ssm_bptt_1ep      — + within-window SSM + BPTT"
-echo "===   5) T4_seq_ssm_xwin_1ep      — + cross-window SSM (pole-state carry)"
-echo "===   6) T4_seq_ssm_xwin_bptt_1ep — + cross-window SSM + BPTT (full stack)"
-echo "=== Decision rule: > 0.0015 nat improvement on best val vs sequential T4."
-echo "============================================================"
+# echo ""
+# echo "============================================================"
+# echo "=== RECURRENCE GATE-CACHE TEST (1ep)"
+# echo "==="
+# echo "=== Compares against T4_recur_N5_K1_1ep (cache off). Same config,"
+# echo "===   mixer_recurrence_cache_gate=true. Expect lower wall-clock;"
+# echo "===   watch best val stays within 0.0015 of the no-cache run."
+# echo "============================================================"
 
 
-# ---- Dense recurrence (DenseNet-style depth-weighted averaging) -------------
-# Each recurrence step's input is a learned weighted combination of ALL prior
-# step outputs (mixer_recurrence_dense=true), not just latest+X0. The M x M
-# lower-triangular weight matrix A is init to reproduce the input-anchored
-# residual exactly (verified bit-identical at init), so these are strict
-# generalizations of the with-residual recurrence runs. ~M^2/2 extra params
-# (~15 at N=5) — negligible. Thesis: routing over a SHARED bank (K=1) may
-# approach DISTINCT-bank (K=2, +58.85M params) quality → parameter efficiency.
-# Rank by BPB sliding (val understates context configs); compare each to its
-# input-anchored twin in the recurrence with-residual table.
+# # ---- Long-range context: multi-pole SSM + truncated BPTT --------------------
+# # Two attention-free upgrades to the cross-window decompose-bypass context.
+# # All four runs use sequential_blocks=true — the cross-window state (and BPTT
+# # through it) is only meaningful in corpus order. The reference is therefore a
+# # SEQUENTIAL T4, NOT the random-batched T4 from the recurrence sections.
+# #   #1 decompose_bypass_ssm   : multi-pole diagonal SSM summary (P EMAs)
+# #   #2 decompose_bypass_bptt  : retain cross-window graph across grad_accum span
+# # Ablation order: SSM vs baseline, BPTT vs baseline, then both. Decision rule:
+# # clear T4 best val 3.5157 by > 0.0015.
 
-# DR1: dense N=5 K=1 (raw weights). Headline param-efficiency test vs K=2.
-run_ablation "T4_recur_dense_N5_K1_1ep T4 dense recurrence N=5 K=1 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true}' \
-    "T4_recur_dense_N5_K1_1ep: dense depth-weighted averaging over 5 steps (shared bank); vs input-anchored N=5 K=1 and vs K=2 (param efficiency)"
+# # All four use grad_accum=2 (so BPTT span = 2 windows = one trained
+# # cross-window link per step; with the BASE grad_accum=1 the span would be a
+# # single window and BPTT a no-op). All four share this batch config so only the
+# # SSM/BPTT flags vary. Effective batch = MBS(8) x GA(2) = 16.
 
-# DR2: dense N=5 K=1, normalized (softmax/convex rows) — interpretability-max.
-run_ablation "T4_recur_dense_norm_N5_K1_1ep T4 dense recurrence N=5 K=1 normalized (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true, "mixer_recurrence_dense_normalize": true}' \
-    "T4_recur_dense_norm_N5_K1_1ep: softmax rows (per-step distribution over depths); interpretability variant vs raw DR1"
+# # LR0: sequential T4 baseline — the honest reference for this section.
+# # run_ablation "T4_seq_baseline_1ep T4 sequential baseline for long-range (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true}' \
+# #     "T4_seq_baseline_1ep: T4 sequential, GA=2 (no SSM, no BPTT); reference for the long-range ablations"
 
-# DR3: dense N=10 K=1 — does dense routing let depth scale past where
-# input-anchoring plateaus? Run only if DR1 shows promise.
-run_ablation "T4_recur_dense_N10_K1_1ep T4 dense recurrence N=10 K=1 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true}' \
-    "T4_recur_dense_N10_K1_1ep: dense routing at depth 10; tests whether dense scales depth past the anchored plateau"
+# # LR1: + multi-pole SSM summary (P=4).
+# # run_ablation "T4_seq_ssm_1ep T4 sequential + multi-pole SSM (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4}' \
+# #     "T4_seq_ssm_1ep: + multi-pole diagonal SSM (P=4) replacing the cumulative-mean context summary"
 
-echo ""
-echo "============================================================"
-echo "=== DENSE RECURRENCE QUEUE (depth-weighted averaging, 1ep each)"
-echo "==="
-echo "=== A init reproduces input-anchored exactly; these generalize it."
-echo "===   1) T4_recur_dense_N5_K1_1ep       — dense N=5 K=1 (raw)"
-echo "===   2) T4_recur_dense_norm_N5_K1_1ep  — dense N=5 K=1 (softmax rows)"
-echo "===   3) T4_recur_dense_N10_K1_1ep      — dense N=10 K=1 (depth-scale test)"
-echo "=== Rank by BPB sliding (~0.0010 threshold). Headline: dense N=5 K=1"
-echo "===   (~15 params) vs K=2 (+58.85M) — does routing replace parameters?"
-echo "=== Report the learned A matrix per run for interpretability."
-echo "============================================================"
+# # # LR2: + truncated BPTT across windows (span = grad_accum = 2).
+# # run_ablation "T4_seq_bptt_1ep T4 sequential + truncated BPTT (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_bptt": true}' \
+# #     "T4_seq_bptt_1ep: + truncated BPTT (span=2 windows; trains the mean cross-window state)"
+
+# # LR3: + both SSM and BPTT — richer state, trained to be useful.
+# # run_ablation "T4_seq_ssm_bptt_1ep T4 sequential + SSM + BPTT (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_bptt": true}' \
+# #     "T4_seq_ssm_bptt_1ep: + multi-pole SSM AND truncated BPTT (span=2; the full long-range bet)"
+
+# # LR4: + cross-window SSM — carry the pole state across block boundaries so the
+# # long poles integrate beyond 256 tokens (forward-only carry in v1). Tests the
+# # genuine cross-block long-range mechanism that the within-window SSM (LR1) is
+# # only a confounded proxy for (within-window competes with the wavelet).
+# # run_ablation "T4_seq_ssm_xwin_1ep T4 sequential + cross-window SSM (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_ssm_cross_window": true}' \
+# #     "T4_seq_ssm_xwin_1ep: + multi-pole SSM with cross-window pole-state carry (multi-timescale memory across blocks)"
+
+# # # LR5: + cross-window SSM AND BPTT — the full long-range stack.
+# # run_ablation "T4_seq_ssm_xwin_bptt_1ep T4 sequential + cross-window SSM + BPTT (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "grad_accum": 2, "sequential_blocks": true, "decompose_bypass_ssm": true, "decompose_bypass_ssm_poles": 4, "decompose_bypass_ssm_cross_window": true, "decompose_bypass_bptt": true}' \
+# #     "T4_seq_ssm_xwin_bptt_1ep: + cross-window SSM AND truncated BPTT (full long-range stack)"
+
+# echo ""
+# echo "============================================================"
+# echo "=== LONG-RANGE CONTEXT QUEUE (SSM + BPTT, 1ep each, sequential)"
+# echo "==="
+# echo "=== Reference: T4_seq_baseline_1ep (sequential T4, no SSM/BPTT)."
+# echo "===   1) T4_seq_baseline_1ep      — sequential T4 reference"
+# echo "===   2) T4_seq_ssm_1ep           — + within-window multi-pole SSM (P=4)"
+# echo "===   3) T4_seq_bptt_1ep          — + truncated BPTT"
+# echo "===   4) T4_seq_ssm_bptt_1ep      — + within-window SSM + BPTT"
+# echo "===   5) T4_seq_ssm_xwin_1ep      — + cross-window SSM (pole-state carry)"
+# echo "===   6) T4_seq_ssm_xwin_bptt_1ep — + cross-window SSM + BPTT (full stack)"
+# echo "=== Decision rule: > 0.0015 nat improvement on best val vs sequential T4."
+# echo "============================================================"
+
+
+# # ---- Dense recurrence (DenseNet-style depth-weighted averaging) -------------
+# # Each recurrence step's input is a learned weighted combination of ALL prior
+# # step outputs (mixer_recurrence_dense=true), not just latest+X0. The M x M
+# # lower-triangular weight matrix A is init to reproduce the input-anchored
+# # residual exactly (verified bit-identical at init), so these are strict
+# # generalizations of the with-residual recurrence runs. ~M^2/2 extra params
+# # (~15 at N=5) — negligible. Thesis: routing over a SHARED bank (K=1) may
+# # approach DISTINCT-bank (K=2, +58.85M params) quality → parameter efficiency.
+# # Rank by BPB sliding (val understates context configs); compare each to its
+# # input-anchored twin in the recurrence with-residual table.
+
+# # DR1: dense N=5 K=1 (raw weights). Headline param-efficiency test vs K=2.
+# # run_ablation "T4_recur_dense_N5_K1_1ep T4 dense recurrence N=5 K=1 (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true}' \
+# #     "T4_recur_dense_N5_K1_1ep: dense depth-weighted averaging over 5 steps (shared bank); vs input-anchored N=5 K=1 and vs K=2 (param efficiency)"
+
+# # # DR2: dense N=5 K=1, normalized (softmax/convex rows) — interpretability-max.
+# # run_ablation "T4_recur_dense_norm_N5_K1_1ep T4 dense recurrence N=5 K=1 normalized (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true, "mixer_recurrence_dense_normalize": true}' \
+# #     "T4_recur_dense_norm_N5_K1_1ep: softmax rows (per-step distribution over depths); interpretability variant vs raw DR1"
+
+# # # DR3: dense N=10 K=1 — does dense routing let depth scale past where
+# # # input-anchoring plateaus? Run only if DR1 shows promise.
+# # run_ablation "T4_recur_dense_N10_K1_1ep T4 dense recurrence N=10 K=1 (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "mixer_recurrence_steps": 10, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_dense": true}' \
+# #     "T4_recur_dense_N10_K1_1ep: dense routing at depth 10; tests whether dense scales depth past the anchored plateau"
+
+# echo ""
+# echo "============================================================"
+# echo "=== DENSE RECURRENCE QUEUE (depth-weighted averaging, 1ep each)"
+# echo "==="
+# echo "=== A init reproduces input-anchored exactly; these generalize it."
+# echo "===   1) T4_recur_dense_N5_K1_1ep       — dense N=5 K=1 (raw)"
+# echo "===   2) T4_recur_dense_norm_N5_K1_1ep  — dense N=5 K=1 (softmax rows)"
+# echo "===   3) T4_recur_dense_N10_K1_1ep      — dense N=10 K=1 (depth-scale test)"
+# echo "=== Rank by BPB sliding (~0.0010 threshold). Headline: dense N=5 K=1"
+# echo "===   (~15 params) vs K=2 (+58.85M) — does routing replace parameters?"
+# echo "=== Report the learned A matrix per run for interpretability."
+# echo "============================================================"
 
 
