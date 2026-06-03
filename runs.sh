@@ -536,15 +536,15 @@ benchmark_only_run() {
 # +~84M params. Mutually exclusive with mixer-only recurrence (breaks the
 # Reconstruct∘Decompose=I invariant). Tested standalone at T4, random batching.
 
-echo ""
-echo "============================================================"
-echo "=== Ablation: T4_untied_recon_1ep T4 + untied reconstruction (1ep)"
-echo "============================================================"
+# echo ""
+# echo "============================================================"
+# echo "=== Ablation: T4_untied_recon_1ep T4 + untied reconstruction (1ep)"
+# echo "============================================================"
 
-run_ablation "T4_untied_recon_1ep T4 + untied wavelet reconstruction (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "untied_reconstruction": true}' \
-    "T4_untied_recon_1ep: untied reconstruct path (+~84M params); standalone expressivity test vs T4 baseline"
+# # run_ablation "T4_untied_recon_1ep T4 + untied wavelet reconstruction (1ep)" \
+# #     "$BASE_PATCH_1EP" \
+# #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "untied_reconstruction": true}' \
+#     "T4_untied_recon_1ep: untied reconstruct path (+~84M params); standalone expressivity test vs T4 baseline"
 
 # ---- Dropout sweep: COORDINATE DESCENT ---------------------------------------
 # One dropout type at a time, ±10% around its current value. After each PAIR
