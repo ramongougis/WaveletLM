@@ -89,16 +89,68 @@ per_level = real-part (clean init), end = magnitude (theory-max). No learned
 2C→C projection in either — that would confound phase with capacity, which the
 matched-param control exists to isolate.
 
-**Reconstruction caveat.** The real lifting wavelet has *perfect*
-reconstruction (`Reconstruct∘Decompose = I`), which is what the mixer-recurrence
-mechanism relies on. Collapsing complex→real is **not exactly invertible**, so
-the complex variant loses perfect reconstruction. This is acceptable because
-(a) complex wavelets are tested **standalone**, not composed with recurrence
-(same mutual-exclusion as untied reconstruction), and (b) the forward pass
-`decompose → FWHT → mixer → iFWHT → reconstruct → x'` still trains as a learned
-encoder/decoder.
+**Reconstruction caveat (collapse variants only).** The real lifting wavelet has
+*perfect* reconstruction (`Reconstruct∘Decompose = I`). The two **collapse**
+constructions above (direct, dualtree) discard phase before the mixer, so they
+are **not** invertible and use a separate untied reconstruct.
 
----
+> ⚠️ **Empirical update (2026-06-03): the untied-reconstruction ablation
+> regressed** — breaking `Reconstruct∘Decompose=I` and adding +117.5M params got
+> *worse* BPB (+0.0013) and best val (+0.0040). The tied invertible symmetry is
+> load-bearing, not just cheaper. This directly predicts the **collapse variants
+> (which also break invertibility) are likely hamstrung by the same effect**, and
+> motivates the invertible construction below as the better-aligned experiment.
+
+## Construction "invertible" (4th construction — phase IS mixed, symmetry kept)
+
+The collapse variants sacrificed invertibility to hand the mixer a shift-invariant
+(magnitude) input. Given the untied result, that trade now looks wrong. The
+invertible construction keeps the load-bearing `Reconstruct∘Decompose=I` symmetry
+**and** mixes phase, at the cost of a complex (2C) mixer path:
+
+```
+x → ComplexDecompose → [complex mixer: mixes magnitude AND phase]
+  → ComplexReconstruct (TIED, same complex weights) → Re(·) → x'
+```
+
+Invertibility holds because (a) complex lifting is structurally invertible with a
+tied complex reconstruct regardless of the P/U nets (lifting steps are
+triangular), and (b) the mixer is the learned transform *inside* the symmetry —
+it is supposed to change coefficients; the wavelet around it stays a true
+invertible transform. At init (mixer ≈ identity, imag ≈ 0) decompose→reconstruct
+returns real `x` with imag→0, so the final `Re(·)` at the block output is lossless
+at init. **This is the only complex construction that preserves the symmetry the
+untied ablation proved is load-bearing.**
+
+Cost: the mixer is no longer real width-C — it must see the full complex coeffs to
+mix phase. This is a new architecture axis (the collapse variants deliberately
+kept the mixer real); it ~doubles mixer width/compute. Config:
+`complex_construction: "invertible"`, with a sub-flag
+`complex_mixer_activation: "split" | "modulus_phase"`:
+
+- **"split" (interleaved 2C real mixer):** carry `[re, im]` as a 2C real tensor
+  through the EXISTING real mixer — applying the real gate activation to the
+  stacked tensor *is* split-complex (independent nonlinearity on re/im) with no
+  complex-activation code. Cheapest; reuses all mixer code; ~2× mixer width.
+- **"modulus_phase" (native complex mixer):** gate the **magnitude**
+  (`GELU(|z|)`, the shift-invariant quantity — best matches the thesis) while
+  preserving the phase angle: `mixer(z) = GELU_gate(|z|) · z/(|z|+ε)`. Needs a
+  genuinely complex mixer (complex linear + this activation) and an eps-guarded
+  phasor (fp16-danger near `|z|=0` — requires a gradient-finiteness smoke test).
+- *Holomorphic (complex Taylor of GELU) is rejected:* GELU's erf/abs are
+  non-analytic → vanishing/exploding complex gradients.
+
+Reconstruct is **tied** (reuses decompose's complex weights via the inverse
+lifting steps) — no separate reconstruct module, unlike the collapse variants.
+Mutual-exclusion with recurrence still applies in v1 (recurrence's mixer-only
+shortcut assumes a *real* mixer; composing them is a later question).
+
+## Design matrix (constructions × modes)
+
+Config flags: `wavelet_basis: "real"|"complex"`, `complex_construction:
+"direct"|"dualtree"|"invertible"`, `complex_collapse: "per_level"|"end"`
+(collapse variants only), `complex_mixer_activation: "split"|"modulus_phase"`
+(invertible only).
 
 ## Implementation surface
 
@@ -202,6 +254,23 @@ Tables for both runs are stubbed in the README "Complex Wavelets" section.
   the only cross-arm variable is the basis; in-section reference is the real
   control, not the crawl-on T4. runs.sh: CW1–CW4. Verified: real-basis
   regression-safe, all complex arms build/fwd/bwd, all guards fire.
+- **Increment 4 — DONE.** Invertible construction
+  (`complex_construction="invertible"`): tied complex decompose/reconstruct
+  (`InvertibleComplexLiftingDecompose` + `InvertibleComplexLiftingReconstruct`,
+  reconstruct reuses decompose's update_nets → exact inverse). Phase mixed inside
+  the symmetry via `complex_mixer_activation`: "split" (real spectral stack on re
+  and im independently) and "modulus_phase" (`modulus_phase_gate`: gate |z|,
+  preserve phase, eps-guarded fp32 phasor). Wired into model.py as an **isolated**
+  forward branch (`_forward_complex_invertible` + `_spectral_stack` helper) via an
+  early dispatch — the real forward is left byte-for-byte unchanged (zero blast
+  radius). Requires mixer_depth=1 (hard-errored). Smoke tests verify
+  Reconstruct∘Decompose=I to ~1e-6 (off-init weights), causality, modulus_phase
+  gradient finiteness at |z|=0, and split≠modulus_phase computation. End-to-end:
+  real regression-safe, both activations build/fwd/bwd with finite grads, guards
+  fire. Params at T4 scale: invertible wavelet 469.99M (vs collapse 293.74M; both
+  predict+update complex, tied reconstruct) → total 745.50M. Matched control =
+  `hidden_mult=4` (469.91M wavelet, near-exact, ratio 1.000). runs.sh: CW5
+  (split), CW6 (modulus_phase), CW7 (hm=4 control).
 
 ## Open questions / risks
 

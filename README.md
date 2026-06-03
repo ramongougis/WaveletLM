@@ -551,9 +551,10 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Long-Range Context: Multi-Pole SSM + Truncated BPTT](#long-range-context-multi-pole-ssm--truncated-bptt)
 - [Dense Recurrence](#dense-recurrence)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
-- [Complex Wavelets](#complex-wavelets)
 - [Dropout](#dropout)
 - [Weight Decay](#weight-decay)
+- [Complex Wavelets](#complex-wavelets)
+- [Wavelet Crawl Off](#wavelet-crawl-off)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
 - [Mixer Transform Ablation](#mixer-transform-ablation)
@@ -1231,60 +1232,9 @@ The current implementation **ties** the wavelet reconstruct path to the decompos
 | Variant | Params | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
 |---|---|---|---|---|---|---|
 | T4 baseline (tied, ref) | 393.01M | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| + untied reconstruction | ~476.94M | queued | queued | queued | — | queued |
+| + untied reconstruction | 510.48M | 1.1324 | 34.38 | 3.5197 | +0.0013 | [link](logs/wikitext-103_2026-06-03_01-48-38/log.txt) |
 
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Complex Wavelets
-
-Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform à la Kingsbury, or direct complex parameterization of the lifting predict/update networks). The motivation that matters is **not** "phase carries bonus information" (the vague version) but **shift-invariance** (the structural version).
-
-**The real mechanism: shift-invariance.** A critically-sampled wavelet transform — including our learned lifting scheme — is shift-*variant*. The split into even/odd lattices is a fixed sampling operation, so the same token pattern starting at position 4 vs position 5 produces materially different coefficient patterns. The learned predict/update networks **cannot fully correct this**, because the variance comes from the sampling lattice, not the filter weights. The classic reason to go complex (the dual-tree CWT) is precisely that an analytic/complex representation yields *approximately shift-invariant magnitude*, with phase encoding where within the subband a feature sits.
-
-For language this is a concrete inductive-bias gap, not an analogy: every syntactic constituent or n-gram that recurs at different offsets currently forces the mixer to learn multiple shifted coefficient signatures of the *same* structure. This is the same positional-binding / agreement-attraction weakness where WaveletLM is structurally weakest versus attention — the place a shift-invariant representation would most directly help.
-
-**Why the added parameters could be load-bearing rather than confounding.** Widening a real lifting net adds capacity to *memorize* both shifted versions; it does **not** make the representation shift-invariant. Complex makes the magnitude shift-invariant *by construction*. So a matched-param win (complex > real-at-equal-params) would be a genuine architectural result — capability emerging *from the structure*, not from capacity. This is the cleanest such test in the current backlog. Secondary, more speculative upsides: the FWHT mixer currently never sees within-subband position (real coefficients collapse it), so phase could let cross-scale gating route on *relative position* — a capability the architecture structurally lacks today; and a complex representation is a richer substrate for *positional* mechanistic probing (you can read off where in the window a feature lives), a non-perplexity reason aligned with the interpretability direction.
-
-**Cost (measured).** The real lifting stage is **117.50M params** (T4 breakdown, [log](logs/wikitext-103_2026-05-24_19-22-19/log.txt)), shared across layers, with reconstruct derived from it for free (tied). The complex variant is **293.74M** (decompose ≈2×117.5M complex predict/update + a *separate* 58.75M reconstruct, since the complex→real collapse is non-invertible so reconstruct can't be tied) — measured via `tools/complex_wavelets.param_count()` at C=2048/levels=7, identical for direct and dualtree. Net wavelet-stage delta **+176.24M** over T4, i.e. total model **569.25M** vs T4's 393.01M. Compute is ~2× on the wavelet stage; the mixer stage is unchanged (coefficients collapse to real width C before the FWHT/mixer, so the spectral stack never sees the imaginary channel).
-
-**Overlap with `wavelet_crawl` (already harvesting part of this benefit).** `wavelet_crawl` (learned ±1 dilation per level, −0.0037 at T4) is a cheap existing mechanism that already buys *some* shift/scale-robustness. So complex wavelets are competing for a *smaller* marginal headroom than a from-scratch estimate would suggest — part of the shift-robustness gain is already taken. The matched-param control must run with `wavelet_crawl` in its current T4 state so the comparison isolates what complex adds *on top of* crawl.
-
-**Test design (required matched-param form).** A bare complex run that beats T4 would be uninterpretable — this project has shown params help monotonically, so a win could be the +params, not the phase. Each complex variant is therefore paired with a **real-wavelet control widened to the same ~569M param count** (via `lifting_hidden_mult`). A complex variant is validated only if it beats its matched-param real control, not merely T4. Two constructions × the valid collapse modes:
-- **direct/per_level** — real-part collapse; clean near-real-Haar init.
-- **direct/end** — magnitude collapse; theory-max phase test.
-- **dualtree/end** — two causal-phase real trees → shift-invariant magnitude (magnitude-only; per_level is rejected as degenerate).
-
-| Variant | Params | BPB sliding | Best val | Δ vs T4 | Run log |
-|---|---|---|---|---|---|
-| T4 baseline (real, tied) | 393.01M | 1.1311 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| complex direct/per_level | 569.25M | queued | queued | — | queued |
-| complex direct/end | 569.25M | queued | queued | — | queued |
-| complex dualtree/end | 569.25M | queued | queued | — | queued |
-| real control (hidden_mult=3) | ~628M | queued | queued | — | queued |
-
-*No integer `lifting_hidden_mult` exactly matches the complex 293.74M wavelet (hm=2 → 234.97M, hm=3 → 352.44M). The control uses **hm=3**, giving it *more* params than the complex variants (~628M vs 569M) — the conservative choice: if a complex variant beats a real control with a param advantage, the shift-invariance benefit is unambiguous (not a capacity artifact).*
-
-Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tools/complex_wavelets.py](tools/complex_wavelets.py). Two real tensors (not native `complex64`), CGELU, collapse-to-real before the FWHT/mixer, matched-param control via `lifting_hidden_mult`. Config: `wavelet_basis: "real"|"complex"`, `complex_construction: "direct"|"dualtree"`, `complex_collapse: "per_level"|"end"`. Mutually exclusive (hard-errored) with recurrence, untied reconstruction, multi-basis, 2D wavelet, and non-shared lifting.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Wavelet Crawl Off
-
-**Chronological correction.** An earlier section (the deprecated bs=16384 / R0 / Test-1 line) recorded `wavelet_crawl` as removable "at no performance benefit," and that verdict is preserved there as an accurate snapshot of what was believed at that point. It was **regime-specific and later reversed.** At the *production* regime (T2: bs=256, levels=7 — the line that became T4), `wavelet_crawl` was re-ablated and is a real, repeatable win:
-
-| Variant | Params | BPB sliding | Best val | Run log |
-|---|---|---|---|---|
-| T2 without wavelet_crawl (1ep) | 392.91M | 1.1616 | 3.6094 | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
-| **T2 with wavelet_crawl (1ep)** | 392.91M | **1.1541** | **3.5881** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
-| Δ (crawl on − off) | — | **−0.0075** | **−0.0213** | ~5× the 0.0015 noise floor |
-
-So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.json default), *not* the no-op the deprecated section described. The two verdicts are both correct for their regimes: crawl is inert at bs=16384 (the coarsest scales span hundreds of tokens, where ±1 dilation is negligible) but helps at bs=256/levels=7 (the ±1 dilation offset is meaningful relative to the finer scales).
-
-**Relevance to [Complex Wavelets](#complex-wavelets).** The complex trees do not implement `wavelet_crawl` (and `model.py` hard-errors `wavelet_basis=complex` + `wavelet_crawl=true` rather than silently ignore it). So **all complex-wavelet arms run crawl-off**, which is why their in-section reference is the matched real control (CW4, also crawl-off) and **not** the crawl-on T4 baseline — comparing a crawl-off complex run to crawl-on T4 would conflate the basis change with the loss of this −0.0075 crawl win.
+**Result — tying is load-bearing, not just cheaper.** Untied reconstruction spent **+117.5M params (+30%)** and came out *worse* on both metrics: BPB +0.0013 (just past the ~0.0010 noise floor) and best val +0.0040 (~2.7× noise). The headline isn't the size of the quality gap (small) — it's that a pure **expressivity increase** (reconstruct freed to apply non-inverse transforms) plus 30% more parameters still couldn't match the tied baseline. The `Reconstruct ∘ Decompose = I` symmetry is doing real work, not merely saving parameters: the model's function genuinely depends on the wavelet stage being a true invertible transform around the mixer, not an arbitrary learned encoder/decoder. **Decision: keep tied.** Untied is rejected; the symmetry constraint stays.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1326,6 +1276,64 @@ Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. Mor
 | 1e-06 (T4 baseline) | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
 | 5e-07 (lower) | queued | queued | queued | — | queued |
 | 2e-06 (higher) | queued | queued | queued | — | queued |
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Complex Wavelets
+
+Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform à la Kingsbury, or direct complex parameterization of the lifting predict/update networks). The motivation that matters is **not** "phase carries bonus information" (the vague version) but **shift-invariance** (the structural version).
+
+**The real mechanism: shift-invariance.** A critically-sampled wavelet transform — including our learned lifting scheme — is shift-*variant*. The split into even/odd lattices is a fixed sampling operation, so the same token pattern starting at position 4 vs position 5 produces materially different coefficient patterns. The learned predict/update networks **cannot fully correct this**, because the variance comes from the sampling lattice, not the filter weights. The classic reason to go complex (the dual-tree CWT) is precisely that an analytic/complex representation yields *approximately shift-invariant magnitude*, with phase encoding where within the subband a feature sits.
+
+For language this is a concrete inductive-bias gap, not an analogy: every syntactic constituent or n-gram that recurs at different offsets currently forces the mixer to learn multiple shifted coefficient signatures of the *same* structure. This is the same positional-binding / agreement-attraction weakness where WaveletLM is structurally weakest versus attention — the place a shift-invariant representation would most directly help.
+
+**Why the added parameters could be load-bearing rather than confounding.** Widening a real lifting net adds capacity to *memorize* both shifted versions; it does **not** make the representation shift-invariant. Complex makes the magnitude shift-invariant *by construction*. So a matched-param win (complex > real-at-equal-params) would be a genuine architectural result — capability emerging *from the structure*, not from capacity. This is the cleanest such test in the current backlog. Secondary, more speculative upsides: the FWHT mixer currently never sees within-subband position (real coefficients collapse it), so phase could let cross-scale gating route on *relative position* — a capability the architecture structurally lacks today; and a complex representation is a richer substrate for *positional* mechanistic probing (you can read off where in the window a feature lives), a non-perplexity reason aligned with the interpretability direction.
+
+**Cost (measured).** The real lifting stage is **117.50M params** (T4 breakdown, [log](logs/wikitext-103_2026-05-24_19-22-19/log.txt)), shared across layers, with reconstruct derived from it for free (tied). The complex variant is **293.74M** (decompose ≈2×117.5M complex predict/update + a *separate* 58.75M reconstruct, since the complex→real collapse is non-invertible so reconstruct can't be tied) — measured via `tools/complex_wavelets.param_count()` at C=2048/levels=7, identical for direct and dualtree. Net wavelet-stage delta **+176.24M** over T4, i.e. total model **569.25M** vs T4's 393.01M. Compute is ~2× on the wavelet stage; the mixer stage is unchanged (coefficients collapse to real width C before the FWHT/mixer, so the spectral stack never sees the imaginary channel).
+
+**Overlap with `wavelet_crawl` (already harvesting part of this benefit).** `wavelet_crawl` (learned ±1 dilation per level, −0.0037 at T4) is a cheap existing mechanism that already buys *some* shift/scale-robustness. So complex wavelets are competing for a *smaller* marginal headroom than a from-scratch estimate would suggest — part of the shift-robustness gain is already taken. The matched-param control must run with `wavelet_crawl` in its current T4 state so the comparison isolates what complex adds *on top of* crawl.
+
+**Test design (required matched-param form).** A bare complex run that beats T4 would be uninterpretable — this project has shown params help monotonically, so a win could be the +params, not the phase. Each complex variant is therefore paired with a **real-wavelet control widened to the same ~569M param count** (via `lifting_hidden_mult`). A complex variant is validated only if it beats its matched-param real control, not merely T4. Two constructions × the valid collapse modes:
+- **direct/per_level** — real-part collapse; clean near-real-Haar init.
+- **direct/end** — magnitude collapse; theory-max phase test.
+- **dualtree/end** — two causal-phase real trees → shift-invariant magnitude (magnitude-only; per_level is rejected as degenerate).
+
+| Variant | Params | BPB sliding | Best val | Δ vs T4 | Run log |
+|---|---|---|---|---|---|
+| T4 baseline (real, tied) | 393.01M | 1.1311 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| complex direct/per_level | 569.25M | queued | queued | — | queued |
+| complex direct/end | 569.25M | queued | queued | — | queued |
+| complex dualtree/end | 569.25M | queued | queued | — | queued |
+| real control (hidden_mult=3) | ~628M | queued | queued | — | queued |
+| **complex invertible/split** | 745.50M | queued | queued | — | queued |
+| **complex invertible/modulus_phase** | 745.50M | queued | queued | — | queued |
+| real control for invertible (hidden_mult=4) | ~745M | queued | queued | — | queued |
+
+*Two matched controls because the variants differ in size. **Collapse** variants (direct/dualtree) use a 293.74M wavelet → control at `hm=3` (~628M, slightly over — conservative). **Invertible** variants carry a 469.99M wavelet (complex predict AND update, tied reconstruct) → control at `hm=4` (469.91M wavelet, ~745M total — a near-exact match, ratio 1.000). Each complex variant is validated only against its size-matched control, never raw T4.*
+
+**The invertible construction is the better-motivated test.** It preserves `Reconstruct∘Decompose = I` — the symmetry the [untied reconstruction](#untied-wavelet-reconstruction) ablation just showed is load-bearing (+117.5M untied params *regressed*). The collapse variants (direct/dualtree) break that symmetry to hand the mixer a shift-invariant magnitude input; given the untied result, they are likely hamstrung by the same effect. Invertible keeps the symmetry *and* mixes phase (via `complex_mixer_activation`: `split` = real spectral stack on re/im independently; `modulus_phase` = gate magnitude, preserve phase). Round-trip identity verified to ~1e-6.
+
+Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tools/complex_wavelets.py](tools/complex_wavelets.py). Two real tensors (not native `complex64`), CGELU, tied complex reconstruct (invertible) or collapse-to-real (collapse variants). Config: `wavelet_basis`, `complex_construction: "direct"|"dualtree"|"invertible"`, `complex_collapse` (collapse only), `complex_mixer_activation` (invertible only). Mutually exclusive (hard-errored) with recurrence, mixer_depth>1, untied reconstruction, multi-basis, 2D wavelet, non-shared lifting, and wavelet_crawl.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Wavelet Crawl Off
+
+**Chronological correction.** An earlier section (the deprecated bs=16384 / R0 / Test-1 line) recorded `wavelet_crawl` as removable "at no performance benefit," and that verdict is preserved there as an accurate snapshot of what was believed at that point. It was **regime-specific and later reversed.** At the *production* regime (T2: bs=256, levels=7 — the line that became T4), `wavelet_crawl` was re-ablated and is a real, repeatable win:
+
+| Variant | Params | BPB sliding | Best val | Run log |
+|---|---|---|---|---|
+| T2 without wavelet_crawl (1ep) | 392.91M | 1.1616 | 3.6094 | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
+| **T2 with wavelet_crawl (1ep)** | 392.91M | **1.1541** | **3.5881** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
+| Δ (crawl on − off) | — | **−0.0075** | **−0.0213** | ~5× the 0.0015 noise floor |
+
+So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.json default), *not* the no-op the deprecated section described. The two verdicts are both correct for their regimes: crawl is inert at bs=16384 (the coarsest scales span hundreds of tokens, where ±1 dilation is negligible) but helps at bs=256/levels=7 (the ±1 dilation offset is meaningful relative to the finer scales).
+
+**Relevance to [Complex Wavelets](#complex-wavelets).** The complex trees do not implement `wavelet_crawl` (and `model.py` hard-errors `wavelet_basis=complex` + `wavelet_crawl=true` rather than silently ignore it). So **all complex-wavelet arms run crawl-off**, which is why their in-section reference is the matched real control (CW4, also crawl-off) and **not** the crawl-on T4 baseline — comparing a crawl-off complex run to crawl-on T4 would conflate the basis change with the loss of this −0.0075 crawl win.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
