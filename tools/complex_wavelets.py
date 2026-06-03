@@ -392,6 +392,122 @@ class DualTreeComplexLiftingWavelet(nn.Module):
         return approx, details
 
 
+# =============================================================================
+# Invertible construction (4th): tied complex decompose/reconstruct. Phase is
+# mixed INSIDE the symmetry (by the spectral mixer, wired in model.py), not
+# collapsed away. Unlike the collapse variants, this keeps
+# Reconstruct∘Decompose = I — the symmetry the untied-reconstruction ablation
+# showed is load-bearing. Decompose returns FULL complex coefficients; the
+# block carries (re, im) through the mixer and calls the tied reconstruct.
+# =============================================================================
+
+class InvertibleComplexLiftingDecompose(nn.Module):
+    """Complex lifting decompose that returns full complex (re, im) coefficients
+    — NO collapse. Pairs with InvertibleComplexLiftingReconstruct (tied: reuses
+    these same predict/update nets), giving exact Reconstruct∘Decompose = I.
+
+    Returns (approx_r, approx_i, details) where details is a list of
+    (detail_r, detail_i) complex pairs, coarsest-last (same order as the real
+    LiftingWaveletDecompose).
+    """
+
+    def __init__(self, levels: int, C: int, hidden_mult: int = 1,
+                 dropout: float = 0.0, imag_std: float = 0.01,
+                 device=None, dtype=None):
+        super().__init__()
+        self.levels = levels
+        self.C = C
+        self.inv_sqrt2 = _INV_SQRT2
+        self.predict_nets = nn.ModuleList([
+            _ComplexPredictUpdate(C, hidden_mult, dropout, haar_scale=1.0,
+                                  imag_std=imag_std, device=device, dtype=dtype)
+            for _ in range(levels)
+        ])
+        self.update_nets = nn.ModuleList([
+            _ComplexPredictUpdate(C, hidden_mult, dropout, haar_scale=0.5,
+                                  imag_std=imag_std, device=device, dtype=dtype)
+            for _ in range(levels)
+        ])
+
+    def forward(self, x_r: torch.Tensor, x_i: torch.Tensor = None):
+        if x_i is None:
+            x_i = torch.zeros_like(x_r)
+        details = []
+        cur_r, cur_i = x_r, x_i
+        for level in range(self.levels):
+            base = 1 << level
+            def _odd(t):
+                padded = F.pad(t, (0, 0, base, 0))
+                return padded[:, :-base, :]
+            odd_r, odd_i = _odd(cur_r), _odd(cur_i)
+            even_r, even_i = cur_r, cur_i
+            pr, pi = self.predict_nets[level](even_r, even_i)
+            det_r = (odd_r - pr) * self.inv_sqrt2
+            det_i = (odd_i - pi) * self.inv_sqrt2
+            ur, ui = self.update_nets[level](det_r, det_i)
+            cur_r = (even_r + ur) * self.inv_sqrt2
+            cur_i = (even_i + ui) * self.inv_sqrt2
+            details.append((det_r, det_i))
+        return cur_r, cur_i, details
+
+
+class InvertibleComplexLiftingReconstruct(nn.Module):
+    """Tied inverse of InvertibleComplexLiftingDecompose. Reuses the decompose
+    module's update_nets (no own params) — inverting only the update step
+    recovers `even` exactly, mirroring the real LiftingWaveletReconstruct.
+
+    Exact inverse holds because the lifting steps are triangular:
+        approx = (even + U(detail))*inv_sqrt2  ->  even = approx*sqrt2 - U(detail)
+    U is recomputed from the (unchanged) detail, so it cancels exactly. (The
+    predict step is not inverted: `even` fully determines the recombination.)
+    """
+
+    def __init__(self, decompose: InvertibleComplexLiftingDecompose):
+        super().__init__()
+        self.decompose = decompose
+        self.sqrt2 = _SQRT2
+
+    def forward(self, approx_r, approx_i, details):
+        cur_r, cur_i = approx_r, approx_i
+        for level in range(len(details) - 1, -1, -1):
+            det_r, det_i = details[level]
+            ur, ui = self.decompose.update_nets[level](det_r, det_i)
+            cur_r = cur_r * self.sqrt2 - ur
+            cur_i = cur_i * self.sqrt2 - ui
+            # Note: full lifting inverse would also undo the predict/split to
+            # re-interleave even/odd. Here (as in the real reconstruct) we invert
+            # the update to recover `even`; the model's forward is
+            # decompose->mixer->reconstruct where the mixer acts on coefficients,
+            # so this update-inverse is the exact partner of the decompose above
+            # when details are unchanged (verified by the round-trip smoke test).
+        return cur_r, cur_i
+
+
+def mix_phase_split(z_r, z_i):
+    """'split' mixer-activation helper — identity here; the actual mixing is the
+    existing real mixer applied to the interleaved [re, im] 2C tensor in
+    model.py. Provided for symmetry / explicitness. Split-complex == applying a
+    real nonlinearity to re and im independently."""
+    return z_r, z_i
+
+
+def modulus_phase_gate(z_r, z_i, gate_mag, eps: float = 1e-6):
+    """'modulus_phase' mixer-activation helper: scale the complex value's
+    MAGNITUDE by a (real, nonnegative) gate while preserving its phase angle.
+        z' = gate_mag * (z / (|z| + eps))   [direction preserved, magnitude set]
+    gate_mag is the real mixer's output interpreted as the new magnitude. The
+    eps-guarded unit phasor keeps gradients finite near |z|=0 (computed in fp32).
+    """
+    mag = torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps * eps)
+    inv = (1.0 / (mag + eps)).to(z_r.dtype)
+    return gate_mag * z_r * inv, gate_mag * z_i * inv
+
+
+def complex_magnitude(z_r, z_i, eps: float = 1e-12):
+    """|z| in fp32 with inside-sqrt eps (for the modulus_phase mixer input)."""
+    return torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps).to(z_r.dtype)
+
+
 def build_complex_wavelet(config: dict, levels: int, C: int,
                           device=None, dtype=None):
     """Factory mirroring tools/two_d_wavelets.build_lifting_wavelet_2d.
@@ -427,9 +543,19 @@ def build_complex_wavelet(config: dict, levels: int, C: int,
             levels=levels, C=C, hidden_mult=hidden_mult, dropout=dropout,
             device=device, dtype=dtype)
         return dec, rec
+    elif construction == "invertible":
+        # Tied complex decompose/reconstruct, full complex coefficients (no
+        # collapse). Reconstruct reuses decompose's update_nets -> exact inverse.
+        imag_std = config.get("complex_imag_std", 0.01)
+        dec = InvertibleComplexLiftingDecompose(
+            levels=levels, C=C, hidden_mult=hidden_mult, dropout=dropout,
+            imag_std=imag_std, device=device, dtype=dtype)
+        rec = InvertibleComplexLiftingReconstruct(dec)
+        return dec, rec
     else:
         raise ValueError(
-            f"complex_construction must be 'direct'|'dualtree', got {construction!r}")
+            f"complex_construction must be 'direct'|'dualtree'|'invertible', "
+            f"got {construction!r}")
 
 
 def param_count(config: dict, levels: int, C: int) -> int:
@@ -578,4 +704,60 @@ if __name__ == "__main__":
     except ValueError:
         print("  dualtree+per_level -> ValueError (correct; degenerate)")
 
-    print("All increment-1 + increment-2 smoke tests passed.")
+    # 6) Invertible construction (increment 4): tied complex decompose/recon.
+    print("=== Invertible construction (increment 4) ===")
+    cfg_inv = {"complex_construction": "invertible", "lifting_hidden_mult": 1,
+               "lifting_dropout": 0.0}
+    dec, rec = build_complex_wavelet(cfg_inv, levels=levels, C=C)
+    dec.eval(); rec.eval()
+    x = torch.randn(B, T, C)
+
+    # 6a) ROUND-TRIP IDENTITY: Reconstruct(Decompose(x)) == x with coefficients
+    #     unchanged. This is the whole point — the symmetry the untied ablation
+    #     showed is load-bearing. Must hold to high precision for ALL weights
+    #     (not just at init), so perturb weights first, then check.
+    with torch.no_grad():
+        for p in dec.parameters():
+            p.add_(0.05 * torch.randn_like(p))
+    ar, ai, dts = dec(x)
+    xr, xi = rec(ar, ai, dts)
+    rt_resid = (xr - x).abs().max().item()
+    assert rt_resid < 1e-3, f"invertible round-trip FAILED: max resid {rt_resid}"
+    # imaginary part of the reconstruction should also return to ~0 (x was real)
+    xi_resid = xi.abs().max().item()
+    assert xi_resid < 1e-3, f"invertible round-trip imag not ~0: {xi_resid}"
+
+    # 6b) Causality (3-tuple return — own loop). Perturb future, check detail[t].
+    dC = build_complex_wavelet(cfg_inv, levels=levels, C=C)[0]; dC.eval()
+    xc = torch.randn(1, T, C)
+    _, _, dd = dC(xc)
+    t_probe = T // 2
+    base = dd[0][0][0, t_probe].clone()  # detail[0] real part
+    worst = 0.0
+    for dt in range(1, T - t_probe):
+        x2 = xc.clone(); x2[0, t_probe + dt] += 100.0
+        _, _, dd2 = dC(x2)
+        worst = max(worst, (dd2[0][0][0, t_probe] - base).abs().max().item())
+    assert worst < 1e-6, f"invertible: FUTURE LEAK {worst:.4f}"
+
+    # 6c) modulus_phase gate: finite forward + grad near |z|=0 (eps-guard works).
+    zr = torch.zeros(2, 4, C, requires_grad=True)
+    zi = torch.zeros(2, 4, C, requires_grad=True)
+    gate = torch.rand(2, 4, C)
+    gr, gi = modulus_phase_gate(zr, zi, gate)
+    (gr.sum() + gi.sum()).backward()
+    assert torch.isfinite(gr).all() and torch.isfinite(gi).all(), "modulus_phase non-finite at |z|=0"
+    assert torch.isfinite(zr.grad).all() and torch.isfinite(zi.grad).all(), "modulus_phase grad non-finite at |z|=0"
+
+    # 6d) gradient flow through the full invertible decompose+reconstruct.
+    dg, rg = build_complex_wavelet(cfg_inv, levels=levels, C=C)
+    xg = torch.randn(B, T, C, requires_grad=True)
+    ar, ai, dts = dg(xg)
+    (rg(ar, ai, dts)[0].sum()).backward()
+    assert xg.grad is not None and torch.isfinite(xg.grad).all(), "invertible grad non-finite"
+    n_inv = param_count(cfg_inv, levels=levels, C=C)
+    print(f"  invertible OK  | round-trip resid {rt_resid:.2e} (imag {xi_resid:.2e}), "
+          f"causal (leak {worst:.0e}), modulus_phase grad finite | "
+          f"params(C={C},L={levels})={n_inv:,}")
+
+    print("All increment-1 + 2 + 4 smoke tests passed.")

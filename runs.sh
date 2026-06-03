@@ -616,3 +616,32 @@ run_ablation "T4_cwav_control_hm3_1ep T4 real-wavelet control hidden_mult=3 (1ep
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 3}' \
     "T4_cwav_control_hm3_1ep: real wavelet widened (hidden_mult=3, ~628M) as matched-param control for the complex runs"
 
+# ---- Complex wavelets: INVERTIBLE construction --------------------------------
+# Tied complex decompose/reconstruct — preserves Reconstruct∘Decompose=I (the
+# symmetry the untied ablation showed is load-bearing) AND mixes phase. The
+# better-aligned experiment than the collapse variants above. mixer_depth=1
+# required. Same crawl-off matched control (CW4) applies. CW5/CW6 differ only in
+# how phase is mixed: split (real spectral stack on re+im) vs modulus_phase
+# (gate magnitude, preserve phase).
+
+# CW5: invertible, split-complex mixer activation.
+run_ablation "T4_cwav_inv_split_1ep T4 complex wavelet invertible/split (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "split"}' \
+    "T4_cwav_inv_split_1ep: invertible complex (tied, Recon∘Decomp=I), split-complex phase mixing; vs CW4 control"
+
+# CW6: invertible, modulus-phase mixer activation (gate |z|, preserve phase).
+run_ablation "T4_cwav_inv_modphase_1ep T4 complex wavelet invertible/modulus_phase (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase"}' \
+    "T4_cwav_inv_modphase_1ep: invertible complex, magnitude-gated phase-preserving mixing; vs CW4 control"
+
+# CW7: matched-param control for the INVERTIBLE variants. The invertible wavelet
+# (complex predict AND update, tied reconstruct) is 469.99M — bigger than the
+# collapse variants' 293.74M — so it needs its own control. hidden_mult=4 gives
+# 469.91M, a near-exact match (ratio 1.000). This is the clean control for CW5/CW6.
+run_ablation "T4_cwav_inv_control_hm4_1ep T4 real-wavelet control hidden_mult=4 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 4}' \
+    "T4_cwav_inv_control_hm4_1ep: real wavelet hidden_mult=4 (~470M wavelet) — near-exact matched-param control for invertible CW5/CW6"
+
