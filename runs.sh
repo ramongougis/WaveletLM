@@ -156,6 +156,31 @@ run_ablation() {
     git_commit_push "${COMMIT_MSG}"
 }
 
+pause_for_decision() {
+    # Coordinate-descent gate: after a dropout pair has run AND been pushed,
+    # halt so the operator can read the two results, decide the winning value
+    # for that dropout type, and edit the carried-forward variable below before
+    # resuming. Resumed by pressing Enter (interactive) — or, if running
+    # non-interactively, set DROPOUT_AUTO=1 to skip the pause (uses the values
+    # already set in the variables, no edit).
+    local MSG="$1"
+    echo ""
+    echo "############################################################"
+    echo "### COORDINATE-DESCENT PAUSE"
+    echo "### ${MSG}"
+    echo "### Both results above are pushed. Decide the winning value,"
+    echo "### edit the carried-forward variable in runs.sh, then press"
+    echo "### Enter to continue (or Ctrl-C to stop here)."
+    echo "############################################################"
+    if [ "${DROPOUT_AUTO:-0}" = "1" ]; then
+        echo "[runs.sh] DROPOUT_AUTO=1 set — skipping pause, using current variable values."
+        return
+    fi
+    read -r _ </dev/tty || {
+        echo "[runs.sh] No TTY for read; pausing via DROPOUT_AUTO check only. Continuing."
+    }
+}
+
 benchmark_only_run() {
     # Replay the post-training steps (test benchmark + two generation passes)
     # against an existing run directory's best_model.pt. No training, no model
@@ -491,79 +516,76 @@ run_ablation "T4_untied_recon_1ep T4 + untied wavelet reconstruction (1ep)" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "untied_reconstruction": true}' \
     "T4_untied_recon_1ep: untied reconstruct path (+~84M params); standalone expressivity test vs T4 baseline"
 
-# ---- Dropout sweep -----------------------------------------------------------
-# Vary each of the 5 dropout quantities individually ±10% from T4 defaults,
-# all others held at baseline. Final combined run uses the better value from
-# each pair (or baseline if neither improved). Reference: T4 BPB 1.1311.
-# T4 defaults: emb=0.20, proj=0.10, mix=0.10, mlp=0.10, lm_head=0.24.
+# ---- Dropout sweep: COORDINATE DESCENT ---------------------------------------
+# One dropout type at a time, ±10% around its current value. After each PAIR
+# runs and is pushed, the script PAUSES (pause_for_decision): read the two
+# results, decide the winner for that type, and edit the carried-forward
+# variable below before pressing Enter. The chosen value persists into all
+# later pairs, so the final pair's run IS the optimized stack — no separate
+# combine run. Reference: T4 BPB 1.1311 (emb=0.20, proj=0.10, mix=0.10,
+# mlp=0.10, lm_head=0.24). Decision threshold: a value only "wins" if it beats
+# the incumbent by > ~0.0010 BPB sliding; otherwise keep the incumbent.
+#
+# CARRIED-FORWARD CHOSEN VALUES — edit each at its pause before continuing:
+DO_EMB=0.20    # emb pair done (0.18 = -0.0004, within noise -> incumbent 0.20 kept; revise if 0.22 wins)
+DO_PROJ=0.10   # set after the proj pair
+DO_MIX=0.10    # set after the mix pair
+DO_MLP=0.10    # set after the mlp pair
+DO_LM=0.24     # set after the lm_head pair
+DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450'
 
-# D1: dropout_embedding low (0.18)
-run_ablation "T4_dropout_emb_low_1ep T4 dropout_embedding=0.18 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_embedding": 0.18}' \
-    "T4_dropout_emb_low_1ep: dropout_embedding 0.20 -> 0.18 (-10%); all others at T4 defaults"
-
-# D2: dropout_embedding high (0.22)
+# === emb pair === (emb-low 0.18 already run: BPB 1.1307, -0.0004, within noise)
+# emb-high 0.22 — the only emb run still pending.
 run_ablation "T4_dropout_emb_high_1ep T4 dropout_embedding=0.22 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_embedding": 0.22}' \
-    "T4_dropout_emb_high_1ep: dropout_embedding 0.20 -> 0.22 (+10%); all others at T4 defaults"
+    "{${DO_COMMON}, \"dropout_embedding\": 0.22, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_emb_high_1ep: dropout_embedding 0.20 -> 0.22 (+10%); proj/mix/mlp/lm at carried values"
+pause_for_decision "emb pair complete (0.18 done earlier, 0.22 just now). Set DO_EMB to the winner (0.18 / 0.20 / 0.22), then continue."
 
-# D3: dropout_projection low (0.09)
+# === proj pair === uses chosen DO_EMB
 run_ablation "T4_dropout_proj_low_1ep T4 dropout_projection=0.09 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_projection": 0.09}' \
-    "T4_dropout_proj_low_1ep: dropout_projection 0.10 -> 0.09 (-10%); all others at T4 defaults"
-
-# D4: dropout_projection high (0.11)
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.09, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_proj_low_1ep: dropout_projection 0.10 -> 0.09; emb at chosen DO_EMB"
 run_ablation "T4_dropout_proj_high_1ep T4 dropout_projection=0.11 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_projection": 0.11}' \
-    "T4_dropout_proj_high_1ep: dropout_projection 0.10 -> 0.11 (+10%); all others at T4 defaults"
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.11, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_proj_high_1ep: dropout_projection 0.10 -> 0.11; emb at chosen DO_EMB"
+pause_for_decision "proj pair complete. Set DO_PROJ to the winner (0.09 / 0.10 / 0.11), then continue."
 
-# D5: dropout_mixer low (0.09)
+# === mix pair === uses chosen DO_EMB, DO_PROJ
 run_ablation "T4_dropout_mix_low_1ep T4 dropout_mixer=0.09 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mixer": 0.09}' \
-    "T4_dropout_mix_low_1ep: dropout_mixer 0.10 -> 0.09 (-10%); all others at T4 defaults"
-
-# D6: dropout_mixer high (0.11)
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.09, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_mix_low_1ep: dropout_mixer 0.10 -> 0.09; emb/proj at chosen values"
 run_ablation "T4_dropout_mix_high_1ep T4 dropout_mixer=0.11 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mixer": 0.11}' \
-    "T4_dropout_mix_high_1ep: dropout_mixer 0.10 -> 0.11 (+10%); all others at T4 defaults"
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.11, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_mix_high_1ep: dropout_mixer 0.10 -> 0.11; emb/proj at chosen values"
+pause_for_decision "mix pair complete. Set DO_MIX to the winner (0.09 / 0.10 / 0.11), then continue."
 
-# D7: dropout_mlp low (0.09)
+# === mlp pair === uses chosen DO_EMB, DO_PROJ, DO_MIX
 run_ablation "T4_dropout_mlp_low_1ep T4 dropout_mlp=0.09 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mlp": 0.09}' \
-    "T4_dropout_mlp_low_1ep: dropout_mlp 0.10 -> 0.09 (-10%); all others at T4 defaults"
-
-# D8: dropout_mlp high (0.11)
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.09, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_mlp_low_1ep: dropout_mlp 0.10 -> 0.09; emb/proj/mix at chosen values"
 run_ablation "T4_dropout_mlp_high_1ep T4 dropout_mlp=0.11 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_mlp": 0.11}' \
-    "T4_dropout_mlp_high_1ep: dropout_mlp 0.10 -> 0.11 (+10%); all others at T4 defaults"
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.11, \"dropout_lm_head\": ${DO_LM}}" \
+    "T4_dropout_mlp_high_1ep: dropout_mlp 0.10 -> 0.11; emb/proj/mix at chosen values"
+pause_for_decision "mlp pair complete. Set DO_MLP to the winner (0.09 / 0.10 / 0.11), then continue."
 
-# D9: dropout_lm_head low (0.216)
+# === lm_head pair === uses chosen DO_EMB, DO_PROJ, DO_MIX, DO_MLP.
+# The winning run of THIS pair is the optimized stack (all 5 at chosen values).
 run_ablation "T4_dropout_lmh_low_1ep T4 dropout_lm_head=0.216 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_lm_head": 0.216}' \
-    "T4_dropout_lmh_low_1ep: dropout_lm_head 0.24 -> 0.216 (-10%); all others at T4 defaults"
-
-# D10: dropout_lm_head high (0.264)
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.216}" \
+    "T4_dropout_lmh_low_1ep: dropout_lm_head 0.24 -> 0.216; emb/proj/mix/mlp at chosen values (= optimized stack)"
 run_ablation "T4_dropout_lmh_high_1ep T4 dropout_lm_head=0.264 (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_lm_head": 0.264}' \
-    "T4_dropout_lmh_high_1ep: dropout_lm_head 0.24 -> 0.264 (+10%); all others at T4 defaults"
-
-# D11: optimal combined dropout — fill in best value from each pair above.
-# Values below are placeholders; replace each TBD with the better of the two
-# values tested for that quantity (or the T4 default if neither improved).
-# run_ablation "T4_dropout_optimal_1ep T4 optimal combined dropout (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "dropout_embedding": TBD, "dropout_projection": TBD, "dropout_mixer": TBD, "dropout_mlp": TBD, "dropout_lm_head": TBD}' \
-#     "T4_dropout_optimal_1ep: best dropout value per type from individual sweeps; combined optimum"
+    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.264}" \
+    "T4_dropout_lmh_high_1ep: dropout_lm_head 0.24 -> 0.264; emb/proj/mix/mlp at chosen values (= optimized stack)"
+pause_for_decision "lm_head pair complete — coordinate descent done. The winning run across all 5 chosen values is the optimized dropout stack; no separate combine run needed."
 
 # ---- Weight decay sweep ------------------------------------------------------
 # Two flanking values around the T4 default (1e-6). Reference: T4 BPB 1.1311.

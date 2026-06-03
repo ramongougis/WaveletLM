@@ -1246,22 +1246,23 @@ Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixe
 
 Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regularization signal). The resulting optimal values will then be retroactively applied to L=2 (and any other higher-layer formulations) for performance measurement and benchmarking to verify whether L=2's (or higher level's) val loss also improves under the L=1-tuned regularization recipe. Headline numbers accordingly.
 
-**Sweep (1ep each; T4 baseline, one value varied at a time; reference = T4 at current defaults).**
+**Sweep — coordinate descent (1ep each).** One dropout type at a time, ±10% around its current value; the **winner of each pair (or the incumbent, if neither clears the ~0.0010 BPB noise floor) is carried forward** into the next type's runs. Each row's non-varied columns show the values *in force at that step*. The final coordinate's run *is* the optimized stack — no separate combine run needed. Bolded cell = the value being varied.
 
-| Run | drop_emb | drop_proj | drop_mix | drop_mlp | drop_lm | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
+| Step | drop_emb | drop_proj | drop_mix | drop_mlp | drop_lm | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
 |---|---|---|---|---|---|---|---|---|---|---|
 | T4 baseline | 0.20 | 0.10 | 0.10 | 0.10 | 0.240 | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| emb −10% | **0.18** | 0.10 | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| emb −10% | **0.18** | 0.10 | 0.10 | 0.10 | 0.240 | 1.1307 | 34.20 | 3.5161 | −0.0004 | [link](logs/wikitext-103_2026-06-03_06-43-53/log.txt) |
 | emb +10% | **0.22** | 0.10 | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| proj −10% | 0.20 | **0.09** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| proj +10% | 0.20 | **0.11** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| mix −10% | 0.20 | 0.10 | **0.09** | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| mix +10% | 0.20 | 0.10 | **0.11** | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| mlp −10% | 0.20 | 0.10 | 0.10 | **0.09** | 0.240 | queued | queued | queued | — | queued |
-| mlp +10% | 0.20 | 0.10 | 0.10 | **0.11** | 0.240 | queued | queued | queued | — | queued |
-| lm_head −10% | 0.20 | 0.10 | 0.10 | 0.10 | **0.216** | queued | queued | queued | — | queued |
-| lm_head +10% | 0.20 | 0.10 | 0.10 | 0.10 | **0.264** | queued | queued | queued | — | queued |
-| **Optimal combo** | TBD | TBD | TBD | TBD | TBD | queued | queued | queued | — | queued |
+| proj −10% | _emb*_ | **0.09** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| proj +10% | _emb*_ | **0.11** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| mix −10% | _emb*_ | _proj*_ | **0.09** | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| mix +10% | _emb*_ | _proj*_ | **0.11** | 0.10 | 0.240 | queued | queued | queued | — | queued |
+| mlp −10% | _emb*_ | _proj*_ | _mix*_ | **0.09** | 0.240 | queued | queued | queued | — | queued |
+| mlp +10% | _emb*_ | _proj*_ | _mix*_ | **0.11** | 0.240 | queued | queued | queued | — | queued |
+| lm_head −10% | _emb*_ | _proj*_ | _mix*_ | _mlp*_ | **0.216** | queued | queued | queued | — | queued |
+| lm_head +10% | _emb*_ | _proj*_ | _mix*_ | _mlp*_ | **0.264** | queued | queued | queued | — | queued |
+
+*`emb*`, `proj*`, etc. = the value chosen for that type in its completed step (carried forward). Filled in as the descent proceeds. **emb −10% (0.18) came in at −0.0004 — within the noise floor, so `emb*` will likely stay 0.20 unless emb +10% clears noise.***
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
