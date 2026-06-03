@@ -158,27 +158,42 @@ run_ablation() {
 
 pause_for_decision() {
     # Coordinate-descent gate: after a dropout pair has run AND been pushed,
-    # halt so the operator can read the two results, decide the winning value
-    # for that dropout type, and edit the carried-forward variable below before
-    # resuming. Resumed by pressing Enter (interactive) — or, if running
-    # non-interactively, set DROPOUT_AUTO=1 to skip the pause (uses the values
-    # already set in the variables, no edit).
-    local MSG="$1"
+    # halt so the operator can read the two results and set the winning value
+    # for that dropout type. The value is read from the terminal and assigned
+    # to the named carried-forward variable IN MEMORY (editing runs.sh on disk
+    # would NOT work — bash already executed the DO_* assignment lines and won't
+    # re-read them). Empty input keeps the current value.
+    #   $1 = variable name to set (e.g. DO_PROJ); empty = final pause, no var.
+    #   $2 = message.
+    local VARNAME="$1"
+    local MSG="$2"
     echo ""
     echo "############################################################"
     echo "### COORDINATE-DESCENT PAUSE"
     echo "### ${MSG}"
-    echo "### Both results above are pushed. Decide the winning value,"
-    echo "### edit the carried-forward variable in runs.sh, then press"
-    echo "### Enter to continue (or Ctrl-C to stop here)."
+    if [ -n "$VARNAME" ]; then
+        echo "### Current ${VARNAME}=${!VARNAME}"
+    fi
+    echo "### Both results above are pushed (read them, then decide)."
     echo "############################################################"
     if [ "${DROPOUT_AUTO:-0}" = "1" ]; then
-        echo "[runs.sh] DROPOUT_AUTO=1 set — skipping pause, using current variable values."
+        echo "[runs.sh] DROPOUT_AUTO=1 — skipping pause, keeping ${VARNAME:-N/A}=${!VARNAME:-}."
         return
     fi
-    read -r _ </dev/tty || {
-        echo "[runs.sh] No TTY for read; pausing via DROPOUT_AUTO check only. Continuing."
-    }
+    if [ -z "$VARNAME" ]; then
+        echo "### Press Enter to finish (or Ctrl-C)."
+        read -r _ </dev/tty || true
+        return
+    fi
+    local NEWVAL=""
+    printf "### Enter winning value for %s (blank = keep %s): " "$VARNAME" "${!VARNAME}" > /dev/tty
+    read -r NEWVAL </dev/tty || true
+    if [ -n "$NEWVAL" ]; then
+        printf -v "$VARNAME" '%s' "$NEWVAL"
+        echo "[runs.sh] ${VARNAME} set to ${!VARNAME}."
+    else
+        echo "[runs.sh] ${VARNAME} kept at ${!VARNAME}."
+    fi
 }
 
 benchmark_only_run() {
@@ -540,7 +555,7 @@ run_ablation "T4_dropout_emb_high_1ep T4 dropout_embedding=0.22 (1ep)" \
     "$BASE_PATCH_1EP" \
     "{${DO_COMMON}, \"dropout_embedding\": 0.22, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
     "T4_dropout_emb_high_1ep: dropout_embedding 0.20 -> 0.22 (+10%); proj/mix/mlp/lm at carried values"
-pause_for_decision "emb pair complete (0.18 done earlier, 0.22 just now). Set DO_EMB to the winner (0.18 / 0.20 / 0.22), then continue."
+pause_for_decision "DO_EMB" "emb pair complete (0.18 done earlier, 0.22 just now). Set DO_EMB to the winner (0.18 / 0.20 / 0.22), then continue."
 
 # === proj pair === uses chosen DO_EMB
 run_ablation "T4_dropout_proj_low_1ep T4 dropout_projection=0.09 (1ep)" \
@@ -551,7 +566,7 @@ run_ablation "T4_dropout_proj_high_1ep T4 dropout_projection=0.11 (1ep)" \
     "$BASE_PATCH_1EP" \
     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.11, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
     "T4_dropout_proj_high_1ep: dropout_projection 0.10 -> 0.11; emb at chosen DO_EMB"
-pause_for_decision "proj pair complete. Set DO_PROJ to the winner (0.09 / 0.10 / 0.11), then continue."
+pause_for_decision "DO_PROJ" "proj pair complete. Set DO_PROJ to the winner (0.09 / 0.10 / 0.11), then continue."
 
 # === mix pair === uses chosen DO_EMB, DO_PROJ
 run_ablation "T4_dropout_mix_low_1ep T4 dropout_mixer=0.09 (1ep)" \
@@ -562,7 +577,7 @@ run_ablation "T4_dropout_mix_high_1ep T4 dropout_mixer=0.11 (1ep)" \
     "$BASE_PATCH_1EP" \
     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.11, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
     "T4_dropout_mix_high_1ep: dropout_mixer 0.10 -> 0.11; emb/proj at chosen values"
-pause_for_decision "mix pair complete. Set DO_MIX to the winner (0.09 / 0.10 / 0.11), then continue."
+pause_for_decision "DO_MIX" "mix pair complete. Set DO_MIX to the winner (0.09 / 0.10 / 0.11), then continue."
 
 # === mlp pair === uses chosen DO_EMB, DO_PROJ, DO_MIX
 run_ablation "T4_dropout_mlp_low_1ep T4 dropout_mlp=0.09 (1ep)" \
@@ -573,7 +588,7 @@ run_ablation "T4_dropout_mlp_high_1ep T4 dropout_mlp=0.11 (1ep)" \
     "$BASE_PATCH_1EP" \
     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.11, \"dropout_lm_head\": ${DO_LM}}" \
     "T4_dropout_mlp_high_1ep: dropout_mlp 0.10 -> 0.11; emb/proj/mix at chosen values"
-pause_for_decision "mlp pair complete. Set DO_MLP to the winner (0.09 / 0.10 / 0.11), then continue."
+pause_for_decision "DO_MLP" "mlp pair complete. Set DO_MLP to the winner (0.09 / 0.10 / 0.11), then continue."
 
 # === lm_head pair === uses chosen DO_EMB, DO_PROJ, DO_MIX, DO_MLP.
 # The winning run of THIS pair is the optimized stack (all 5 at chosen values).
@@ -585,7 +600,7 @@ run_ablation "T4_dropout_lmh_high_1ep T4 dropout_lm_head=0.264 (1ep)" \
     "$BASE_PATCH_1EP" \
     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.264}" \
     "T4_dropout_lmh_high_1ep: dropout_lm_head 0.24 -> 0.264; emb/proj/mix/mlp at chosen values (= optimized stack)"
-pause_for_decision "lm_head pair complete — coordinate descent done. The winning run across all 5 chosen values is the optimized dropout stack; no separate combine run needed."
+pause_for_decision "DO_LM" "lm_head pair complete — coordinate descent done. The winning run across all 5 chosen values is the optimized dropout stack; no separate combine run needed."
 
 # ---- Weight decay sweep ------------------------------------------------------
 # Two flanking values around the T4 default (1e-6). Reference: T4 BPB 1.1311.
