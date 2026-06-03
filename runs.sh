@@ -185,15 +185,30 @@ pause_for_decision() {
         read -r _ </dev/tty || true
         return
     fi
-    local NEWVAL=""
-    printf "### Enter winning value for %s (blank = keep %s): " "$VARNAME" "${!VARNAME}" > /dev/tty
-    read -r NEWVAL </dev/tty || true
-    if [ -n "$NEWVAL" ]; then
-        printf -v "$VARNAME" '%s' "$NEWVAL"
-        echo "[runs.sh] ${VARNAME} set to ${!VARNAME}."
-    else
-        echo "[runs.sh] ${VARNAME} kept at ${!VARNAME}."
-    fi
+    # Accept any of: "0.2" | "DO_EMB=0.2" | "dropout_emb=0.2" |
+    # "dropout_embedding=0.2". Strip everything up to and including the last
+    # '=', trim whitespace, and require the result to be a bare number — so a
+    # mistyped key never gets assigned as a string and corrupts the JSON.
+    while true; do
+        local RAW=""
+        printf "### Winning value for %s (e.g. 0.2, or DO_EMB=0.2; blank = keep %s): " \
+            "$VARNAME" "${!VARNAME}" > /dev/tty
+        read -r RAW </dev/tty || { echo "[runs.sh] no input; keeping ${VARNAME}=${!VARNAME}."; break; }
+        # blank -> keep current
+        if [ -z "${RAW//[[:space:]]/}" ]; then
+            echo "[runs.sh] ${VARNAME} kept at ${!VARNAME}."
+            break
+        fi
+        local VAL="${RAW##*=}"          # drop any "key=" prefix (last '=' wins)
+        VAL="${VAL//[[:space:]]/}"      # strip all whitespace
+        # Validate: integer or decimal (optionally signed), e.g. 0.2 / .09 / 1
+        if [[ "$VAL" =~ ^-?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]; then
+            printf -v "$VARNAME" '%s' "$VAL"
+            echo "[runs.sh] ${VARNAME} set to ${!VARNAME}."
+            break
+        fi
+        echo "[runs.sh] '${RAW}' is not a valid number — try again (or blank to keep)." > /dev/tty
+    done
 }
 
 benchmark_only_run() {
