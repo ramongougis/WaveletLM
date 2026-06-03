@@ -580,3 +580,39 @@ run_ablation "T4_wd_2e6_1ep T4 weight_decay=2e-6 (1ep)" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 2e-6}' \
     "T4_wd_2e6_1ep: weight_decay 1e-6 -> 2e-6 (doubled); vs T4 baseline"
 
+# ---- Complex wavelets --------------------------------------------------------
+# Shift-invariance-motivated complex lifting variant (tools/complex_wavelets.py,
+# plans/complex_wavelets.md). Collapses complex->real before FWHT/mixer.
+# IMPORTANT: all arms here run wavelet_crawl=FALSE (the complex trees don't
+# implement crawl; model.py hard-errors complex+crawl). So the matched real
+# CONTROL is also crawl-off — the only variable across arms is the wavelet basis.
+# This makes these NOT directly comparable to the crawl-on T4 baseline (1.1311);
+# the in-section reference is the real control below, not T4. Each complex
+# variant is validated only if it beats the matched-param real control.
+
+# CW1: direct construction, per-level (real-part) collapse — clean-init baseline.
+run_ablation "T4_cwav_direct_perlevel_1ep T4 complex wavelet direct/per_level (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "direct", "complex_collapse": "per_level"}' \
+    "T4_cwav_direct_perlevel_1ep: complex direct construction, real-part collapse; vs matched real control"
+
+# CW2: direct construction, end (magnitude) collapse — theory-max phase test.
+run_ablation "T4_cwav_direct_end_1ep T4 complex wavelet direct/end-magnitude (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "direct", "complex_collapse": "end"}' \
+    "T4_cwav_direct_end_1ep: complex direct construction, magnitude collapse; vs matched real control"
+
+# CW3: dual-tree construction (magnitude only) — two causal-phase real trees.
+run_ablation "T4_cwav_dualtree_1ep T4 complex wavelet dualtree/end-magnitude (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "dualtree", "complex_collapse": "end"}' \
+    "T4_cwav_dualtree_1ep: dual-tree (Hilbert-pair, causal phase) shift-invariant magnitude; vs matched real control"
+
+# CW4: matched-param real control. hidden_mult=3 -> ~352M wavelet (~628M total),
+# slightly MORE params than the complex variants (569M) — conservative: a
+# complex win over this is unambiguous (not a capacity artifact). crawl off.
+run_ablation "T4_cwav_control_hm3_1ep T4 real-wavelet control hidden_mult=3 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 3}' \
+    "T4_cwav_control_hm3_1ep: real wavelet widened (hidden_mult=3, ~628M) as matched-param control for the complex runs"
+

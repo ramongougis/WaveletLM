@@ -1363,6 +1363,7 @@ class WaveletLMBlock(nn.Module):
         skip_proj_out: bool = False,
         learned_residual: bool = False,
         shared_lifting_module: 'LiftingWaveletDecompose' = None,
+        shared_lifting_reconstruct: nn.Module = None,
         untied_reconstruction: bool = False,
         multi_basis_lifting: bool = False,
         multi_basis_inits: List[str] = None,
@@ -1491,6 +1492,18 @@ class WaveletLMBlock(nn.Module):
                     lifting_reference_weights=lifting_reference_weights,
                 )
 
+            # Complex wavelet path: the shared module is a complex decompose
+            # (returns real (approx, details) of width Cp after collapse) paired
+            # with its OWN shared reconstruct (the collapse is non-invertible, so
+            # reconstruct cannot be derived from decompose as in the real path).
+            # When present, use it directly and skip the real reconstruct
+            # derivation below. Mutual-exclusion with subband/untied/multi-basis
+            # is enforced at model construction (see WaveletLM.__init__).
+            self.is_complex_wavelet = shared_lifting_reconstruct is not None
+            if self.is_complex_wavelet:
+                self.lifting_wavelet = shared_lifting_module
+                self.lifting_reconstruct = shared_lifting_reconstruct
+
             # Detect 2D wavelet "subband" mode via duck typing (avoids hard
             # import dep on tools/two_d_wavelets.py). In subband mode the
             # wavelet emits more details per joint level (3 sub-bands instead
@@ -1511,7 +1524,9 @@ class WaveletLMBlock(nn.Module):
             # the proper sub-band layout. The standard LiftingWaveletReconstruct
             # only handles 1D inversion. For all other modes (off, passthrough,
             # internal), the standard reconstruct path applies.
-            if self.is_subband_mode:
+            if self.is_complex_wavelet:
+                pass  # lifting_reconstruct already set to the shared complex reconstruct
+            elif self.is_subband_mode:
                 self.lifting_reconstruct = None  # handled by self.lifting_wavelet directly
             elif untied_reconstruction:
                 # Asymmetric: reconstruction has its own predict/update networks,
@@ -2343,8 +2358,59 @@ class WaveletLM(nn.Module):
 
         # Shared lifting wavelet module
         shared_lifting = None
+        shared_lifting_reconstruct = None
         self.shared_lifting_weights = config.get("shared_lifting_weights", True)
-        if wavelet_mode == "lifting" and self.shared_lifting_weights:
+
+        # Complex wavelet basis: a shift-invariance-motivated variant living in
+        # tools/complex_wavelets.py. It collapses complex->real before returning
+        # coefficients (so downstream FWHT/mixer are untouched), which breaks the
+        # perfect-reconstruction identity the real path has. It is therefore
+        # mutually exclusive with every feature that relies on that identity or
+        # on a real decompose. Enforced here as hard errors (no silent override).
+        wavelet_basis = config.get("wavelet_basis", "real")
+        if wavelet_basis == "complex":
+            if wavelet_mode != "lifting":
+                raise ValueError("wavelet_basis='complex' requires wavelet_mode='lifting'.")
+            if not self.shared_lifting_weights:
+                raise ValueError(
+                    "wavelet_basis='complex' requires shared_lifting_weights=true "
+                    "(per-layer complex wavelets would be ~2x params per layer).")
+            _N = int(config.get("mixer_recurrence_steps", 1))
+            _K = int(config.get("mixer_recurrence_distinct_mixer_count", 1))
+            if _N * _K > 1:
+                raise ValueError(
+                    "wavelet_basis='complex' is mutually exclusive with mixer "
+                    "recurrence (recurrence relies on Reconstruct∘Decompose=I, "
+                    "which the complex collapse breaks).")
+            for bad, name in [
+                (config.get("untied_reconstruction", False), "untied_reconstruction"),
+                (config.get("multi_basis_lifting", False), "multi_basis_lifting"),
+                (config.get("wavelet_2d_mode", "off") != "off", "wavelet_2d_mode"),
+                (config.get("lifting_diaglowrank", False), "lifting_diaglowrank"),
+                (config.get("lifting_level_sharing", False), "lifting_level_sharing"),
+                (config.get("lifting_offdiag_structure", "none") not in (None, "none"),
+                 "lifting_offdiag_structure"),
+                # wavelet_crawl is a LiftingWaveletDecompose feature the complex
+                # trees do not implement; allowing it would SILENTLY ignore crawl
+                # and break the matched-control comparison. Error instead.
+                (config.get("wavelet_crawl", False), "wavelet_crawl"),
+            ]:
+                if bad:
+                    raise ValueError(
+                        f"wavelet_basis='complex' is mutually exclusive with {name}.")
+            from tools.complex_wavelets import build_complex_wavelet
+            Cp = next_pow2(C)
+            shared_lifting, shared_lifting_reconstruct = build_complex_wavelet(
+                config, levels=config['levels'], C=Cp, device=device)
+            n_params = sum(p.numel() for p in shared_lifting.parameters())
+            n_params += sum(p.numel() for p in shared_lifting_reconstruct.parameters())
+            print(
+                f"[Lifting] COMPLEX wavelet basis: "
+                f"construction={config.get('complex_construction', 'direct')!r}, "
+                f"collapse={config.get('complex_collapse', 'per_level')!r}, "
+                f"shared across all layers: {n_params/1e6:.2f}M params")
+
+        if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
             Cp = next_pow2(C)
             shared_lifting = LiftingWaveletDecompose(
                 levels=config['levels'],
@@ -2512,6 +2578,7 @@ class WaveletLM(nn.Module):
                 skip_proj_out=skip_proj_out,
                 learned_residual=learned_residual,
                 shared_lifting_module=shared_lifting,
+                shared_lifting_reconstruct=shared_lifting_reconstruct,
                 untied_reconstruction=config.get("untied_reconstruction", False),
                 multi_basis_lifting=config.get("multi_basis_lifting", False),
                 multi_basis_inits=config.get("multi_basis_inits", None),
