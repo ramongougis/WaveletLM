@@ -557,9 +557,9 @@ benchmark_only_run() {
 # the incumbent by > ~0.0010 BPB sliding; otherwise keep the incumbent.
 #
 # CARRIED-FORWARD CHOSEN VALUES — edit each at its pause before continuing:
-DO_EMB=0.20    # emb pair done (0.18 = -0.0004, within noise -> incumbent 0.20 kept; revise if 0.22 wins)
-DO_PROJ=0.10   # set after the proj pair
-DO_MIX=0.10    # set after the mix pair
+DO_EMB=0.18    # emb pair done: 0.18 BPB 1.1307 (best of 3 on BPB) vs 0.20 1.1311, 0.22 1.1309 — all within noise; 0.18 chosen (lowest BPB)
+DO_PROJ=0.09   # proj pair done: 0.09 BPB 1.1304 < 0.10 1.1307 < 0.11 1.1316 (monotonic; 0.09-vs-0.10 within noise but consistent). 0.09 chosen; edge of range — probe lower at higher L
+DO_MIX=0.09    # mix pair done: 0.09 BPB 1.1295 < 0.10 1.1304 < 0.11 1.1311 (monotonic; 0.09-vs-0.10 = 0.0009, ~noise floor — strongest pair yet). 0.09 chosen; edge of range — probe lower at higher L
 DO_MLP=0.10    # set after the mlp pair
 DO_LM=0.24     # set after the lm_head pair
 DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450'

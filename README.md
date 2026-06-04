@@ -1252,17 +1252,17 @@ Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regul
 |---|---|---|---|---|---|---|---|---|---|---|
 | T4 baseline | 0.20 | 0.10 | 0.10 | 0.10 | 0.240 | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
 | emb −10% | **0.18** | 0.10 | 0.10 | 0.10 | 0.240 | 1.1307 | 34.20 | 3.5161 | −0.0004 | [link](logs/wikitext-103_2026-06-03_06-43-53/log.txt) |
-| emb +10% | **0.22** | 0.10 | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| proj −10% | _emb*_ | **0.09** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| proj +10% | _emb*_ | **0.11** | 0.10 | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| mix −10% | _emb*_ | _proj*_ | **0.09** | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| mix +10% | _emb*_ | _proj*_ | **0.11** | 0.10 | 0.240 | queued | queued | queued | — | queued |
-| mlp −10% | _emb*_ | _proj*_ | _mix*_ | **0.09** | 0.240 | queued | queued | queued | — | queued |
-| mlp +10% | _emb*_ | _proj*_ | _mix*_ | **0.11** | 0.240 | queued | queued | queued | — | queued |
-| lm_head −10% | _emb*_ | _proj*_ | _mix*_ | _mlp*_ | **0.216** | queued | queued | queued | — | queued |
-| lm_head +10% | _emb*_ | _proj*_ | _mix*_ | _mlp*_ | **0.264** | queued | queued | queued | — | queued |
+| emb +10% | **0.22** | 0.10 | 0.10 | 0.10 | 0.240 | 1.1309 | 34.22 | 3.5187 | −0.0002 | [link](logs/wikitext-103_2026-06-03_11-49-52/log.txt) |
+| proj −10% | 0.18 | **0.09** | 0.10 | 0.10 | 0.240 | 1.1304 | 34.16 | 3.5164 | −0.0007 | [link](logs/wikitext-103_2026-06-03_16-46-23/log.txt) |
+| proj +10% | 0.18 | **0.11** | 0.10 | 0.10 | 0.240 | 1.1316 | 34.30 | 3.5169 | +0.0005 | [link](logs/wikitext-103_2026-06-03_21-36-30/log.txt) |
+| mix −10% | 0.18 | 0.09 | **0.09** | 0.10 | 0.240 | 1.1295 | 34.07 | 3.5143 | −0.0016 | [link](logs/wikitext-103_2026-06-04_05-24-45/log.txt) |
+| mix +10% | 0.18 | 0.09 | **0.11** | 0.10 | 0.240 | 1.1311 | 34.24 | 3.5152 | +0.0000 | [link](logs/wikitext-103_2026-06-04_10-10-20/log.txt) |
+| mlp −10% | 0.18 | 0.09 | 0.09 | **0.09** | 0.240 | queued | queued | queued | — | queued |
+| mlp +10% | 0.18 | 0.09 | 0.09 | **0.11** | 0.240 | queued | queued | queued | — | queued |
+| lm_head −10% | 0.18 | 0.09 | 0.09 | _mlp*_ | **0.216** | queued | queued | queued | — | queued |
+| lm_head +10% | 0.18 | 0.09 | 0.09 | _mlp*_ | **0.264** | queued | queued | queued | — | queued |
 
-*`emb*`, `proj*`, etc. = the value chosen for that type in its completed step (carried forward). Filled in as the descent proceeds. **emb −10% (0.18) came in at −0.0004 — within the noise floor, so `emb*` will likely stay 0.20 unless emb +10% clears noise.***
+*`proj*`, `mix*`, etc. = the value chosen for that type in its completed step (carried forward), filled in as the descent proceeds. **emb step done: all three (0.18/0.20/0.22) landed within 0.0004 BPB — a noise-floor tie. `emb*`=0.18 chosen as lowest BPB (1.1307), but treat as a weak prior, not an established result; re-validate at higher layer counts where dropout bites harder.***
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
