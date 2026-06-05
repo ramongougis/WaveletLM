@@ -564,58 +564,58 @@ DO_MLP=0.10    # mlp pair done: incumbent 0.10 BPB 1.1295 < 0.09 1.1305 & 0.11 1
 DO_LM=0.216    # lm_head pair done: 0.216 BPB 1.1285 < 0.240 1.1295 < 0.264 1.1305 (monotonic, both metrics agree; 0.216-vs-0.240 = 0.0010 ~floor). 0.216 chosen; edge-winner ↓. FINAL STACK best point: 1.1285 (-0.0026 vs T4)
 DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450'
 
-# === emb pair === (emb-low 0.18 already run: BPB 1.1307, -0.0004, within noise)
-# emb-high 0.22 — the only emb run still pending.
-run_ablation "T4_dropout_emb_high_1ep T4 dropout_embedding=0.22 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": 0.22, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_emb_high_1ep: dropout_embedding 0.20 -> 0.22 (+10%); proj/mix/mlp/lm at carried values"
-pause_for_decision "DO_EMB" "emb pair complete (0.18 done earlier, 0.22 just now). Set DO_EMB to the winner (0.18 / 0.20 / 0.22), then continue."
+# # === emb pair === (emb-low 0.18 already run: BPB 1.1307, -0.0004, within noise)
+# # emb-high 0.22 — the only emb run still pending.
+# run_ablation "T4_dropout_emb_high_1ep T4 dropout_embedding=0.22 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": 0.22, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_emb_high_1ep: dropout_embedding 0.20 -> 0.22 (+10%); proj/mix/mlp/lm at carried values"
+# pause_for_decision "DO_EMB" "emb pair complete (0.18 done earlier, 0.22 just now). Set DO_EMB to the winner (0.18 / 0.20 / 0.22), then continue."
 
-# === proj pair === uses chosen DO_EMB
-run_ablation "T4_dropout_proj_low_1ep T4 dropout_projection=0.09 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.09, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_proj_low_1ep: dropout_projection 0.10 -> 0.09; emb at chosen DO_EMB"
-run_ablation "T4_dropout_proj_high_1ep T4 dropout_projection=0.11 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.11, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_proj_high_1ep: dropout_projection 0.10 -> 0.11; emb at chosen DO_EMB"
-pause_for_decision "DO_PROJ" "proj pair complete. Set DO_PROJ to the winner (0.09 / 0.10 / 0.11), then continue."
+# # === proj pair === uses chosen DO_EMB
+# run_ablation "T4_dropout_proj_low_1ep T4 dropout_projection=0.09 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.09, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_proj_low_1ep: dropout_projection 0.10 -> 0.09; emb at chosen DO_EMB"
+# run_ablation "T4_dropout_proj_high_1ep T4 dropout_projection=0.11 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": 0.11, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_proj_high_1ep: dropout_projection 0.10 -> 0.11; emb at chosen DO_EMB"
+# pause_for_decision "DO_PROJ" "proj pair complete. Set DO_PROJ to the winner (0.09 / 0.10 / 0.11), then continue."
 
-# === mix pair === uses chosen DO_EMB, DO_PROJ
-run_ablation "T4_dropout_mix_low_1ep T4 dropout_mixer=0.09 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.09, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_mix_low_1ep: dropout_mixer 0.10 -> 0.09; emb/proj at chosen values"
-run_ablation "T4_dropout_mix_high_1ep T4 dropout_mixer=0.11 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.11, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_mix_high_1ep: dropout_mixer 0.10 -> 0.11; emb/proj at chosen values"
-pause_for_decision "DO_MIX" "mix pair complete. Set DO_MIX to the winner (0.09 / 0.10 / 0.11), then continue."
+# # === mix pair === uses chosen DO_EMB, DO_PROJ
+# run_ablation "T4_dropout_mix_low_1ep T4 dropout_mixer=0.09 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.09, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_mix_low_1ep: dropout_mixer 0.10 -> 0.09; emb/proj at chosen values"
+# run_ablation "T4_dropout_mix_high_1ep T4 dropout_mixer=0.11 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": 0.11, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_mix_high_1ep: dropout_mixer 0.10 -> 0.11; emb/proj at chosen values"
+# pause_for_decision "DO_MIX" "mix pair complete. Set DO_MIX to the winner (0.09 / 0.10 / 0.11), then continue."
 
-# === mlp pair === uses chosen DO_EMB, DO_PROJ, DO_MIX
-run_ablation "T4_dropout_mlp_low_1ep T4 dropout_mlp=0.09 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.09, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_mlp_low_1ep: dropout_mlp 0.10 -> 0.09; emb/proj/mix at chosen values"
-run_ablation "T4_dropout_mlp_high_1ep T4 dropout_mlp=0.11 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.11, \"dropout_lm_head\": ${DO_LM}}" \
-    "T4_dropout_mlp_high_1ep: dropout_mlp 0.10 -> 0.11; emb/proj/mix at chosen values"
-pause_for_decision "DO_MLP" "mlp pair complete. Set DO_MLP to the winner (0.09 / 0.10 / 0.11), then continue."
+# # === mlp pair === uses chosen DO_EMB, DO_PROJ, DO_MIX
+# run_ablation "T4_dropout_mlp_low_1ep T4 dropout_mlp=0.09 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.09, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_mlp_low_1ep: dropout_mlp 0.10 -> 0.09; emb/proj/mix at chosen values"
+# run_ablation "T4_dropout_mlp_high_1ep T4 dropout_mlp=0.11 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": 0.11, \"dropout_lm_head\": ${DO_LM}}" \
+#     "T4_dropout_mlp_high_1ep: dropout_mlp 0.10 -> 0.11; emb/proj/mix at chosen values"
+# pause_for_decision "DO_MLP" "mlp pair complete. Set DO_MLP to the winner (0.09 / 0.10 / 0.11), then continue."
 
-# === lm_head pair === uses chosen DO_EMB, DO_PROJ, DO_MIX, DO_MLP.
-# The winning run of THIS pair is the optimized stack (all 5 at chosen values).
-run_ablation "T4_dropout_lmh_low_1ep T4 dropout_lm_head=0.216 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.216}" \
-    "T4_dropout_lmh_low_1ep: dropout_lm_head 0.24 -> 0.216; emb/proj/mix/mlp at chosen values (= optimized stack)"
-run_ablation "T4_dropout_lmh_high_1ep T4 dropout_lm_head=0.264 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.264}" \
-    "T4_dropout_lmh_high_1ep: dropout_lm_head 0.24 -> 0.264; emb/proj/mix/mlp at chosen values (= optimized stack)"
-pause_for_decision "DO_LM" "lm_head pair complete — coordinate descent done. The winning run across all 5 chosen values is the optimized dropout stack; no separate combine run needed."
+# # === lm_head pair === uses chosen DO_EMB, DO_PROJ, DO_MIX, DO_MLP.
+# # The winning run of THIS pair is the optimized stack (all 5 at chosen values).
+# run_ablation "T4_dropout_lmh_low_1ep T4 dropout_lm_head=0.216 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.216}" \
+#     "T4_dropout_lmh_low_1ep: dropout_lm_head 0.24 -> 0.216; emb/proj/mix/mlp at chosen values (= optimized stack)"
+# run_ablation "T4_dropout_lmh_high_1ep T4 dropout_lm_head=0.264 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     "{${DO_COMMON}, \"dropout_embedding\": ${DO_EMB}, \"dropout_projection\": ${DO_PROJ}, \"dropout_mixer\": ${DO_MIX}, \"dropout_mlp\": ${DO_MLP}, \"dropout_lm_head\": 0.264}" \
+#     "T4_dropout_lmh_high_1ep: dropout_lm_head 0.24 -> 0.264; emb/proj/mix/mlp at chosen values (= optimized stack)"
+# pause_for_decision "DO_LM" "lm_head pair complete — coordinate descent done. The winning run across all 5 chosen values is the optimized dropout stack; no separate combine run needed."
 
 # ---- Weight decay sweep ------------------------------------------------------
 # Two flanking values around the T4 default (1e-6). Reference: T4 BPB 1.1311.
