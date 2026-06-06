@@ -572,6 +572,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
 - [Final Regularization Sweep](#final-regularization-sweep)
 - [Scaled-Up Model (B200)](#scaled-up-model-b200)
+- [Scaled-Up Model with PTQ and other Infernece Strategies](#scaled-up-model-with-ptq-and-other-infernece-strategies)
 - [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
@@ -1310,31 +1311,26 @@ For language this is a concrete inductive-bias gap, not an analogy: every syntac
 
 **Why the added parameters could be load-bearing rather than confounding.** Widening a real lifting net adds capacity to *memorize* both shifted versions; it does **not** make the representation shift-invariant. Complex makes the magnitude shift-invariant *by construction*. So a matched-param win (complex > real-at-equal-params) would be a genuine architectural result — capability emerging *from the structure*, not from capacity. This is the cleanest such test in the current backlog. Secondary, more speculative upsides: the FWHT mixer currently never sees within-subband position (real coefficients collapse it), so phase could let cross-scale gating route on *relative position* — a capability the architecture structurally lacks today; and a complex representation is a richer substrate for *positional* mechanistic probing (you can read off where in the window a feature lives), a non-perplexity reason aligned with the interpretability direction.
 
-**Cost (measured).** The real lifting stage is **117.50M params** (T4 breakdown, [log](logs/wikitext-103_2026-05-24_19-22-19/log.txt)), shared across layers, with reconstruct derived from it for free (tied). The complex variant is **293.74M** (decompose ≈2×117.5M complex predict/update + a *separate* 58.75M reconstruct, since the complex→real collapse is non-invertible so reconstruct can't be tied) — measured via `tools/complex_wavelets.param_count()` at C=2048/levels=7, identical for direct and dualtree. Net wavelet-stage delta **+176.24M** over T4, i.e. total model **569.25M** vs T4's 393.01M. Compute is ~2× on the wavelet stage; the mixer stage is unchanged (coefficients collapse to real width C before the FWHT/mixer, so the spectral stack never sees the imaginary channel).
+**Cost (measured).** The real lifting stage is **117.50M params** (T4 breakdown, [log](logs/wikitext-103_2026-05-24_19-22-19/log.txt)), shared across layers, reconstruct tied (free). The invertible complex wavelet is **469.99M** — complex predict *and* update nets (each ≈2× a real net), reconstruct tied — measured via `tools/complex_wavelets.param_count()` at C=2048/levels=7. Total model **≈745.50M** vs T4's 393.01M. The spectral stack runs on both real and imaginary parts (the mixer sees the imaginary channel — that's how phase is mixed), so spectral-stage compute is ~2× as well; the real part only is taken at the block output.
 
 **Overlap with `wavelet_crawl` (already harvesting part of this benefit).** `wavelet_crawl` (learned ±1 dilation per level, −0.0037 at T4) is a cheap existing mechanism that already buys *some* shift/scale-robustness. So complex wavelets are competing for a *smaller* marginal headroom than a from-scratch estimate would suggest — part of the shift-robustness gain is already taken. The matched-param control must run with `wavelet_crawl` in its current T4 state so the comparison isolates what complex adds *on top of* crawl.
 
-**Test design (required matched-param form).** A bare complex run that beats T4 would be uninterpretable — this project has shown params help monotonically, so a win could be the +params, not the phase. Each complex variant is therefore paired with a **real-wavelet control widened to the same ~569M param count** (via `lifting_hidden_mult`). A complex variant is validated only if it beats its matched-param real control, not merely T4. Two constructions × the valid collapse modes:
-- **direct/per_level** — real-part collapse; clean near-real-Haar init.
-- **direct/end** — magnitude collapse; theory-max phase test.
-- **dualtree/end** — two causal-phase real trees → shift-invariant magnitude (magnitude-only; per_level is rejected as degenerate).
+**Construction — invertible, tied.** The wavelet decomposes to *full complex* coefficients, the spectral mixer processes them, and a **tied** reconstruct (reusing decompose's nets) inverts exactly — `Reconstruct∘Decompose = I` is preserved. This matters because the [untied reconstruction](#untied-wavelet-reconstruction) ablation showed that symmetry is load-bearing (+117.5M untied params *regressed*). So the complex wavelet keeps the symmetry *and* mixes phase, rather than collapsing phase away. Phase enters the mixer via `complex_mixer_activation`:
+- **`split`** — the real spectral stack runs on the real and imaginary parts independently (split-complex; no re/im cross-coupling).
+- **`modulus_phase`** — gate the magnitude `|z|` (the shift-invariant quantity) with a **non-negative** (softplus) gate and re-apply the preserved unit phase, so it scales magnitude without spurious sign-flips.
+
+Round-trip identity verified to ~1e-6 (off-init weights), causality verified (no future leak), imaginary path verified to receive gradient at init.
+
+**Test design (matched-param form).** A bare complex run beating T4 would be uninterpretable — params help monotonically here, so a win could be capacity, not phase. Each complex variant is paired with a **real-wavelet control widened (via `lifting_hidden_mult`) to the same param count**, and is validated only if it beats *that control*, not merely T4. The invertible wavelet is 469.99M (complex predict AND update, tied reconstruct → ~745M total); its matched real control is `hidden_mult=4` (469.91M wavelet, ratio 1.000 — near-exact).
 
 | Variant | Params | BPB sliding | Best val | Δ vs T4 | Run log |
 |---|---|---|---|---|---|
 | T4 baseline (real, tied) | 393.01M | 1.1311 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| complex direct/per_level | 569.25M | queued | queued | — | queued |
-| complex direct/end | 569.25M | queued | queued | — | queued |
-| complex dualtree/end | 569.25M | queued | queued | — | queued |
-| real control (hidden_mult=3) | ~628M | queued | queued | — | queued |
-| **complex invertible/split** | 745.50M | queued | queued | — | queued |
-| **complex invertible/modulus_phase** | 745.50M | queued | queued | — | queued |
-| real control for invertible (hidden_mult=4) | ~745M | queued | queued | — | queued |
+| complex invertible / split | 745.50M | queued | queued | — | queued |
+| complex invertible / modulus_phase | 745.50M | queued | queued | — | queued |
+| real control (hidden_mult=4) | ~745M | queued | queued | — | queued |
 
-*Two matched controls because the variants differ in size. **Collapse** variants (direct/dualtree) use a 293.74M wavelet → control at `hm=3` (~628M, slightly over — conservative). **Invertible** variants carry a 469.99M wavelet (complex predict AND update, tied reconstruct) → control at `hm=4` (469.91M wavelet, ~745M total — a near-exact match, ratio 1.000). Each complex variant is validated only against its size-matched control, never raw T4.*
-
-**The invertible construction is the better-motivated test.** It preserves `Reconstruct∘Decompose = I` — the symmetry the [untied reconstruction](#untied-wavelet-reconstruction) ablation just showed is load-bearing (+117.5M untied params *regressed*). The collapse variants (direct/dualtree) break that symmetry to hand the mixer a shift-invariant magnitude input; given the untied result, they are likely hamstrung by the same effect. Invertible keeps the symmetry *and* mixes phase (via `complex_mixer_activation`: `split` = real spectral stack on re/im independently; `modulus_phase` = gate magnitude, preserve phase). Round-trip identity verified to ~1e-6.
-
-Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tools/complex_wavelets.py](tools/complex_wavelets.py). Two real tensors (not native `complex64`), CGELU, tied complex reconstruct (invertible) or collapse-to-real (collapse variants). Config: `wavelet_basis`, `complex_construction: "direct"|"dualtree"|"invertible"`, `complex_collapse` (collapse only), `complex_mixer_activation` (invertible only). Mutually exclusive (hard-errored) with recurrence, mixer_depth>1, untied reconstruction, multi-basis, 2D wavelet, non-shared lifting, and wavelet_crawl.
+Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tools/complex_wavelets.py](tools/complex_wavelets.py). Two real tensors (not native `complex64`), CGELU, tied complex reconstruct. Config: `wavelet_basis: "real"|"complex"`, `complex_mixer_activation: "split"|"modulus_phase"`. Mutually exclusive (hard-errored) with recurrence, mixer_depth>1, untied reconstruction, multi-basis, 2D wavelet, non-shared lifting, and wavelet_crawl.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1413,6 +1409,17 @@ Throughput per token of context flattens past `bs≈1024` despite linear-in-N th
 ### T5 Baseline
 
 Time to establish a new baseline. Here, we'll incorporate the best features performance-wise so far and roll them all together.
+
+**Regularization 2×2 (transfer + coupling test).** The [Dropout](#dropout) coordinate descent (final stack: emb 0.18 / proj 0.09 / mix 0.09 / mlp 0.10 / lm_head 0.216, −0.0026 at L=1) and [Weight Decay](#weight-decay) sweep (2e-6, −0.0035 at L=1) were both tuned at L=1/1-epoch and are single-seed. Before folding them into the production baseline they must (a) be confirmed to *transfer* to T5 scale — the dropout-down direction is the fragile one and may flip if a deeper/wider T5 wants more dropout, whereas WD-up is more likely scale-monotone — and (b) be checked for *coupling*, since dropout and WD are both regularizers and may trade off (a ridge) rather than stack additively. A 2×2 factorial answers both with 3 runs on top of the T5 baseline (which *is* the old/old corner — keep it at T4 dropout defaults + WD=1e-6, all other accepted T5 wins folded in). All four cells identical except the dropout/WD axes.
+
+| Cell | Dropout | Weight decay | BPB sliding | PPL sliding | Best val | Δ vs T5 base | Run log |
+|---|---|---|---|---|---|---|---|
+| T5 baseline (old / old) | T4 defaults | 1e-6 | queued | queued | queued | (ref) | queued |
+| + new dropout only | descent stack | 1e-6 | queued | queued | queued | — | queued |
+| + new WD only | T4 defaults | 2e-6 | queued | queued | queued | — | queued |
+| + both | descent stack | 2e-6 | queued | queued | queued | — | queued |
+
+**Reading:** *new-dropout-only* vs base = does the L=1 dropout stack transfer to T5; *new-WD-only* vs base = does WD=2e-6 transfer; *both* vs (sum of the two single-axis Δs) = additive (independent → fold both in) or coupled (ridge → keep the better single axis, or tune jointly at the [final regularization sweep](#final-regularization-sweep)). Edge-winner directions to continue if confirmed: dropout proj/mix/lm_head ↓, WD ↑. Single-seed at T5 too — the chosen recipe still gets a seed-check before B200.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1538,9 +1545,19 @@ Conditional on the architectural research roadmap above (multi-transform paralle
 - `pkm_num_keys` & `fwpkm_num_keys`: 16384 → 65536 each
 - fp16 → FP8 via Blackwell tensor cores (NYI)
 
-The goal is a 10–15B parameter configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. 
+The goal is a 10–15B parameter (or however large it will be) configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. Other possibilities such as LAMBADA will also be considered post-release.
 
 Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with [uniform 8-bit PTQ](runs.md#ptq-sweep-summary). See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Scaled-Up Model with PTQ and other Infernece Strategies
+
+Once trained, test the best model versions with PTQ to ascertain generation speeds and VRAM requirements on a variety of systems.
+
+Insert a collection of tables here later for each dataset, configuration, GPU type, and their associated inference VRAM and generation speeds in tokens/s for public consumption.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

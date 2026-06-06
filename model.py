@@ -1493,22 +1493,15 @@ class WaveletLMBlock(nn.Module):
                     lifting_reference_weights=lifting_reference_weights,
                 )
 
-            # Complex wavelet path: the shared module is a complex decompose
-            # (returns real (approx, details) of width Cp after collapse) paired
-            # with its OWN shared reconstruct (the collapse is non-invertible, so
-            # reconstruct cannot be derived from decompose as in the real path).
-            # When present, use it directly and skip the real reconstruct
-            # derivation below. Mutual-exclusion with subband/untied/multi-basis
-            # is enforced at model construction (see WaveletLM.__init__).
+            # Complex wavelet path (invertible only): the shared module is a
+            # complex decompose returning FULL complex (approx_r, approx_i,
+            # details), paired with a TIED reconstruct (reuses decompose's update
+            # nets), preserving Reconstruct∘Decompose=I. The block runs a
+            # dedicated complex spectral forward (_forward_complex_invertible).
+            # Mutual-exclusion with recurrence/subband/untied/multi-basis/2D/
+            # crawl is enforced at model construction (see WaveletLM.__init__).
             self.is_complex_wavelet = shared_lifting_reconstruct is not None
-            # Invertible complex sub-type: decompose returns FULL complex
-            # (approx_r, approx_i, details) and reconstruct is tied, so the
-            # forward runs a dedicated complex spectral path. Detected by class
-            # name (avoids importing tools/complex_wavelets.py here).
-            self.is_complex_invertible = (
-                type(shared_lifting_module).__name__
-                == "InvertibleComplexLiftingDecompose"
-            ) if self.is_complex_wavelet else False
+            self.is_complex_invertible = self.is_complex_wavelet  # only construction
             if self.is_complex_wavelet:
                 self.lifting_wavelet = shared_lifting_module
                 self.lifting_reconstruct = shared_lifting_reconstruct
@@ -2537,12 +2530,13 @@ class WaveletLM(nn.Module):
             Cp = next_pow2(C)
             shared_lifting, shared_lifting_reconstruct = build_complex_wavelet(
                 config, levels=config['levels'], C=Cp, device=device)
+            # Invertible reconstruct is TIED (reuses decompose's update_nets), so
+            # it adds no independent params — count decompose only to avoid
+            # double-counting the shared nets.
             n_params = sum(p.numel() for p in shared_lifting.parameters())
-            n_params += sum(p.numel() for p in shared_lifting_reconstruct.parameters())
             print(
-                f"[Lifting] COMPLEX wavelet basis: "
-                f"construction={config.get('complex_construction', 'direct')!r}, "
-                f"collapse={config.get('complex_collapse', 'per_level')!r}, "
+                f"[Lifting] COMPLEX wavelet basis (invertible, tied): "
+                f"mixer_activation={config.get('complex_mixer_activation', 'split')!r}, "
                 f"shared across all layers: {n_params/1e6:.2f}M params")
 
         if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
