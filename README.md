@@ -570,6 +570,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
 - [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+- [Final Regularization Sweep](#final-regularization-sweep)
 - [Scaled-Up Model (B200)](#scaled-up-model-b200)
 - [Other Post-Release Plans](#other-post-release-plans)
 
@@ -1286,10 +1287,14 @@ Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. Mor
 | weight_decay | BPB sliding | PPL sliding | Best val | Δ vs T4 | Run log |
 |---|---|---|---|---|---|
 | 1e-06 (T4 baseline) | 1.1311 | 34.24 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| 5e-07 (lower) | queued | queued | queued | — | queued |
-| 2e-06 (higher) | queued | queued | queued | — | queued |
+| 5e-07 (lower) | 1.1330 | 34.45 | 3.5271 | +0.0019 | [link](logs/wikitext-103_2026-06-05_17-58-36/log.txt) |
+| **2e-06 (higher)** | **1.1276** | **33.87** | **3.5107** | **−0.0035** | [link](logs/wikitext-103_2026-06-05_22-45-57/log.txt) |
 
-Note this is purely exploratory. Stacking behavior with the new dropout stack above must be tested separately at a later time.
+**Finding — higher WD helps, and it's the cleanest single result of the cycle.** Monotonic with both metrics agreeing (5e-7 → 1e-6 → 2e-6: BPB 1.1330 → 1.1311 → 1.1276, val 3.5271 → 3.5157 → 3.5107). **2e-6 beats T4 by −0.0035 BPB (~3.5× the single-seed noise floor) on a single step** — the only individual ablation in this cycle to clear noise on its own (every dropout step was at/below floor; this is decisively above). Run at T4 dropout defaults, so directly comparable to T4.
+
+**The dropout↔WD asymmetry is the interesting part.** Dropout wanted to go *down* (4 of 5 coordinates ↓), but weight decay wants to go *up*. Not a contradiction — they regularize different things: the model wanted *less* stochastic/activation regularization (dropout, targets co-adaptation) but *more* weight-norm regularization (WD). Suggests L=1's overfitting is more weight-magnitude growth than co-adaptation.
+
+**Caveats / follow-ups:** (1) 2e-6 is the **range edge** — true optimum may be higher (5e-6, 1e-5); continue upward at T5/higher-L. (2) Single-seed; rides to the same seed-check as the dropout stack before locking. (3) Stacking with the dropout stack untested — both go into the scheduled **T5 Baseline** consolidation, not the current default.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1510,6 +1515,14 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 ### Multinodal Mode (Product-of-Experts)
 
 WaveletLM supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever — a capstone for pure scale-up once the rest of the architectural roadmap settles. Distinct from [Multi-Transform Parallelization](#multi-transform-parallelization) above (which parallelizes inside a single model at the FWHT slot); the PoE mode parallelizes whole models. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Final Regularization Sweep
+
+Do a final regularization sweep building on the results of the [Dropout](#dropout) and [Weight Decay](#weight-decay) sections above. With the increase in model layers and potentially width, higher regularization will likely be needed. Work in a coordinate descent fashion to discover the optimal hyperparameters here.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
