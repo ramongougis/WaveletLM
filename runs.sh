@@ -621,16 +621,16 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # Two flanking values around the T4 default (1e-6). Reference: T4 BPB 1.1311.
 
 # WD1: lower weight decay (5e-7)
-run_ablation "T4_wd_5e7_1ep T4 weight_decay=5e-7 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 5e-7}' \
-    "T4_wd_5e7_1ep: weight_decay 1e-6 -> 5e-7 (halved); vs T4 baseline"
+# run_ablation "T4_wd_5e7_1ep T4 weight_decay=5e-7 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 5e-7}' \
+#     "T4_wd_5e7_1ep: weight_decay 1e-6 -> 5e-7 (halved); vs T4 baseline"
 
-# WD2: higher weight decay (2e-6)
-run_ablation "T4_wd_2e6_1ep T4 weight_decay=2e-6 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 2e-6}' \
-    "T4_wd_2e6_1ep: weight_decay 1e-6 -> 2e-6 (doubled); vs T4 baseline"
+# # WD2: higher weight decay (2e-6)
+# run_ablation "T4_wd_2e6_1ep T4 weight_decay=2e-6 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "weight_decay": 2e-6}' \
+#     "T4_wd_2e6_1ep: weight_decay 1e-6 -> 2e-6 (doubled); vs T4 baseline"
 
 # ---- Complex wavelets --------------------------------------------------------
 # Shift-invariance-motivated complex lifting variant (tools/complex_wavelets.py,
@@ -643,10 +643,10 @@ run_ablation "T4_wd_2e6_1ep T4 weight_decay=2e-6 (1ep)" \
 # variant is validated only if it beats the matched-param real control.
 
 # CW1: direct construction, per-level (real-part) collapse — clean-init baseline.
-run_ablation "T4_cwav_direct_perlevel_1ep T4 complex wavelet direct/per_level (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "direct", "complex_collapse": "per_level"}' \
-    "T4_cwav_direct_perlevel_1ep: complex direct construction, real-part collapse; vs matched real control"
+# run_ablation "T4_cwav_direct_perlevel_1ep T4 complex wavelet direct/per_level (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "direct", "complex_collapse": "per_level"}' \
+#     "T4_cwav_direct_perlevel_1ep: complex direct construction, real-part collapse; vs matched real control"
 
 # CW2: direct construction, end (magnitude) collapse — theory-max phase test.
 run_ablation "T4_cwav_direct_end_1ep T4 complex wavelet direct/end-magnitude (1ep)" \
