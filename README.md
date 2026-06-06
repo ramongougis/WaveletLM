@@ -570,6 +570,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
 - [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
+- [Final Regularization Sweep](#final-regularization-sweep)
 - [Scaled-Up Model (B200)](#scaled-up-model-b200)
 - [Other Post-Release Plans](#other-post-release-plans)
 
@@ -1514,6 +1515,14 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 ### Multinodal Mode (Product-of-Experts)
 
 WaveletLM supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever — a capstone for pure scale-up once the rest of the architectural roadmap settles. Distinct from [Multi-Transform Parallelization](#multi-transform-parallelization) above (which parallelizes inside a single model at the FWHT slot); the PoE mode parallelizes whole models. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Final Regularization Sweep
+
+Do a final regularization sweep building on the results of the [Dropout](#dropout) and [Weight Decay](#weight-decay) sections above. With the increase in model layers and potentially width, higher regularization will likely be needed. Work in a coordinate descent fashion to discover the optimal hyperparameters here.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
