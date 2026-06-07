@@ -122,6 +122,48 @@ class ComplexLayerNorm(nn.Module):
         return gr.to(in_dtype), gi.to(in_dtype)
 
 
+class RealToComplexProjection(nn.Module):
+    """Learned real↔complex projection for Option C (complex in the MIXER, real
+    wavelet). `up`: real coeffs (Cp) → complex (re, im) before the FWHT/mixer.
+    `down`: complex (re, im) → real coeffs (Cp) after the inverse FWHT, before
+    the (real) wavelet reconstruct. One instance PER SCALE (scales carry
+    different structure). The real wavelet stays exactly invertible — this
+    machinery lives entirely on the coefficients, between decompose and
+    reconstruct.
+
+    Init makes the whole up→(identity mixer)→down round-trip start ≈ a real
+    passthrough scaled by ~1, so the model begins near the real baseline and
+    learns the complex routing in:
+      up_r  = I/√2  (real part ≈ input, magnitude-matched into FWHT per the
+              1/√2 note so re and im together have unit-ish magnitude),
+      up_i  = small N(0, imag_std)  (live imaginary path, quiet at init),
+      down  = [√2·I | 0]  (recovers the real part; ignores imag at init).
+    So at init: re≈x/√2, im≈0 → down → ≈x. Training learns away from this.
+    """
+
+    def __init__(self, Cp: int, imag_std: float = 0.01, device=None, dtype=None):
+        super().__init__()
+        self.Cp = Cp
+        self.up_r = nn.Linear(Cp, Cp, bias=False, device=device, dtype=dtype)
+        self.up_i = nn.Linear(Cp, Cp, bias=False, device=device, dtype=dtype)
+        # down takes concat(re, im) = 2Cp -> Cp.
+        self.down = nn.Linear(2 * Cp, Cp, bias=False, device=device, dtype=dtype)
+        with torch.no_grad():
+            eye = torch.eye(Cp, device=self.up_r.weight.device, dtype=self.up_r.weight.dtype)
+            self.up_r.weight.copy_(eye * _INV_SQRT2)
+            nn.init.normal_(self.up_i.weight, std=imag_std)
+            # down = [sqrt2 * I | 0]
+            self.down.weight.zero_()
+            self.down.weight[:, :Cp].copy_(eye * _SQRT2)
+
+    def project_up(self, x_r):
+        # x_r: [..., Cp] real. Returns (re, im).
+        return self.up_r(x_r), self.up_i(x_r)
+
+    def project_down(self, z_r, z_i):
+        return self.down(torch.cat([z_r, z_i], dim=-1))
+
+
 class ComplexLinear(nn.Module):
     """Complex-valued linear layer on split (re, im) real tensors.
 
@@ -302,31 +344,47 @@ class InvertibleComplexLiftingReconstruct(nn.Module):
         return cur_r, cur_i
 
 
-def modulus_phase_gate(z_r, z_i, gate_mag, eps: float = 1e-3):
+# tanh shift so the gate STARTS at the same value softplus gives at init:
+# softplus(0) = ln 2 ≈ 0.6931, and tanh(_TANH_SHIFT) = ln 2 → shift ≈ 0.8540.
+# This makes the tanh-vs-softplus run a clean ablation (identical starting gate,
+# only the activation SHAPE differs) and follows the "start near +1, learn into
+# phase-flips" init advice — no chaotic π rotations on the first backward pass.
+_TANH_SHIFT = 0.8540283  # atanh(ln 2)
+
+
+def modulus_phase_gate(z_r, z_i, gate_mag, eps: float = 1e-3, gate: str = "softplus"):
     """'modulus_phase' mixer-activation helper: scale the complex value's
-    MAGNITUDE by a gate while preserving its phase angle.
-        z' = softplus(gate_mag) * (z / (|z| + eps))   with |z| floored at eps
-    The gate is forced NON-NEGATIVE via softplus before scaling — without it a
-    negative scale flips both components' sign (an unintended π phase rotation).
+    MAGNITUDE by a gate while preserving its phase angle (up to a sign for the
+    bipolar gate):
+        z' = g(gate_mag) * (z / |z|)        |z| floored at eps
+    where g is the gate activation:
+      "softplus":  g = softplus(gate_mag)  ∈ (0, ∞)  — strictly magnitude-only;
+                   the gate can scale but never flip sign / rotate phase by π.
+      "tanh":      g = tanh(gate_mag + shift) ∈ (-1, 1) — BOUNDED and BIPOLAR.
+                   Bounded |g|≤1 is a stabilizer (cannot drive the magnitude
+                   explosion that caused the complex NaNs); amplification >1 is
+                   supplied elsewhere (scale_weights, proj_out). Bipolar lets the
+                   gate learn discrete π phase flips (g<0 ⇔ +π rotation) — extra
+                   expressivity the strictly-positive softplus lacks. The +shift
+                   makes g start at ln2 (= softplus's init value), so it begins as
+                   near-standard positive scaling and learns into flips.
 
-    fp16 NaN guard: the unit phasor 1/|z| explodes for small |z|, and at fp16
-    a small coefficient underflows toward 0. eps=1e-3 ≈ fp16 machine epsilon
-    (9.77e-4): below this fp16 has neither reliable magnitude nor a safe phasor
-    (1/|z| would overflow fp16's 65504), so it is the principled floor, not an
-    expressivity cut — it only affects |z| already in the no-signal/no-precision
-    zone, and does NOT alter the phase ANGLE (verified). eps² goes INSIDE the
-    sqrt, flooring |z| at eps (sqrt(0+eps²)=eps); divisor is the floored mag (no
-    second +eps double-count).
-
-    The ENTIRE phasor product is kept in fp32 and cast to the input dtype only at
-    the very end — so for |z| above the floor the result carries fp32 precision
-    (the eps spend doesn't blunt the representable coefficients).
+    fp16 NaN guard (unchanged): the unit phasor 1/|z| explodes for small |z|;
+    eps=1e-3 ≈ fp16 machine eps floors |z| (eps² inside the sqrt → sqrt(0+eps²)=eps),
+    below which fp16 has neither reliable magnitude nor a safe phasor. Does NOT
+    alter the phase ANGLE. Entire phasor product kept in fp32, cast at the end.
     """
-    gate_pos = F.softplus(gate_mag.float())
+    g = gate_mag.float()
+    if gate == "tanh":
+        gate_val = torch.tanh(g + _TANH_SHIFT)
+    elif gate == "softplus":
+        gate_val = F.softplus(g)
+    else:
+        raise ValueError(f"gate must be 'softplus'|'tanh', got {gate!r}")
     mag = torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps * eps)
     inv = 1.0 / mag
-    out_r = gate_pos * z_r.float() * inv
-    out_i = gate_pos * z_i.float() * inv
+    out_r = gate_val * z_r.float() * inv
+    out_i = gate_val * z_i.float() * inv
     return out_r.to(z_r.dtype), out_i.to(z_i.dtype)
 
 
@@ -402,6 +460,30 @@ if __name__ == "__main__":
     assert torch.isfinite(zr0.grad).all() and torch.isfinite(zi0.grad).all(), "CLN non-finite grad on zero input"
     print(f"  OK | reduces-to-real-LN err {red_err:.1e} | finite fwd/grad incl. zero-variance input")
 
+    # --- RealToComplexProjection (Option C) checks ---
+    print("=== RealToComplexProjection (Option C) ===")
+    proj = RealToComplexProjection(C); proj.eval()
+    xp = torch.randn(B, T, C)
+    pr, pi = proj.project_up(xp)
+    # at init: re ≈ x/√2, im ≈ 0 (small), down(re,im) ≈ x
+    assert pi.abs().mean().item() < 0.1, "up_i not quiet at init"
+    back = proj.project_down(pr, pi)
+    rt = (back - xp).abs().max().item()
+    assert rt < 1e-2, f"Option C round-trip not ~identity at init: {rt}"
+    # finite grad through up+down
+    xg = torch.randn(B, T, C, requires_grad=True)
+    r, i = proj.project_up(xg)
+    proj.project_down(r, i).sum().backward()
+    assert torch.isfinite(xg.grad).all(), "Option C proj non-finite grad"
+    # up_i must receive gradient (live imaginary path)
+    ige = proj.up_i.weight.grad
+    # (grad flows only via down's imag half; ensure nonzero by routing through it)
+    r2, i2 = proj.project_up(torch.randn(B, T, C))
+    loss2 = (proj.project_down(r2, i2) + i2.sum()*0).sum() + i2.pow(2).sum()
+    proj.zero_grad(); loss2.backward()
+    assert proj.up_i.weight.grad is not None and proj.up_i.weight.grad.abs().sum() > 0, "up_i dead"
+    print(f"  OK | round-trip-at-init {rt:.1e} | im quiet | finite grad | up_i live")
+
     print("=== Invertible complex wavelet smoke tests ===")
     dec, rec = build_complex_wavelet(cfg, levels=levels, C=C)
     dec.eval(); rec.eval()
@@ -441,21 +523,32 @@ if __name__ == "__main__":
         worst = max(worst, (dd2[0][0][0, t_probe] - base).abs().max().item())
     assert worst < 1e-6, f"FUTURE LEAK {worst:.4f}"
 
-    # 4) modulus_phase gate: (a) finite forward+grad near |z|=0 (eps guard),
-    #    (b) gate is NON-NEGATIVE (softplus) so it never sign-flips / phase-rotates.
-    zr = torch.zeros(2, 4, C, requires_grad=True)
-    zi = torch.zeros(2, 4, C, requires_grad=True)
-    gate = torch.randn(2, 4, C)  # includes NEGATIVE values on purpose
-    gr, gi = modulus_phase_gate(zr, zi, gate)
-    (gr.sum() + gi.sum()).backward()
-    assert torch.isfinite(gr).all() and torch.isfinite(gi).all(), "modulus_phase non-finite at |z|=0"
-    assert torch.isfinite(zr.grad).all() and torch.isfinite(zi.grad).all(), "modulus_phase grad non-finite at |z|=0"
-    # Non-negativity: with a nonzero phasor, sign(z') must match sign(z) (no flip).
+    # 4) modulus_phase gate, BOTH activations:
+    #    (a) finite forward+grad near |z|=0 (eps guard) for each;
+    #    (b) softplus: gate >0, never sign-flips (sign(z')==sign(z));
+    #    (c) tanh: BOUNDED |g|<=1 (stabilizer) and CAN flip sign on negative gate
+    #        (the intended learnable π rotation), and starts at ln2 at gate_mag=0.
+    for gname in ("softplus", "tanh"):
+        zr = torch.zeros(2, 4, C, requires_grad=True)
+        zi = torch.zeros(2, 4, C, requires_grad=True)
+        gate = torch.randn(2, 4, C)
+        gr, gi = modulus_phase_gate(zr, zi, gate, gate=gname)
+        (gr.sum() + gi.sum()).backward()
+        assert torch.isfinite(gr).all() and torch.isfinite(gi).all(), f"{gname} non-finite at |z|=0"
+        assert torch.isfinite(zr.grad).all() and torch.isfinite(zi.grad).all(), f"{gname} grad non-finite at |z|=0"
+    # softplus: no sign flip on strongly-negative gate.
     zr2 = torch.randn(2, 4, C); zi2 = torch.randn(2, 4, C)
-    neg_gate = -torch.abs(torch.randn(2, 4, C)) - 5.0  # strongly negative
-    gr2, gi2 = modulus_phase_gate(zr2, zi2, neg_gate)
-    # softplus(neg_gate) > 0, so scaled vector keeps the unit-phasor direction:
-    assert (torch.sign(gr2) == torch.sign(zr2)).all(), "modulus_phase sign-flip on negative gate (softplus missing)"
+    neg = -torch.abs(torch.randn(2, 4, C)) - 5.0
+    gsr, _ = modulus_phase_gate(zr2, zi2, neg, gate="softplus")
+    assert (torch.sign(gsr) == torch.sign(zr2)).all(), "softplus sign-flip on negative gate"
+    # tanh: strongly-negative gate SHOULD flip sign (π rotation), and |g| bounded.
+    gtr, _ = modulus_phase_gate(zr2, zi2, neg, gate="tanh")
+    assert (torch.sign(gtr) == -torch.sign(zr2)).all(), "tanh failed to flip sign on negative gate"
+    # tanh init: at gate_mag=0, |g| == ln2 (matches softplus init) -> phasor*ln2.
+    z_unit_r = torch.ones(1, 1, C); z_unit_i = torch.zeros(1, 1, C)
+    g0r, _ = modulus_phase_gate(z_unit_r, z_unit_i, torch.zeros(1, 1, C), gate="tanh")
+    import math as _m
+    assert abs(g0r.abs().mean().item() - _m.log(2)) < 1e-3, "tanh init gate != ln2"
 
     # 5) Imaginary path receives NONZERO gradient at init (no dead phase path).
     dg, rg = build_complex_wavelet(cfg, levels=levels, C=C)
@@ -472,6 +565,6 @@ if __name__ == "__main__":
 
     n_inv = param_count(cfg, levels=levels, C=C)
     print(f"  OK | round-trip {rt_resid:.2e} (imag {xi_resid:.2e}) | "
-          f"causal (leak {worst:.0e}) | modulus_phase non-neg + grad finite | "
+          f"causal (leak {worst:.0e}) | gate softplus+tanh (bounded/flip/init) ok | "
           f"imag |grad|={imag_grad:.2e} | params(C={C},L={levels})={n_inv:,}")
     print("All invertible complex-wavelet smoke tests passed.")

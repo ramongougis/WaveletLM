@@ -132,3 +132,52 @@ so it is a larger/higher-variance model; if NaNs recur at scale, lowering LR
   phase rotations. Open; gauge against whether the cheap versions show any signal.
 - **Shallow-finetune caveat.** L=1/1-epoch surface is flat; a null result here
   does not rule out complex wavelets at the final layer count.
+
+## tanh gate for modulus_phase (2026-06-07)
+
+`modulus_phase_gate` takes a `gate` arg: `softplus` (default, strictly positive,
+magnitude-only) or `tanh`. tanh is BOUNDED (|g|≤1 — a stabilizer; cannot drive the
+magnitude explosion behind the complex NaNs) and BIPOLAR (g<0 = learnable discrete
+π phase flip — expressivity softplus lacks). Amplification >1 is supplied
+elsewhere (scale_weights, proj_out), so the bound costs little. Init-shifted by
+`atanh(ln2)≈0.854` so g starts at ln2 (= softplus's init value): begins as
+standard positive scaling, learns into flips — no chaotic π rotations on the first
+backward pass. Config `complex_gate_activation`. Run: T4_cwav_inv_modphase_tanh.
+
+## Option C: complex in the MIXER, real wavelets (2026-06-07)
+
+The wavelet was the wrong home for complex — its invertibility/causality fought
+the complex machinery and the cheap version regressed (+0.0189 vs T4 for
+split at L=1). The mixer operates in spectral space where phase is natural, so
+move complex THERE and keep the wavelet real. Chosen form: **learnable
+real→complex projection (Gemini's Option C), per-scale, with a tied/learned
+inverse** — preferred over a fixed transform (Option A, custom CHT kernel) or a
+causal Hilbert filter (Option B, reintroduces the causal-Hilbert ambiguity that
+sank the dual-tree) because it (a) reuses the existing real FWHT untouched,
+(b) sidesteps every constraint that sank the complex wavelet (no invertibility
+coupling, no causality issue — it's a per-token channel projection), and (c) is
+the honest test of "does a complex spectral representation help" without imposing
+a possibly-wrong fixed mapping.
+
+Flow (per layer, real wavelet unchanged):
+1. Real wavelet decompose → real coeffs `[B,T,S,Cp]`.
+2. **Per-scale up-projection** `Linear(Cp→2Cp)` → (re, im); init scaled by 1/√2
+   so magnitude into the FWHT matches the real baseline. ComplexLayerNorm after.
+3. Real FWHT on re and im separately → complex spectrum.
+4. Complex gated spectral mixer (re/im), `complex_mixer_activation` reused.
+5. Inverse FWHT on each part.
+6. **Per-scale down-projection** `Linear(2Cp→Cp)` → real coeffs.
+7. Real wavelet reconstruct (unchanged, still exactly invertible — the real
+   wavelet's `Reconstruct∘Decompose=I` is untouched; the complex machinery lives
+   entirely between decompose and reconstruct, on the coefficients).
+
+Decisions (locked): per-scale projections (not one shared across scales — scales
+carry different structure); ComplexLayerNorm reused (not wavelet-specific); the
+real wavelet stays the default real path, so this is gated on a config flag.
+Matched-param control: a real model widened to Option C's param count (the
+projections add ~2·Cp² per scale per layer). Same crawl-off / vs-control framing.
+Config: `complex_mixer_complex` (or reuse `wavelet_basis` semantics — TBD at
+implementation). Mutually exclusive with the complex *wavelet* basis (they're two
+different homes for the same idea; don't stack).
+**Status: DESIGNED, not built** — implement after the current split/modphase/
+control runs report, so the wavelet-vs-mixer comparison has both numbers.

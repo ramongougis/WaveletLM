@@ -1323,14 +1323,25 @@ Round-trip identity verified to ~1e-6 (off-init weights), causality verified (no
 
 **Test design (matched-param form).** A bare complex run beating T4 would be uninterpretable — params help monotonically here, so a win could be capacity, not phase. Each complex variant is paired with a **real-wavelet control widened (via `lifting_hidden_mult`) to the same param count**, and is validated only if it beats *that control*, not merely T4. The invertible wavelet is 469.99M (complex predict AND update, tied reconstruct → ~745M total); its matched real control is `hidden_mult=4` (469.91M wavelet, ratio 1.000 — near-exact).
 
-| Variant | Params | BPB sliding | Best val | Δ vs T4 | Run log |
-|---|---|---|---|---|---|
-| T4 baseline (real, tied) | 393.01M | 1.1311 | 3.5157 | (ref) | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
-| complex invertible / split | 745.50M | queued | queued | — | queued |
-| complex invertible / modulus_phase | 745.50M | queued | queued | — | queued |
-| real control (hidden_mult=4) | ~745M | queued | queued | — | queued |
+| Variant | Params | BPB sliding | Best val | Δ vs T4 | Train VRAM | Inf VRAM | Run log |
+|---|---|---|---|---|---|---|---|
+| T4 baseline (real, tied) | 393.01M | 1.1311 | 3.5157 | (ref) | 7,790 MiB | n/m | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| complex invertible / split | 745.50M | 1.1500 | 3.5689 | +0.0189 | 10,229 MiB | 3,759 MiB | [link](logs/wikitext-103_2026-06-07_09-03-30/log.txt) |
+| complex invertible / modulus_phase (softplus) | 745.50M | queued | queued | — | queued | queued | queued |
+| complex invertible / modulus_phase (tanh) | 745.50M | queued | queued | — | queued | queued | queued |
+| real control (hidden_mult=4) | ~745M | queued | queued | — | queued | queued | queued |
 
-Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tools/complex_wavelets.py](tools/complex_wavelets.py). Two real tensors (not native `complex64`), CGELU, tied complex reconstruct. Config: `wavelet_basis: "real"|"complex"`, `complex_mixer_activation: "split"|"modulus_phase"`. Mutually exclusive (hard-errored) with recurrence, mixer_depth>1, untied reconstruction, multi-basis, 2D wavelet, non-shared lifting, and wavelet_crawl.
+The **tanh** gate variant (`complex_gate_activation="tanh"`) is bounded (|g|≤1, a stabilizer) and bipolar (learns discrete π phase flips — expressivity the strictly-positive softplus lacks), init-shifted to start at ln2 = softplus's init value so the two are a clean ablation.
+
+Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tools/complex_wavelets.py](tools/complex_wavelets.py). Two real tensors (not native `complex64`), CGELU, tied complex reconstruct, ComplexLayerNorm (joint re/im whitening) for stability. Config: `wavelet_basis`, `complex_mixer_activation: "split"|"modulus_phase"`, `complex_gate_activation: "softplus"|"tanh"`. Mutually exclusive (hard-errored) with recurrence, mixer_depth>1, untied reconstruction, multi-basis, 2D wavelet, non-shared lifting, and wavelet_crawl.
+
+**Option C — complex in the MIXER, real wavelet.** The complex wavelet regressed (split +0.0189 vs T4 at L=1), plausibly because the wavelet's invertibility/causality constraints fight the complex machinery. The mixer operates in spectral space where phase is native, so a separate experiment keeps the wavelet **real and exactly invertible** and makes the *mixer* complex via a per-scale learned real↔complex projection (`RealToComplexProjection`) around the FWHT — up-project real coeffs to (re, im), run the complex spectral pass, down-project to real, then the real reconstruct. This is the cleaner test of "does a complex spectral representation help" without the wavelet-side constraints, and it's a *distinct beast* from complex wavelets (mutually exclusive; `complex_mixer=true`). Measured 527.13M at T4 (+134.22M from the projections); matched real control = `hidden_mult=2` (510.38M, ~3% under — no integer hm matches exactly).
+
+| Variant | Params | BPB sliding | Best val | Δ vs T4 | Train VRAM | Inf VRAM | Run log |
+|---|---|---|---|---|---|---|---|
+| complex mixer / split | 527.13M | queued | queued | — | queued | queued | queued |
+| complex mixer / modulus_phase | 527.13M | queued | queued | — | queued | queued | queued |
+| real control (hidden_mult=2) | 510.38M | queued | queued | — | queued | queued | queued |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

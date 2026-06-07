@@ -282,16 +282,24 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # validated only if it beats that matched-param control.
 
 # CW-split: invertible, split-complex mixer activation (real stack on re+im).
-run_ablation "T4_cwav_inv_split_1ep T4 complex wavelet invertible/split (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "split"}' \
-    "T4_cwav_inv_split_1ep: invertible complex (tied, Recon∘Decomp=I), split-complex phase mixing; vs hm=4 control"
+# run_ablation "T4_cwav_inv_split_1ep T4 complex wavelet invertible/split (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "split"}' \
+#     "T4_cwav_inv_split_1ep: invertible complex (tied, Recon∘Decomp=I), split-complex phase mixing; vs hm=4 control"
 
-# CW-modphase: invertible, modulus-phase activation (softplus-gated |z|, phase kept).
-run_ablation "T4_cwav_inv_modphase_1ep T4 complex wavelet invertible/modulus_phase (1ep)" \
+# # CW-modphase: invertible, modulus-phase activation (softplus-gated |z|, phase kept).
+# run_ablation "T4_cwav_inv_modphase_1ep T4 complex wavelet invertible/modulus_phase (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase"}' \
+#     "T4_cwav_inv_modphase_1ep: invertible complex, softplus-gated magnitude phase-preserving mixing; vs hm=4 control"
+
+# CW-modphase-tanh: modulus_phase with a tanh gate — BOUNDED |g|<=1 (stabilizer)
+# and BIPOLAR (learns discrete π phase flips), init-shifted to start at ln2 (=
+# softplus init) so it begins as standard positive scaling and learns into flips.
+run_ablation "T4_cwav_inv_modphase_tanh_1ep T4 complex wavelet invertible/modulus_phase tanh-gate (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase"}' \
-    "T4_cwav_inv_modphase_1ep: invertible complex, softplus-gated magnitude phase-preserving mixing; vs hm=4 control"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "tanh"}' \
+    "T4_cwav_inv_modphase_tanh_1ep: tanh-gated modulus_phase (bounded, bipolar π-flips); vs softplus variant + hm=4 control"
 
 # CW-control: matched-param real control. Invertible wavelet is 469.99M (complex
 # predict AND update, tied reconstruct); hidden_mult=4 = 469.91M, near-exact
@@ -301,3 +309,30 @@ run_ablation "T4_cwav_control_hm4_1ep T4 real-wavelet control hidden_mult=4 (1ep
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 4}' \
     "T4_cwav_control_hm4_1ep: real wavelet hidden_mult=4 (~470M wavelet) — near-exact matched-param control for the invertible complex runs"
 
+# ---- Option C: complex MIXER, REAL wavelet -----------------------------------
+# Separate experiment from the complex-wavelet basis: the wavelet stays real and
+# exactly invertible; the complex machinery is a per-scale learned real↔complex
+# projection around the FWHT/mixer (tools/complex_wavelets.RealToComplexProjection)
+# + the complex spectral pass. Tests whether complex helps in the MIXER (spectral
+# space, where phase is native) even though it regressed in the wavelet. Total
+# 527.13M at T4 (+134.22M projections). crawl off for clean comparison; in-section
+# reference is the hm=2 control below (510.38M, ~3% under — note slight under-match).
+
+# CM-split: complex mixer, split activation.
+run_ablation "T4_cmix_split_1ep T4 complex mixer (Option C) / split (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "split"}' \
+    "T4_cmix_split_1ep: Option C — real wavelet + complex mixer (learned R↔C proj), split; vs hm=2 control"
+
+# CM-modphase: complex mixer, modulus_phase (softplus gate).
+run_ablation "T4_cmix_modphase_1ep T4 complex mixer (Option C) / modulus_phase (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "softplus"}' \
+    "T4_cmix_modphase_1ep: Option C complex mixer, softplus-gated modulus_phase; vs hm=2 control"
+
+# CM-control: matched-param real control for Option C. hidden_mult=2 = 510.38M
+# (~3% under Option C's 527.13M; no integer hm matches exactly — hm=3 is 19% over).
+run_ablation "T4_cmix_control_hm2_1ep T4 real-wavelet control hidden_mult=2 (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 2}' \
+    "T4_cmix_control_hm2_1ep: real wavelet hidden_mult=2 (510.38M) — matched-param control for Option C (~3% under)"

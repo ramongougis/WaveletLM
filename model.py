@@ -1365,6 +1365,8 @@ class WaveletLMBlock(nn.Module):
         shared_lifting_module: 'LiftingWaveletDecompose' = None,
         shared_lifting_reconstruct: nn.Module = None,
         complex_mixer_activation: str = "split",
+        complex_gate_activation: str = "softplus",
+        complex_mixer: bool = False,
         untied_reconstruction: bool = False,
         multi_basis_lifting: bool = False,
         multi_basis_inits: List[str] = None,
@@ -1502,10 +1504,15 @@ class WaveletLMBlock(nn.Module):
             # crawl is enforced at model construction (see WaveletLM.__init__).
             self.is_complex_wavelet = shared_lifting_reconstruct is not None
             self.is_complex_invertible = self.is_complex_wavelet  # only construction
+            # Option C: real wavelet, complex MIXER (independent of the complex
+            # wavelet basis; mutually exclusive, enforced at model construction).
+            self.is_complex_mixer = bool(complex_mixer)
             if self.is_complex_wavelet:
                 self.lifting_wavelet = shared_lifting_module
                 self.lifting_reconstruct = shared_lifting_reconstruct
+            if self.is_complex_wavelet or self.is_complex_mixer:
                 self.complex_mixer_activation = complex_mixer_activation
+                self.complex_gate_activation = complex_gate_activation
 
             # Detect 2D wavelet "subband" mode via duck typing (avoids hard
             # import dep on tools/two_d_wavelets.py). In subband mode the
@@ -1883,7 +1890,9 @@ class WaveletLMBlock(nn.Module):
         # tied reconstruct amplifies over levels) — the observed NaN source.
         # ComplexLayerNorm whitens the 2D (re, im) covariance instead. Built only
         # when complex is active, so the real path's norms are untouched.
-        if getattr(self, "is_complex_invertible", False):
+        # Coupled complex norms are needed by BOTH the complex-wavelet invertible
+        # path and the Option C complex-mixer path (same complex spectral pass).
+        if getattr(self, "is_complex_invertible", False) or getattr(self, "is_complex_mixer", False):
             from tools.complex_wavelets import ComplexLayerNorm
             if wavelet_decomp_norm:
                 self.decomp_norms_complex = nn.ModuleList([
@@ -1893,6 +1902,12 @@ class WaveletLMBlock(nn.Module):
                 self.recon_norms_complex = nn.ModuleList([
                     ComplexLayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
                 ])
+        # Option C: per-scale learned real↔complex projections around the mixer.
+        if getattr(self, "is_complex_mixer", False):
+            from tools.complex_wavelets import RealToComplexProjection
+            self.complex_mixer_proj = nn.ModuleList([
+                RealToComplexProjection(self.Cp, device=device, dtype=dtype) for _ in range(S)
+            ])
 
         # Per-step normalization *between* mixer applications during any
         # recurrence (N*K > 1). The recurrence runs inside the FWHT/iFWHT span,
@@ -2112,7 +2127,8 @@ class WaveletLMBlock(nn.Module):
                 coeffs_i = torch.stack(ni, dim=2)
             mag = complex_magnitude(coeffs_r, coeffs_i)
             mixed_mag = self._spectral_stack(mag, S)
-            new_r, new_i = modulus_phase_gate(coeffs_r, coeffs_i, mixed_mag)
+            new_r, new_i = modulus_phase_gate(
+                coeffs_r, coeffs_i, mixed_mag, gate=self.complex_gate_activation)
         else:  # "split": joint-normed complex spectral pass on (re, im)
             new_r, new_i = self._spectral_stack_complex(coeffs_r, coeffs_i, S)
 
@@ -2158,6 +2174,96 @@ class WaveletLMBlock(nn.Module):
             x = x + mem_out
         return x, None
 
+    def _forward_complex_mixer(self, x, prev_state=None, token_embeddings=None):
+        """Option C: REAL wavelet, COMPLEX mixer. Real decompose → per-scale
+        learned up-projection to (re, im) → complex spectral pass (split or
+        modulus_phase) → per-scale down-projection to real → real reconstruct.
+        The real wavelet's exact invertibility is untouched; the complex
+        machinery lives entirely on the coefficients between decompose and
+        reconstruct. mixer_depth=1, no recurrence (hard-errored at construction)."""
+        from tools.complex_wavelets import modulus_phase_gate, complex_magnitude
+
+        if self.per_layer_embedding and token_embeddings is not None:
+            x = x + self.embedding_residual_gamma * token_embeddings
+        h = self.ln1(x)
+        h = pad_features_to_pow2(h, self.Cp)
+
+        # REAL decompose -> real (approx, details).
+        if self.wavelet_mode == "lifting":
+            approx, details = self.lifting_wavelet(h)
+        else:
+            approx, details = causal_haar_decompose(h, self.levels)
+        S = self.s_effective
+        coeffs_top_down = [approx] + details[::-1]
+        stacked = torch.stack(coeffs_top_down, dim=2)  # [B,T,S,Cp] real
+
+        # Per-scale learned up-projection real -> (re, im).
+        up_r, up_i = [], []
+        for s in range(S):
+            r, i = self.complex_mixer_proj[s].project_up(stacked[:, :, s, :])
+            up_r.append(r); up_i.append(i)
+        coeffs_r = torch.stack(up_r, dim=2)
+        coeffs_i = torch.stack(up_i, dim=2)
+
+        # Complex spectral pass (reuses the invertible path's machinery).
+        if self.complex_mixer_activation == "modulus_phase":
+            if self.wavelet_decomp_norm:
+                nr, ni = [], []
+                for s in range(S):
+                    r, i = self.decomp_norms_complex[s](
+                        coeffs_r[:, :, s, :], coeffs_i[:, :, s, :])
+                    nr.append(r); ni.append(i)
+                coeffs_r = torch.stack(nr, dim=2); coeffs_i = torch.stack(ni, dim=2)
+            mag = complex_magnitude(coeffs_r, coeffs_i)
+            mixed_mag = self._spectral_stack(mag, S)
+            new_r, new_i = modulus_phase_gate(
+                coeffs_r, coeffs_i, mixed_mag, gate=self.complex_gate_activation)
+        else:  # split
+            new_r, new_i = self._spectral_stack_complex(coeffs_r, coeffs_i, S)
+
+        # Per-scale learned down-projection (re, im) -> real.
+        down = []
+        for s in range(S):
+            down.append(self.complex_mixer_proj[s].project_down(
+                new_r[:, :, s, :], new_i[:, :, s, :]))
+        mixed_all = torch.stack(down, dim=2)  # [B,T,S,Cp] real
+
+        # Per-scale dropout + scale weights, then REAL reconstruct.
+        mixed_list = list(mixed_all.unbind(dim=2))
+        processed = [self.dropout_mix(m) * self.scale_weights[idx]
+                     for idx, m in enumerate(mixed_list)]
+        approx_proc = processed[0]
+        details_proc = processed[1:][::-1]
+        if self.wavelet_mode == "lifting":
+            reconstructed_padded = self.lifting_reconstruct(approx_proc, details_proc)
+        else:
+            reconstructed_padded = causal_haar_reconstruct(approx_proc, details_proc)
+
+        if self.skip_proj_out:
+            projected = reconstructed_padded
+        else:
+            projected = self.proj_out(reconstructed_padded)
+        if self.learned_residual:
+            x = self.residual_alpha_spectral * x + self.dropout_proj(projected)
+        else:
+            x = x + self.dropout_proj(projected)
+
+        h2 = self.ln2(x)
+        if self._cache_h2:
+            self._cached_h2 = h2.detach()
+        mem_out = torch.zeros_like(h2)
+        if self.use_mlp:
+            mem_out = mem_out + self.alpha_mlp * self.ffwd(h2)
+        if self.pkm_enabled:
+            mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
+        if self.fwpkm_enabled:
+            mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
+        if self.learned_residual:
+            x = self.residual_alpha_mlp * x + mem_out
+        else:
+            x = x + mem_out
+        return x, None
+
     def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None):
         # Invertible complex wavelet uses a dedicated forward (full complex
         # coefficients carried through the spectral stack, tied reconstruct).
@@ -2167,6 +2273,10 @@ class WaveletLMBlock(nn.Module):
         # below completely untouched.
         if getattr(self, "is_complex_invertible", False):
             return self._forward_complex_invertible(x, prev_state, token_embeddings)
+        # Option C: real wavelet + complex MIXER (learned real↔complex projection
+        # around the FWHT/mixer). Separate dedicated forward; real path untouched.
+        if getattr(self, "is_complex_mixer", False):
+            return self._forward_complex_mixer(x, prev_state, token_embeddings)
 
         _, _, C = x.shape
         current_running_mean = None
@@ -2575,6 +2685,26 @@ class WaveletLM(nn.Module):
         # perfect-reconstruction identity the real path has. It is therefore
         # mutually exclusive with every feature that relies on that identity or
         # on a real decompose. Enforced here as hard errors (no silent override).
+        # Option C (complex MIXER, real wavelet): mutually exclusive with the
+        # complex wavelet basis, recurrence, and mixer_depth>1. Uses the normal
+        # real shared-lifting path below; the complex machinery is per-block.
+        if config.get("complex_mixer", False):
+            if config.get("wavelet_basis", "real") == "complex":
+                raise ValueError(
+                    "complex_mixer (Option C) is mutually exclusive with "
+                    "wavelet_basis='complex' — they are two homes for the same "
+                    "idea; enable only one.")
+            _N = int(config.get("mixer_recurrence_steps", 1))
+            _K = int(config.get("mixer_recurrence_distinct_mixer_count", 1))
+            if _N * _K > 1:
+                raise ValueError("complex_mixer is mutually exclusive with mixer recurrence.")
+            if int(config.get("mixer_depth", 1)) != 1:
+                raise ValueError("complex_mixer requires mixer_depth=1.")
+            cact = config.get("complex_mixer_activation", "split")
+            if cact not in ("split", "modulus_phase"):
+                raise ValueError(
+                    f"complex_mixer_activation must be 'split'|'modulus_phase', got {cact!r}.")
+
         wavelet_basis = config.get("wavelet_basis", "real")
         if wavelet_basis == "complex":
             if wavelet_mode != "lifting":
@@ -2792,6 +2922,8 @@ class WaveletLM(nn.Module):
                 shared_lifting_module=shared_lifting,
                 shared_lifting_reconstruct=shared_lifting_reconstruct,
                 complex_mixer_activation=config.get("complex_mixer_activation", "split"),
+                complex_gate_activation=config.get("complex_gate_activation", "softplus"),
+                complex_mixer=config.get("complex_mixer", False),
                 untied_reconstruction=config.get("untied_reconstruction", False),
                 multi_basis_lifting=config.get("multi_basis_lifting", False),
                 multi_basis_inits=config.get("multi_basis_inits", None),
