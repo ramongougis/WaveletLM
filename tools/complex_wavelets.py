@@ -46,6 +46,82 @@ _INV_SQRT2 = 0.7071067811865476
 _SQRT2 = 1.4142135623730951
 
 
+class ComplexLayerNorm(nn.Module):
+    """LayerNorm for a complex value carried as two real tensors (x_r, x_i).
+
+    Normalizes re and im **jointly** as a coupled 2D quantity via covariance
+    whitening (Trabelsi et al. 2018, "Deep Complex Networks", complex BN/LN):
+    center, then multiply by the inverse square root of the 2x2 (rr, ri; ri, ii)
+    covariance so the output has identity covariance, then a complex affine
+    (gamma, beta). This is the coupling the per-part real LayerNorm lacks: it
+    bounds the *joint* magnitude, not re and im independently — the magnitude
+    that the tied reconstruct amplifies over levels.
+
+    Why this and not the obvious complex64 version:
+    - Operates on REAL (x_r, x_i) tensors — NEVER torch.complex64 (the whole
+      module avoids it: torch.compile + fp16 handle complex dtypes poorly).
+    - Whitening is computed in fp32 with an eps FLOOR ON THE DETERMINANT, because
+      1/sqrt(det) explodes for near-degenerate covariance (tiny/early variance,
+      fp16) — the same failure class as the modulus_phase phasor.
+
+    Reduces to standard real LayerNorm when x_i == 0: then Vii→eps, Vri→0, the
+    whitening collapses to (x_r - mean_r)/sqrt(Vrr) on the real part. So it is a
+    safe drop-in for the real LayerNorm at points where both parts are in hand.
+
+    normalized_shape: the feature dim C (last axis), matching nn.LayerNorm(C).
+    """
+
+    def __init__(self, normalized_shape, eps: float = 1e-5, device=None, dtype=None):
+        super().__init__()
+        if isinstance(normalized_shape, int):
+            normalized_shape = (normalized_shape,)
+        self.normalized_shape = tuple(normalized_shape)
+        self.eps = eps
+        # Complex affine as separate real params (gamma_r, gamma_i, beta_r,
+        # beta_i). gamma init: real=1, imag=0 (identity scale at init).
+        self.gamma_rr = nn.Parameter(torch.ones(self.normalized_shape, device=device, dtype=dtype))
+        self.gamma_ii = nn.Parameter(torch.ones(self.normalized_shape, device=device, dtype=dtype))
+        self.gamma_ri = nn.Parameter(torch.zeros(self.normalized_shape, device=device, dtype=dtype))
+        self.beta_r = nn.Parameter(torch.zeros(self.normalized_shape, device=device, dtype=dtype))
+        self.beta_i = nn.Parameter(torch.zeros(self.normalized_shape, device=device, dtype=dtype))
+
+    def forward(self, x_r: torch.Tensor, x_i: torch.Tensor):
+        ndims = len(self.normalized_shape)
+        dim = tuple(range(-ndims, 0))
+        in_dtype = x_r.dtype
+        xr = x_r.float()
+        xi = x_i.float()
+        eps = self.eps
+
+        mr = xr.mean(dim=dim, keepdim=True)
+        mi = xi.mean(dim=dim, keepdim=True)
+        xr = xr - mr
+        xi = xi - mi
+
+        Vrr = xr.pow(2).mean(dim=dim, keepdim=True) + eps
+        Vii = xi.pow(2).mean(dim=dim, keepdim=True) + eps
+        Vri = (xr * xi).mean(dim=dim, keepdim=True)
+
+        # Inverse sqrt of the 2x2 covariance via the closed form, with the
+        # determinant FLOORED so 1/(s*t) cannot explode (fp16-degenerate cov).
+        det = (Vrr * Vii - Vri.pow(2)).clamp_min(eps * eps)
+        s = torch.sqrt(det)
+        t = torch.sqrt(Vrr + Vii + 2.0 * s).clamp_min(eps)
+        inv_st = 1.0 / (s * t)
+        Wrr = (Vii + s) * inv_st
+        Wii = (Vrr + s) * inv_st
+        Wri = -Vri * inv_st
+
+        nr = Wrr * xr + Wri * xi
+        ni = Wri * xr + Wii * xi
+
+        # Complex affine: (gamma_rr + i gamma_ri)(nr + i ni) ... using a 2x2
+        # gamma (rr, ri; ri, ii) for a full learnable complex scale, + beta.
+        gr = self.gamma_rr.float() * nr + self.gamma_ri.float() * ni + self.beta_r.float()
+        gi = self.gamma_ri.float() * nr + self.gamma_ii.float() * ni + self.beta_i.float()
+        return gr.to(in_dtype), gi.to(in_dtype)
+
+
 class ComplexLinear(nn.Module):
     """Complex-valued linear layer on split (re, im) real tensors.
 
@@ -226,26 +302,31 @@ class InvertibleComplexLiftingReconstruct(nn.Module):
         return cur_r, cur_i
 
 
-def modulus_phase_gate(z_r, z_i, gate_mag, eps: float = 1e-6):
+def modulus_phase_gate(z_r, z_i, gate_mag, eps: float = 1e-3):
     """'modulus_phase' mixer-activation helper: scale the complex value's
     MAGNITUDE by a gate while preserving its phase angle.
-        z' = softplus(gate_mag) * (z / (|z| + eps))
-    The gate is forced NON-NEGATIVE via softplus before scaling. Without this,
-    the real spectral stack that produces gate_mag can output negatives, and a
-    negative scale flips the sign of both components — an unintended π phase
-    rotation that defeats "preserve phase, scale magnitude only". softplus keeps
-    the gate a pure (positive) magnitude scaler. The eps-guarded unit phasor
-    keeps gradients finite near |z|=0 (computed in fp32).
+        z' = softplus(gate_mag) * (z / (|z| + eps))   with |z| floored at eps
+    The gate is forced NON-NEGATIVE via softplus before scaling — without it a
+    negative scale flips both components' sign (an unintended π phase rotation).
+
+    fp16 NaN guard: the unit phasor 1/|z| explodes for small |z|, and at fp16
+    a small coefficient underflows toward 0. The magnitude is therefore computed
+    in fp32 with eps² INSIDE the sqrt, which floors |z| at `eps` itself (since
+    sqrt(0 + eps²) = eps) — note the magnitude squares the guard, so flooring
+    |z| at 1e-3 needs eps²=1e-6 inside, exactly what eps=1e-3 gives. The divisor
+    is then `mag` (already floored); no second `+eps` (that would double-count).
+    Division done in fp32, cast back to the input dtype.
     """
     gate_pos = F.softplus(gate_mag)
     mag = torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps * eps)
-    inv = (1.0 / (mag + eps)).to(z_r.dtype)
+    inv = (1.0 / mag).to(z_r.dtype)
     return gate_pos * z_r * inv, gate_pos * z_i * inv
 
 
-def complex_magnitude(z_r, z_i, eps: float = 1e-12):
-    """|z| in fp32 with inside-sqrt eps (for the modulus_phase mixer input)."""
-    return torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps).to(z_r.dtype)
+def complex_magnitude(z_r, z_i, eps: float = 1e-3):
+    """|z| in fp32 with eps² inside the sqrt → floors |z| at `eps` (fp16-safe;
+    matches modulus_phase_gate's guard). Feeds the modulus_phase mixer input."""
+    return torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps * eps).to(z_r.dtype)
 
 
 def build_complex_wavelet(config: dict, levels: int, C: int,
@@ -286,6 +367,33 @@ if __name__ == "__main__":
     B, T, C, levels = 2, 64, 32, 4
     cfg = {"complex_construction": "invertible", "lifting_hidden_mult": 1,
            "lifting_dropout": 0.0}
+
+    # --- ComplexLayerNorm checks ---
+    print("=== ComplexLayerNorm ===")
+    cln = ComplexLayerNorm(C); cln.eval()
+    # (a) reduces to real LayerNorm when imag == 0
+    xr = torch.randn(B, T, C)
+    zi = torch.zeros(B, T, C)
+    gr, gi = cln(xr, zi)
+    ref = nn.functional.layer_norm(xr, (C,))  # standard LN, unit gamma/zero beta
+    red_err = (gr - ref).abs().max().item()
+    assert red_err < 1e-4, f"ComplexLayerNorm != real LN at imag=0: {red_err}"
+    assert gi.abs().max().item() < 1e-4, "imag output nonzero when imag input is zero"
+    # (b) finite forward + grad on generic complex input
+    ar = torch.randn(B, T, C, requires_grad=True)
+    ai = torch.randn(B, T, C, requires_grad=True)
+    or_, oi_ = cln(ar, ai)
+    (or_.pow(2).sum() + oi_.pow(2).sum()).backward()
+    assert torch.isfinite(or_).all() and torch.isfinite(oi_).all(), "CLN non-finite fwd"
+    assert torch.isfinite(ar.grad).all() and torch.isfinite(ai.grad).all(), "CLN non-finite grad"
+    # (c) degenerate input (zero variance) stays finite (det-floor works)
+    zr0 = torch.zeros(B, T, C, requires_grad=True)
+    zi0 = torch.zeros(B, T, C, requires_grad=True)
+    dr, di = cln(zr0, zi0)
+    (dr.sum() + di.sum()).backward()
+    assert torch.isfinite(dr).all() and torch.isfinite(di).all(), "CLN non-finite on zero input"
+    assert torch.isfinite(zr0.grad).all() and torch.isfinite(zi0.grad).all(), "CLN non-finite grad on zero input"
+    print(f"  OK | reduces-to-real-LN err {red_err:.1e} | finite fwd/grad incl. zero-variance input")
 
     print("=== Invertible complex wavelet smoke tests ===")
     dec, rec = build_complex_wavelet(cfg, levels=levels, C=C)

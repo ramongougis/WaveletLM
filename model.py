@@ -1876,6 +1876,23 @@ class WaveletLMBlock(nn.Module):
             self.recon_norms = nn.ModuleList([
                 nn.LayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
             ])
+        # Complex-coupled norms (invertible complex wavelet only): jointly
+        # normalize (re, im) per scale, replacing the per-part real LayerNorm in
+        # the complex spectral pass. The per-part real norm normalizes re and im
+        # independently and lets their JOINT magnitude drift (the magnitude the
+        # tied reconstruct amplifies over levels) — the observed NaN source.
+        # ComplexLayerNorm whitens the 2D (re, im) covariance instead. Built only
+        # when complex is active, so the real path's norms are untouched.
+        if getattr(self, "is_complex_invertible", False):
+            from tools.complex_wavelets import ComplexLayerNorm
+            if wavelet_decomp_norm:
+                self.decomp_norms_complex = nn.ModuleList([
+                    ComplexLayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
+                ])
+            if wavelet_recon_norm:
+                self.recon_norms_complex = nn.ModuleList([
+                    ComplexLayerNorm(self.Cp, device=device, dtype=dtype) for _ in range(S)
+                ])
 
         # Per-step normalization *between* mixer applications during any
         # recurrence (N*K > 1). The recurrence runs inside the FWHT/iFWHT span,
@@ -1999,6 +2016,64 @@ class WaveletLMBlock(nn.Module):
             mixed_all = mixed_all * self.fht_signs
         return mixed_all
 
+    def _spectral_stack_complex(self, coeffs_r, coeffs_i, S):
+        """Complex (split) spectral pass: like _spectral_stack but the decomp and
+        recon norms are ComplexLayerNorm applied JOINTLY to (re, im) — coupling
+        the two parts so their joint magnitude is bounded (the per-part real norm
+        does not, which is the NaN source). FWHT and the (real) per-scale mixer
+        then run on each part independently (split-complex). Returns (re, im).
+        Used only by the invertible complex forward; the real _spectral_stack is
+        untouched."""
+        # Joint complex decomp-norm, per scale.
+        if self.wavelet_decomp_norm:
+            nr, ni = [], []
+            for s in range(S):
+                r, i = self.decomp_norms_complex[s](
+                    coeffs_r[:, :, s, :], coeffs_i[:, :, s, :])
+                nr.append(r); ni.append(i)
+            coeffs_r = torch.stack(nr, dim=2)
+            coeffs_i = torch.stack(ni, dim=2)
+        if self.fht_thue_morse_signflips:
+            coeffs_r = coeffs_r * self.fht_signs
+            coeffs_i = coeffs_i * self.fht_signs
+        if self.fht_input_cap_enabled:
+            coeffs_r = coeffs_r.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
+            coeffs_i = coeffs_i.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
+        spec_r = self.fht(coeffs_r)
+        spec_i = self.fht(coeffs_i)
+        # Single real mixer application per part (mixer_depth==1 for complex).
+        # Cross-scale gate routing is computed per part from that part's spectrum.
+        def _mix(spec):
+            if self.cross_scale_gating:
+                routed = torch.einsum('rs,btsd->btrd', self.scale_routing, spec)
+            else:
+                routed = None
+            out = []
+            for s in range(S):
+                Gs = routed[:, :, s, :] if routed is not None else None
+                out.append(self.scale_mixers[s](spec[:, :, s, :], gate_input=Gs))
+            return torch.stack(out, dim=2)
+        mixed_r = _mix(spec_r)
+        mixed_i = _mix(spec_i)
+        if self.fht_input_cap_enabled:
+            mixed_r = mixed_r.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
+            mixed_i = mixed_i.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
+        mixed_r = self.fht(mixed_r)
+        mixed_i = self.fht(mixed_i)
+        # Joint complex recon-norm, per scale.
+        if self.wavelet_recon_norm:
+            nr, ni = [], []
+            for s in range(S):
+                r, i = self.recon_norms_complex[s](
+                    mixed_r[:, :, s, :], mixed_i[:, :, s, :])
+                nr.append(r); ni.append(i)
+            mixed_r = torch.stack(nr, dim=2)
+            mixed_i = torch.stack(ni, dim=2)
+        if self.fht_thue_morse_signflips:
+            mixed_r = mixed_r * self.fht_signs
+            mixed_i = mixed_i * self.fht_signs
+        return mixed_r, mixed_i
+
     def _forward_complex_invertible(self, x, prev_state=None, token_embeddings=None):
         """Forward for the invertible complex wavelet. Carries full complex
         coefficients through the spectral stack and uses the tied complex
@@ -2024,14 +2099,22 @@ class WaveletLMBlock(nn.Module):
         coeffs_i = _stack(approx_i, details, 1)
 
         if self.complex_mixer_activation == "modulus_phase":
-            # Mix the magnitude through the (real) spectral stack; preserve and
-            # re-apply phase. mag is the shift-invariant quantity.
+            # Joint-norm the (re, im) coefficients first (bounds joint magnitude),
+            # then mix the magnitude through the real spectral stack and re-apply
+            # the preserved phase. mag is the shift-invariant quantity.
+            if self.wavelet_decomp_norm:
+                nr, ni = [], []
+                for s in range(S):
+                    r, i = self.decomp_norms_complex[s](
+                        coeffs_r[:, :, s, :], coeffs_i[:, :, s, :])
+                    nr.append(r); ni.append(i)
+                coeffs_r = torch.stack(nr, dim=2)
+                coeffs_i = torch.stack(ni, dim=2)
             mag = complex_magnitude(coeffs_r, coeffs_i)
             mixed_mag = self._spectral_stack(mag, S)
             new_r, new_i = modulus_phase_gate(coeffs_r, coeffs_i, mixed_mag)
-        else:  # "split": independent real spectral stack on re and im
-            new_r = self._spectral_stack(coeffs_r, S)
-            new_i = self._spectral_stack(coeffs_i, S)
+        else:  # "split": joint-normed complex spectral pass on (re, im)
+            new_r, new_i = self._spectral_stack_complex(coeffs_r, coeffs_i, S)
 
         # Per-scale dropout + scale weights (applied to both parts identically).
         def _post(mixed_all):

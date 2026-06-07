@@ -91,6 +91,35 @@ lifting, and wavelet_crawl.
 - End-to-end (model.py): real-basis regression-safe, both activations
   build/fwd/bwd with finite grads, removed constructions error cleanly.
 
+## NaN fix: coupled ComplexLayerNorm + phasor eps (2026-06-07)
+
+First invertible runs NaN'd (split: intermittent from step ~25.7k/lr≈0.02, fought
+through; modulus_phase: persistent from ~15.5k, dominated). Two distinct causes,
+both fixed:
+
+1. **Joint-magnitude drift (both activations).** The spectral pass applied the
+   per-part real `LayerNorm` to re and im *independently*, so each looked
+   normalized while their JOINT magnitude — the quantity the tied √2-per-level
+   reconstruct amplifies — drifted until fp16 overflow. Fix: `ComplexLayerNorm`
+   (`tools/complex_wavelets.py`) whitens the 2×2 (re,im) covariance jointly
+   (Trabelsi-style complex LN), in fp32 with an eps FLOOR on the determinant
+   (1/√det explodes for near-degenerate covariance). It reduces *exactly* to real
+   LayerNorm when im=0 (verified ~7e-7), so it is a safe drop-in. Wired only into
+   a complex-only `_spectral_stack_complex` (and the modulus_phase coeff pre-norm)
+   via per-scale `decomp_norms_complex`/`recon_norms_complex`, built only when
+   complex is active — the real path's norms and `_spectral_stack` are untouched
+   (verified: real loss identical pre/post).
+2. **Phasor division (modulus_phase only).** `1/(|z|+ε)` with ε=1e-6 (and ε² inside
+   the sqrt) underflows at fp16 for small |z|. Fix: ε=1e-3, so ε² inside the sqrt
+   floors |z| at 1e-3 (the magnitude squares the guard); divisor is the floored
+   mag, no double `+ε`. fp32 throughout.
+
+Stress-checked: 60 Adagrad steps at lr=0.0225 (the LR that NaN'd) finite for both
+activations. Note this is NOT param-count parity with the real model — the
+invertible complex wavelet is ~4× the real wavelet (complex predict AND update),
+so it is a larger/higher-variance model; if NaNs recur at scale, lowering LR
+(toward 0.01) remains the cheap fallback before further structural change.
+
 ## Open questions (for a fuller implementation — not yet built)
 
 - **Per-block phase reset (#1 from the impl review).** The block takes real x and
