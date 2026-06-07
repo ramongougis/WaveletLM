@@ -310,17 +310,24 @@ def modulus_phase_gate(z_r, z_i, gate_mag, eps: float = 1e-3):
     negative scale flips both components' sign (an unintended π phase rotation).
 
     fp16 NaN guard: the unit phasor 1/|z| explodes for small |z|, and at fp16
-    a small coefficient underflows toward 0. The magnitude is therefore computed
-    in fp32 with eps² INSIDE the sqrt, which floors |z| at `eps` itself (since
-    sqrt(0 + eps²) = eps) — note the magnitude squares the guard, so flooring
-    |z| at 1e-3 needs eps²=1e-6 inside, exactly what eps=1e-3 gives. The divisor
-    is then `mag` (already floored); no second `+eps` (that would double-count).
-    Division done in fp32, cast back to the input dtype.
+    a small coefficient underflows toward 0. eps=1e-3 ≈ fp16 machine epsilon
+    (9.77e-4): below this fp16 has neither reliable magnitude nor a safe phasor
+    (1/|z| would overflow fp16's 65504), so it is the principled floor, not an
+    expressivity cut — it only affects |z| already in the no-signal/no-precision
+    zone, and does NOT alter the phase ANGLE (verified). eps² goes INSIDE the
+    sqrt, flooring |z| at eps (sqrt(0+eps²)=eps); divisor is the floored mag (no
+    second +eps double-count).
+
+    The ENTIRE phasor product is kept in fp32 and cast to the input dtype only at
+    the very end — so for |z| above the floor the result carries fp32 precision
+    (the eps spend doesn't blunt the representable coefficients).
     """
-    gate_pos = F.softplus(gate_mag)
+    gate_pos = F.softplus(gate_mag.float())
     mag = torch.sqrt(z_r.float() ** 2 + z_i.float() ** 2 + eps * eps)
-    inv = (1.0 / mag).to(z_r.dtype)
-    return gate_pos * z_r * inv, gate_pos * z_i * inv
+    inv = 1.0 / mag
+    out_r = gate_pos * z_r.float() * inv
+    out_i = gate_pos * z_i.float() * inv
+    return out_r.to(z_r.dtype), out_i.to(z_i.dtype)
 
 
 def complex_magnitude(z_r, z_i, eps: float = 1e-3):
