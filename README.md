@@ -553,7 +553,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Dropout](#dropout)
 - [Weight Decay](#weight-decay)
-- [Complex Wavelets](#complex-wavelets)
+- [Complex Wavelets and Complex Mixer](#complex-wavelets-and-complex-mixer)
 - [Wavelet Crawl Off](#wavelet-crawl-off)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
 - [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
@@ -1301,7 +1301,7 @@ Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. Mor
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Complex Wavelets
+### Complex Wavelets and Complex Mixer
 
 Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform à la Kingsbury, or direct complex parameterization of the lifting predict/update networks). The motivation that matters is **not** "phase carries bonus information" (the vague version) but **shift-invariance** (the structural version).
 
@@ -1359,7 +1359,7 @@ Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tool
 
 So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.json default), *not* the no-op the deprecated section described. The two verdicts are both correct for their regimes: crawl is inert at bs=16384 (the coarsest scales span hundreds of tokens, where ±1 dilation is negligible) but helps at bs=256/levels=7 (the ±1 dilation offset is meaningful relative to the finer scales).
 
-**Relevance to [Complex Wavelets](#complex-wavelets).** The complex trees do not implement `wavelet_crawl` (and `model.py` hard-errors `wavelet_basis=complex` + `wavelet_crawl=true` rather than silently ignore it). So **all complex-wavelet arms run crawl-off**, which is why their in-section reference is the matched real control (CW4, also crawl-off) and **not** the crawl-on T4 baseline — comparing a crawl-off complex run to crawl-on T4 would conflate the basis change with the loss of this −0.0075 crawl win.
+**Relevance to [Complex Wavelets and Complex Mixer](#complex-wavelets-and-complex-mixer).** The complex trees do not implement `wavelet_crawl` (and `model.py` hard-errors `wavelet_basis=complex` + `wavelet_crawl=true` rather than silently ignore it). So **all complex wavelet runsn have wavelet crawl turned off**, which is why their in-section reference is the matched real control (CW4, also crawl-off) and **not** the crawl-on T4 baseline — comparing a crawl-off complex run to crawl-on T4 would conflate the basis change with the loss of this −0.0075 crawl win.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
