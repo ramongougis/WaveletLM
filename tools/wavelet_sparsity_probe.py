@@ -109,13 +109,11 @@ def main():
     from train import load_and_encode_dataset
 
     class _NullLogger:
-        def info(self, *a, **k): pass
+        """No-op for any method train.py's loader calls (.log/.info/.warning/...)."""
         def __call__(self, *a, **k): pass
-    try:
-        _train, _val, test_data, enc, _bpt = load_and_encode_dataset(config, _NullLogger())
-    except TypeError:
-        # logger may be a plain callable in some versions
-        _train, _val, test_data, enc, _bpt = load_and_encode_dataset(config, lambda *a, **k: None)
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+    _train, _val, test_data, enc, _bpt = load_and_encode_dataset(config, _NullLogger())
     vocab_size = enc.vocab_size
 
     if config.get("multinodal_enabled", False):
