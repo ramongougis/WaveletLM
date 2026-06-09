@@ -1394,6 +1394,7 @@ class WaveletLMBlock(nn.Module):
         mixer_depth_stabilizers: bool = False,
         mixer_depth_residuals: bool = False,
         mixer_recurrence_steps: int = 1,
+        mixer_recurrence_inference_steps: int = 0,
         mixer_recurrence_distinct_mixer_count: int = 1,
         mixer_recurrence_residuals: bool = True,
         mixer_recurrence_cache_gate: bool = False,
@@ -1669,6 +1670,11 @@ class WaveletLMBlock(nn.Module):
         # Only applied when N*K > 1 — preserves baseline behavior when no
         # recurrence is active (default N=K=1).
         self.mixer_recurrence_steps = int(mixer_recurrence_steps)
+        # Inference-time outer-step override ("train deep, infer shallow"). 0 =
+        # disabled (use trained depth). When > 0 and in eval mode, the forward
+        # runs this many outer recurrence steps instead of mixer_recurrence_steps,
+        # clamped to [1, trained]. Eval-only: training depth is never affected.
+        self.mixer_recurrence_inference_steps = int(mixer_recurrence_inference_steps)
         self.mixer_recurrence_distinct_mixer_count = int(mixer_recurrence_distinct_mixer_count)
         self.mixer_recurrence_residuals = bool(mixer_recurrence_residuals)
         # Approximation: compute the (cross-scale) gate once on the first
@@ -2370,13 +2376,29 @@ class WaveletLMBlock(nn.Module):
         # iFWHT, see mixer_recurrence_steps / mixer_recurrence_distinct_mixer_count).
         if self.mixer_depth == 1:
             current_spec = stacked_spec
-            N = self.mixer_recurrence_steps
+            N_trained = self.mixer_recurrence_steps
             K = self.mixer_recurrence_distinct_mixer_count
+            # Inference-time depth override ("train deep, infer shallow"): at
+            # eval, optionally run fewer outer recurrence steps (N_eff) than
+            # trained. 0 = disabled (use trained depth). Eval-only — the training
+            # path is untouched, so it never affects learning. N_eff is clamped
+            # to [1, N_trained]. Crucially, apply_residual and the step-norm
+            # existence stay keyed to the TRAINED depth (N_trained*K), not N_eff,
+            # so a recurrence-trained model keeps its input-anchored residual
+            # semantics even when truncated to N_eff=1 (one anchored step
+            # X0+m(X0)). Only the iteration count and the final-step boundary
+            # move with N_eff — a clean monotonic depth sweep. (Dense recurrence
+            # is excluded from meaningful truncation: its A matrix is trained for
+            # the full trajectory; the override still runs but is not a faithful
+            # truncation there.)
+            N = N_trained
+            if (not self.training) and self.mixer_recurrence_inference_steps > 0:
+                N = max(1, min(self.mixer_recurrence_inference_steps, N_trained))
             # Apply residual at every recurrent step (Y = X + mixer(X)) when
             # recurrence is active. Without it, chaining identical or repeated
             # layers can cause representation collapse over many steps.
             # Preserves baseline (N=K=1) behavior when no recurrence is active.
-            apply_residual = self.mixer_recurrence_residuals and (N * K > 1)
+            apply_residual = self.mixer_recurrence_residuals and (N_trained * K > 1)
             # Input injection ("memory channel"): when the recurrence residual
             # is active, re-add the initial post-FWHT spectrum X0 at the input
             # of every mixer application *after the first*, in addition to the
@@ -2951,6 +2973,9 @@ class WaveletLM(nn.Module):
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
                 mixer_depth_residuals=config.get("mixer_depth_residuals", False),
                 mixer_recurrence_steps=config.get("mixer_recurrence_steps", 1),
+                mixer_recurrence_inference_steps=config.get(
+                    "mixer_recurrence_inference_steps", 0
+                ),
                 mixer_recurrence_distinct_mixer_count=config.get(
                     "mixer_recurrence_distinct_mixer_count", 1
                 ),

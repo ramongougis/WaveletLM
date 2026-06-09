@@ -887,6 +887,10 @@ def save_with_retry(state_dict, path, retries=3, tokenizer_name=None):
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='config.json', help='Path to config file')
+    parser.add_argument('--mixer_recurrence_inference_steps', '--infer_n', type=int, default=None,
+                        help='Eval/benchmark-only: run this many outer mixer-recurrence '
+                             'steps instead of the trained count (train deep, infer shallow). '
+                             'Clamped to [1, trained]. Omit to use the trained depth.')
     args = parser.parse_args()
 
     # Load config
@@ -991,6 +995,16 @@ def train():
         logger = Logger(log_dir, filename="benchmark.txt")
         logger.log(f"=== BENCHMARK ONLY MODE ===")
         logger.log(f"Run directory: {benchmark_run_dir}")
+        # Inference-time mixer-recurrence depth override (eval-only). Injected as
+        # a NEW config key on top of the run's own config — it never modifies a
+        # trained parameter, only tells the eval forward to run fewer outer
+        # recurrence steps ("train deep, infer shallow"). See
+        # model.py WaveletLMBlock.mixer_recurrence_inference_steps.
+        if args.mixer_recurrence_inference_steps is not None:
+            config['mixer_recurrence_inference_steps'] = int(args.mixer_recurrence_inference_steps)
+            logger.log(f"[Override] mixer_recurrence_inference_steps = "
+                       f"{config['mixer_recurrence_inference_steps']} "
+                       f"(eval-only recurrence-depth truncation)")
     else:
         # Create run directory
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

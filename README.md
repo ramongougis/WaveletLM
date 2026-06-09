@@ -549,14 +549,14 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Recurrence with Adagrad (with residual)](#recurrence-with-adagrad-with-residual)
 - [Recurrence Efficiency: Gate Caching](#recurrence-efficiency-gate-caching)
 - [Long-Range Context: Multi-Pole SSM + Truncated BPTT](#long-range-context-multi-pole-ssm--truncated-bptt)
-- [Dense Recurrence](#dense-recurrence)
+- [Dense Mixer Recurrence](#dense-mixer-recurrence)
 - [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
 - [Dropout](#dropout)
 - [Weight Decay](#weight-decay)
 - [Complex Wavelets and Complex Mixer](#complex-wavelets-and-complex-mixer)
 - [Wavelet Crawl Off](#wavelet-crawl-off)
 - [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
-- [Inference-Depth Flexibility (Train Deep, Infer Shallow)](#inference-depth-flexibility-train-deep-infer-shallow)
+- [Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)](#inference-depth-flexibility-with-mixer-recurrence-train-deep-infer-shallow)
 - [Mixer Transform Ablation](#mixer-transform-ablation)
 - [Step-Time Speedups](#step-time-speedups)
 - [T5 Baseline](#t5-baseline)
@@ -1127,7 +1127,7 @@ The first step is the plain residual (the running state already equals X⁰ ther
 **Findings:**
 
 - **Depth rescued — the headline result.** No-residual N=5 K=1 *regressed* to 1.1291 (worse than N=2 K=1's 1.1279); with input anchoring it improves to **1.1240 (Δ resid −0.0051)** and now *beats* anchored N=2 K=1 (1.1272). Anchoring flips depth from harmful to helpful: where the shared-weight stack drifted, the input-anchored iteration converges. Confirms the hypothesis — the no-residual depth regression was a missing-input-anchor problem, not a fundamental depth ceiling.
-- **Partial parameter-efficiency win — depth closes most of the gap to diversity, but doesn't overtake it.** Anchored N=5 K=1 (1.1240, **+0 params** vs T4) lands within ~0.002 of the K=2 plateau — near the noise floor. So shared-bank depth is now *competitive* with expensive distinct-bank diversity, but the best results still carry the +58.85M K=2 bank. This is exactly the gap the [Dense Recurrence](#dense-recurrence) experiments target: can learned trajectory routing over the shared bank close that last ~0.002 for free?
+- **Partial parameter-efficiency win — depth closes most of the gap to diversity, but doesn't overtake it.** Anchored N=5 K=1 (1.1240, **+0 params** vs T4) lands within ~0.002 of the K=2 plateau — near the noise floor. So shared-bank depth is now *competitive* with expensive distinct-bank diversity, but the best results still carry the +58.85M K=2 bank. This is exactly the gap the [Dense Mixer Recurrence](#dense-mixer-recurrence) experiments target: can learned trajectory routing over the shared bank close that last ~0.002 for free?
 - **K=2 saturates with depth; N=5 K=2 (1.1215) is the marginal new best.** Adding depth on top of diversity barely moves anything: N=2 K=2 (1.1219) → N=5 K=2 (1.1215) is only −0.0004 (within noise), for 2.5× the apps (10 vs 4, 10.6h vs 6.8h). The best recurrence results plateau at **~1.1215–1.1219** regardless of N once K=2 is present. Anchoring still helped N=5 K=2 (Δ resid −0.0060), consistent with the depth-dependent anchoring benefit — but depth and diversity don't compound. Diversity (K) sets the ceiling; depth (N) just reaches it faster or, once there, adds nothing.
 - **Anchoring is neutral at low depth, decisive at higher depth.** Δ resid: N=1 K=2 +0.0013, N=2 K=1 −0.0007, N=2 K=2 −0.0008 (all within noise) → N=5 K=1 **−0.0051** (clearly real). At N·K ≤ 4 there's little iteration to stabilize; at N=5 the anchor earns its keep — the depth-dependent pattern the mechanism predicts.
 - **Depth peaks at N=5, then regresses.** Anchored N=10 K=1 lands at **1.1256 (−0.0055)** — **+0.0016 worse than N=5 K=1 (1.1240)**, just past the ~0.0010 noise floor. So anchoring extends the useful-depth range from N=2 (no-residual) to N=5, but does not make depth scale indefinitely: past N=5 the shared-bank iteration gives ground back. This confirms the ~1.121–1.124 plateau and removes the rationale for **N=20 K=1** — depth has already turned over, so the deeper probe is not worth its ~15.7h. K=2 diversity (1.1215) remains the ceiling.
@@ -1190,7 +1190,7 @@ Two attention-free upgrades targeting **cross-window** long-range dependency. Wi
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Dense Recurrence
+### Dense Mixer Recurrence
 
 DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseFormer](https://arxiv.org/abs/2402.02622), Pagliardini et al. 2024, applied to the recurrence depth axis). Instead of each step's input being just `latest + X⁰` (the input-anchored residual), it becomes a **learned weighted combination of all prior step outputs**: with M = N·K applications and states `[X⁰, X⁽¹⁾, …]`, step *t*'s input is `inpₜ = Σ_{k≤t} A[t,k]·stateₖ`, where `A` is an M×M lower-triangular learnable matrix. Plan: [plans/dense_recurrence.md](plans/dense_recurrence.md). Config: `mixer_recurrence_dense` (+ `mixer_recurrence_dense_normalize` for softmax/convex rows). Default off = identical to today.
 
@@ -1408,7 +1408,7 @@ A diagnostic probe ([tools/wavelet_sparsity_probe.py](tools/wavelet_sparsity_pro
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Inference-Depth Flexibility (Train Deep, Infer Shallow)
+### Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)
 
 Recurrence multiplies inference latency, not just training cost: every token pays N× the mixer (N=5 K=2 generates at ~18 tok/s vs T4's ~34 tok/s). This section pursues **decoupling inference depth N′ from training depth N** — keeping the deep-trained quality while recovering speed. **Target checkpoint: the recurrence sweep settled on N=5 K=1** (BPB 1.1240, best val 3.4986, +0 params over T4 — the depth-ladder winner; N=10 regressed, so N=5 is the chosen depth). K=1 is also the clean case for Route 1's fixed-point argument (a single shared bank converges to one point; K>1 would converge to a K-cycle).
 

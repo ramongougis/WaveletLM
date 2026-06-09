@@ -738,6 +738,10 @@ def main():
                         help="Shortcut: activates all quantize strategies at 8 bits across all components (mixer, MLP, lifting, embedding).")
     parser.add_argument("--ptq8", action="store_true", dest="quantize8",
                         help="Alias for --quantize8: activates all quantize strategies at 8 bits across all components.")
+    parser.add_argument("--mixer_recurrence_inference_steps", "--infer_n", type=int, default=None,
+                        help="Eval-only: run this many outer mixer-recurrence steps instead of "
+                             "the trained count (train deep, infer shallow). Clamped to [1, trained]. "
+                             "Omit to use the trained depth.")
     args = parser.parse_args()
 
     # Start GPU memory polling immediately, BEFORE any torch CUDA initialization
@@ -785,6 +789,16 @@ def main():
         raise FileNotFoundError(f"Config not found: {config_path}")
     with open(config_path, 'r') as f:
         config = json.load(f)
+
+    # Inference-time mixer-recurrence depth override (eval-only). Injected as a
+    # NEW config key before model construction (the block reads it at init), so
+    # it never modifies a trained parameter — it only runs fewer outer
+    # recurrence steps ("train deep, infer shallow"). Clamped to [1, trained]
+    # inside the forward. See model.py WaveletLMBlock.mixer_recurrence_inference_steps.
+    if getattr(args, "mixer_recurrence_inference_steps", None) is not None:
+        config['mixer_recurrence_inference_steps'] = int(args.mixer_recurrence_inference_steps)
+        log(f"[Override] mixer_recurrence_inference_steps = "
+            f"{config['mixer_recurrence_inference_steps']} (eval-only recurrence-depth truncation)")
 
     # Precision
     use_amp = config.get('use_amp', True)
