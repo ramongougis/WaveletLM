@@ -1373,11 +1373,36 @@ So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.
 
 ### Wavelet Sparsity Probe & Wavelet Shrinkage
 
-Two related ablations on the sparsity structure of the wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits, but our learned-wavelet pipeline has not measured.
+A diagnostic probe ([tools/wavelet_sparsity_probe.py](tools/wavelet_sparsity_probe.py)) on the sparsity structure of the learned wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits in *fixed* wavelets on natural images, here measured for the first time on our *learned* wavelet on language. Forward hooks capture per-scale detail coefficients of the T4 checkpoint ([log](logs/wikitext-103_2026-05-24_19-22-19/log.txt), L=1, levels=7) over 8 held-out WikiText-103 batches; no training, ~30 s.
 
-**Sparsity probe (diagnostic, ~30 minutes).** Run a trained T4 checkpoint on a held-out batch slice; log the magnitude distribution of detail coefficients per scale (quantiles, fraction below 1% of max). If ~80%+ are near zero (typical for natural signals), several optimization directions open: sparse mixer compute (top-k mixing per scale), low-bit detail quantization (details at fp8/int8, approximation at fp16), sparse activation storage for long-context, and structural intuition for [BBCE](#bisected-block-context-extension)'s compressed history. High info-per-compute; run this first.
+**Magnitude distribution per scale.** Detail-coefficient magnitudes decay smoothly from coarse (scale 0) to fine (scale 6), but the per-scale distributions are *spread*, not spiked: median sits at ~6% of max and `mean ≈ median` (the signature of a mildly right-skewed distribution, **not** the sharp spike-at-zero of a sparse wavelet). Only ~11% of coefficients fall below 1% of the per-scale max.
 
-**Wavelet shrinkage (training-time regularization).** Soft-threshold detail coefficients in forward: `detail = sign(d) * max(|d| - λ * σ_scale, 0)` with `λ ~ 0.1` and `σ_scale` a per-scale running EMA. One config flag (`wavelet_shrinkage_lambda`), ~10 lines. **Helps** → effective regularization (model was using detail coefficients indiscriminately); **Hurts** → coefficients aren't redundant, the learned wavelet lacks JPEG-style sparsity (itself informative). Combine: run probe first, calibrate `λ` from the 25th percentile per scale, then test shrinkage at 1ep on T4.
+| Scale | mean\|d\| | median | p90 | p99 | max | frac < 0.01·max |
+|---|---|---|---|---|---|---|
+| 0 | 0.8236 | 0.6818 | 1.6832 | 2.9558 | 11.6351 | 0.082 |
+| 1 | 0.4927 | 0.3994 | 1.0178 | 1.8188 | 8.4953 | 0.096 |
+| 2 | 0.4191 | 0.3355 | 0.8704 | 1.6009 | 7.6758 | 0.104 |
+| 3 | 0.3610 | 0.2838 | 0.7583 | 1.4573 | 7.1620 | 0.117 |
+| 4 | 0.2657 | 0.2090 | 0.5619 | 1.0396 | 4.5080 | 0.099 |
+| 5 | 0.1868 | 0.1472 | 0.3959 | 0.7119 | 6.8283 | 0.141 |
+| 6 | 0.1240 | 0.0946 | 0.2693 | 0.4910 | 3.0489 | 0.125 |
+| **mean** | | | | | | **0.109** |
+
+**Energy-retention curve (the real compressibility metric).** Count-below-threshold depends on an arbitrary cutoff; what actually governs compressibility is *energy* (∑d²), since a few large coefficients dominate. For each scale we hard-threshold the smallest coefficients and ask: to retain X% of energy, what fraction of coefficients can be zeroed? The curve is remarkably **scale-uniform** (every scale within ±0.02 of the mean) — unlike fixed wavelets, where fine scales are far sparser than coarse.
+
+| Energy retained | mean droppable fraction |
+|---|---|
+| 90% | 0.597 |
+| 95% | 0.485 |
+| 99% | 0.291 |
+| 99.9% | 0.137 |
+| 99.99% | 0.064 |
+| 99.999% | 0.030 |
+| 99.9999% | 0.014 |
+
+**Verdict: semi-sparse, unstructured.** The learned wavelet is meaningfully compressible — drop ~29% of coefficients for 1% energy loss — but far from the ~95%-droppable of fixed wavelets on images, and well above the ~4% of a uniform distribution. The tail decays smoothly with no spike of machine-zero coefficients (even at 99.9999% energy only 1.4% are droppable), so there is **no free sparse tier to exploit**. This is itself the finding: **language, under a learned wavelet, does not concentrate into sparse detail coefficients the way smooth natural signals do** — the model spreads linguistic information densely and evenly across all scales (the cross-scale gating and per-scale widths appear to equalize the load).
+
+**Wavelet shrinkage — not pursued.** Soft-thresholding detail coefficients during training was the planned follow-up *if* the representation proved sparse. It did not. With energy spread across the bulk (the smallest 29% of coefficients still carry 1% of energy, and dropping more costs real signal), shrinkage would either be a no-op (tiny λ) or actively harmful (meaningful λ). Separately, **dropping coefficients yields no inference-efficiency win regardless of sparsity**: detail coefficients are dense activations, so zeroing values neither reduces peak VRAM (a zero occupies the same fp16 slot) nor latency (the downstream FWHT/mixer are dense ops over every entry). The only efficiency lever the architecture supports here is low-bit *quantization* of the detail path (keep all coefficients, fewer bits), which is orthogonal to sparsity and tracked under the quantization config. The probe is therefore recorded as an **interpretability data point** about learned-wavelet behavior, not an optimization.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
