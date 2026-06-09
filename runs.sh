@@ -345,7 +345,7 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # the element-wise gate is NOT, so this tests whether gating Walsh-frequencies
 # (FWHT) beats gating raw channels (identity) or other bases (DHT/DCT). Run at
 # the present LR (0.0225); per-transform LR re-probes follow if a transform is
-# competitive but mis-tuned (see README 'Mixer Transform Ablation' + the
+# competitive but mis-tuned (see README 'Mixer Transform Ablation' + the 
 # Multi-Transform §'s learning-rate note). fwht arm is a fresh same-config
 # control (should reproduce ~T4). Identity first — the cheap "does the slot
 # matter at all?" probe. Butterfly (learned orthogonal) deferred to a follow-up.
