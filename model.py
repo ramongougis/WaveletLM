@@ -117,6 +117,76 @@ class FastHadamardTransform(nn.Module):
         else:
             return fwht_ortho_iterative(x)
 
+
+def _make_dht_matrix(n: int) -> torch.Tensor:
+    """Orthonormal Discrete Hartley Transform: (1/√n)·cas(2πkj/n), where
+    cas(x)=cos(x)+sin(x). The matrix is symmetric and orthogonal, hence
+    self-inverse (M² = I)."""
+    k = torch.arange(n, dtype=torch.float64).unsqueeze(1)
+    j = torch.arange(n, dtype=torch.float64).unsqueeze(0)
+    ang = 2.0 * math.pi * k * j / n
+    M = (torch.cos(ang) + torch.sin(ang)) / math.sqrt(n)
+    return M.to(torch.float32)
+
+
+def _make_dct_matrix(n: int) -> torch.Tensor:
+    """Orthonormal DCT-II matrix: a(k)·cos(π(2j+1)k/2n), a(0)=√(1/n),
+    a(k>0)=√(2/n). Orthogonal but not symmetric, so its inverse is its
+    transpose (the DCT-III)."""
+    k = torch.arange(n, dtype=torch.float64).unsqueeze(1)
+    j = torch.arange(n, dtype=torch.float64).unsqueeze(0)
+    M = torch.cos(math.pi * (2.0 * j + 1.0) * k / (2.0 * n)) * math.sqrt(2.0 / n)
+    M[0, :] = M[0, :] / math.sqrt(2.0)
+    return M.to(torch.float32)
+
+
+class MixerTransform(nn.Module):
+    """Orthonormal transform occupying the per-scale mixer slot: forward()
+    before the mixer, inverse() after. All variants are orthonormal
+    (norm-preserving), so the alternatives are amplitude-matched to the default
+    FWHT — the fair-comparison requirement for the mixer-transform ablation
+    (README 'Mixer Transform Ablation'). Round-trip inverse(forward(x)) == x.
+
+    The default 'fwht' is NOT routed through this class — the baseline path keeps
+    using the existing FastHadamardTransform so it stays byte-identical. This
+    class covers only the alternatives:
+      - 'identity': no transform; the mixer operates in raw coefficient space.
+        Tests whether the spectral basis matters at all (the linear part of the
+        mixer is basis-absorbable, so this isolates the element-wise gate's
+        dependence on basis: gate-frequencies vs gate-raw-channels).
+      - 'dht'     : Discrete Hartley (self-inverse, orthonormal).
+      - 'dct'     : DCT-II/III (orthonormal; inverse = transpose).
+
+    Forward is x @ F, inverse is x @ Fᵀ (Fᵀ = F⁻¹ for orthonormal F). The matrix
+    is held in fp32 and the matmul is done in fp32 then cast back, so the
+    round-trip is as exact as the FWHT's — we don't want fp16 transform error
+    confounding the basis comparison."""
+
+    VALID = ("identity", "dht", "dct")
+
+    def __init__(self, dim: int, kind: str, device=None, dtype=None):
+        super().__init__()
+        self.kind = kind
+        self.dim = dim
+        if kind == "identity":
+            self.register_buffer("F", None, persistent=False)
+        elif kind == "dht":
+            self.register_buffer("F", _make_dht_matrix(dim).to(device=device), persistent=False)
+        elif kind == "dct":
+            self.register_buffer("F", _make_dct_matrix(dim).to(device=device), persistent=False)
+        else:
+            raise ValueError(f"MixerTransform: unknown kind {kind!r} (expected one of {self.VALID})")
+
+    def forward(self, x):
+        if self.kind == "identity":
+            return x
+        return torch.matmul(x.float(), self.F).to(x.dtype)
+
+    def inverse(self, x):
+        if self.kind == "identity":
+            return x
+        return torch.matmul(x.float(), self.F.transpose(-2, -1)).to(x.dtype)
+
 # ==============================================================================
 # 3. WAVELET TRANSFORMS
 # ==============================================================================
@@ -1405,6 +1475,7 @@ class WaveletLMBlock(nn.Module):
         fht_input_cap_value: float = 1000.0,
         fht_thue_morse_signflips: bool = False,
         fht_thue_morse_increment: int = 21,
+        mixer_transform: str = "fwht",
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1432,6 +1503,29 @@ class WaveletLMBlock(nn.Module):
         self.fht_input_cap_value = fht_input_cap_value
         self.fht_thue_morse_signflips = fht_thue_morse_signflips
         self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
+
+        # Mixer-transform ablation: the orthonormal transform occupying the
+        # per-scale mixer slot (forward before the mixer, inverse after). Default
+        # 'fwht' keeps using self.fht above so the baseline path is byte-identical
+        # (mixer_transform stays None). Alternatives ('identity', 'dht', 'dct')
+        # are orthonormal too, so they are amplitude-matched for a fair basis
+        # comparison. See README 'Mixer Transform Ablation'. Only wired into the
+        # real path; mutually exclusive with the complex paths and the FWHT-
+        # specific Thue-Morse signflips (which assume the Hadamard basis).
+        self.mixer_transform_kind = mixer_transform
+        if mixer_transform == "fwht":
+            self.mixer_transform = None
+        elif mixer_transform in MixerTransform.VALID:
+            if fht_thue_morse_signflips:
+                raise ValueError(
+                    "mixer_transform != 'fwht' is incompatible with "
+                    "fht_thue_morse_signflips (sign pattern assumes the Hadamard basis)")
+            self.mixer_transform = MixerTransform(self.Cp, mixer_transform,
+                                                  device=device, dtype=dtype)
+        else:
+            raise ValueError(
+                f"Unknown mixer_transform {mixer_transform!r}; expected 'fwht' or "
+                f"one of {MixerTransform.VALID}")
 
         # Permuted Thue-Morse ±1 pattern for breaking spectral bias on FWHT
         # input (and symmetrically post-invFWHT). counter += odd_increment per
@@ -2369,7 +2463,8 @@ class WaveletLMBlock(nn.Module):
             stacked_coeffs = stacked_coeffs.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
 
         # FHT forward
-        stacked_spec = self.fht(stacked_coeffs)
+        stacked_spec = (self.fht(stacked_coeffs) if self.mixer_transform is None
+                        else self.mixer_transform.forward(stacked_coeffs))
 
         # Per-scale spectral mixing (with optional depth stacking and optional
         # recurrence — total N*K applications of the mixer between FWHT and
@@ -2528,8 +2623,10 @@ class WaveletLMBlock(nn.Module):
         if self.fht_input_cap_enabled:
             mixed_spec = mixed_spec.clamp(-self.fht_input_cap_value, self.fht_input_cap_value)
 
-        # FHT inverse (self-inverse for orthogonal Hadamard)
-        mixed_all = self.fht(mixed_spec)
+        # FHT inverse (self-inverse for orthogonal Hadamard); or the alternative
+        # transform's inverse when the mixer-transform ablation is active.
+        mixed_all = (self.fht(mixed_spec) if self.mixer_transform is None
+                     else self.mixer_transform.inverse(mixed_spec))
 
         if self.wavelet_recon_norm:
             mixed_all = torch.stack(
@@ -2710,6 +2807,20 @@ class WaveletLM(nn.Module):
         # Option C (complex MIXER, real wavelet): mutually exclusive with the
         # complex wavelet basis, recurrence, and mixer_depth>1. Uses the normal
         # real shared-lifting path below; the complex machinery is per-block.
+        # Mixer-transform ablation guard: the alternative transforms (identity/
+        # dht/dct) are wired only into the real path, so they cannot combine with
+        # the complex wavelet basis or the complex mixer (both use self.fht
+        # directly). Validate the name up front too.
+        _mt = config.get("mixer_transform", "fwht")
+        if _mt != "fwht":
+            if _mt not in MixerTransform.VALID:
+                raise ValueError(
+                    f"Unknown mixer_transform {_mt!r}; expected 'fwht' or one of {MixerTransform.VALID}")
+            if config.get("wavelet_basis", "real") == "complex" or config.get("complex_mixer", False):
+                raise ValueError(
+                    "mixer_transform != 'fwht' is mutually exclusive with the complex paths "
+                    "(wavelet_basis='complex' / complex_mixer), which use the FWHT directly.")
+
         if config.get("complex_mixer", False):
             if config.get("wavelet_basis", "real") == "complex":
                 raise ValueError(
@@ -2996,6 +3107,7 @@ class WaveletLM(nn.Module):
                 fht_input_cap_value=config.get("fht_input_cap_value", 1000.0),
                 fht_thue_morse_signflips=config.get("fht_thue_morse_signflips", False),
                 fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
+                mixer_transform=config.get("mixer_transform", "fwht"),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),

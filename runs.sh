@@ -296,20 +296,20 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # CW-modphase-tanh: modulus_phase with a tanh gate — BOUNDED |g|<=1 (stabilizer)
 # and BIPOLAR (learns discrete π phase flips), init-shifted to start at ln2 (=
 # softplus init) so it begins as standard positive scaling and learns into flips.
-run_ablation "T4_cwav_inv_modphase_tanh_1ep T4 complex wavelet invertible/modulus_phase tanh-gate (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "tanh"}' \
-    "T4_cwav_inv_modphase_tanh_1ep: tanh-gated modulus_phase (bounded, bipolar π-flips); vs softplus variant + hm=4 control"
+# run_ablation "T4_cwav_inv_modphase_tanh_1ep T4 complex wavelet invertible/modulus_phase tanh-gate (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "tanh"}' \
+#     "T4_cwav_inv_modphase_tanh_1ep: tanh-gated modulus_phase (bounded, bipolar π-flips); vs softplus variant + hm=4 control"
 
-# CW-control: matched-param real control. Invertible wavelet is 469.99M (complex
-# predict AND update, tied reconstruct); hidden_mult=4 = 469.91M, near-exact
-# match (ratio 1.000). The in-section reference both complex arms compare against.
-run_ablation "T4_cwav_control_hm4_1ep T4 real-wavelet control hidden_mult=4 (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 4}' \
-    "T4_cwav_control_hm4_1ep: real wavelet hidden_mult=4 (~470M wavelet) — near-exact matched-param control for the invertible complex runs"
+# # CW-control: matched-param real control. Invertible wavelet is 469.99M (complex
+# # predict AND update, tied reconstruct); hidden_mult=4 = 469.91M, near-exact
+# # match (ratio 1.000). The in-section reference both complex arms compare against.
+# run_ablation "T4_cwav_control_hm4_1ep T4 real-wavelet control hidden_mult=4 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 4}' \
+#     "T4_cwav_control_hm4_1ep: real wavelet hidden_mult=4 (~470M wavelet) — near-exact matched-param control for the invertible complex runs"
 
-# ---- Option C: complex MIXER, REAL wavelet -----------------------------------
+# # ---- Option C: complex MIXER, REAL wavelet -----------------------------------
 # Separate experiment from the complex-wavelet basis: the wavelet stays real and
 # exactly invertible; the complex machinery is a per-scale learned real↔complex
 # projection around the FWHT/mixer (tools/complex_wavelets.RealToComplexProjection)
@@ -318,21 +318,58 @@ run_ablation "T4_cwav_control_hm4_1ep T4 real-wavelet control hidden_mult=4 (1ep
 # 527.13M at T4 (+134.22M projections). crawl off for clean comparison; in-section
 # reference is the hm=2 control below (510.38M, ~3% under — note slight under-match).
 
-# CM-split: complex mixer, split activation.
-run_ablation "T4_cmix_split_1ep T4 complex mixer (Option C) / split (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "split"}' \
-    "T4_cmix_split_1ep: Option C — real wavelet + complex mixer (learned R↔C proj), split; vs hm=2 control"
+# # CM-split: complex mixer, split activation.
+# run_ablation "T4_cmix_split_1ep T4 complex mixer (Option C) / split (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "split"}' \
+#     "T4_cmix_split_1ep: Option C — real wavelet + complex mixer (learned R↔C proj), split; vs hm=2 control"
 
-# CM-modphase: complex mixer, modulus_phase (softplus gate).
-run_ablation "T4_cmix_modphase_1ep T4 complex mixer (Option C) / modulus_phase (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "softplus"}' \
-    "T4_cmix_modphase_1ep: Option C complex mixer, softplus-gated modulus_phase; vs hm=2 control"
+# # CM-modphase: complex mixer, modulus_phase (softplus gate).
+# run_ablation "T4_cmix_modphase_1ep T4 complex mixer (Option C) / modulus_phase (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "softplus"}' \
+#     "T4_cmix_modphase_1ep: Option C complex mixer, softplus-gated modulus_phase; vs hm=2 control"
 
-# CM-control: matched-param real control for Option C. hidden_mult=2 = 510.38M
-# (~3% under Option C's 527.13M; no integer hm matches exactly — hm=3 is 19% over).
-run_ablation "T4_cmix_control_hm2_1ep T4 real-wavelet control hidden_mult=2 (1ep)" \
+# # CM-control: matched-param real control for Option C. hidden_mult=2 = 510.38M
+# # (~3% under Option C's 527.13M; no integer hm matches exactly — hm=3 is 19% over).
+# run_ablation "T4_cmix_control_hm2_1ep T4 real-wavelet control hidden_mult=2 (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 2}' \
+#     "T4_cmix_control_hm2_1ep: real wavelet hidden_mult=2 (510.38M) — matched-param control for Option C (~3% under)"
+
+# ---- Mixer Transform Ablation -------------------------------------------------
+# Replace the FWHT slot in the per-scale mixer with alternative orthonormal
+# transforms (identity / DHT / DCT) at the T4 reference config. All are
+# orthonormal, so they are amplitude-matched — the only difference is the BASIS
+# the per-scale mixer operates in. The mixer's linear part is basis-absorbable;
+# the element-wise gate is NOT, so this tests whether gating Walsh-frequencies
+# (FWHT) beats gating raw channels (identity) or other bases (DHT/DCT). Run at
+# the present LR (0.0225); per-transform LR re-probes follow if a transform is
+# competitive but mis-tuned (see README 'Mixer Transform Ablation' + the
+# Multi-Transform §'s learning-rate note). fwht arm is a fresh same-config
+# control (should reproduce ~T4). Identity first — the cheap "does the slot
+# matter at all?" probe. Butterfly (learned orthogonal) deferred to a follow-up.
+
+# Identity: no transform — mixer operates in raw coefficient space.
+run_ablation "T4_mt_identity_1ep T4 mixer-transform=identity / no transform (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 2}' \
-    "T4_cmix_control_hm2_1ep: real wavelet hidden_mult=2 (510.38M) — matched-param control for Option C (~3% under)"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_mt_identity_1ep: mixer-transform ablation — identity (no transform, mixer in raw coeff space); does the FWHT slot matter at all?"
+
+# FWHT control: fresh same-config reference (crawl off, norms on, lr 0.0225).
+run_ablation "T4_mt_fwht_1ep T4 mixer-transform=fwht control (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "fwht"}' \
+    "T4_mt_fwht_1ep: mixer-transform ablation — FWHT control (same config as identity/dht/dct); in-section reference"
+
+# DHT: Discrete Hartley (orthonormal, self-inverse).
+run_ablation "T4_mt_dht_1ep T4 mixer-transform=dht / Hartley (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dht"}' \
+    "T4_mt_dht_1ep: mixer-transform ablation — DHT (Hartley) basis"
+
+# DCT: DCT-II/III (orthonormal; inverse = transpose).
+run_ablation "T4_mt_dct_1ep T4 mixer-transform=dct (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dct"}' \
+    "T4_mt_dct_1ep: mixer-transform ablation — DCT basis"

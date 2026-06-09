@@ -891,6 +891,11 @@ def train():
                         help='Eval/benchmark-only: run this many outer mixer-recurrence '
                              'steps instead of the trained count (train deep, infer shallow). '
                              'Clamped to [1, trained]. Omit to use the trained depth.')
+    parser.add_argument('--mixer_transform', type=str, default=None,
+                        choices=['fwht', 'identity', 'dht', 'dct'],
+                        help='Per-scale mixer transform for the ablation: fwht (default), '
+                             'identity (no transform), dht (Hartley), or dct. Injected into '
+                             'the run config and persisted to the saved config.json.')
     args = parser.parse_args()
 
     # Load config
@@ -898,6 +903,13 @@ def train():
         raise FileNotFoundError(f"Config file {args.config} not found!")
     with open(args.config, 'r') as f:
         config = json.load(f)
+
+    # Mixer-transform ablation override (training mode): inject before model
+    # build so it's used and persisted to the saved run config.json. In
+    # benchmark_only mode the run's saved config is the source of truth, so the
+    # transform is read from there and this CLI flag is unnecessary.
+    if args.mixer_transform is not None:
+        config['mixer_transform'] = args.mixer_transform
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
