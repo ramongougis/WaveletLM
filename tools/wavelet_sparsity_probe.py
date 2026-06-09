@@ -206,12 +206,17 @@ def main():
     # DROP coefficients without hurting the model is ENERGY (sum d^2). Hard-thresh
     # the smallest coefficients and ask: to keep X% of energy, what fraction of
     # coefficients can be zeroed? (the bigger that fraction, the more sparse-
-    # exploitable the representation actually is).
+    # exploitable the representation actually is). Low keep-levels (90-99%) gauge
+    # lossy shrinkage; the 99.9-99.9999% tail gauges how many coeffs are *truly*
+    # negligible (near machine-zero) and droppable for essentially free.
+    keep_levels = [0.90, 0.95, 0.99, 0.999, 0.9999, 0.99999, 0.999999]
     print()
+    hdr = "  ".join(f"{k*100:>8.4f}%" for k in keep_levels)
     print(f"{'layer':>5} {'scale':>5} | fraction of coeffs droppable while retaining energy:")
-    print(f"{'':>5} {'':>5} | {'99.0%':>8} {'95.0%':>8} {'90.0%':>8}")
-    print("-" * 80)
-    drop_at = {0.99: [], 0.95: [], 0.90: []}
+    print(f"{'':>5} {'':>5} | {hdr}")
+    print("-" * (16 + len(hdr)))
+    drop_at = {k: [] for k in keep_levels}
+    sample_counts = []
     for key in sorted(samples.keys()):
         li, si = key
         v = torch.cat(samples[key])
@@ -220,24 +225,27 @@ def main():
         total = sq_sorted.sum()
         cum = torch.cumsum(sq_sorted, dim=0)          # energy of smallest-k set
         n = sq_sorted.numel()
-        row = []
-        for keep in (0.99, 0.95, 0.90):
+        sample_counts.append(n)
+        cells = []
+        for keep in keep_levels:
             budget = (1.0 - keep) * total             # energy we may discard
             # largest count of smallest coeffs whose cumulative energy <= budget
             k = int(torch.searchsorted(cum, budget).item())
             frac_droppable = k / n
             drop_at[keep].append(frac_droppable)
-            row.append(frac_droppable)
-        print(f"{li:>5} {si:>5} | {row[0]:>8.3f} {row[1]:>8.3f} {row[2]:>8.3f}")
-    print("-" * 80)
-    m99 = sum(drop_at[0.99]) / len(drop_at[0.99])
-    m95 = sum(drop_at[0.95]) / len(drop_at[0.95])
-    m90 = sum(drop_at[0.90]) / len(drop_at[0.90])
-    print(f"[energy] mean droppable fraction: keep99%={m99:.3f}  keep95%={m95:.3f}  keep90%={m90:.3f}")
-    print(f"[energy] interpretation: this is the real shrinkage gate. If you can drop a")
-    print(f"[energy] LARGE fraction of coeffs while keeping ~99% energy, shrinkage/top-k")
-    print(f"[energy] pays off. If keep99% droppable is small, the energy is spread and")
-    print(f"[energy] dropping coeffs costs real signal (shrinkage will hurt).")
+            cells.append(f"{frac_droppable:>9.4f}")
+        print(f"{li:>5} {si:>5} | {'  '.join(cells)}")
+    print("-" * (16 + len(hdr)))
+    means = {k: sum(drop_at[k]) / len(drop_at[k]) for k in keep_levels}
+    summary = "  ".join(f"keep{k*100:g}%={means[k]:.4f}" for k in keep_levels)
+    print(f"[energy] mean droppable fraction: {summary}")
+    min_n = min(sample_counts)
+    print(f"[energy] resolution floor ~1/N = {1.0/min_n:.2e} (N={min_n:,} sampled coeffs/key);")
+    print(f"[energy]   droppable fractions below this are at the granularity limit.")
+    print(f"[energy] interpretation: keep99% is the real lossy-shrinkage gate; the")
+    print(f"[energy]   99.9-99.9999% tail measures the truly-negligible coeff fraction")
+    print(f"[energy]   (free to drop). A tail that stays well above the resolution floor")
+    print(f"[energy]   means a real population of near-zero coeffs exists.")
 
 
 if __name__ == "__main__":
