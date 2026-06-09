@@ -1,0 +1,233 @@
+[2026-06-09 09:17:34] === BENCHMARK ONLY MODE ===
+[2026-06-09 09:17:34] Run directory: logs/wikitext-103_2026-05-30_04-52-42
+[2026-06-09 09:17:34] [Override] mixer_recurrence_inference_steps = 5 (eval-only recurrence-depth truncation)
+[2026-06-09 09:17:34] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-06-09 09:17:34] Device: cuda, AMP: True (fp16)
+[2026-06-09 09:17:34] 
+[2026-06-09 09:17:34] 	dataset                               : wikitext-103
+[2026-06-09 09:17:34] 	tokenizer                             : auto
+[2026-06-09 09:17:34] 	out_dir                               : logs
+[2026-06-09 09:17:34] 	compile                               : True
+[2026-06-09 09:17:34] 	compile_mode                          : default
+[2026-06-09 09:17:34] 	seed                                  : 1337
+[2026-06-09 09:17:34] 	epochs                                : 1
+[2026-06-09 09:17:34] 	micro_batch_size                      : 8
+[2026-06-09 09:17:34] 	grad_accum                            : 1
+[2026-06-09 09:17:34] 	block_size                            : 256
+[2026-06-09 09:17:34] 	eval_interval                         : 250
+[2026-06-09 09:17:34] 	skip_warmup_saves                     : True
+[2026-06-09 09:17:34] 	C                                     : 2048
+[2026-06-09 09:17:34] 	layers                                : 1
+[2026-06-09 09:17:34] 	levels                                : 7
+[2026-06-09 09:17:34] 	low_rank                              : 4
+[2026-06-09 09:17:34] 	mlp_expansion                         : 10
+[2026-06-09 09:17:34] 	mlp_layers                            : 2
+[2026-06-09 09:17:34] 	pkm_enabled                           : False
+[2026-06-09 09:17:34] 	pkm_num_keys                          : 16384
+[2026-06-09 09:17:34] 	pkm_top_k                             : 32
+[2026-06-09 09:17:34] 	pkm_heads                             : 1
+[2026-06-09 09:17:34] 	fwpkm_enabled                         : True
+[2026-06-09 09:17:34] 	fwpkm_num_keys                        : 8281
+[2026-06-09 09:17:34] 	fwpkm_top_k                           : 32
+[2026-06-09 09:17:34] 	fwpkm_heads                           : 1
+[2026-06-09 09:17:34] 	fwpkm_inference_updates               : False
+[2026-06-09 09:17:34] 	fwpkm_update_lr                       : 0.01
+[2026-06-09 09:17:34] 	fwpkm_chunk_size                      : 64
+[2026-06-09 09:17:34] 	wavelet_mode                          : lifting
+[2026-06-09 09:17:34] 	shared_lifting_weights                : True
+[2026-06-09 09:17:34] 	untied_reconstruction                 : False
+[2026-06-09 09:17:34] 	multi_basis_lifting                   : False
+[2026-06-09 09:17:34] 	multi_basis_inits                     : ['haar', 'random']
+[2026-06-09 09:17:34] 	cross_scale_gating                    : True
+[2026-06-09 09:17:34] 	per_scale_mixer_widths                : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-06-09 09:17:34] 	stable_parametrization                : False
+[2026-06-09 09:17:34] 	stab_spectral_norm                    : False
+[2026-06-09 09:17:34] 	stab_ff_scaling                       : False
+[2026-06-09 09:17:34] 	stab_embed_scaling                    : False
+[2026-06-09 09:17:34] 	stab_proj_out_scaling                 : False
+[2026-06-09 09:17:34] 	stab_mixer_eps_scaling                : False
+[2026-06-09 09:17:34] 	stab_lifting_level_scaling            : False
+[2026-06-09 09:17:34] 	looped_blocks                         : False
+[2026-06-09 09:17:34] 	looped_blocks_count                   : 8
+[2026-06-09 09:17:34] 	wavelet_crawl                         : True
+[2026-06-09 09:17:34] 	wavelet_crawl_k                       : 3
+[2026-06-09 09:17:34] 	lifting_linear_only                   : False
+[2026-06-09 09:17:34] 	lifting_hidden_mult                   : 1
+[2026-06-09 09:17:34] 	lifting_init                          : haar
+[2026-06-09 09:17:34] 	lifting_dropout                       : 0.0
+[2026-06-09 09:17:34] 	lifting_diaglowrank                   : False
+[2026-06-09 09:17:34] 	lifting_level_sharing                 : False
+[2026-06-09 09:17:34] 	lifting_offdiag_structure             : none
+[2026-06-09 09:17:34] 	lifting_block_size                    : 64
+[2026-06-09 09:17:34] 	lifting_band_width                    : 64
+[2026-06-09 09:17:34] 	lifting_monarch_blocks                : 32
+[2026-06-09 09:17:34] 	lifting_offdiag_density               : 0.0
+[2026-06-09 09:17:34] 	lifting_offdiag_mask_seed             : 1337
+[2026-06-09 09:17:34] 	lifting_offdiag_mask_checkpoint       : 
+[2026-06-09 09:17:34] 	mlp_offdiag_structure                 : none
+[2026-06-09 09:17:34] 	mlp_block_size                        : 64
+[2026-06-09 09:17:34] 	mlp_band_width                        : 64
+[2026-06-09 09:17:34] 	mlp_pq_density                        : 0.1
+[2026-06-09 09:17:34] 	mlp_pq_mode                           : structural
+[2026-06-09 09:17:34] 	sparse_pq_embedding_enabled           : False
+[2026-06-09 09:17:34] 	sparse_pq_embedding_density           : 0.1
+[2026-06-09 09:17:34] 	sparse_pq_embedding_mode              : structural
+[2026-06-09 09:17:34] 	sparse_pq_embedding_epsilon           : 1e-06
+[2026-06-09 09:17:34] 	sparse_encoder_decoder_embedding      : False
+[2026-06-09 09:17:34] 	sparse_encoder_decoder_embedding_C    : 512
+[2026-06-09 09:17:34] 	use_mixer_gate                        : True
+[2026-06-09 09:17:34] 	mixer_gate_activation                 : silu
+[2026-06-09 09:17:34] 	mixer_depth                           : 1
+[2026-06-09 09:17:34] 	mixer_depth_stabilizers               : False
+[2026-06-09 09:17:34] 	mixer_depth_residuals                 : False
+[2026-06-09 09:17:34] 	mixer_recurrence_steps                : 5
+[2026-06-09 09:17:34] 	mixer_recurrence_distinct_mixer_count : 1
+[2026-06-09 09:17:34] 	mixer_recurrence_residuals            : True
+[2026-06-09 09:17:34] 	mixer_recurrence_cache_gate           : False
+[2026-06-09 09:17:34] 	decompose_bypass                      : True
+[2026-06-09 09:17:34] 	decompose_bypass_cross_window         : True
+[2026-06-09 09:17:34] 	decompose_bypass_ema                  : False
+[2026-06-09 09:17:34] 	decompose_bypass_ssm                  : False
+[2026-06-09 09:17:34] 	decompose_bypass_ssm_poles            : 4
+[2026-06-09 09:17:34] 	decompose_bypass_ssm_cross_window     : False
+[2026-06-09 09:17:34] 	decompose_bypass_bptt                 : False
+[2026-06-09 09:17:34] 	decompose_bypass_bptt_span            : 0
+[2026-06-09 09:17:34] 	learned_residual                      : True
+[2026-06-09 09:17:34] 	skip_proj_out                         : False
+[2026-06-09 09:17:34] 	stochastic_depth_rate                 : 0.0
+[2026-06-09 09:17:34] 	dropout_embedding                     : 0.2
+[2026-06-09 09:17:34] 	dropout_projection                    : 0.1
+[2026-06-09 09:17:34] 	dropout_mixer                         : 0.1
+[2026-06-09 09:17:34] 	dropout_mlp                           : 0.1
+[2026-06-09 09:17:34] 	dropout_lm_head                       : 0.24
+[2026-06-09 09:17:34] 	optimizer                             : Adagrad
+[2026-06-09 09:17:34] 	optimizer_eps                         : 2e-13
+[2026-06-09 09:17:34] 	wavelet_2d_mode                       : off
+[2026-06-09 09:17:34] 	wavelet_2d_b_levels                   : -1
+[2026-06-09 09:17:34] 	wavelet_2d_init_zero                  : True
+[2026-06-09 09:17:34] 	wavelet_2d_state_passing              : False
+[2026-06-09 09:17:34] 	bbce_enabled                          : False
+[2026-06-09 09:17:34] 	block_size_compressed                 : 65536
+[2026-06-09 09:17:34] 	bbce_compressed_grad                  : True
+[2026-06-09 09:17:34] 	lr                                    : 0.0225
+[2026-06-09 09:17:34] 	min_lr                                : 0.00045
+[2026-06-09 09:17:34] 	warmup_fraction                       : 0.3
+[2026-06-09 09:17:34] 	grad_clip                             : 1.0
+[2026-06-09 09:17:34] 	tie_embedding_to_lm_head              : True
+[2026-06-09 09:17:34] 	gradient_checkpointing                : False
+[2026-06-09 09:17:34] 	use_amp                               : True
+[2026-06-09 09:17:34] 	amp_dtype                             : fp16
+[2026-06-09 09:17:34] 	allow_tf32                            : True
+[2026-06-09 09:17:34] 	generation_prompt                     : The history of
+[2026-06-09 09:17:34] 	temperature                           : 1.0
+[2026-06-09 09:17:34] 	num_new_tokens                        : 512
+[2026-06-09 09:17:34] 	top_p                                 : 0.95
+[2026-06-09 09:17:34] 	repetition_penalty                    : 1.1
+[2026-06-09 09:17:34] 	benchmark_only                        : True
+[2026-06-09 09:17:34] 	benchmark_run_dir                     : logs/wikitext-103_2026-05-30_04-52-42
+[2026-06-09 09:17:34] 	multinodal_enabled                    : False
+[2026-06-09 09:17:34] 	multinodal_num_cells                  : 2
+[2026-06-09 09:17:34] 	multinodal_cell_dim                   : 512
+[2026-06-09 09:17:34] 	multinodal_seeds                      : [42, 137]
+[2026-06-09 09:17:34] 	multinodal_combination                : average
+[2026-06-09 09:17:34] 	multinodal_cross_cell_gating          : False
+[2026-06-09 09:17:34] 	multinodal_cross_cell_gate_interval   : 1
+[2026-06-09 09:17:34] 	multinodal_features_per_cell          : -1
+[2026-06-09 09:17:34] 	multinodal_bagged_eps                 : 1e-06
+[2026-06-09 09:17:34] 	quantize_enabled                      : False
+[2026-06-09 09:17:34] 	quantize_mixer_coarse_bits            : 8
+[2026-06-09 09:17:34] 	quantize_mixer_mid_bits               : 4
+[2026-06-09 09:17:34] 	quantize_mixer_fine_bits              : 2
+[2026-06-09 09:17:34] 	quantize_mlp_bits                     : 4
+[2026-06-09 09:17:34] 	quantize_lifting_bits                 : 16
+[2026-06-09 09:17:34] 	quantize_embedding_bits               : 8
+[2026-06-09 09:17:34] 	per_layer_embedding                   : True
+[2026-06-09 09:17:34] 	loop_iterations                       : 1
+[2026-06-09 09:17:34] 	weight_decay                          : 1e-06
+[2026-06-09 09:17:34] 	wavelet_decomp_norm                   : True
+[2026-06-09 09:17:34] 	wavelet_recon_norm                    : True
+[2026-06-09 09:17:34] 	mixer_recurrence_inference_steps      : 5
+[2026-06-09 09:17:34] 
+[2026-06-09 09:17:35] [GPU] NVIDIA RTX A5000
+[2026-06-09 09:17:35] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-06-09 09:17:35] [Dataset] Loading wikitext-103 from cache...
+[2026-06-09 09:17:35] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-06-09 09:17:35] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-06-09 09:17:35] [Dataset] Vocab size: 50257
+[2026-06-09 09:17:38] [Run Folder] logs/wikitext-103_2026-05-30_04-52-42
+[2026-06-09 09:17:38] 
+============================================================
+[2026-06-09 09:17:38] PARAMETER BREAKDOWN
+[2026-06-09 09:17:38] ============================================================
+[2026-06-09 09:17:38] Total parameters:             393,011,297 (393.01M)
+[2026-06-09 09:17:38]   Wavelets:                   117,497,877 (117.50M)
+[2026-06-09 09:17:38]   Token embedding:            102,926,336 (102.93M)
+[2026-06-09 09:17:38]   Layers (total):             172,582,988 (172.58M)
+[2026-06-09 09:17:38]     Mixer/layer:               58,818,560 (58.82M)
+[2026-06-09 09:17:38]     MLP/layer:                 83,908,608 (83.91M)
+[2026-06-09 09:17:38]     FwPKM/layer:               21,340,160 (21.34M)
+[2026-06-09 09:17:38]   LM head (shared):                     0 additional
+[2026-06-09 09:17:38]   Final LayerNorm:                  4,096 (0.00M)
+[2026-06-09 09:17:38] ============================================================
+
+[2026-06-09 09:17:38] [Model] 393.01M parameters (393.01M trainable)
+[2026-06-09 09:17:38] 
+Loading best model for benchmarks...
+[2026-06-09 09:17:41] Best model loaded.
+[2026-06-09 09:17:41] 
+[BENCHMARK] Non-overlapping: 1123 windows of length 256
+[2026-06-09 09:18:12] 
+[BENCHMARK - Non-overlapping]
+[2026-06-09 09:18:12]   Perplexity: 35.1110
+[2026-06-09 09:18:12]   BPT: 5.1339
+[2026-06-09 09:18:12]   BPB: 1.1391
+[2026-06-09 09:18:12]   Avg Loss: 3.5585
+[2026-06-09 09:18:12] 
+[SLIDING WINDOW] block_size=256, stride=128, min_context=128, 2246 windows
+[2026-06-09 09:19:10] 
+[BENCHMARK - Sliding Window]
+[2026-06-09 09:19:10]   Perplexity: 33.4908
+[2026-06-09 09:19:10]   BPT: 5.0657
+[2026-06-09 09:19:10]   BPB: 1.1240
+[2026-06-09 09:19:10]   Avg Loss: 3.5113
+[2026-06-09 09:19:10]   Stride: 128, Min Context: 128
+[2026-06-09 09:19:10] 
+=== GENERATION — Standard ===
+[2026-06-09 09:19:10] Prompt: The history of
+[2026-06-09 09:19:23] Generated:
+The history of the Hawaiian Islands and the Chinesewestern United States dates back to the Kokoda Trail . These sightings are dated to the 3rd century CE . 
+
+
+ A mid @-@ sized Persian civilization powered by a rocky course was the next ancient Cape Hellenic Summit . Based on 2 372 @,@ 000 years ago , there are 39 official surface records and two preliminary discoveries . Early expeditions from the Central Ohioan , Romblon , Emboth , and Amphitrite peaks on the eastern border of the peninsula . 
+
+
+ The St. Elmo area of plateau of the Northern following the point of a substantial phagocyte range across the Lympne , range from the rest of the Mount Adams – Nantucket Montana Mountains range from 1 @,@ 200 to 1 @,@ 000 feet ( 270 m ) in elevation . This trail arrived in 1914 as a result of world year @-@ round snow silent in some areas , which prompted the decomposition of mountain vegetation along the Columbia River . Caprous water jams more than 26 miles ( 40 km ) of bog turtles have been found in the lake , including waterspouts and the lakes of Trinity Lake , Lincoln County and others . Copper was found at the ocean level in the Zion National Park in King 's State Park and the Zion Range at Big Bend in 1882 , during Goddard 's slide . 
+
+
+ The path of the mountains led to the creation of use a dive in and out of the park for another 40 miles ( 64 km ) . The trail , which has been analyzed to contain an genetic disease typically encountered primarily through Yosemite to variety a portion of the Glen Canyon Dam . The cloaca of Lake Soviet Fishing Creek was the easiest tocosystem and maintained a large body of water and brush . In many places , from the Gardner Trail , them fed on serpentine pikes and even refuse at the water table , causing the tusk to disappear if the creek was an overgrown four @-@ two @-@ lane leading down a width of 1 @.@ 88 feet ( 0 @.@ 1 m ) . 
+
+
+ Chetro Ketl had a long history ofward activities for railroad agencies . As of 1997 , it had developed fields and parks around the Willamette Valley National Forest and along the stream 's eastern and southern tributaries . Kootenay Creek is drowning , and houses the Reagan Institute of Special Scientific Interest which on the prairie Pointed is a Shirley and Sheria National Forest Reserve . Discussions have considered this climate
+
+[2026-06-09 09:19:23] === GENERATION — Strategies ===
+[2026-06-09 09:19:23] Prompt: The history of
+[2026-06-09 09:19:43] Generated:
+The history of the island is one of several historical records . It was a major military disaster for the British Empire during the American Civil War . The fort has been used as a base prison , and served as a memorial to the United States government 's war dead in World War I. 
+
+
+ In New York City , Fort Stikine is located at the corner of Lake Erie on the eastern edge of town . A small village that lies between NY 5 ( now part of US 9 ) runs through the city of Covington , where it continues northeastward into the hamlet of North Hudson . The route ends here and CR 644 turns east along NY 442D west to the hamlet of Westport . At this point , NY 22 passes under the Delmarva Secondary railroad line before passing over the city limits to its southern terminus at an intersection with U.S. Route 2 / 9 Truck near the junction . After crossing the Susquehanna River , NY 31 intersects with NY 254 and heads northwest toward downtown Rochester . The two routes meet again once more and continue north on the north bank of the river . 
+
+
+ While NY 73 progresses northwesterly from the city of Easton , NY 117 meets the northern terminus of NY 350 . Here , NY 386 merges onto the western side of the city and enters the town of Plattsburgh . Past this interchange , the highway begins to parallel the former alignment of NY 890 south of the community . 
+
+
+ Upon leaving Newton , NY 37 crosses into the hamlet of Barrow @-@ within @-@ the @-@ Sea , paralleling the shores of the lake . The road heads through farmland with some residences , but becomes less developed . The road then leaves the village of Stony Point and curves due east to follow the modern alignment of NY 3 . At this point , NY 175 proceeds southeast and turns southwestward , entering the hamlets of Chautauqua County , where they run past the village of Mount Pleasant . Now at exit 34 , the highway intersects with CR 149 ( Millbrook Road ) . Just short of CR 80 , NY 32 bends back to the east on Main Street , following which the route makes another turn east and later parallel to the Garden State Parkway . From there , NY 38 turns northward towards the hamlet of Clifton , intersecting with the two highways . The latter overlap , however , when NY 370 splits away from the rest of the highway . 
+
+
+
+
+ = = History = = 
+
+
+[2026-06-09 09:19:43] Metrics: MeanLogP=-1.3177 | MeanH=3.67 | D1=0.572 | D2=0.865 | D3=0.953 | Rep4=0.082
+[2026-06-09 09:19:43] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
