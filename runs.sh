@@ -351,10 +351,21 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # matter at all?" probe. Butterfly (learned orthogonal) deferred to a follow-up.
 
 # Identity: no transform — mixer operates in raw coefficient space.
-run_ablation "T4_mt_identity_1ep T4 mixer-transform=identity / no transform (1ep)" \
+# run_ablation "T4_mt_identity_1ep T4 mixer-transform=identity / no transform (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+#     "T4_mt_identity_1ep: mixer-transform ablation — identity (no transform, mixer in raw coeff space); does the FWHT slot matter at all?"
+
+# Learned butterfly: the only LEARNED transform — a butterfly lattice of 2x2
+# rotations (FWHT topology, learnable angles), orthogonal-by-construction so
+# exactly invertible. Lets gradient descent discover the optimal gating basis.
+# Init at angles=0 = identity, so it starts from the no-transform behaviour and
+# learns rotations only if they help. Placed right after identity so it runs
+# next. Adds only log2(Cp)*Cp/2 = 11,264 angle params (~0.003%).
+run_ablation "T4_mt_learned_butterfly_1ep T4 mixer-transform=learned_butterfly (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-    "T4_mt_identity_1ep: mixer-transform ablation — identity (no transform, mixer in raw coeff space); does the FWHT slot matter at all?"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
+    "T4_mt_learned_butterfly_1ep: mixer-transform ablation — learned orthogonal butterfly (model picks its own gating basis); init=identity"
 
 # FWHT control: fresh same-config reference (crawl off, norms on, lr 0.0225).
 run_ablation "T4_mt_fwht_1ep T4 mixer-transform=fwht control (1ep)" \

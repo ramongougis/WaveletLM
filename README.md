@@ -1440,7 +1440,22 @@ Checkpoint: N=5 K=1 ([log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)), trai
 
 ### Mixer Transform Ablation
 
-Test the contribution of the FWHT slot in the per-scale mixer versus having no transform, having a Hartley transform, using a DCT-II/III pair, or employing a butterfly-parametrized learned orthogonal mixer. Measures whether FWHT specifically is necessary, or whether any orthogonal mixer of similar structure (or none at all, with the learned embedding in place) achieves equivalent performance. See [plans/other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation) for the full design and proposed test. 
+Tests the contribution of the FWHT slot in the per-scale mixer against alternative orthonormal transforms: no transform (identity), Hartley (DHT), DCT, and a **learned** orthogonal butterfly. All candidates are orthonormal, so they are amplitude-matched and **parameter-free** (learned_butterfly adds only log₂(Cp)·Cp/2 ≈ 11k angle params, ~0.003%) — there is no param confound, the only variable is the basis. Run at the T4 reference (L=1, levels=7, lr=0.0225, crawl off, wavelet norms on). See [plans/other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation) for the full design.
+
+**Why the basis can matter at all (it shouldn't, for the linear part).** The mixer's linear map is *basis-absorbable*: FWHT∘W∘FWHT⁻¹ is just another linear, so identity can replicate it with different weights. The only basis-*dependent* operation is the mixer's **element-wise gate** — gating Walsh-frequencies (FWHT) is a different nonlinearity than gating raw channels (identity) or other bases. So this ablation is really "does the gate care which basis it acts in?", and the **learned butterfly** is the definitive version: it lets gradient descent pick its own orthogonal gating basis (init = identity; rotation-only, so it spans a structured SO family rather than exactly containing FWHT's reflections).
+
+| Transform | Learned? | BPB sliding | Best val | Δ vs T4† | Train VRAM | Inf VRAM | Run log |
+|---|---|---|---|---|---|---|---|
+| T4 baseline (fwht, crawl **on**) | no | 1.1311 | 3.5157 | (ref) | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| identity (no transform) | no | 1.1463 | 3.5596 | +0.0152 | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_13-12-26/log.txt) |
+| learned_butterfly | **yes** | queued | queued | — | queued | queued | queued |
+| fwht control (crawl **off**) | no | queued | queued | — | queued | queued | queued |
+| dht (Hartley) | no | queued | queued | — | queued | queued | queued |
+| dct | no | queued | queued | — | queued | queued | queued |
+
+†Δ is against the T4 baseline (crawl **on**); the clean same-config reference is the **fwht control (crawl off)**, pending — it carries no crawl advantage, so the true FWHT-vs-identity gap will be *smaller* than the +0.0152 shown here.
+
+**Early finding: the FWHT slot is not integral.** Identity — *no transform at all* — reaches BPB 1.1463 / val 3.5596, only +0.0152 over the crawl-advantaged T4 baseline (and the crawl-matched gap will be smaller still). The model recovers nearly all of its quality with the mixer operating in raw coefficient space, confirming the absorbability reasoning: the linear part doesn't need a basis, and the raw-channel gate is nearly as effective as the Walsh-frequency gate. The remaining runs test whether *any* fixed basis (DHT/DCT) or a *learned* one (butterfly) beats identity/FWHT — i.e. whether a specially-good gating basis exists at all. VRAM is identical across transforms (the transform is compute, not memory).
 
 Will likely require LR retuning for each transform type.
 

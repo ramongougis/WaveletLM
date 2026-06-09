@@ -892,10 +892,11 @@ def train():
                              'steps instead of the trained count (train deep, infer shallow). '
                              'Clamped to [1, trained]. Omit to use the trained depth.')
     parser.add_argument('--mixer_transform', type=str, default=None,
-                        choices=['fwht', 'identity', 'dht', 'dct'],
+                        choices=['fwht', 'identity', 'dht', 'dct', 'learned_butterfly'],
                         help='Per-scale mixer transform for the ablation: fwht (default), '
-                             'identity (no transform), dht (Hartley), or dct. Injected into '
-                             'the run config and persisted to the saved config.json.')
+                             'identity (no transform), dht (Hartley), dct, or learned_butterfly '
+                             '(learned orthogonal). Injected into the run config and persisted '
+                             'to the saved config.json.')
     args = parser.parse_args()
 
     # Load config

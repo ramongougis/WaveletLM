@@ -156,13 +156,24 @@ class MixerTransform(nn.Module):
         dependence on basis: gate-frequencies vs gate-raw-channels).
       - 'dht'     : Discrete Hartley (self-inverse, orthonormal).
       - 'dct'     : DCT-II/III (orthonormal; inverse = transpose).
+      - 'learned_butterfly': the only LEARNED variant — a butterfly lattice of
+        2×2 rotations (the same log₂N-layer topology as the FWHT, but with
+        learnable rotation angles instead of fixed ±1). Orthogonal by
+        construction (a product of rotations), so exactly invertible (inverse =
+        reverse the layers with negated angles). Lets gradient descent discover
+        the optimal basis to gate in, rather than hand-picking one. Init at
+        angles=0 → identity transform at start (gradients are live: dR/dθ|₀ ≠ 0),
+        so it begins from no-transform and learns rotations only if they help.
+        Note: rotation-only (det +1), so it spans a structured SO family — it
+        does not exactly contain FWHT's reflections, but it contains identity and
+        a rich orthogonal family, and adds only (log₂N · N/2) params.
 
-    Forward is x @ F, inverse is x @ Fᵀ (Fᵀ = F⁻¹ for orthonormal F). The matrix
-    is held in fp32 and the matmul is done in fp32 then cast back, so the
+    For the fixed variants, forward is x @ F, inverse is x @ Fᵀ (Fᵀ = F⁻¹ for
+    orthonormal F). All transforms compute in fp32 then cast back, so the
     round-trip is as exact as the FWHT's — we don't want fp16 transform error
     confounding the basis comparison."""
 
-    VALID = ("identity", "dht", "dct")
+    VALID = ("identity", "dht", "dct", "learned_butterfly")
 
     def __init__(self, dim: int, kind: str, device=None, dtype=None):
         super().__init__()
@@ -174,17 +185,53 @@ class MixerTransform(nn.Module):
             self.register_buffer("F", _make_dht_matrix(dim).to(device=device), persistent=False)
         elif kind == "dct":
             self.register_buffer("F", _make_dct_matrix(dim).to(device=device), persistent=False)
+        elif kind == "learned_butterfly":
+            if dim & (dim - 1) != 0:
+                raise ValueError(f"learned_butterfly requires a power-of-2 dim, got {dim}")
+            self.num_layers = int(math.log2(dim))
+            # angles[ℓ] holds the n/2 rotation angles for butterfly layer ℓ
+            # (stride 2^ℓ). Zero-init → identity at start; gradients are live
+            # because dR/dθ|₀ = [[0,-1],[1,0]] ≠ 0.
+            self.angles = nn.Parameter(
+                torch.zeros(self.num_layers, dim // 2, device=device, dtype=dtype))
+            self.register_buffer("F", None, persistent=False)
         else:
             raise ValueError(f"MixerTransform: unknown kind {kind!r} (expected one of {self.VALID})")
+
+    def _butterfly(self, x, inverse: bool):
+        """Apply the learned butterfly (or its inverse) in fp32. Forward runs
+        layers 0..L-1 (stride 2^ℓ); inverse runs them in reverse with negated
+        rotations, exactly undoing the forward."""
+        n = self.dim
+        y = x.float()
+        ang = self.angles.float()
+        layer_iter = range(self.num_layers - 1, -1, -1) if inverse else range(self.num_layers)
+        for l in layer_iter:
+            h = 1 << l
+            th = ang[l].reshape(n // (2 * h), h)          # broadcasts over batch dims
+            c, s = torch.cos(th), torch.sin(th)
+            y = y.reshape(y.shape[:-1] + (n // (2 * h), 2, h))
+            a, b = y.unbind(dim=-2)                         # each (..., n/(2h), h)
+            if inverse:
+                c1, c2 = c * a + s * b, -s * a + c * b      # R(-θ)
+            else:
+                c1, c2 = c * a - s * b, s * a + c * b       # R(θ)
+            y = torch.stack([c1, c2], dim=-2)
+            y = y.reshape(y.shape[:-3] + (n,))
+        return y.to(x.dtype)
 
     def forward(self, x):
         if self.kind == "identity":
             return x
+        if self.kind == "learned_butterfly":
+            return self._butterfly(x, inverse=False)
         return torch.matmul(x.float(), self.F).to(x.dtype)
 
     def inverse(self, x):
         if self.kind == "identity":
             return x
+        if self.kind == "learned_butterfly":
+            return self._butterfly(x, inverse=True)
         return torch.matmul(x.float(), self.F.transpose(-2, -1)).to(x.dtype)
 
 # ==============================================================================
