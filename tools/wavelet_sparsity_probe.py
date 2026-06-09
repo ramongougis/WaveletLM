@@ -153,7 +153,7 @@ def main():
     torch.manual_seed(0)
     n_tokens = test_data.numel()
     with torch.no_grad():
-        for b in range(args.batches):
+        for _b in range(args.batches):
             # random contiguous windows from the test set
             starts = torch.randint(0, max(1, n_tokens - block_size - 1), (mbs,))
             xb = torch.stack([test_data[s:s + block_size] for s in starts]).to(device)
@@ -200,6 +200,44 @@ def main():
         print(f"[summary] interpretation: >~0.80 => strongly sparse (shrinkage / "
               f"low-bit detail / top-k mixing justified); <~0.50 => not sparse "
               f"(learned wavelet does not concentrate energy like fixed wavelets).")
+
+    # --- Energy-retention curve: the ACTUAL shrinkage decision metric. ---
+    # Count-of-near-zero depends on a threshold; what determines whether you can
+    # DROP coefficients without hurting the model is ENERGY (sum d^2). Hard-thresh
+    # the smallest coefficients and ask: to keep X% of energy, what fraction of
+    # coefficients can be zeroed? (the bigger that fraction, the more sparse-
+    # exploitable the representation actually is).
+    print()
+    print(f"{'layer':>5} {'scale':>5} | fraction of coeffs droppable while retaining energy:")
+    print(f"{'':>5} {'':>5} | {'99.0%':>8} {'95.0%':>8} {'90.0%':>8}")
+    print("-" * 80)
+    drop_at = {0.99: [], 0.95: [], 0.90: []}
+    for key in sorted(samples.keys()):
+        li, si = key
+        v = torch.cat(samples[key])
+        sq = (v ** 2)
+        sq_sorted, _ = torch.sort(sq)                 # ascending: smallest first
+        total = sq_sorted.sum()
+        cum = torch.cumsum(sq_sorted, dim=0)          # energy of smallest-k set
+        n = sq_sorted.numel()
+        row = []
+        for keep in (0.99, 0.95, 0.90):
+            budget = (1.0 - keep) * total             # energy we may discard
+            # largest count of smallest coeffs whose cumulative energy <= budget
+            k = int(torch.searchsorted(cum, budget).item())
+            frac_droppable = k / n
+            drop_at[keep].append(frac_droppable)
+            row.append(frac_droppable)
+        print(f"{li:>5} {si:>5} | {row[0]:>8.3f} {row[1]:>8.3f} {row[2]:>8.3f}")
+    print("-" * 80)
+    m99 = sum(drop_at[0.99]) / len(drop_at[0.99])
+    m95 = sum(drop_at[0.95]) / len(drop_at[0.95])
+    m90 = sum(drop_at[0.90]) / len(drop_at[0.90])
+    print(f"[energy] mean droppable fraction: keep99%={m99:.3f}  keep95%={m95:.3f}  keep90%={m90:.3f}")
+    print(f"[energy] interpretation: this is the real shrinkage gate. If you can drop a")
+    print(f"[energy] LARGE fraction of coeffs while keeping ~99% energy, shrinkage/top-k")
+    print(f"[energy] pays off. If keep99% droppable is small, the energy is spread and")
+    print(f"[energy] dropping coeffs costs real signal (shrinkage will hurt).")
 
 
 if __name__ == "__main__":
