@@ -1455,16 +1455,17 @@ Tests the contribution of the FWHT slot in the per-scale mixer against alternati
 | **learned_butterfly** | **yes** | **1.1455** | 3.5596 | +0.0144 | 10,090 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_17-40-33/log.txt) |
 | identity (no transform) | no | 1.1463 | 3.5596 | +0.0152 | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_13-12-26/log.txt) |
 | fwht control (crawl **off**) | no | 1.1492 | 3.5670 | +0.0181 | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_22-59-25/log.txt) |
-| dht (Hartley) | no | queued | queued | — | queued | queued | queued |
+| dht (Hartley) | no | 1.1479 | 3.5683 | +0.0168 | 7,806 MiB | 3,112 MiB | [link](logs/wikitext-103_2026-06-10_03-44-52/log.txt) |
 | dct | no | queued | queued | — | queued | queued | queued |
 
 †Δ is against the T4 baseline (crawl **on**). The clean same-config reference is the **fwht control (crawl off)**: all crawl-off rows compare against its 1.1492.
 
-**Findings so far (dht/dct pending):**
+**Findings so far (dct pending):**
 
 1. **FWHT actively hurts at this config.** Against the clean crawl-off control, identity (*no transform at all*, 1.1463) **beats** FWHT (1.1492) by −0.0029 (~3× noise). The Walsh basis isn't merely non-integral — gating raw channels works *better* than gating Walsh-frequencies here. This confirms the absorbability reasoning (the mixer's linear part never needed a basis) and sharpens it: the hand-picked basis was a small net negative.
 2. **The learned butterfly stays home.** Given free choice of orthogonal gating basis (init = identity), it converged to 1.1455 — only −0.0008 below identity (**within the ~0.0010 noise floor**) and identical best val (3.5596). Gradient descent, free to rotate into any basis in its family, found nothing meaningfully better than no rotation. Together with (1): **no specially-good gating basis appears to exist** at this config — the gate is close to basis-indifferent, with FWHT slightly on the wrong side of indifferent. Note the butterfly costs +2,300 MiB train VRAM (fp32 butterfly-layer activations) for its within-noise gain; inference VRAM is unchanged.
-3. **Incidental but important: the T4 crawl-off datapoint.** The fwht control is *exactly* T4-with-crawl-off, so this sweep incidentally measured the crawl contribution at T4: **−0.0181** (1.1311 vs 1.1492) — substantially larger than the −0.0075 measured at T2 (lr=0.01). Wavelet crawl matters *more* in the T4 LR regime, not less; it is doing more work than the transform slot is.
+3. **DHT lands between identity and FWHT** (1.1479: +0.0016 over identity, −0.0013 under FWHT), as the basis-indifference picture predicts. The full spread across all four bases is just 0.0037 — every fixed basis loses to no-basis, and the entire axis is worth less than a fifth of the crawl effect.
+4. **Incidental but important: the T4 crawl-off datapoint.** The fwht control is *exactly* T4-with-crawl-off, so this sweep incidentally measured the crawl contribution at T4: **−0.0181** (1.1311 vs 1.1492) — substantially larger than the −0.0075 measured at T2 (lr=0.01). Wavelet crawl matters *more* in the T4 LR regime, not less; it is doing more work than the transform slot is.
 
 Implication for [Multi-Transform Parallelization](#multi-transform-parallelization): the leading indicator is unfavorable — if the gate barely distinguishes bases (and the learnable basis stays at identity), parallel fixed bases are likely redundant perspectives, and the compound would mostly add capacity that MLP width provides more cheaply. dht/dct complete the picture.
 
@@ -1490,8 +1491,6 @@ This is a learned, normalized, dilated causal convolution over time — the same
 | 5 | [1..5] / [62..66] | queued | queued | — | queued |
 | 9 | [1..9] / [60..68] | queued | queued | — | queued |
 | 17 | [1..17] / [56..72] | queued | queued | — | queued |
-
-Will likely require LR retuning for each transform type.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
