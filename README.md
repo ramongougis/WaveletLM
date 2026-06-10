@@ -1361,9 +1361,14 @@ Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tool
 |---|---|---|---|---|
 | T2 without wavelet_crawl (1ep) | 392.91M | 1.1616 | 3.6094 | [link](logs/wikitext-103_2026-05-10_01-39-25/log.txt) |
 | **T2 with wavelet_crawl (1ep)** | 392.91M | **1.1541** | **3.5881** | [link](logs/wikitext-103_2026-05-10_03-39-43/log.txt) |
-| Δ (crawl on − off) | — | **−0.0075** | **−0.0213** | ~5× the 0.0015 noise floor |
+| Δ at T2 (crawl on − off) | — | **−0.0075** | **−0.0213** | ~5× the 0.0015 noise floor |
+| T4 without wavelet_crawl (1ep) ‡ | 393.01M | 1.1492 | 3.5670 | [link](logs/wikitext-103_2026-06-09_22-59-25/log.txt) |
+| **T4 with wavelet_crawl (1ep)** | 393.01M | **1.1311** | **3.5157** | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| **Δ at T4 (crawl on − off)** | — | **−0.0181** | **−0.0513** | **~18× the noise floor** |
 
-So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.json default), *not* the no-op the deprecated section described. The two verdicts are both correct for their regimes: crawl is inert at bs=16384 (the coarsest scales span hundreds of tokens, where ±1 dilation is negligible) but helps at bs=256/levels=7 (the ±1 dilation offset is meaningful relative to the finer scales).
+‡ Measured incidentally as the fwht control of the [Mixer Transform Ablation](#mixer-transform-ablation) — identical config to T4 except `wavelet_crawl=false`.
+
+So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.json default), *not* the no-op the deprecated section described. The two verdicts are both correct for their regimes: crawl is inert at bs=16384 (the coarsest scales span hundreds of tokens, where ±1 dilation is negligible) but helps at bs=256/levels=7 (the ±1 dilation offset is meaningful relative to the finer scales). **And the effect grows with the regime's tuning: at T4 (lr=0.0225) crawl is worth −0.0181 — 2.4× its T2 (lr=0.01) value, and the single largest component-level win measured on the T4 line.** The learned-dilation convolution axis is doing more work than the spectral-transform axis (see the transform ablation's identity result); pushing it further is the subject of the [Wavelet Crawl Dilation Window (K) Sweep](#wavelet-crawl-dilation-window-k-sweep).
 
 **Relevance to [Complex Wavelets and Complex Mixer](#complex-wavelets-and-complex-mixer).** The complex trees do not implement `wavelet_crawl` (and `model.py` hard-errors `wavelet_basis=complex` + `wavelet_crawl=true` rather than silently ignore it). So **all complex wavelet runsn have wavelet crawl turned off**, which is why their in-section reference is the matched real control (CW4, also crawl-off) and **not** the crawl-on T4 baseline — comparing a crawl-off complex run to crawl-on T4 would conflate the basis change with the loss of this −0.0075 crawl win.
 
@@ -1447,15 +1452,44 @@ Tests the contribution of the FWHT slot in the per-scale mixer against alternati
 | Transform | Learned? | BPB sliding | Best val | Δ vs T4† | Train VRAM | Inf VRAM | Run log |
 |---|---|---|---|---|---|---|---|
 | T4 baseline (fwht, crawl **on**) | no | 1.1311 | 3.5157 | (ref) | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-05-24_19-22-19/log.txt) |
+| **learned_butterfly** | **yes** | **1.1455** | 3.5596 | +0.0144 | 10,090 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_17-40-33/log.txt) |
 | identity (no transform) | no | 1.1463 | 3.5596 | +0.0152 | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_13-12-26/log.txt) |
-| learned_butterfly | **yes** | queued | queued | — | queued | queued | queued |
-| fwht control (crawl **off**) | no | queued | queued | — | queued | queued | queued |
+| fwht control (crawl **off**) | no | 1.1492 | 3.5670 | +0.0181 | 7,790 MiB | 3,096 MiB | [link](logs/wikitext-103_2026-06-09_22-59-25/log.txt) |
 | dht (Hartley) | no | queued | queued | — | queued | queued | queued |
 | dct | no | queued | queued | — | queued | queued | queued |
 
-†Δ is against the T4 baseline (crawl **on**); the clean same-config reference is the **fwht control (crawl off)**, pending — it carries no crawl advantage, so the true FWHT-vs-identity gap will be *smaller* than the +0.0152 shown here.
+†Δ is against the T4 baseline (crawl **on**). The clean same-config reference is the **fwht control (crawl off)**: all crawl-off rows compare against its 1.1492.
 
-**Early finding: the FWHT slot is not integral.** Identity — *no transform at all* — reaches BPB 1.1463 / val 3.5596, only +0.0152 over the crawl-advantaged T4 baseline (and the crawl-matched gap will be smaller still). The model recovers nearly all of its quality with the mixer operating in raw coefficient space, confirming the absorbability reasoning: the linear part doesn't need a basis, and the raw-channel gate is nearly as effective as the Walsh-frequency gate. The remaining runs test whether *any* fixed basis (DHT/DCT) or a *learned* one (butterfly) beats identity/FWHT — i.e. whether a specially-good gating basis exists at all. VRAM is identical across transforms (the transform is compute, not memory).
+**Findings so far (dht/dct pending):**
+
+1. **FWHT actively hurts at this config.** Against the clean crawl-off control, identity (*no transform at all*, 1.1463) **beats** FWHT (1.1492) by −0.0029 (~3× noise). The Walsh basis isn't merely non-integral — gating raw channels works *better* than gating Walsh-frequencies here. This confirms the absorbability reasoning (the mixer's linear part never needed a basis) and sharpens it: the hand-picked basis was a small net negative.
+2. **The learned butterfly stays home.** Given free choice of orthogonal gating basis (init = identity), it converged to 1.1455 — only −0.0008 below identity (**within the ~0.0010 noise floor**) and identical best val (3.5596). Gradient descent, free to rotate into any basis in its family, found nothing meaningfully better than no rotation. Together with (1): **no specially-good gating basis appears to exist** at this config — the gate is close to basis-indifferent, with FWHT slightly on the wrong side of indifferent. Note the butterfly costs +2,300 MiB train VRAM (fp32 butterfly-layer activations) for its within-noise gain; inference VRAM is unchanged.
+3. **Incidental but important: the T4 crawl-off datapoint.** The fwht control is *exactly* T4-with-crawl-off, so this sweep incidentally measured the crawl contribution at T4: **−0.0181** (1.1311 vs 1.1492) — substantially larger than the −0.0075 measured at T2 (lr=0.01). Wavelet crawl matters *more* in the T4 LR regime, not less; it is doing more work than the transform slot is.
+
+Implication for [Multi-Transform Parallelization](#multi-transform-parallelization): the leading indicator is unfavorable — if the gate barely distinguishes bases (and the learnable basis stays at identity), parallel fixed bases are likely redundant perspectives, and the compound would mostly add capacity that MLP width provides more cheaply. dht/dct complete the picture.
+
+**Crawl-interaction follow-ups (scheduled):** the transform sweep ran with crawl off for cleanliness, but crawl is worth −0.0181 at T4 (see [Wavelet Crawl Off](#wavelet-crawl-off)), so two combination runs are queued: `crawl + learned_butterfly` and `crawl + identity`. The latter is the consequential one — if crawl+identity ≈ T4 (crawl+fwht), the FWHT can be **deleted from the headline config entirely** (one less component, same quality), and the T5 baseline proceeds transform-free.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Wavelet Crawl Dilation Window (K) Sweep
+
+Wavelet crawl replaced the fixed per-level dilation with a **learned K-tap causal look-back**: at level ℓ, instead of pairing each position with the single sample `2^ℓ` steps back, the "odd" stream is a softmax-weighted convex combination of K distinct look-back offsets in a window centered on `2^ℓ` (shifted upward at fine levels so all offsets stay ≥ 1). Initialization places nearly all softmax mass (logit 5.0) on the base offset, so K=anything starts ≈ the standard wavelet and learns to spread only if it helps. Parameters: `levels × K` logits — **21 params at K=3** — making this possibly the highest BPB-per-parameter feature in the model (−0.0181 at T4 for 21 params).
+
+This is a learned, normalized, dilated causal convolution over time — the same structural family as Hyena's implicit long convolutions, in miniature. The T4 crawl result (−0.0181, 2.4× its T2 value, the largest component win on the T4 line) suggests the convolutional axis has more headroom, which this sweep probes by widening the window.
+
+**What bounds K:** K must be odd (symmetric window), and it is *not* bounded by channels — the mixture is over time offsets, shared across all channels. The practical bounds are (a) look-back reach: the deepest level's largest offset is `2^(levels−1) + (K−1)/2`, which must stay sensible relative to `block_size=256` (at levels=7: K ≤ ~385 before the window exceeds the context itself); (b) softmax dilution: with one base-offset logit at 5.0 and K−1 at 0, the init mass on the base falls slowly (98.7% at K=3, ~95% at K=9, ~82% at K=33) — safe; and (c) window overlap: adjacent fine levels' windows begin to overlap at small K already (level-1 and level-2 windows touch at K=3), so growing K makes fine scales progressively less distinct — informative if it helps, diagnostic if it hurts.
+
+**Sweep (1ep, T4 base + crawl on + `mixer_transform=identity`, geometric K spacing; extend to K=33 only if K=17 still improves).** Base/reference is the queued crawl+identity (K=3) run from the transform-ablation follow-ups, so the sweep and the T5-bound config share a lineage. ⚠️ If crawl+identity unexpectedly regresses vs T4 (crawl+fwht), the sweep base switches back to fwht and the reference becomes T4 (1.1311).
+
+| K | Window at level 0 / level 6 | BPB sliding | Best val | Δ vs K=3 ref | Run log |
+|---|---|---|---|---|---|
+| 3 (ref) | [1..3] / [63..65] | queued (crawl+identity run) | queued | (ref) | queued |
+| 5 | [1..5] / [62..66] | queued | queued | — | queued |
+| 9 | [1..9] / [60..68] | queued | queued | — | queued |
+| 17 | [1..17] / [56..72] | queued | queued | — | queued |
 
 Will likely require LR retuning for each transform type.
 
@@ -1563,6 +1597,12 @@ See [plans/multi_transform_parallelization.md](plans/multi_transform_paralleliza
 An optional replacement for the learned token embedding is a **semantic embedding**, where each dimension is a plain-language feature (e.g. "is this token a noun?", "is this token associated with anger?", "corpus frequency in deceptive contexts") and each token or n-gram is a vector of values across those dimensions. 
 
 WaveletLM is structurally well-suited for this: the spectral mixer can operate directly on vectorized human-readable features, and multi-scale decomposition lets the same concept be processed at different temporal granularities. The expected tradeoff is improved interpretability at a small performance cost, potentially recovered or even improved via n-gram tokens and careful feature selection for the dimensions. 
+
+**Transform-reintroduction hypothesis (from the [Mixer Transform Ablation](#mixer-transform-ablation)).** With the *learned* embedding, the spectral transform proved unnecessary (identity ≥ FWHT) — plausibly because learned upstream components absorb the basis choice: anything that can emit features in whatever coordinates the gate prefers makes a fixed mid-network rotation redundant gauge. Two candidate absorbers, with different predictions for the semantic embedding:
+- *If the learned **embedding** is the absorber*: freezing it (semantic embedding) removes the gauge freedom, and a transform (FWHT, or the learned butterfly — within noise of best, simpler, and itself interpretable as a learned orthogonal basis) may become a win again. Historical support: earlier EXARCH semantic embeddings underperformed the learned embedding for unexplained reasons — a missing basis-adaptation mechanism is a candidate explanation, and reintroducing a (learned) transform is a candidate fix.
+- *If the learned **lifting nets** are the absorber* (they sit immediately upstream of the mixer slot and mix channels freely per level): the transform stays unnecessary even with a frozen embedding, and the historical semantic gap needs a different explanation.
+
+The discriminating test is cheap and should be part of the semantic-embedding bring-up: semantic embedding ± transform (identity vs fwht vs learned_butterfly) at 1ep. Whichever way it lands, it pins down *where* the architecture's basis-adaptation lives — itself an interpretability result.
 
 See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_semantic_embedding.md) for the full design, including open questions on coefficient assignment methods: one-hot/binary, LLM-scored, human-rated, or corpus-derived.
 

@@ -270,73 +270,6 @@ DO_MLP=0.10    # mlp pair done: incumbent 0.10 BPB 1.1295 < 0.09 1.1305 & 0.11 1
 DO_LM=0.216    # lm_head pair done: 0.216 BPB 1.1285 < 0.240 1.1295 < 0.264 1.1305 (monotonic, both metrics agree; 0.216-vs-0.240 = 0.0010 ~floor). 0.216 chosen; edge-winner ↓. FINAL STACK best point: 1.1285 (-0.0026 vs T4)
 DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450'
 
-# ---- Complex wavelets (invertible) -------------------------------------------
-# Shift-invariance-motivated complex lifting (tools/complex_wavelets.py,
-# plans/complex_wavelets.md). Invertible & tied: decompose -> full complex
-# coefficients -> spectral mixer (sees re+im) -> tied reconstruct (Recon∘Decomp=I
-# preserved). Phase mixed via complex_mixer_activation; mixer_depth=1 required.
-# IMPORTANT: all arms run wavelet_crawl=FALSE (model.py hard-errors complex+crawl),
-# so the matched real CONTROL is also crawl-off — the only cross-arm variable is
-# the wavelet basis. NOT directly comparable to the crawl-on T4 baseline (1.1311);
-# the in-section reference is the hm=4 control, not T4. Each complex variant is
-# validated only if it beats that matched-param control.
-
-# CW-split: invertible, split-complex mixer activation (real stack on re+im).
-# run_ablation "T4_cwav_inv_split_1ep T4 complex wavelet invertible/split (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "split"}' \
-#     "T4_cwav_inv_split_1ep: invertible complex (tied, Recon∘Decomp=I), split-complex phase mixing; vs hm=4 control"
-
-# # CW-modphase: invertible, modulus-phase activation (softplus-gated |z|, phase kept).
-# run_ablation "T4_cwav_inv_modphase_1ep T4 complex wavelet invertible/modulus_phase (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase"}' \
-#     "T4_cwav_inv_modphase_1ep: invertible complex, softplus-gated magnitude phase-preserving mixing; vs hm=4 control"
-
-# CW-modphase-tanh: modulus_phase with a tanh gate — BOUNDED |g|<=1 (stabilizer)
-# and BIPOLAR (learns discrete π phase flips), init-shifted to start at ln2 (=
-# softplus init) so it begins as standard positive scaling and learns into flips.
-# run_ablation "T4_cwav_inv_modphase_tanh_1ep T4 complex wavelet invertible/modulus_phase tanh-gate (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "complex", "complex_construction": "invertible", "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "tanh"}' \
-#     "T4_cwav_inv_modphase_tanh_1ep: tanh-gated modulus_phase (bounded, bipolar π-flips); vs softplus variant + hm=4 control"
-
-# # CW-control: matched-param real control. Invertible wavelet is 469.99M (complex
-# # predict AND update, tied reconstruct); hidden_mult=4 = 469.91M, near-exact
-# # match (ratio 1.000). The in-section reference both complex arms compare against.
-# run_ablation "T4_cwav_control_hm4_1ep T4 real-wavelet control hidden_mult=4 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 4}' \
-#     "T4_cwav_control_hm4_1ep: real wavelet hidden_mult=4 (~470M wavelet) — near-exact matched-param control for the invertible complex runs"
-
-# # ---- Option C: complex MIXER, REAL wavelet -----------------------------------
-# Separate experiment from the complex-wavelet basis: the wavelet stays real and
-# exactly invertible; the complex machinery is a per-scale learned real↔complex
-# projection around the FWHT/mixer (tools/complex_wavelets.RealToComplexProjection)
-# + the complex spectral pass. Tests whether complex helps in the MIXER (spectral
-# space, where phase is native) even though it regressed in the wavelet. Total
-# 527.13M at T4 (+134.22M projections). crawl off for clean comparison; in-section
-# reference is the hm=2 control below (510.38M, ~3% under — note slight under-match).
-
-# # CM-split: complex mixer, split activation.
-# run_ablation "T4_cmix_split_1ep T4 complex mixer (Option C) / split (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "split"}' \
-#     "T4_cmix_split_1ep: Option C — real wavelet + complex mixer (learned R↔C proj), split; vs hm=2 control"
-
-# # CM-modphase: complex mixer, modulus_phase (softplus gate).
-# run_ablation "T4_cmix_modphase_1ep T4 complex mixer (Option C) / modulus_phase (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "complex_mixer": true, "complex_mixer_activation": "modulus_phase", "complex_gate_activation": "softplus"}' \
-#     "T4_cmix_modphase_1ep: Option C complex mixer, softplus-gated modulus_phase; vs hm=2 control"
-
-# # CM-control: matched-param real control for Option C. hidden_mult=2 = 510.38M
-# # (~3% under Option C's 527.13M; no integer hm matches exactly — hm=3 is 19% over).
-# run_ablation "T4_cmix_control_hm2_1ep T4 real-wavelet control hidden_mult=2 (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "lifting_hidden_mult": 2}' \
-#     "T4_cmix_control_hm2_1ep: real wavelet hidden_mult=2 (510.38M) — matched-param control for Option C (~3% under)"
-
 # ---- Mixer Transform Ablation -------------------------------------------------
 # Replace the FWHT slot in the per-scale mixer with alternative orthonormal
 # transforms (identity / DHT / DCT) at the T4 reference config. All are
@@ -362,25 +295,65 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # Init at angles=0 = identity, so it starts from the no-transform behaviour and
 # learns rotations only if they help. Placed right after identity so it runs
 # next. Adds only log2(Cp)*Cp/2 = 11,264 angle params (~0.003%).
-run_ablation "T4_mt_learned_butterfly_1ep T4 mixer-transform=learned_butterfly (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
-    "T4_mt_learned_butterfly_1ep: mixer-transform ablation — learned orthogonal butterfly (model picks its own gating basis); init=identity"
+# run_ablation "T4_mt_learned_butterfly_1ep T4 mixer-transform=learned_butterfly (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
+#     "T4_mt_learned_butterfly_1ep: mixer-transform ablation — learned orthogonal butterfly (model picks its own gating basis); init=identity"
 
-# FWHT control: fresh same-config reference (crawl off, norms on, lr 0.0225).
-run_ablation "T4_mt_fwht_1ep T4 mixer-transform=fwht control (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "fwht"}' \
-    "T4_mt_fwht_1ep: mixer-transform ablation — FWHT control (same config as identity/dht/dct); in-section reference"
+# # FWHT control: fresh same-config reference (crawl off, norms on, lr 0.0225).
+# run_ablation "T4_mt_fwht_1ep T4 mixer-transform=fwht control (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "fwht"}' \
+#     "T4_mt_fwht_1ep: mixer-transform ablation — FWHT control (same config as identity/dht/dct); in-section reference"
 
-# DHT: Discrete Hartley (orthonormal, self-inverse).
-run_ablation "T4_mt_dht_1ep T4 mixer-transform=dht / Hartley (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dht"}' \
-    "T4_mt_dht_1ep: mixer-transform ablation — DHT (Hartley) basis"
+# # DHT: Discrete Hartley (orthonormal, self-inverse).
+# run_ablation "T4_mt_dht_1ep T4 mixer-transform=dht / Hartley (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dht"}' \
+#     "T4_mt_dht_1ep: mixer-transform ablation — DHT (Hartley) basis"
 
 # DCT: DCT-II/III (orthonormal; inverse = transpose).
 run_ablation "T4_mt_dct_1ep T4 mixer-transform=dct (1ep)" \
     "$BASE_PATCH_1EP" \
     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dct"}' \
     "T4_mt_dct_1ep: mixer-transform ablation — DCT basis"
+
+# ---- Crawl x Transform combination runs ---------------------------------------
+# The transform sweep ran crawl-off for cleanliness; crawl is worth -0.0181 at T4.
+# These two test whether the transform findings survive with crawl on. The
+# crawl+identity run is the consequential one: if it matches T4 (crawl+fwht,
+# 1.1311), the FWHT can be deleted from the headline config entirely. It also
+# becomes the K=3 reference for the crawl-K sweep below.
+
+run_ablation "T4_crawl_butterfly_1ep T4 crawl ON + learned_butterfly (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
+    "T4_crawl_butterfly_1ep: crawl x transform — learned butterfly with crawl on; does the within-noise butterfly edge stack with crawl?"
+
+run_ablation "T4_crawl_identity_1ep T4 crawl ON + identity/no transform (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawl_identity_1ep: crawl x transform — NO transform with crawl on; if ~= T4 (1.1311) the FWHT is deletable from the headline config. K=3 reference for the crawl-K sweep."
+
+# ---- Wavelet Crawl Dilation Window (K) Sweep -----------------------------------
+# Crawl = learned K-tap softmax look-back per level (levels x K logits; 21 params
+# at K=3, worth -0.0181 at T4 — the largest component win on the T4 line). This
+# sweep widens the window: K odd, geometric spacing, identity transform (the
+# T5-bound lineage; reference = T4_crawl_identity_1ep above). Extend to K=33 only
+# if K=17 still improves. If crawl+identity unexpectedly regresses vs T4, switch
+# these to mixer_transform=fwht and compare against T4 (1.1311) instead.
+
+run_ablation "T4_crawlk5_1ep T4 crawl K=5 + identity (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk5_1ep: crawl-K sweep — K=5 (window +-2 around each level dilation), identity transform"
+
+run_ablation "T4_crawlk9_1ep T4 crawl K=9 + identity (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 9, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk9_1ep: crawl-K sweep — K=9 (window +-4), identity transform"
+
+run_ablation "T4_crawlk17_1ep T4 crawl K=17 + identity (1ep)" \
+    "$BASE_PATCH_1EP" \
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 17, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk17_1ep: crawl-K sweep — K=17 (window +-8), identity transform"
