@@ -151,6 +151,33 @@ Sense-separated tokenization was explored in sense2vec (Trask et al., 2015), Ada
 - Does the WSD classifier's error rate dominate the interpretability win? If 15% of sense assignments are wrong, does the noise wipe out the cleaner feature rows?
 - Can sense-separated tokens share some feature dimensions with their lemma-parent (e.g., "is a noun") via parameter tying, without collapsing the separation? Hybrid lemma+sense representation is worth probing.
 
+## Relational/positional construction (dyadic-bucket PMI factorization)
+
+A third coefficient-construction route (2026-06-11), motivated by the Yoneda view of meaning — a token is characterized by the totality of its relations to other tokens — and by the architecture itself: WaveletLM is a pure position-mixing machine (no content-based attention; every token interaction is a fixed-or-learned function of relative offset via wavelet dilations and crawl windows), so an embedding whose named coordinates are *offset-bucketed relational statistics* encodes exactly the statistics the model natively consumes.
+
+**Recipe:**
+1. One pass over the corpus: for each token pair (v, w) and each **dyadic offset bucket** d ∈ {1, 2–3, 4–7, 8–15, …, 128–255}, accumulate co-occurrence counts. Buckets deliberately mirror the wavelet's scale structure, so embedding coordinates align with decomposition levels ("dimension k = co-occurs-with-cluster-j at distance 8–15" pairs naturally with the scale-3 gate).
+2. Convert to PMI (or shifted PPMI) per bucket: the V×V×D relational tensor.
+3. Factorize to V×C (per-slice SVD or joint tensor factorization); name each dimension by its dominant (cluster, bucket) loading. All names are verifiable from corpus statistics — less plain-language-readable than "is-a-noun", but auditable.
+4. Measure variance-explained vs C **before training anything** — the graceful-degradation curve of the factorization is a free preview of how much relational structure survives compression.
+
+**Cost:** pure counting + factorization; no LLM labeling (vs ~$200–250/concept for FDA-style features).
+
+**Rejected simpler variant (recorded so it stays rejected):** per-block *absolute* position statistics — e.g. the mean of (t_mid − t_b) per vocab word per corpus chunk, compressed into V×C. Block boundaries are arbitrary 256-token cuts with no alignment to sentences/documents, so by (approximate) stationarity of language every word's within-block position distribution is ~uniform and its mean converges to ~0: the statistic is washed out. More fundamentally it is a *unary* statistic, while the Yoneda framing itself locates meaning in *pairwise* relations — position is a property of an occurrence, not of a type. Type-level statistics should be relational (the recipe above); occurrence-level position belongs at runtime (next section).
+
+**Caveats:** a frozen Yoneda snapshot — corpus-global, no context sensitivity, so polysemy lands on the embedding (see homonym separation above). The learned embedding will likely still win raw BPB; the bet is that this construction's quality gap is smaller than plain-language features' because it matches the architecture's native statistics, at comparable traceability.
+
+## Runtime positional channel + frozen-tied-head architecture
+
+Companion architecture design (2026-06-11) for *any* of the frozen constructions: keep type-level semantics frozen in the embedding, inject occurrence-level position at runtime, and tie the output head to the *position-free* frozen embedding.
+
+- **Input:** `x_t = E[token_t] ⊕ PE(t)` — frozen semantic table E (V×C_sem) **concatenated** with a positional channel (C_pos dims), reusing the existing `concat` hybrid-embedding mechanism. Concatenation, NOT addition or convolution: additive PE pollutes every named dimension and convolution scrambles them — concat keeps semantic dims pure/labeled and position dims separately labeled.
+- **Output:** logits = h·Eᵀ with the **frozen** E (no position). The model must end every forward pass in the pure semantic frame — position is used by the trunk and discarded by the head ("the MLP handles the unencoding"). Minimal relaxation if the frozen-tied head costs too much BPB: a learned per-vocab scalar gain (+ optional bias) on the logits — one parameter per token, fixes softmax geometry without rotating the named frame.
+- **Free interpretability artifact:** the pre-head representation is the model's prediction expressed as a *named semantic profile of the next token*, and per-dimension logit contributions `h_i·E[v]_i` give feature-level output attribution with no SAE.
+- **Preprocessing requirement:** whiten/normalize E before freezing. Frequency-derived vectors are Zipf-dominated (first principal component ≈ log-frequency) and raw norm disparities wreck softmax geometry under a frozen head.
+- **Mandatory ablation arm — ±PE:** WaveletLM's mixing machinery already encodes relative position structurally, so the PE channel may be redundant. If frozen-E-no-PE matches frozen-E⊕PE, that is itself a mechanistic finding (position lives in the mixing structure, not the representation) and simplifies the architecture.
+- **First runs:** frozen-E⊕PE + identity transform + scalar-gain head vs frozen-E-no-PE, 1ep, then branch. Combine with the transform-reintroduction test (± fwht/butterfly) from the README's Semantic Embedding section — the same runs localize where basis-adaptation lives.
+
 ## Key differences from EXARCH's current approach
 
 1. **Feature construction**: Statistical/structural extraction from corpus, not LLM-based concept labeling. Much cheaper ($0 vs $200+/concept for FDA).
