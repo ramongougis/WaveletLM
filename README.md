@@ -1485,6 +1485,20 @@ This is a learned, normalized, dilated causal convolution over time — the same
 
 **What bounds K:** K must be odd (symmetric window), and it is *not* bounded by channels — the mixture is over time offsets, shared across all channels. The practical bounds are (a) look-back reach: the deepest level's largest offset is `2^(levels−1) + (K−1)/2`, which must stay sensible relative to `block_size=256` (at levels=7: K ≤ ~385 before the window exceeds the context itself); (b) softmax dilution: with one base-offset logit at 5.0 and K−1 at 0, the init mass on the base falls slowly (98.7% at K=3, ~95% at K=9, ~82% at K=33) — safe; and (c) window overlap: adjacent fine levels' windows begin to overlap at small K already (level-1 and level-2 windows touch at K=3), so growing K makes fine scales progressively less distinct — informative if it helps, diagnostic if it hurts.
 
+**Offset-preference readout (K=3, from the crawl+identity checkpoint via [tools/dump_crawl_offsets.py](tools/dump_crawl_offsets.py)).** The learned softmax weights over each level's 3-tap window, read directly from `dilation_logits` (the tied reconstruct exposes an identical copy, confirming weight tying):
+
+| Level | Base | Learned weights (offset:weight) | Mass off base |
+|---|---|---|---|
+| 0 | 1 | **1:0.986** · 2:0.007 · 3:0.007 | 1.4% |
+| 1 | 2 | 1:0.247 · **2:0.561** · 3:0.192 | 43.9% |
+| 2 | 4 | 3:0.331 · **4:0.414** · 5:0.255 | 58.6% |
+| 3 | 8 | **7:0.380** · 8:0.317 · 9:0.303 | 68.3% |
+| 4 | 16 | **15:0.381** · 16:0.287 · 17:0.332 | 71.3% |
+| 5 | 32 | **31:0.374** · 32:0.278 · 33:0.347 | 72.2% |
+| 6 | 64 | **63:0.362** · 64:0.280 · 65:0.359 | 72.0% |
+
+Three readable facts: (1) **monotone precision-to-diffusion gradient** — level 0 keeps 98.6% of its mass on exact adjacency (the bigram link is sacred), and off-base mass grows monotonically with scale, saturating at ~72%; (2) **coarse levels converge to near-uniform smoothing** — by level 3+ the weights approach uniform (⅓ each, slightly *under*-weighting the base), i.e. the model turns the single dilation tap into a 3-tap low-pass filter: at distance ~64 it wants a neighborhood average, not a precise sample; (3) **mild recency bias** — the shorter offset consistently edges the longer one at mid levels (e.g. 7:0.380 vs 9:0.303), answering what a K=2 ablation would have asked, without a run. The near-uniform saturation is the key signal: the model appears to have **maxed out the spread the K=3 window allows**, which is the signature of wanting a wider kernel. **Registered prediction (before the K-sweep results land): K=5/9 will improve BPB, with the gains concentrated at coarse levels, and the learned weights at higher K will again spread toward smooth/uniform at coarse scales.** This readout also mildly favors the *smearing* interpretation over the *new-lattice* interpretation for the [p-adic gate](#multinodal-mode-product-of-experts) — the model asks for width around dyadic points, not different lattice points per se.
+
 **Sweep (1ep, T4 base + crawl on + `mixer_transform=identity`, geometric K spacing; extend to K=33 only if K=17 still improves).** Base/reference is the crawl+identity (K=3) run — confirmed as the new T4-class best (1.1287, beats crawl+fwht), so the sweep and the T5-bound config share a lineage and the fwht fallback is moot.
 
 | K | Window at level 0 / level 6 | BPB sliding | Best val | Δ vs K=3 ref | Run log |
