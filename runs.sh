@@ -312,48 +312,74 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 #     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dht"}' \
 #     "T4_mt_dht_1ep: mixer-transform ablation — DHT (Hartley) basis"
 
-# DCT: DCT-II/III (orthonormal; inverse = transpose).
-run_ablation "T4_mt_dct_1ep T4 mixer-transform=dct (1ep)" \
+# # DCT: DCT-II/III (orthonormal; inverse = transpose).
+# run_ablation "T4_mt_dct_1ep T4 mixer-transform=dct (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dct"}' \
+#     "T4_mt_dct_1ep: mixer-transform ablation — DCT basis"
+
+# # ---- Crawl x Transform combination runs ---------------------------------------
+# # The transform sweep ran crawl-off for cleanliness; crawl is worth -0.0181 at T4.
+# # These two test whether the transform findings survive with crawl on. The
+# # crawl+identity run is the consequential one: if it matches T4 (crawl+fwht,
+# # 1.1311), the FWHT can be deleted from the headline config entirely. It also
+# # becomes the K=3 reference for the crawl-K sweep below.
+
+# run_ablation "T4_crawl_butterfly_1ep T4 crawl ON + learned_butterfly (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
+#     "T4_crawl_butterfly_1ep: crawl x transform — learned butterfly with crawl on; does the within-noise butterfly edge stack with crawl?"
+
+# run_ablation "T4_crawl_identity_1ep T4 crawl ON + identity/no transform (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+#     "T4_crawl_identity_1ep: crawl x transform — NO transform with crawl on; if ~= T4 (1.1311) the FWHT is deletable from the headline config. K=3 reference for the crawl-K sweep."
+
+# # ---- Wavelet Crawl Dilation Window (K) Sweep -----------------------------------
+# # Crawl = learned K-tap softmax look-back per level (levels x K logits; 21 params
+# # at K=3, worth -0.0181 at T4 — the largest component win on the T4 line). This
+# # sweep widens the window: K odd, geometric spacing, identity transform (the
+# # T5-bound lineage; reference = T4_crawl_identity_1ep above). Extend to K=33 only
+# # if K=17 still improves. If crawl+identity unexpectedly regresses vs T4, switch
+# # these to mixer_transform=fwht and compare against T4 (1.1311) instead.
+
+# run_ablation "T4_crawlk5_1ep T4 crawl K=5 + identity (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+#     "T4_crawlk5_1ep: crawl-K sweep — K=5 (window +-2 around each level dilation), identity transform"
+
+# run_ablation "T4_crawlk9_1ep T4 crawl K=9 + identity (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 9, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+#     "T4_crawlk9_1ep: crawl-K sweep — K=9 (window +-4), identity transform"
+
+# run_ablation "T4_crawlk17_1ep T4 crawl K=17 + identity (1ep)" \
+#     "$BASE_PATCH_1EP" \
+#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 17, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+#     "T4_crawlk17_1ep: crawl-K sweep — K=17 (window +-8), identity transform"
+
+# Ladder extension (K=5: 1.1248, K=9: 1.1194 — monotone, prediction confirmed).
+# Geometric to the hard cap K=255 (window [1..255] at all levels; clamping makes
+# all windows identical at K>=129, scale hierarchy then lives in the recursive
+# cascade — the K axis interpolates dyadic wavelet -> depth-7 learned long-conv).
+# Stop the ladder at the first clear regression vs the previous K.
+
+run_ablation "T4_crawlk33_1ep T4 crawl K=33 + identity (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dct"}' \
-    "T4_mt_dct_1ep: mixer-transform ablation — DCT basis"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk33_1ep: crawl-K sweep — K=33 (levels 0-4 clamp to [1..33]), identity transform"
 
-# ---- Crawl x Transform combination runs ---------------------------------------
-# The transform sweep ran crawl-off for cleanliness; crawl is worth -0.0181 at T4.
-# These two test whether the transform findings survive with crawl on. The
-# crawl+identity run is the consequential one: if it matches T4 (crawl+fwht,
-# 1.1311), the FWHT can be deleted from the headline config entirely. It also
-# becomes the K=3 reference for the crawl-K sweep below.
-
-run_ablation "T4_crawl_butterfly_1ep T4 crawl ON + learned_butterfly (1ep)" \
+run_ablation "T4_crawlk65_1ep T4 crawl K=65 + identity (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
-    "T4_crawl_butterfly_1ep: crawl x transform — learned butterfly with crawl on; does the within-noise butterfly edge stack with crawl?"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 65, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk65_1ep: crawl-K sweep — K=65 (six of seven levels clamp to [1..65]), identity transform"
 
-run_ablation "T4_crawl_identity_1ep T4 crawl ON + identity/no transform (1ep)" \
+run_ablation "T4_crawlk129_1ep T4 crawl K=129 + identity (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-    "T4_crawl_identity_1ep: crawl x transform — NO transform with crawl on; if ~= T4 (1.1311) the FWHT is deletable from the headline config. K=3 reference for the crawl-K sweep."
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 129, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk129_1ep: crawl-K sweep — K=129 (ALL windows identical [1..129]; hierarchy via cascade only), identity transform"
 
-# ---- Wavelet Crawl Dilation Window (K) Sweep -----------------------------------
-# Crawl = learned K-tap softmax look-back per level (levels x K logits; 21 params
-# at K=3, worth -0.0181 at T4 — the largest component win on the T4 line). This
-# sweep widens the window: K odd, geometric spacing, identity transform (the
-# T5-bound lineage; reference = T4_crawl_identity_1ep above). Extend to K=33 only
-# if K=17 still improves. If crawl+identity unexpectedly regresses vs T4, switch
-# these to mixer_transform=fwht and compare against T4 (1.1311) instead.
-
-run_ablation "T4_crawlk5_1ep T4 crawl K=5 + identity (1ep)" \
+run_ablation "T4_crawlk255_1ep T4 crawl K=255 + identity (1ep)" \
     "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-    "T4_crawlk5_1ep: crawl-K sweep — K=5 (window +-2 around each level dilation), identity transform"
-
-run_ablation "T4_crawlk9_1ep T4 crawl K=9 + identity (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 9, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-    "T4_crawlk9_1ep: crawl-K sweep — K=9 (window +-4), identity transform"
-
-run_ablation "T4_crawlk17_1ep T4 crawl K=17 + identity (1ep)" \
-    "$BASE_PATCH_1EP" \
-    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 17, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-    "T4_crawlk17_1ep: crawl-K sweep — K=17 (window +-8), identity transform"
+    '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 255, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
+    "T4_crawlk255_1ep: crawl-K sweep — K=255 (hard cap; full-block windows, depth-7 learned long-conv limit), identity transform"

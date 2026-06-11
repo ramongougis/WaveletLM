@@ -1484,7 +1484,7 @@ Wavelet crawl replaced the fixed per-level dilation with a **learned K-tap causa
 
 This is a learned, normalized, dilated causal convolution over time — the same structural family as Hyena's implicit long convolutions, in miniature. The T4 crawl result (−0.0181, 2.4× its T2 value, the largest component win on the T4 line) suggests the convolutional axis has more headroom, which this sweep probes by widening the window.
 
-**What bounds K:** K must be odd (symmetric window), and it is *not* bounded by channels — the mixture is over time offsets, shared across all channels. The practical bounds are (a) look-back reach: the deepest level's largest offset is `2^(levels−1) + (K−1)/2`, which must stay sensible relative to `block_size=256` (at levels=7: K ≤ ~385 before the window exceeds the context itself); (b) softmax dilution: with one base-offset logit at 5.0 and K−1 at 0, the init mass on the base falls slowly (98.7% at K=3, ~95% at K=9, ~82% at K=33) — safe; and (c) window overlap: adjacent fine levels' windows begin to overlap at small K already (level-1 and level-2 windows touch at K=3), so growing K makes fine scales progressively less distinct — informative if it helps, diagnostic if it hurts.
+**What bounds K:** K must be odd (symmetric window), and it is *not* bounded by channels — the mixture is over time offsets, shared across all channels. The window construction is `min_off = max(1, 2^ℓ − K//2)`, `offsets = [min_off .. min_off+K−1]` — when the symmetric window would underflow past offset 1, it **clamps and shifts upward** rather than recentering. This clamping sets the real bounds (an earlier version of this section said K ≤ ~385 from the symmetric formula — wrong, the clamp binds first): the deepest level (base 64) stays symmetric only to K=127; at **K=129 every level's window has clamped to the identical [1..129]**, and the hard cap is **K=255** (window [1..255] at all levels — beyond that, taps reach past the block and read pure zero-padding). Important nuance: identical windows do *not* mean identical levels — each level operates on the previous level's approximation, so the recursive cascade preserves a scale hierarchy by composition even when the windows fully overlap. As K grows, the architecture therefore *interpolates from a dyadic wavelet toward a depth-7 stack of full-context learned causal convolutions* (a Hyena-like object) — the K sweep is measuring exactly where on that continuum the value lies. Secondary bounds: softmax dilution of the base-offset init is mild (~95% at K=9, ~82% at K=33, ~61% at K=255 — safe), and compute grows linearly in K but stays memory-bound-negligible vs the mixer matmuls.
 
 **Offset-preference readout (K=3, from the crawl+identity checkpoint via [tools/dump_crawl_offsets.py](tools/dump_crawl_offsets.py)).** The learned softmax weights over each level's 3-tap window, read directly from `dilation_logits` (the tied reconstruct exposes an identical copy, confirming weight tying):
 
@@ -1505,9 +1505,15 @@ Three readable facts: (1) **monotone precision-to-diffusion gradient** — level
 | K | Window at level 0 / level 6 | BPB sliding | Best val | Δ vs K=3 ref | Run log |
 |---|---|---|---|---|---|
 | 3 (ref) | [1..3] / [63..65] | 1.1287 | 3.5105 | (ref) | [link](logs/wikitext-103_2026-06-10_18-06-13/log.txt) |
-| 5 | [1..5] / [62..66] | queued | queued | — | queued |
-| 9 | [1..9] / [60..68] | queued | queued | — | queued |
+| 5 | [1..5] / [62..66] | 1.1248 | 3.4933 | −0.0039 | [link](logs/wikitext-103_2026-06-10_22-24-24/log.txt) |
+| **9** | [1..9] / [60..68] | **1.1194** | **3.4796** | **−0.0093** | [link](logs/wikitext-103_2026-06-11_02-43-01/log.txt) |
 | 17 | [1..17] / [56..72] | queued | queued | — | queued |
+| 33 | [1..33] / [48..80] | queued | queued | — | queued |
+| 65 | [1..65] / [32..96] | queued | queued | — | queued |
+| 129 | [1..129] / [1..129] | queued | queued | — | queued |
+| 255 (cap) | [1..255] / [1..255] | queued | queued | — | queued |
+
+**Status: the registered prediction is confirmed so far** — K=5 and K=9 both improve, monotonically, with K=9 the best T4-class result yet recorded (1.1194; −0.0117 below the original crawl+fwht T4). Mechanism check pending: run [tools/dump_crawl_offsets.py](tools/dump_crawl_offsets.py) on the K=9 checkpoint to verify the second half of the prediction (weights re-spreading toward uniform at coarse levels).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
