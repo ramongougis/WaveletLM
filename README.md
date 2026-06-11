@@ -534,30 +534,31 @@ Longer training time, more regularization, and parameter compression are the sur
 - [(Done) Mixer Low Rank](#done-mixer-low-rank)
 - [(Done) T1 Baseline Without Wavelet Crawl](#done-t1-baseline-without-wavelet-crawl)
 - [(Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
-- [Optimizer Swap (Muon)](#optimizer-swap-muon)
+- [(Post-Release) Optimizer Swap (Muon)](#post-release-optimizer-swap-muon)
 - [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
 - [(Shelved on WikiText-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-WikiText-103-2d-wavelet-over-batch-token-with-sequential-training)
-- [Bisected Block Context Extension](#bisected-block-context-extension)
-- [Adagrad Learning Rate Tuning](#adagrad-learning-rate-tuning)
-- [New T3 Baseline](#new-t3-baseline)
-- [Recurrence with Adagrad (partial)](#recurrence-with-adagrad-partial)
-- [Optimizer Swap (AdamW) and Wavelet Norms](#optimizer-swap-adamw-and-wavelet-norms)
-- [Optimizer Tuning (Adagrad) with Wavelet Norms](#optimizer-tuning-adagrad-with-wavelet-norms)
-- [Spectral Norm](#spectral-norm)
-- [New T4 Baseline](#new-t4-baseline)
-- [Recurrence with Adagrad (no residual)](#recurrence-with-adagrad-no-residual)
-- [Recurrence with Adagrad (with residual)](#recurrence-with-adagrad-with-residual)
-- [Recurrence Efficiency: Gate Caching](#recurrence-efficiency-gate-caching)
-- [Long-Range Context: Multi-Pole SSM + Truncated BPTT](#long-range-context-multi-pole-ssm--truncated-bptt)
-- [Dense Mixer Recurrence](#dense-mixer-recurrence)
-- [Untied Wavelet Reconstruction](#untied-wavelet-reconstruction)
-- [Dropout](#dropout)
-- [Weight Decay](#weight-decay)
-- [Complex Wavelets and Complex Mixer](#complex-wavelets-and-complex-mixer)
-- [Wavelet Crawl Off](#wavelet-crawl-off)
-- [Wavelet Sparsity Probe & Wavelet Shrinkage](#wavelet-sparsity-probe--wavelet-shrinkage)
-- [Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)](#inference-depth-flexibility-with-mixer-recurrence-train-deep-infer-shallow)
-- [Mixer Transform Ablation](#mixer-transform-ablation)
+- [(Done) Bisected Block Context Extension](#done-bisected-block-context-extension)
+- [(Done) Adagrad Learning Rate Tuning](#done-adagrad-learning-rate-tuning)
+- [(Done) New T3 Baseline](#done-new-t3-baseline)
+- [(Done) Recurrence with Adagrad (partial)](#done-recurrence-with-adagrad-partial)
+- [(Done) Optimizer Swap (AdamW) and Wavelet Norms](#done-optimizer-swap-adamw-and-wavelet-norms)
+- [(Done) Optimizer Tuning (Adagrad) with Wavelet Norms](#done-optimizer-tuning-adagrad-with-wavelet-norms)
+- [(Done) Spectral Norm](#done-spectral-norm)
+- [(Done) New T4 Baseline](#done-new-t4-baseline)
+- [(Done) Recurrence with Adagrad (no residual)](#done-recurrence-with-adagrad-no-residual)
+- [(Done) Recurrence with Adagrad (with residual)](#done-recurrence-with-adagrad-with-residual)
+- [(Done) Recurrence Efficiency: Gate Caching](#done-recurrence-efficiency-gate-caching)
+- [(Done) Long-Range Context: Multi-Pole SSM + Truncated BPTT](#done-long-range-context-multi-pole-ssm--truncated-bptt)
+- [(Done) Dense Mixer Recurrence](#done-dense-mixer-recurrence)
+- [(Done) Untied Wavelet Reconstruction](#done-untied-wavelet-reconstruction)
+- [(Done) Dropout](#done-dropout)
+- [(Done) Weight Decay](#done-weight-decay)
+- [(Done) Complex Wavelets and Complex Mixer](#done-complex-wavelets-and-complex-mixer)
+- [(Done) Wavelet Crawl Off](#done-wavelet-crawl-off)
+- [(Done) Wavelet Sparsity Probe & Wavelet Shrinkage](#done-wavelet-sparsity-probe--wavelet-shrinkage)
+- [(Done) Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)](#done-inference-depth-flexibility-with-mixer-recurrence-train-deep-infer-shallow)
+- [(Done) Mixer Transform Ablation](#done-mixer-transform-ablation)
+- [(In Progress) Wavelet Crawl Dilation Window (K) Sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)
 - [Step-Time Speedups](#step-time-speedups)
 - [T5 Baseline](#t5-baseline)
 - [More Layers](#more-layers)
@@ -733,7 +734,7 @@ The new baseline shall be named **T2**.
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Optimizer Swap (Muon)
+### (Post-Release) Optimizer Swap (Muon)
 
 **Phase 1: Muon** ([Jordan et al., 2025](https://arxiv.org/abs/2502.16982); used in DeepSeek-V4) — Newton-Schulz orthogonalization bounds every update's spectral norm, applied to the matrix-heavy MLP / mixer / lifting `Linear(C, C)`. Hybrid split: 2D non-embedding hidden weights → Muon, biases / norms / embeddings / LM head → AdamW. **Phase 2: AdamW** as fallback baseline. All runs use T2 architecture (`levels=7`, T2 mixer widths, `wavelet_crawl=true`, `bs=256`, `MBS=8`).
 
@@ -787,7 +788,7 @@ Generalize the lifting wavelet from 1D (token axis) to 2D (joint batch-token axi
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Bisected Block Context Extension
+### (Done) Bisected Block Context Extension
 
 Inspired by [DeepSeek-V4](https://huggingface.co/collections/deepseek-ai/deepseek-v4): take the most recent `block_size/2` slots as uncompressed input; use the other `block_size/2` slots to hold per-channel means of `g = (block_size_compressed − block_size/2) / (block_size/2)` consecutive corpus tokens. The half-block-size seam aligns with every wavelet scale's dyadic partitions, giving O(log block_size) seam-bridging predict/update ops. Sweep across `block_size × block_size_compressed ∈ {256, 512, 1024, 2048} × {65K, 131K, 250K}` was queued; partially completed before project closure on 2026-05-13.
 
@@ -813,7 +814,7 @@ Full sweep tables, the `bbce_compressed_grad` toggle, and the bc=1M OOM analysis
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Adagrad Learning Rate Tuning
+### (Done) Adagrad Learning Rate Tuning
 
 T2's default `lr=0.01` was inherited from earlier baselines. Sequential block ordering surfaced that lr=0.015 recovered ~50% of the sequential-vs-random gap; the follow-up was whether this generalizes to T2 random.
 
@@ -831,7 +832,7 @@ T2's default `lr=0.01` was inherited from earlier baselines. Sequential block or
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### New T3 Baseline
+### (Done) New T3 Baseline
 
 Establishing a new baseline of T3 using lr = 0.015 (without the BBCE). Comparison table:
 
@@ -845,7 +846,7 @@ Establishing a new baseline of T3 using lr = 0.015 (without the BBCE). Compariso
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence with Adagrad (partial)
+### (Done) Recurrence with Adagrad (partial)
 
 Due to wavelet decomposition and reconstruction being inverses of each other, and FWHT being its own inverse, one form of recurrence in WaveletLM only requires repeating the mixer operation. In other words, N steps of recurrence would look like:
 
@@ -902,7 +903,7 @@ Other recurrence approaches likely exist, but this section will only test the mi
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Optimizer Swap (AdamW) and Wavelet Norms
+### (Done) Optimizer Swap (AdamW) and Wavelet Norms
 
 Adagrad NaN'd at recurrence N ≥ 5 (step 8,000 for K=1; immediate for K=2), prompting the switch to AdamW. The sweep also revealed the entire wavelet path (decompose → FWHT → mixer → iFWHT → reconstruct) was unnormalized between `ln1` and `ln2`, allowing the mixer to feed unconstrained magnitudes into reconstruction. Two per-scale `LayerNorm(Cp)` modules — `wavelet_decomp_norm` (after decompose) and `wavelet_recon_norm` (after iFWHT) — extend the stable LR range (A3/A4 complete cleanly where they previously NaN'd) and accelerate early convergence, but shift the effective LR landscape: normed runs trail the T3 baseline across all LRs tested so far. A1+norms and A2+norms sweep lower LRs to find the optimum; A3 was run at both clip values to isolate grad_clip. **All prior ablation deltas were measured on the unnormed baseline and will need re-sweeping** once the optimal normed LR is confirmed.
 
@@ -968,7 +969,7 @@ After the amsgrad probe, `eps` and `weight_decay` sweeps follow.
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Optimizer Tuning (Adagrad) with Wavelet Norms
+### (Done) Optimizer Tuning (Adagrad) with Wavelet Norms
 
 The T3 Adagrad reference ran on the un-normed architecture. Ag0 (norms at the T3 LR of 0.015) yields BPB 1.1332 — better than T3 (1.1362) and T4 AdamW (1.1365) with no LR retuning, showing norms help Adagrad in place. Ag1 (10× lower, lr=0.0015) collapses to BPB 1.3340, ruling out the lower end. The 15× AdamW conversion hypothesis is retired. A log-symmetric grid centred on 0.015 (×10, ×√10, ×∛10, ÷∛10, ÷√10; or until divergence) locates the normed Adagrad optimum. All normed rows use fp16, `wavelet_decomp_norm=true`, `wavelet_recon_norm=true`, eps=2e-13, weight_decay=1e-6, grad_clip=1.0.
 
@@ -1020,7 +1021,7 @@ All runs use the locked Ag0 config as base (lr=0.015, min_lr=3e-4, fp16, wavelet
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Spectral Norm
+### (Done) Spectral Norm
 
 Adding for stability and testing its performance.
 
@@ -1045,7 +1046,7 @@ But the achieved BPB at SN2 (1.1337) is *worse* than Ag0's baseline (1.1332). Pu
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### New T4 Baseline
+### (Done) New T4 Baseline
 
 T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_norm`) + tuned hyperparameters for the best optimizer. LR sweep complete — optimum locked at **lr=0.02250** (Ag150, BPB 1.1311), a clean single peak confirmed by the fine-grained ×1.25/×1.50/×1.75 sweep. T4 updated accordingly.
 
@@ -1061,7 +1062,7 @@ T4 = T3 architecture + wavelet norms (`wavelet_decomp_norm` + `wavelet_recon_nor
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence with Adagrad (no residual)
+### (Done) Recurrence with Adagrad (no residual)
 
 > **What "no residual" means here.** These runs had `mixer_recurrence_residuals=true`, so each step applied the *step-local* residual `Xₜ = Xₜ₋₁ + m(Xₜ₋₁)`. But the residual was **incomplete**: it never re-injected the initial input X⁰, so the recurrence was a shared-weight (or weight-cycled) residual stack with no anchor to the input. Mathematically it had nowhere to converge — each step transforms the previous step's output, so more steps = more drift, which is why **depth past N=2 regresses** (see findings). The [with-residual section](#recurrence-with-adagrad-with-residual) corrects this by re-injecting X⁰ at every step (input-anchored iteration). The numbers below stand as the no-anchor baseline.
 
@@ -1098,7 +1099,7 @@ All five re-runs share seed 1337 and the N·K>1 inter-step norm, so the comparis
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence with Adagrad (with residual)
+### (Done) Recurrence with Adagrad (with residual)
 
 Re-runs the recurrence sweep under the **corrected, input-anchored residual**. The fix (in `model.py`, folded into the already-`true` `mixer_recurrence_residuals` — no new flag) re-injects the initial post-FWHT spectrum X⁰ at the input of every mixer application *after the first*, in addition to the running-state residual:
 
@@ -1136,7 +1137,7 @@ The first step is the plain residual (the running state already equals X⁰ ther
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Recurrence Efficiency: Gate Caching
+### (Done) Recurrence Efficiency: Gate Caching
 
 Recurrence multiplies the per-step mixer cost by N. Each step's dominant cost is two `C'×C'` matmuls — the signal projection `W_mix·X` and the gate projection `W_gate·(R·X)` (cross-scale routed). The **gate caching** approximation (`mixer_recurrence_cache_gate`) computes the gate `φ(W_gate·R·X)` once on the first recurrence cycle and reuses it for cycles 2..N, eliminating the `W_gate` matmul + routing einsum on all but the first cycle — roughly halving per-step matmul cost at K=1. The trade-off: the gate no longer tracks the evolving spectral state past cycle 1.
 
@@ -1159,7 +1160,7 @@ Auto-conditions: active only when `N > 1` (needs cycles to amortize over) and `u
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Long-Range Context: Multi-Pole SSM + Truncated BPTT
+### (Done) Long-Range Context: Multi-Pole SSM + Truncated BPTT
 
 Two attention-free upgrades targeting **cross-window** long-range dependency. Within a 256-token block, the lifting wavelet already couples tokens ~128 apart (multi-scale, O(n log n)); beyond the block, the only carrier is the decompose-bypass cross-window state, which today is (a) a first-moment causal mean, (b) `.detach()`ed so it's never trained across windows, (c) a single per-channel vector. Plan: [plans/long_range_ssm_bptt.md](plans/long_range_ssm_bptt.md). Both default off; `false` = byte-identical to T4.
 
@@ -1190,7 +1191,7 @@ Two attention-free upgrades targeting **cross-window** long-range dependency. Wi
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Dense Mixer Recurrence
+### (Done) Dense Mixer Recurrence
 
 DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseFormer](https://arxiv.org/abs/2402.02622), Pagliardini et al. 2024, applied to the recurrence depth axis). Instead of each step's input being just `latest + X⁰` (the input-anchored residual), it becomes a **learned weighted combination of all prior step outputs**: with M = N·K applications and states `[X⁰, X⁽¹⁾, …]`, step *t*'s input is `inpₜ = Σ_{k≤t} A[t,k]·stateₖ`, where `A` is an M×M lower-triangular learnable matrix. Plan: [plans/dense_recurrence.md](plans/dense_recurrence.md). Config: `mixer_recurrence_dense` (+ `mixer_recurrence_dense_normalize` for softmax/convex rows). Default off = identical to today.
 
@@ -1219,7 +1220,7 @@ DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseF
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Untied Wavelet Reconstruction
+### (Done) Untied Wavelet Reconstruction
 
 The current implementation **ties** the wavelet reconstruct path to the decompose path: they share the same `predict_nets` and `update_nets` (perfect mathematical invertibility — decompose followed by reconstruct is exactly identity when no processing happens in between). The flag `untied_reconstruction` (already in config.json, currently `false`) would give the reconstruct path its **own** predict/update networks — same architecture, separate weights.
 
@@ -1242,7 +1243,7 @@ The current implementation **ties** the wavelet reconstruct path to the decompos
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Dropout
+### (Done) Dropout
 
 Re-tune the five dropout values (`dropout_lm_head`, `dropout_mlp`, `dropout_mixer`, `dropout_projection`, and `dropout_embedding`) once model parameters are reduced from above. A doubled-dropout ablation at the prior baseline gave -0.0221 BPB. This is larger than the projected BPB increase from parameter reduction. A true dropout sweep may surpass the gap.
 
@@ -1281,7 +1282,7 @@ Sweep is to be conducted at L=1 first (faster iteration, more sensitive to regul
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Weight Decay
+### (Done) Weight Decay
 
 Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. More values must to be attempted (likely slightly higher is best).
 
@@ -1301,7 +1302,7 @@ Re-tune `weight_decay`. Current value (1e-6) was only tested alongside 1e-3. Mor
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Complex Wavelets and Complex Mixer
+### (Done) Complex Wavelets and Complex Mixer
 
 Replace the real-valued wavelet basis with a complex-valued one (e.g., dual-tree complex wavelet transform à la Kingsbury, or direct complex parameterization of the lifting predict/update networks). The motivation that matters is **not** "phase carries bonus information" (the vague version) but **shift-invariance** (the structural version).
 
@@ -1353,7 +1354,7 @@ Implementation: [plans/complex_wavelets.md](plans/complex_wavelets.md) and [tool
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Wavelet Crawl Off
+### (Done) Wavelet Crawl Off
 
 **Chronological correction.** An earlier section (the deprecated bs=16384 / R0 / Test-1 line) recorded `wavelet_crawl` as removable "at no performance benefit," and that verdict is preserved there as an accurate snapshot of what was believed at that point. It was **regime-specific and later reversed.** At the *production* regime (T2: bs=256, levels=7 — the line that became T4), `wavelet_crawl` was re-ablated and is a real, repeatable win:
 
@@ -1376,7 +1377,7 @@ So `wavelet_crawl=true` is a genuine part of the T4 production baseline (config.
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Wavelet Sparsity Probe & Wavelet Shrinkage
+### (Done) Wavelet Sparsity Probe & Wavelet Shrinkage
 
 A diagnostic probe ([tools/wavelet_sparsity_probe.py](tools/wavelet_sparsity_probe.py)) on the sparsity structure of the learned wavelet's detail coefficients — a property classical wavelet compression (JPEG 2000) heavily exploits in *fixed* wavelets on natural images, here measured for the first time on our *learned* wavelet on language. Forward hooks capture per-scale detail coefficients of the T4 checkpoint ([log](logs/wikitext-103_2026-05-24_19-22-19/log.txt), L=1, levels=7) over 8 held-out WikiText-103 batches; no training, ~30 s.
 
@@ -1413,7 +1414,7 @@ A diagnostic probe ([tools/wavelet_sparsity_probe.py](tools/wavelet_sparsity_pro
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)
+### (Done) Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)
 
 Recurrence multiplies inference latency, not just training cost: every token pays N× the mixer (N=5 K=2 generates at ~18 tok/s vs T4's ~34 tok/s). This section pursues **decoupling inference depth N′ from training depth N** — keeping the deep-trained quality while recovering speed. **Target checkpoint: the recurrence sweep settled on N=5 K=1** (BPB 1.1240, best val 3.4986, +0 params over T4 — the depth-ladder winner; N=10 regressed, so N=5 is the chosen depth). K=1 is also the clean case for Route 1's fixed-point argument (a single shared bank converges to one point; K>1 would converge to a K-cycle).
 
@@ -1443,7 +1444,7 @@ Checkpoint: N=5 K=1 ([log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)), trai
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Mixer Transform Ablation
+### (Done) Mixer Transform Ablation
 
 Tests the contribution of the FWHT slot in the per-scale mixer against alternative orthonormal transforms: no transform (identity), Hartley (DHT), DCT, and a **learned** orthogonal butterfly. All candidates are orthonormal, so they are amplitude-matched and **parameter-free** (learned_butterfly adds only log₂(Cp)·Cp/2 ≈ 11k angle params, ~0.003%) — there is no param confound, the only variable is the basis. Run at the T4 reference (L=1, levels=7, lr=0.0225, crawl off, wavelet norms on). See [plans/other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation) for the full design.
 
@@ -1477,7 +1478,7 @@ Implication for [Multi-Transform Parallelization](#multi-transform-parallelizati
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Wavelet Crawl Dilation Window (K) Sweep
+### (In Progress) Wavelet Crawl Dilation Window (K) Sweep
 
 Wavelet crawl replaced the fixed per-level dilation with a **learned K-tap causal look-back**: at level ℓ, instead of pairing each position with the single sample `2^ℓ` steps back, the "odd" stream is a softmax-weighted convex combination of K distinct look-back offsets in a window centered on `2^ℓ` (shifted upward at fine levels so all offsets stay ≥ 1). Initialization places nearly all softmax mass (logit 5.0) on the base offset, so K=anything starts ≈ the standard wavelet and learns to spread only if it helps. Parameters: `levels × K` logits — **21 params at K=3** — making this possibly the highest BPB-per-parameter feature in the model (−0.0181 at T4 for 21 params).
 
