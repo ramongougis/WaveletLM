@@ -615,8 +615,8 @@ Starting with the best WikiText-103 config, we made the following changes to red
 **Results:** 
 - 41% fewer parameters
 - 21% less training time
-- minimal performance impact (−0.0013 BPB)
-- 26% smaller train/val loss gap (implicit regularization via less params)
+- slight **positive** performance impact (−0.0013 BPB)
+- 26% smaller train/val loss gap (**implicit regularization via less params yields better performance** at this depth & scale)
 
 The "Test 1", aka **T1**, configuration in the table below incorporates these reductions. 
 
