@@ -43,6 +43,19 @@ Factor low-order positional co-occurrence statistics out of the weights and into
 
 The weight-side version of this idea exists as a young interpretability thread (attribution-based parameter decomposition, transcoders): split *trained* weights into mechanism-aligned components after the fact. Structure factoring is the stronger position when available — factor *before and during* training by architectural prescription, rather than fighting superposition after it has formed. Post-hoc methods remain the fallback for structure we failed to anticipate.
 
+## The iteration loop (2026-06-11)
+
+Structure factoring is not a bag of one-off tricks but a **closed improvement loop**:
+
+1. **Hypothesize** (justifiably — from readouts, probes, or measured behavior, not aesthetics) what the model currently encodes implicitly in opaque weights.
+2. **Factor** it out as explicit structure, per the design rule (interfaces / parallel channels).
+3. **Measure** acceptance: learned mixing scalars, ablation deltas, matched controls, *registered predictions before results land*.
+4. **Read back** the factored structure's learned parameters — because it is explicit, it is readable, and the readout generates the *next* hypothesis.
+
+Step 4 is what makes the loop self-propelling, and the crawl arc is the first completed cycle: crawl factored positional structure into 21 readable logits → the K=3 readout showed coarse levels maxing out their windows (hypothesis: wants width) → prediction registered → K=5/9 confirmed (1.1287 → 1.1194) → the K=9 readout sharpened the hypothesis into a **scale-proportional-width (constant-Q) law** → which proposes its own refinement (per-level K ∝ 2^ℓ). Each pass through the loop produced both a capability gain and a mechanistic finding from the same artifact — the dual yield is the point.
+
+**Grounding cautions for the trajectory:** (a) the "justifiably" in step 1 is load-bearing — the FWHT was also once a justified-seeming prior, and the protection against aesthetic factorings is registered predictions + matched controls, never conviction; (b) expect diminishing territory — each cycle peels the most legible remaining layer of structure, and the deep semantic content of the MLPs may admit no clean factorization; the loop's endpoint is precisely the boundary between what is statistics and what is genuinely learned computation, and *finding that boundary is itself the interpretability result*.
+
 ## Candidate future factorings (beyond skip-gram)
 
 - Trigram / skip-n-gram positional tables at additional offsets (same recipe, more tables).
