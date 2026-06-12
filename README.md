@@ -558,11 +558,12 @@ Longer training time, more regularization, and parameter compression are the sur
 - [(Done) Wavelet Sparsity Probe & Wavelet Shrinkage](#done-wavelet-sparsity-probe--wavelet-shrinkage)
 - [(Done) Inference-Depth Flexibility with Mixer Recurrence (Train Deep, Infer Shallow)](#done-inference-depth-flexibility-with-mixer-recurrence-train-deep-infer-shallow)
 - [(Done) Mixer Transform Ablation](#done-mixer-transform-ablation)
-- [(In Progress) Wavelet Crawl Dilation Window (K) Sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)
+- [(Done) Wavelet Crawl Dilation Window (K) Sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)
 - [Structure Factoring](#structure-factoring)
 - [Step-Time Speedups](#step-time-speedups)
 - [T5 Baseline](#t5-baseline)
 - [More Layers](#more-layers)
+- [More Epochs](#more-epochs)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
 - [Model Comparisons](#model-comparisons)
@@ -1186,7 +1187,7 @@ Two attention-free upgrades targeting **cross-window** long-range dependency. Wi
 
 **Findings:**
 
-(pending runs)
+All variants improve on the *sequential* reference (best: +SSM cross-window, −0.0045), but the sequential reference itself (1.1499) sits ~+0.019 above random-batched T4 (1.1311) — the gain from the best SSM stack is several times smaller than the cost of the sequential mode it requires. Within-window SSM provides most of what little there is (−0.0035; the wavelet already covers in-block range), BPTT adds nothing (−0.0002 alone), and cross-window carry adds only −0.0010 over within-window. **Verdict: a clean negative for WT103 at 256-token context — cross-window dependency is not where perplexity lives at this scale, and nothing here joins the T5 baseline** (random batching stays; `decompose_bypass` + simple cross-window mean carry remain the only long-range components, as in all T4/T5-line runs).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1215,7 +1216,7 @@ DenseNet-style depth-weighted averaging over the mixer recurrence steps ([DenseF
 
 **Findings:**
 
-(pending runs)
+All variants improve on the *sequential* reference (best: +SSM cross-window, −0.0045), but the sequential reference itself (1.1499) sits ~+0.019 above random-batched T4 (1.1311) — the gain from the best SSM stack is several times smaller than the cost of the sequential mode it requires. Within-window SSM provides most of what little there is (−0.0035; the wavelet already covers in-block range), BPTT adds nothing (−0.0002 alone), and cross-window carry adds only −0.0010 over within-window. **Verdict: a clean negative for WT103 at 256-token context — cross-window dependency is not where perplexity lives at this scale, and nothing here joins the T5 baseline** (random batching stays; `decompose_bypass` + simple cross-window mean carry remain the only long-range components, as in all T4/T5-line runs).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1479,7 +1480,7 @@ Implication for [Multi-Transform Parallelization](#multi-transform-parallelizati
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### (In Progress) Wavelet Crawl Dilation Window (K) Sweep
+### (Done) Wavelet Crawl Dilation Window (K) Sweep
 
 Wavelet crawl replaced the fixed per-level dilation with a **learned K-tap causal look-back**: at level ℓ, instead of pairing each position with the single sample `2^ℓ` steps back, the "odd" stream is a softmax-weighted convex combination of K distinct look-back offsets in a window centered on `2^ℓ` (shifted upward at fine levels so all offsets stay ≥ 1). Initialization places nearly all softmax mass (logit 5.0) on the base offset, so K=anything starts ≈ the standard wavelet and learns to spread only if it helps. Parameters: `levels × K` logits — **21 params at K=3** — making this possibly the highest BPB-per-parameter feature in the model (−0.0181 at T4 for 21 params).
 
@@ -1493,14 +1494,16 @@ This is a learned, normalized, dilated causal convolution over time — the same
 |---|---|---|---|---|---|
 | 3 (ref) | [1..3] / [63..65] | 1.1287 | 3.5105 | (ref) | [link](logs/wikitext-103_2026-06-10_18-06-13/log.txt) |
 | 5 | [1..5] / [62..66] | 1.1248 | 3.4933 | −0.0039 | [link](logs/wikitext-103_2026-06-10_22-24-24/log.txt) |
-| **9** | [1..9] / [60..68] | **1.1194** | **3.4796** | **−0.0093** | [link](logs/wikitext-103_2026-06-11_02-43-01/log.txt) |
-| 17 | [1..17] / [56..72] | queued | queued | — | queued |
-| 33 | [1..33] / [48..80] | queued | queued | — | queued |
-| 65 | [1..65] / [32..96] | queued | queued | — | queued |
-| 129 | [1..129] / [1..129] | queued | queued | — | queued |
-| 255 (cap) | [1..255] / [1..255] | queued | queued | — | queued |
+| 9 | [1..9] / [60..68] | 1.1194 | 3.4796 | −0.0093 | [link](logs/wikitext-103_2026-06-11_02-43-01/log.txt) |
+| 17 | [1..17] / [56..72] | 1.1162 | 3.4709 | −0.0125 | [link](logs/wikitext-103_2026-06-11_07-04-35/log.txt) |
+| **33 (knee)** | [1..33] / [48..80] | **1.1156** | **3.4679** | **−0.0131** | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
+| 65 | [1..65] / [32..96] | 1.1148 | 3.4687 | −0.0139 | [link](logs/wikitext-103_2026-06-11_16-09-53/log.txt) |
+| 129 | [1..129] / [1..129] | 1.1163 | 3.4694 | −0.0124 | [link](logs/wikitext-103_2026-06-11_20-59-19/log.txt) |
+| 255 (cap) | [1..255] / [1..255] | 1.1173 | 3.4791 | −0.0114 | [link](logs/wikitext-103_2026-06-12_02-22-23/log.txt) |
 
-**Status: the registered prediction is confirmed so far** — K=5 and K=9 both improve, monotonically, with K=9 the best T4-class result yet recorded (1.1194; −0.0117 below the original crawl+fwht T4).
+**Status: every registered prediction has graded correct, including the knee.** K=5/9/17 all improve monotonically — K=17 is the best T4-class result yet recorded (**1.1162**; −0.0149 below the original crawl+fwht T4, and below every recurrence variant at a few hundredths of the parameter cost). The sharpened forecast's first clause landed: K=9→17 gained −0.0032, smaller than the K=5→9 step (−0.0054), with per-tap efficiency falling from −0.0014 to −0.0004/tap — the deceleration profile of an approaching knee. The knee clause graded correct too: K=17→33 gained −0.0006 — smaller still, and **within the ~0.0010 noise floor**, i.e. the curve flattens in [17, 33] exactly where the half-width≈base/4 law put it (level 6 satisfied at ±16). Cumulative crawl-K arc: 1.1287 → **1.1156** (−0.0131), every step of it predicted from weight readouts before the runs landed. The final clause graded correct as well: K=33→65 is flat (−0.0008, within noise; 1.1148 the numerical minimum), and **K=129/255 regress** (+0.0015/+0.0025 vs 65, with best val degrading in step). The plateau is [17..65]; **T5 carries K=33** — tied with 65 on BPB (sub-noise), best val of the sweep, and the 'everyone satisfied' point of the half-width law with the most scale structure preserved (at K=65, six of seven windows have merged).
+
+**The identity-experiment verdict — the wavelet wins its own vote.** K=129/255 are the configurations where every level's window is identical and the dyadic lattice survives only as initialization — the architecture's Hyena-limit (depth-7 full-context learned causal conv). It *loses*: monotone regression past the knee, with K=255 (1.1173) worse than K=17. Performance peaks exactly where scale-proportional structure is preserved and degrades as the structure dissolves — the dyadic wavelet prior is load-bearing, not scaffolding the convolution subsumes. (Honest caveat: at 1ep, part of the large-K regression may be optimization burden — 255-way softmaxes diluting the init — rather than purely structural inferiority. The discriminating readout is a dump on the K=255 checkpoint: if its learned kernels *re-derive* narrow-fine/wide-coarse structure despite full freedom, that strengthens the structural reading further — the model rebuilds the wavelet when nobody makes it.)
 
 #### Mechanism readouts (weight-level evidence; chronological — every prediction below was registered before the run that tested it)
 
@@ -1575,16 +1578,50 @@ Slot this alongside the final regularization sweep in the pre-B200 window — sa
 
 Time to establish a new baseline. Here, we'll incorporate the best features performance-wise so far and roll them all together.
 
-**Regularization 2×2 (transfer + coupling test).** The [Dropout](#dropout) coordinate descent (final stack: emb 0.18 / proj 0.09 / mix 0.09 / mlp 0.10 / lm_head 0.216, −0.0026 at L=1) and [Weight Decay](#weight-decay) sweep (2e-6, −0.0035 at L=1) were both tuned at L=1/1-epoch and are single-seed. Before folding them into the production baseline they must (a) be confirmed to *transfer* to T5 scale — the dropout-down direction is the fragile one and may flip if a deeper/wider T5 wants more dropout, whereas WD-up is more likely scale-monotone — and (b) be checked for *coupling*, since dropout and WD are both regularizers and may trade off (a ridge) rather than stack additively. A 2×2 factorial answers both with 3 runs on top of the T5 baseline (which *is* the old/old corner — keep it at T4 dropout defaults + WD=1e-6, all other accepted T5 wins folded in). All four cells identical except the dropout/WD axes.
+**Regularization 2×2 (transfer + coupling test).** The [Dropout](#dropout) coordinate descent (final stack: emb 0.18 / proj 0.09 / mix 0.09 / mlp 0.10 / lm_head 0.216, −0.0026 at L=1) and [Weight Decay](#weight-decay) sweep (2e-6, −0.0035 at L=1) were both tuned at L=1/1-epoch and are single-seed. Before folding them into the production baseline they must (a) be confirmed to *transfer* to T5 scale — the dropout-down direction is the fragile one and may flip if a deeper/wider T5 wants more dropout, whereas WD-up is more likely scale-monotone — and (b) be checked for *coupling*, since dropout and WD are both regularizers and may trade off (a ridge) rather than stack additively. A 2×2 factorial answers both with 3 runs on top of the **T5 pre-baseline** (the old/old corner — T4 dropout defaults + WD=1e-6 on the locked recipe; conveniently already measured, since the K=33 sweep run is exactly this configuration). All four cells identical except the dropout/WD axes.
 
 | Cell | Dropout | Weight decay | BPB sliding | PPL sliding | Best val | Δ vs T5 base | Run log |
 |---|---|---|---|---|---|---|---|
-| T5 baseline (old / old) | T4 defaults | 1e-6 | queued | queued | queued | (ref) | queued |
+| T5 pre-baseline (old / old) | T4 defaults | 1e-6 | 1.1156 | 32.62 | 3.4679 | (ref) | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
 | + new dropout only | descent stack | 1e-6 | queued | queued | queued | — | queued |
 | + new WD only | T4 defaults | 2e-6 | queued | queued | queued | — | queued |
 | + both | descent stack | 2e-6 | queued | queued | queued | — | queued |
 
 **Reading:** *new-dropout-only* vs base = does the L=1 dropout stack transfer to T5; *new-WD-only* vs base = does WD=2e-6 transfer; *both* vs (sum of the two single-axis Δs) = additive (independent → fold both in) or coupled (ridge → keep the better single axis, or tune jointly at the [final regularization sweep](#final-regularization-sweep)). Edge-winner directions to continue if confirmed: dropout proj/mix/lm_head ↓, WD ↑. Single-seed at T5 too — the chosen recipe still gets a seed-check before B200.
+
+**Recurrence stacking test (1ep, baseline candidate by election).** Input-anchored N=5 K=1 mixer recurrence (`mixer_recurrence_residuals=true`, no gate caching — the −0.0071 winner at 1.1240 on the *old* recipe, [log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)) run on the new recipe (identity, K=33). The interaction is untested in either direction: recurrence iterates the *channel* mixer toward its fixed point while crawl-K widens *time* taps (different axes → additivity plausible), but both enrich temporal processing (→ sub-additivity also plausible). **Folds into the declared baseline iff it clears the noise floor vs the pre-baseline (1.1156).** Cost if adopted: ~+53% train time and ~1.3× inference latency — with the mitigation that the [inference-depth study](#inference-depth-flexibility-with-mixer-recurrence-train-deep-infer-shallow) showed N′=4 serving is quality-free and N′=3 cheap, so the adopted baseline would inherit an anytime-inference knob.
+
+| Variant | BPB sliding | Best val | Δ vs pre-baseline | Run log |
+|---|---|---|---|---|
+| pre-baseline (no recurrence) | 1.1156 | 3.4679 | (ref) | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
+| + N=5 K=1 input-anchored | queued | queued | — | queued |
+
+**Capacity restoration (1ep, L=1, vs the shared pre-baseline).** The ablation line deliberately runs a reduced base for sweep cheapness (mlp_expansion 10, PKM off, FwPKM 8281, tied head), while the production headline carries full capacity (mlp 20, PKM+FwPKM 16384, untied head). Each component is restored individually on the **pre-baseline recipe** (identity, K=33, T4 dropouts, WD=1e-6 — the same 1.1156 reference the 2×2 and recurrence tests use, so every decision axis shares one anchor), then all together — measuring per-component value under the post-ablation architecture plus the A5000 resource/runtime numbers that calibrate the B200 plan. The combined row is the presumptive new-baseline capacity form; cross-axis interactions are caught by the declared baseline's own confirmation run.
+
+| Restoration | Config delta | Params | BPB sliding | Best val | Δ vs T5 base | Train VRAM | Train time | Run log |
+|---|---|---|---|---|---|---|---|---|
+| T5 base (reduced) | — | 392.98M | 1.1156 | 3.4679 | (ref) | 7,790 MiB | ~4.5h | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
+| + MLP 20 | mlp_expansion 10→20 | queued | queued | queued | — | queued | queued | queued |
+| + PKM | pkm_enabled on, 16384 keys | queued | queued | queued | — | queued | queued | queued |
+| + FwPKM full | fwpkm_num_keys 8281→16384 | queued | queued | queued | — | queued | queued | queued |
+| + untied head | tie_embedding_to_lm_head off | queued | queued | queued | — | queued | queued | queued |
+| **+ all restored** | all four | queued | queued | queued | — | queued | queued | queued |
+
+**T5 Baseline (declared).** Once the three decision blocks above resolve, the chosen combination **gets its own confirmation run** (interactions between axes are validated here, since each block measured against the shared pre-baseline) and is declared *the* T5 baseline — the single reference row that every subsequent section ([More Layers](#more-layers), [More Epochs](#more-epochs), PG-19, B200) measures against. Components already locked by the ablation arc, with provenance: `mixer_transform = identity` ([transform ablation](#done-mixer-transform-ablation)), `wavelet_crawl = true, K = 33` ([K sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)), levels = 7, per-scale widths [1.0×4, 0.5×4], wavelet norms on, lr = 0.0225 (T4 reference regime). Pending: dropout/WD (2×2 verdict), capacity form (restoration table), and recurrence (stacking test — elected candidate, folds iff it clears noise on the new recipe).
+
+| T5 Baseline | Transform | Crawl K | Dropout | WD | Recurrence | Capacity | Params | BPB sliding | PPL sliding | Best val | Train VRAM | Run log |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| (declared after verdicts) | identity | 33 | pending 2×2 | pending 2×2 | pending stacking test | pending restoration | queued | queued | queued | queued | queued | queued |
+
+**Other T5 baseline settings not shown in the table** (the full audited ledger — carried, pending, and tested-but-excluded):
+
+*Carried — architecture:* levels=7; per_scale_mixer_widths=[1.0×4, 0.5×4]; `wavelet_decomp_norm`/`recon_norm` on; lifting: shared weights, dense (offdiag "none", no diaglowrank, no level-sharing), hidden_mult=1, haar init, lifting_dropout=0; low_rank=4 (the 5-ep revert decision in runs.md); cross_scale_gating on; mixer gate on (silu); mixer_depth=1; learned_residual on; **decompose_bypass on + cross_window mean carry on** (the long-range mechanism in every T4/T5-line run); per_layer_embedding on (inert at L=1; activates in [More Layers](#more-layers)); mlp_layers=2.
+
+*Carried — training:* Adagrad (eps=2e-13, initial_accumulator=0); lr=0.0225 → min_lr=4.5e-4, warmup_fraction=0.3, grad_clip=1.0; block_size=256, micro_batch=8, grad_accum=1; **random batching**; fp16 AMP + TF32; compile (default mode); seed 1337 (recipe gets the 3-seed check before B200).
+
+*Pending the two decision blocks above:* dropout stack and WD (2×2); capacity quartet (mlp_expansion 10→20, PKM on @16384, FwPKM 8281→16384, untied head).
+
+*Audited and excluded — tested, with recorded reasons:* the **parameter-costly recurrence variants** (distinct banks K>1, dense recurrence, gate caching — best 1.1227 at +58.85M params vs crawl-K's 1.1156 at 231 logits); **N=5 K=1 input-anchored recurrence is the exception**: zero params, elected as a baseline candidate, pending its stacking test on the new recipe (see above — all prior recurrence numbers predate identity/K=33); the `--infer_n` truncation infra becomes a serving feature if it folds in; **sequential batching + SSM/BPTT bypass variants** (best gain −0.0045 on the sequential reference, several times smaller than sequential mode's ~+0.019 cost vs random batching); **decompose_bypass_ema** (1-ep win inverted at 5 ep); **BBCE** (context-extension tool, off at 256); **complex wavelet/mixer** (closed negatives vs matched controls); **FWHT/DHT/DCT/butterfly** (identity won; Thue-Morse signflips and the FWHT input cap are Hadamard-boundary tools, moot under identity); **untied reconstruction** (tied drastically better) and **multi-basis lifting** (NaN; dropped feature); the **stability bundle** (stable_parametrization / spectral norm / stab_* scalings — wavelet norms cover stability at this LR); **compression structures** (lifting/MLP offdiag masks, diaglowrank, sparse-PQ embedding — no real savings or BPB cost; opt-in tools only); stochastic_depth=0; multinodal / looped_blocks / 2D-wavelet modes off (separate tracks); fwpkm_inference_updates off.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1592,7 +1629,37 @@ Time to establish a new baseline. Here, we'll incorporate the best features perf
 
 ### More Layers
 
-Adding layers again after most of the tuning and architectural test ablations. Aim to identify low and high layer variants to work with.
+Adding layers again after most of the tuning and architectural test ablations — the depth axis re-measured on the **post-ablation recipe** (identity transform, crawl on, K = the [K-sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep) winner, T5 regularization verdicts folded in). The prior depth findings (deep >= wide at C=512; 30L regressing past 20L; the L=2 headline) all predate the FWHT deletion and the crawl-K widening, so the depth response curve needs re-establishing: crawl-K reshaped *where* temporal mixing happens, which plausibly changes what additional layers contribute.
+
+1-epoch sweep at the T5 recipe (A5000-feasible; ~linear runtime in L). L=4 included if VRAM permits (expected to fit at the reduced ablation base — verify at launch). These 1ep runs double as the **pruning gate for [More Epochs](#more-epochs)**: only depths that hold up here graduate to the 5-epoch B200 arms.
+
+| Layers | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | Run log |
+|---|---|---|---|---|---|---|
+| 1 (T5 base) | — | queued | queued | (ref) | queued | queued |
+| 2 | — | queued | queued | — | queued | queued |
+| 3 | — | queued | queued | — | queued | queued |
+| 4 (if it fits) | — | queued | queued | — | queued | queued |
+
+Caveat carried from the [final regularization sweep](#final-regularization-sweep): regularization needs likely grow with depth, so a depth winner here gets its dropout/WD re-checked before any headline claim.
+
+**Capacity arms:** the sweep above runs at the reduced base for cost; depths that survive re-run with the **T5-winning capacity form** (per the [capacity-restoration table](#t5-baseline)) before graduating — giving the depth × capacity corner the B200 arms need, with A5000 VRAM/runtime recorded as scaling reference points.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### More Epochs
+
+The 5-epoch confirmation arms for the depth sweep — **B200 hardware** (an A5000 is prohibitive: 4 depths x 5 epochs ~ 240 A5000-hours; B200-class cuts this to a tractable window). Layers 1-4 at 5 epochs on the T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here.
+
+| Layers | Epochs | BPB sliding | Best val | Run log |
+|---|---|---|---|---|
+| 1 | 5 | queued | queued | queued |
+| 2 | 5 | queued | queued | queued |
+| 3 | 5 | queued | queued | queued |
+| 4 | 5 | queued | queued | queued |
+
+**These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity form:** settled upstream — the [T5 capacity-restoration ablations](#t5-baseline) (component-wise at L=1) and the [More Layers](#more-layers) restored-capacity confirmations decide which form these arms run; if the reduced recipe beats the old headline outright, that is itself a headline result (better BPB at substantially fewer parameters) and both forms may warrant a 5ep arm. Headline claims additionally require the 3-seed protocol.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1754,6 +1821,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 - Data-dependent lifting networks (Mamba-style)
 - Wavelet Packet Decomposition (WPD)
 - Top-K / hard thresholding in the Hadamard domain
+- Complete Muon sweep
 
 
 ## License
