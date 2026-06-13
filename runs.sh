@@ -392,32 +392,32 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # Three remaining cells below. Reading per README "T5 Baseline" section.
 # Dropout descent stack: emb .18 / proj .09 / mix .09 / mlp .10 / lm_head .216.
 
-run_ablation "T5_reg_dropout_1ep T5 2x2 — descent dropout stack, WD=1e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216}'     "T5_reg_dropout_1ep: T5 2x2 cell — descent dropout stack only; transfer test vs T5 base (1.1156)"
+# run_ablation "T5_reg_dropout_1ep T5 2x2 — descent dropout stack, WD=1e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216}'     "T5_reg_dropout_1ep: T5 2x2 cell — descent dropout stack only; transfer test vs T5 base (1.1156)"
 
-run_ablation "T5_reg_wd_1ep T5 2x2 — T4 dropouts, WD=2e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "weight_decay": 2e-6}'     "T5_reg_wd_1ep: T5 2x2 cell — WD=2e-6 only; transfer test vs T5 base (1.1156)"
+# run_ablation "T5_reg_wd_1ep T5 2x2 — T4 dropouts, WD=2e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "weight_decay": 2e-6}'     "T5_reg_wd_1ep: T5 2x2 cell — WD=2e-6 only; transfer test vs T5 base (1.1156)"
 
-run_ablation "T5_reg_both_1ep T5 2x2 — descent dropouts + WD=2e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6}'     "T5_reg_both_1ep: T5 2x2 cell — both axes; additivity vs coupling test"
+# run_ablation "T5_reg_both_1ep T5 2x2 — descent dropouts + WD=2e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6}'     "T5_reg_both_1ep: T5 2x2 cell — both axes; additivity vs coupling test"
 
-# Recurrence stacking test (user-elected baseline candidate): input-anchored
-# N=5 K=1 (the 1.1240 / -0.0071 winner on the OLD recipe, logs/...05-30_04-52-42)
-# x the NEW recipe (identity, K=33). Interaction untested: recurrence iterates
-# the channel mixer, crawl widens time taps — plausibly independent, but both
-# enrich temporal processing. Folds into the declared baseline only if it clears
-# the noise floor vs the pre-baseline (1.1156). Cost if adopted: ~+53% train
-# time, ~1.3x inference latency (with the N'=4-free / N'=3-cheap --infer_n
-# fallback measured in the inference-depth study). residuals=true (input-
-# anchored), no gate caching.
-run_ablation "T5_recur_n5k1_1ep T5 recurrence stacking — N=5 K=1 on K=33+identity (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_cache_gate": false}'     "T5_recur_n5k1_1ep: recurrence x new-recipe stacking test; folds into declared baseline iff > noise vs 1.1156"
+# # Recurrence stacking test (user-elected baseline candidate): input-anchored
+# # N=5 K=1 (the 1.1240 / -0.0071 winner on the OLD recipe, logs/...05-30_04-52-42)
+# # x the NEW recipe (identity, K=33). Interaction untested: recurrence iterates
+# # the channel mixer, crawl widens time taps — plausibly independent, but both
+# # enrich temporal processing. Folds into the declared baseline only if it clears
+# # the noise floor vs the pre-baseline (1.1156). Cost if adopted: ~+53% train
+# # time, ~1.3x inference latency (with the N'=4-free / N'=3-cheap --infer_n
+# # fallback measured in the inference-depth study). residuals=true (input-
+# # anchored), no gate caching.
+# run_ablation "T5_recur_n5k1_1ep T5 recurrence stacking — N=5 K=1 on K=33+identity (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_cache_gate": false}'     "T5_recur_n5k1_1ep: recurrence x new-recipe stacking test; folds into declared baseline iff > noise vs 1.1156"
 
-# ---- Capacity restoration (vs shared pre-baseline 1.1156) ---------------------
-# Each production-capacity component restored individually on the pre-baseline
-# recipe (identity, K=33, T4 dropouts, WD=1e-6, no recurrence), then all four.
-# All five compare against the same 1.1156 reference as the 2x2 and the
-# recurrence test — every decision axis shares one anchor; the chosen combined
-# baseline then gets its own confirmation run (the declared T5 row).
-# Also records A5000 VRAM/runtime per component to calibrate the B200 plan.
+# # ---- Capacity restoration (vs shared pre-baseline 1.1156) ---------------------
+# # Each production-capacity component restored individually on the pre-baseline
+# # recipe (identity, K=33, T4 dropouts, WD=1e-6, no recurrence), then all four.
+# # All five compare against the same 1.1156 reference as the 2x2 and the
+# # recurrence test — every decision axis shares one anchor; the chosen combined
+# # baseline then gets its own confirmation run (the declared T5 row).
+# # Also records A5000 VRAM/runtime per component to calibrate the B200 plan.
 
-run_ablation "T5_cap_mlp20_1ep T5 capacity — mlp_expansion 20 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20}'     "T5_cap_mlp20_1ep: capacity restoration — MLP expansion 10->20 vs pre-baseline (1.1156)"
+# run_ablation "T5_cap_mlp20_1ep T5 capacity — mlp_expansion 20 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20}'     "T5_cap_mlp20_1ep: capacity restoration — MLP expansion 10->20 vs pre-baseline (1.1156)"
 
 run_ablation "T5_cap_pkm_1ep T5 capacity — PKM on, 16384 keys (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "pkm_enabled": true, "pkm_num_keys": 16384}'     "T5_cap_pkm_1ep: capacity restoration — PKM enabled @16384 vs pre-baseline (1.1156)"
 

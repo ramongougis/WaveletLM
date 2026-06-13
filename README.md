@@ -1583,25 +1583,29 @@ Time to establish a new baseline. Here, we'll incorporate the best features perf
 | Cell | Dropout | Weight decay | BPB sliding | PPL sliding | Best val | Δ vs T5 base | Run log |
 |---|---|---|---|---|---|---|---|
 | T5 pre-baseline (old / old) | T4 defaults | 1e-6 | 1.1156 | 32.62 | 3.4679 | (ref) | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
-| + new dropout only | descent stack | 1e-6 | queued | queued | queued | — | queued |
-| + new WD only | T4 defaults | 2e-6 | queued | queued | queued | — | queued |
-| + both | descent stack | 2e-6 | queued | queued | queued | — | queued |
+| + new dropout only | descent stack | 1e-6 | 1.1121 | 32.27 | 3.4623 | −0.0035 | [link](logs/wikitext-103_2026-06-12_11-21-32/log.txt) |
+| + new WD only | T4 defaults | 2e-6 | 1.1140 | 32.46 | 3.4654 | −0.0016 | [link](logs/wikitext-103_2026-06-12_15-53-50/log.txt) |
+| **+ both** | descent stack | 2e-6 | **1.1118** | 32.23 | **3.4580** | **−0.0038** | [link](logs/wikitext-103_2026-06-12_20-25-51/log.txt) |
 
 **Reading:** *new-dropout-only* vs base = does the L=1 dropout stack transfer to T5; *new-WD-only* vs base = does WD=2e-6 transfer; *both* vs (sum of the two single-axis Δs) = additive (independent → fold both in) or coupled (ridge → keep the better single axis, or tune jointly at the [final regularization sweep](#final-regularization-sweep)). Edge-winner directions to continue if confirmed: dropout proj/mix/lm_head ↓, WD ↑. Single-seed at T5 too — the chosen recipe still gets a seed-check before B200.
+
+**Verdict (2×2 complete): adopt both — dropout carries it, WD rides along free.** Dropout-only transfers cleanly (−0.0035, 3.5× noise); WD-only is marginal (−0.0016, ~1.6× noise); *both* is **sub-additive** (observed −0.0038 vs −0.0051 if the singles stacked) — the two regularizers overlap, as expected. But *both* is the best cell on **both** metrics (BPB 1.1118, best val 3.4580 — the val edge over dropout-only's 3.4623 is above the val noise floor), and crucially WD=2e-6 does **not hurt** on top of the dropout stack (the user's adoption criterion). So the T5 baseline takes **the descent dropout stack + WD=2e-6**. The dropout-down direction held at T5 scale rather than flipping — the L=1 tuning transferred, contra the fragility worry.
 
 **Recurrence stacking test (1ep, baseline candidate by election).** Input-anchored N=5 K=1 mixer recurrence (`mixer_recurrence_residuals=true`, no gate caching — the −0.0071 winner at 1.1240 on the *old* recipe, [log](logs/wikitext-103_2026-05-30_04-52-42/log.txt)) run on the new recipe (identity, K=33). The interaction is untested in either direction: recurrence iterates the *channel* mixer toward its fixed point while crawl-K widens *time* taps (different axes → additivity plausible), but both enrich temporal processing (→ sub-additivity also plausible). **Folds into the declared baseline iff it clears the noise floor vs the pre-baseline (1.1156).** Cost if adopted: ~+53% train time and ~1.3× inference latency — with the mitigation that the [inference-depth study](#inference-depth-flexibility-with-mixer-recurrence-train-deep-infer-shallow) showed N′=4 serving is quality-free and N′=3 cheap, so the adopted baseline would inherit an anytime-inference knob.
 
 | Variant | BPB sliding | Best val | Δ vs pre-baseline | Run log |
 |---|---|---|---|---|
 | pre-baseline (no recurrence) | 1.1156 | 3.4679 | (ref) | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
-| + N=5 K=1 input-anchored | queued | queued | — | queued |
+| + N=5 K=1 input-anchored | 1.1121 | 3.4619 | −0.0035 | [link](logs/wikitext-103_2026-06-13_00-58-58/log.txt) |
+
+**Verdict: recurrence's benefit halved on the new recipe — now a borderline keep, leaning drop.** On the old recipe (fwht, K=3) N=5 K=1 was worth −0.0071; here it is **−0.0035** — exactly the sub-additivity predicted: crawl-K=33 already absorbed roughly half of what recurrence used to contribute (both enrich temporal processing). The remaining −0.0035 clears the noise floor but costs **+53% train time** (8,814 vs 7,790 MiB, and ~1.3× the wall-clock that propagates into every B200 arm). For reference it matches the *free* dropout stack's −0.0035. Recommendation: **defer it from the declared baseline** — fold in only if the confirmation/depth runs show headroom that justifies the train-time tax, since the N′=4-free inference knob recovers serving cost but not training cost. Flagged for the user's call (elected candidate).
 
 **Capacity restoration (1ep, L=1, vs the shared pre-baseline).** The ablation line deliberately runs a reduced base for sweep cheapness (mlp_expansion 10, PKM off, FwPKM 8281, tied head), while the production headline carries full capacity (mlp 20, PKM+FwPKM 16384, untied head). Each component is restored individually on the **pre-baseline recipe** (identity, K=33, T4 dropouts, WD=1e-6 — the same 1.1156 reference the 2×2 and recurrence tests use, so every decision axis shares one anchor), then all together — measuring per-component value under the post-ablation architecture plus the A5000 resource/runtime numbers that calibrate the B200 plan. The combined row is the presumptive new-baseline capacity form; cross-axis interactions are caught by the declared baseline's own confirmation run.
 
 | Restoration | Config delta | Params | BPB sliding | Best val | Δ vs T5 base | Train VRAM | Train time | Run log |
 |---|---|---|---|---|---|---|---|---|
 | T5 base (reduced) | — | 392.98M | 1.1156 | 3.4679 | (ref) | 7,790 MiB | ~4.5h | [link](logs/wikitext-103_2026-06-11_11-36-16/log.txt) |
-| + MLP 20 | mlp_expansion 10→20 | queued | queued | queued | — | queued | queued | queued |
+| + MLP 20 | mlp_expansion 10→20 | 476.89M | 1.1081 | 3.4486 | −0.0075 | 9,390 MiB | ~5.1h | [link](logs/wikitext-103_2026-06-13_08-01-10/log.txt) |
 | + PKM | pkm_enabled on, 16384 keys | queued | queued | queued | — | queued | queued | queued |
 | + FwPKM full | fwpkm_num_keys 8281→16384 | queued | queued | queued | — | queued | queued | queued |
 | + untied head | tie_embedding_to_lm_head off | queued | queued | queued | — | queued | queued | queued |
