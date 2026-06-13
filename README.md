@@ -564,6 +564,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [T5 Baseline](#t5-baseline)
 - [More Layers](#more-layers)
 - [More Epochs](#more-epochs)
+- [Cross-Layer Skip Connections](#cross-layer-skip-connections)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
 - [Model Comparisons](#model-comparisons)
@@ -1637,12 +1638,15 @@ Adding layers again after most of the tuning and architectural test ablations �
 
 1-epoch sweep at the T5 recipe (A5000-feasible; ~linear runtime in L). L=4 included if VRAM permits (expected to fit at the reduced ablation base — verify at launch). These 1ep runs double as the **pruning gate for [More Epochs](#more-epochs)**: only depths that hold up here graduate to the 5-epoch B200 arms.
 
-| Layers | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | Run log |
-|---|---|---|---|---|---|---|
-| 1 (T5 base) | — | queued | queued | (ref) | queued | queued |
-| 2 | — | queued | queued | — | queued | queued |
-| 3 | — | queued | queued | — | queued | queued |
-| 4 (if it fits) | — | queued | queued | — | queued | queued |
+| Layers | learned_residual | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | Run log |
+|---|---|---|---|---|---|---|---|
+| 1 (T5 base) | on (default) | — | queued | queued | (ref) | queued | queued |
+| 2 | on | — | queued | queued | — | queued | queued |
+| 3 | on | — | queued | queued | — | queued | queued |
+| 3 (residual off) | **off** | — | queued | queued | — | queued | queued |
+| 4 (if it fits) | on | — | queued | queued | — | queued | queued |
+
+**Learned-residual contribution at depth (the L=3 ± residual control).** The old depth verdict ("little gained past L=2") was measured *before* `learned_residual` existed — so it may have been confounded: L=3 with no good cross-layer information path, not L=3 inherently. The learned residual acts as a **memory bus** carrying state across layers (per-sublayer `α·x + f(x)`, plus per-layer embedding re-injection — confirmed on in config). The controlled test runs L=3 with it **off** against L=3 with it **on** (default): if `on ≫ off`, the residual is the load-bearing depth mechanism, and L=3 may now beat L=2 where it previously didn't — which is what would justify a deeper headline. All other runs keep `learned_residual=true`; this single off-run is the isolation control.
 
 Caveat carried from the [final regularization sweep](#final-regularization-sweep): regularization needs likely grow with depth, so a depth winner here gets its dropout/WD re-checked before any headline claim.
 
@@ -1664,6 +1668,22 @@ The 5-epoch confirmation arms for the depth sweep — **B200 hardware** (an A500
 | 4 | 5 | queued | queued | queued |
 
 **These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity form:** settled upstream — the [T5 capacity-restoration ablations](#t5-baseline) (component-wise at L=1) and the [More Layers](#more-layers) restored-capacity confirmations decide which form these arms run; if the reduced recipe beats the old headline outright, that is itself a headline result (better BPB at substantially fewer parameters) and both forms may warrant a 5ep arm. Headline claims additionally require the 3-seed protocol.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Cross-Layer Skip Connections
+
+Richer cross-layer information flow, motivated by the [learned-residual depth result](#more-layers): if the residual stream is the *memory bus* that makes depth pay (the L=3 ± residual control measures this), then enriching that bus is the obvious next lever. Both designs below are **additive and init-to-identity** — they reproduce the plain sequential residual stream exactly at initialization and learn away from it only if it helps, so they are strict, safe generalizations under the [structure-factoring](#structure-factoring) design rule (cross-layer flow added in parallel, not an in-series re-encoding).
+
+**1. Dense multi-hop skips (layer-axis dense recurrence).** Today the residual stream is *accumulative-sequential*: layer *t* reads the running sum of all prior sublayer outputs, but cannot weight layer 1's contribution differently from layer *t−1*'s. Dense skips make each layer's input a **learned lower-triangular weighted combination of all prior layer outputs** — `input_t = Σ_{j≤t} A[t,j] · x_j`. Implementation template already exists: the [dense-recurrence `recur_dense_A` matrix](#done-dense-mixer-recurrence) lifted from the mixer-step axis to the layer axis, with the same identity init (`A[t,t]=1`, else 0 → byte-identical to the plain stream). Cheap; effectively a config-gated generalization. Only meaningful at L≥3 (at L=2 it reduces to the existing residual).
+
+**2. Wavelet U-Net skips.** Distinct from #1: wavelet-native, and operating on the *detail coefficients* rather than the residual stream `x`. Routes fine-scale (high-frequency) detail from an **early** layer's decomposition into a **later** layer's reconstruction — the encoder→decoder symmetry of a U-Net, which the decompose→reconstruct structure already mirrors *within* a block. Hypothesis: fine detail washes out through depth as coarse/semantic structure dominates; a detail skip preserves it. More plumbing than #1 (scale alignment, injection point, which detail levels to carry), init at skip-weight 0 → identity.
+
+**3. Stacking.** #1 and #2 are orthogonal (generic x-mixing vs detail-specific routing) and can run jointly; the combined arm tests whether they compound.
+
+**Timing — gated promotion (recommended: decide on the residual result, lean right-after-layers).** These are net-new implementations, so committing them *before* the headline is speculative scope. The disciplined trigger is the [More Layers](#more-layers) ± residual outcome: (a) if depth is **bottlenecked** even with the learned residual (L≥3 ≈ L=2), cross-layer skips become the mechanism that might unlock depth *before* the B200 spend — promote to right-after-layers; (b) if the residual is **strongly load-bearing** (L=3-on ≫ L=3-off), the memory-bus hypothesis is confirmed and richer buses are well-motivated — also promote; (c) if depth already pays cleanly on the plain stream, the headline proceeds as-is and these become post-release refinements toward the *next* headline. Cost-ascending within the branch: dense skips (#1) first, U-Net (#2) second, stacking (#3) last. Each is gated on its predecessor clearing the noise floor on the L=3 recipe.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
