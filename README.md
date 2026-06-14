@@ -568,6 +568,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
 - [Model Comparisons](#model-comparisons)
+- [Generation Decode Speedup (compile / CUDA graphs)](#generation-decode-speedup-compile--cuda-graphs)
 - [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
 - [Multi-Transform Parallelization](#multi-transform-parallelization)
 - [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
@@ -1626,11 +1627,11 @@ So "restore all production capacity" was the wrong instinct *at this scale*. **A
 
 **Declared capacity form: MLP-20 + the baseline's FwPKM@8281** (PKM off, FwPKM not widened, head tied). i.e. identity + crawl-K=33 + reg(both) + mlp_expansion 20, carrying the one memory module the base already had. Every *added* component (MLP) has a measured benefit; the extras that didn't pay (second memory, wider memory, untied head) are left out. If it holds at 5ep, the new headline is *both better and smaller* than the old — which carried PKM@16384 **and** FwPKM@16384 **and** an untied head, the components this sweep showed add nothing (or harm) at this scale.
 
-**T5 Baseline (declared).** Once the three decision blocks above resolve, the chosen combination **gets its own confirmation run** (interactions between axes are validated here, since each block measured against the shared pre-baseline) and is declared *the* T5 baseline — the single reference row that every subsequent section ([More Layers](#more-layers), [More Epochs](#more-epochs), PG-19, B200) measures against. Components already locked by the ablation arc, with provenance: `mixer_transform = identity` ([transform ablation](#done-mixer-transform-ablation)), `wavelet_crawl = true, K = 33` ([K sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)), levels = 7, per-scale widths [1.0×4, 0.5×4], wavelet norms on, lr = 0.0225 (T4 reference regime). All three decision blocks resolved: dropout stack + WD=2e-6 (2×2 — both, sub-additive but WD doesn't hurt); recurrence **off** (halved to −0.0035 on the new recipe, not worth +53% train time); capacity **MLP-20 only** (the only component that paid; PKM/FwPKM/untied inert-or-harmful at 1ep, deferred to a 5ep re-test). The combined confirmation run validates that these stack as expected and becomes the declared baseline. **Note — the combined confirmation run (and thus the declared baseline) carries FwPKM at 8281 keys** (`fwpkm_enabled=True`, inherited from the base): it is the one memory module retained, since the capacity sweep only showed that *adding a second* (PKM) or *widening* it (16384) doesn't pay, never that FwPKM-at-all is unneeded. **Paired ablation queued:** a combined-minus-FwPKM run (`fwpkm_enabled=false`, else identical) tests FwPKM-vs-nothing on the new recipe for the first time — if within noise, the declared baseline drops it for an even smaller config; if it regresses, the one module is confirmed to earn its slot. (1ep verdict is mildly undertraining-flavored for memory, so a drop here is provisional pending the 5ep re-test.)
+**T5 Baseline (declared).** Once the three decision blocks above resolve, the chosen combination **gets its own confirmation run** (interactions between axes are validated here, since each block measured against the shared pre-baseline) and is declared *the* T5 baseline — the single reference row that every subsequent section ([More Layers](#more-layers), [More Epochs](#more-epochs), PG-19, B200) measures against. Components already locked by the ablation arc, with provenance: `mixer_transform = identity` ([transform ablation](#done-mixer-transform-ablation)), `wavelet_crawl = true, K = 33` ([K sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)), levels = 7, per-scale widths [1.0×4, 0.5×4], wavelet norms on, lr = 0.0225 (T4 reference regime). All three decision blocks resolved: dropout stack + WD=2e-6 (2×2 — both, sub-additive but WD doesn't hurt); recurrence **off** (halved to −0.0035 on the new recipe, not worth +53% train time); capacity **MLP-20 only** (the only component that paid; PKM/FwPKM/untied inert-or-harmful at 1ep, deferred to a 5ep re-test). The combined confirmation run **landed at BPB 1.1082 / val 3.4472 / 476.89M params** (−0.0074 vs the pre-baseline, −0.0229 vs the original T4) — and is now the declared baseline. It is **statistically tied with the MLP=20-only run** (1.1081 / 3.4486, old regularization): at 1ep the new regularization is net-neutral, confirming the underfitting/data-starved read (reg has no overfitting to fix here — its value is insurance for the 5ep headline regime). Notably, the declared baseline beats the *old* headline's L=1/1ep equivalent (1.1648, 586.15M) by **−0.0566 at −110M params** — better and smaller. **Note — the combined confirmation run (and thus the declared baseline) carries FwPKM at 8281 keys** (`fwpkm_enabled=True`, inherited from the base): it is the one memory module retained, since the capacity sweep only showed that *adding a second* (PKM) or *widening* it (16384) doesn't pay, never that FwPKM-at-all is unneeded. **Paired ablation queued:** a combined-minus-FwPKM run (`fwpkm_enabled=false`, else identical) tests FwPKM-vs-nothing on the new recipe for the first time — if within noise, the declared baseline drops it for an even smaller config; if it regresses, the one module is confirmed to earn its slot. (1ep verdict is mildly undertraining-flavored for memory, so a drop here is provisional pending the 5ep re-test.)
 
 | T5 Baseline | Transform | Crawl K | Dropout | WD | Recurrence | Capacity | Params | BPB sliding | PPL sliding | Best val | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **T5 (confirmation run)** | identity | 33 | descent stack | 2e-6 | off (deferred) | MLP-20 + FwPKM@8281 | ~477M | queued | queued | queued | queued | queued |
+| **T5 baseline (declared)** | identity | 33 | descent stack | 2e-6 | off | MLP-20 + FwPKM@8281 | 476.89M | **1.1082** | 31.88 | 3.4472 | 9,390 MiB | [link](logs/wikitext-103_2026-06-14_11-00-00/log.txt) |
 
 **Other T5 baseline settings not shown in the table** (the full audited ledger — carried, pending, and tested-but-excluded):
 
@@ -1672,16 +1673,19 @@ Caveat carried from the [final regularization sweep](#final-regularization-sweep
 
 ### More Epochs
 
-The 5-epoch confirmation arms for the depth sweep — **B200 hardware** (an A5000 is prohibitive: 4 depths x 5 epochs ~ 240 A5000-hours; B200-class cuts this to a tractable window). Layers 1-4 at 5 epochs on the T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here.
+The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per the cost analysis: ~$0.99/hr, identical recipe so directly comparable; B200 reserved for the C scale-up). Layers 1-4 at 5 epochs on the lean T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here. Plus a **full-capacity ceiling arm** (last row) motivated by the data-starvation finding below.
 
-| Layers | Epochs | BPB sliding | Best val | Run log |
-|---|---|---|---|---|
-| 1 | 5 | queued | queued | queued |
-| 2 | 5 | queued | queued | queued |
-| 3 | 5 | queued | queued | queued |
-| 4 | 5 | queued | queued | queued |
+| Layers | Epochs | Capacity | BPB sliding | Best val | Run log |
+|---|---|---|---|---|---|
+| 1 | 5 | lean | queued | queued | queued |
+| 2 | 5 | lean | queued | queued | queued |
+| 3 | 5 | lean | queued | queued | queued |
+| 4 | 5 | lean | queued | queued | queued |
+| **5** | 5 | **full** (MLP-20 + PKM@16384 + FwPKM@16384 + untied) | queued | queued | queued |
 
 **These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity form:** settled upstream — the [T5 capacity-restoration ablations](#t5-baseline) (component-wise at L=1) and the [More Layers](#more-layers) restored-capacity confirmations decide which form these arms run; if the reduced recipe beats the old headline outright, that is itself a headline result (better BPB at substantially fewer parameters) and both forms may warrant a 5ep arm. Headline claims additionally require the 3-seed protocol.
+
+**The full-capacity ceiling arm (L=5, 5ep, all capacity restored) — testing data-starvation vs redundancy.** The capacity sweep's nulls (PKM/FwPKM-widening/untied inert-or-harmful) were all measured at **1 epoch on WikiText-103 — ~0.2 tokens/param, ~100× under Chinchilla-optimal** (~20 tok/param). In that heavily over-parameterized regime, extra capacity *can't* show value (not enough data to fill it) and regularization is inert (the combined baseline confirmed this: more dropout/WD slightly *hurt* at 1ep, the signature of underfitting, not overfitting). This arm restores all capacity at the **most favorable regime** — deepest (L=5), longest-trained (5ep), full capacity — so if the capacity components ever earn their parameters, it is here. ⚠️ **Confound to keep honest:** this single run varies *both* depth (L=5, a new point beyond the L=1–4 sweep) *and* capacity, so a win/loss can't be cleanly attributed. The cheap clean isolation is a **paired full-capacity arm at an already-planned lean depth** (e.g. L=2-full vs the existing L=2-lean row) — far less compute than two L=5 runs, and it isolates capacity at fixed depth. Note also L=5 skips the 1ep [More Layers](#more-layers) gate; adding an L=5 point there first (cheap) would confirm depth-5 is worth the 5ep spend before committing it. The deeper implication either way: WaveletLM has *always* trained data-starved on WT103 (even the old headline at ~0.6 tok/param), so the capacity question is most fairly settled on the **larger scale-up datasets** (PG-19 ~2.5 tok/param, the multi-dataset mix higher), not on WT103 — this arm is the WT103 ceiling check, not the final word.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1724,6 +1728,14 @@ The best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, an
 ### Model Comparisons
 
 Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Generation Decode Speedup (compile / CUDA graphs)
+
+The largest single-stream **inference** win available, and at **zero quality cost** — distinct from the [Step-Time Speedups](#step-time-speedups) above, which target *training*. Measured decode is ~27 tok/s single-stream, ~**30× below the bandwidth roofline**: the gap is per-token *overhead* (eager Python decode loop, kernel-launch dispatch — `generate.py` applies no `torch.compile`), not compute. The decode forward is **CUDA-graph-friendly**: after the context fills, every step runs a static `[1, context_len]` forward (no KV cache — attention-free, so it recomputes the window at a fixed shape). Tiered: (1) `torch.compile(mode="reduce-overhead")` on the decode forward (auto-CUDA-graphs, near-zero effort, likely most of the win); (2) hand-rolled graph capture with a fixed input buffer + sampling kept in eager; (3) *separately* — incremental/stateful decode (a KV-cache-equivalent caching causal wavelet/crawl/bypass state) to kill the full-window recompute per token, which is the win that matters for long-context generation. Zero BPB risk (same computation — validate with a compiled-vs-eager logit match). Full design, caveats (AMP+graphs, fixed buffers, prefill handling), and measurement protocol in [plans/generation_decode_speedup.md](plans/generation_decode_speedup.md).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
