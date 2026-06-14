@@ -270,145 +270,6 @@ DO_MLP=0.10    # mlp pair done: incumbent 0.10 BPB 1.1295 < 0.09 1.1305 & 0.11 1
 DO_LM=0.216    # lm_head pair done: 0.216 BPB 1.1285 < 0.240 1.1295 < 0.264 1.1305 (monotonic, both metrics agree; 0.216-vs-0.240 = 0.0010 ~floor). 0.216 chosen; edge-winner ↓. FINAL STACK best point: 1.1285 (-0.0026 vs T4)
 DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450'
 
-# ---- Mixer Transform Ablation -------------------------------------------------
-# Replace the FWHT slot in the per-scale mixer with alternative orthonormal
-# transforms (identity / DHT / DCT) at the T4 reference config. All are
-# orthonormal, so they are amplitude-matched — the only difference is the BASIS
-# the per-scale mixer operates in. The mixer's linear part is basis-absorbable;
-# the element-wise gate is NOT, so this tests whether gating Walsh-frequencies
-# (FWHT) beats gating raw channels (identity) or other bases (DHT/DCT). Run at
-# the present LR (0.0225); per-transform LR re-probes follow if a transform is
-# competitive but mis-tuned (see README 'Mixer Transform Ablation' + the 
-# Multi-Transform §'s learning-rate note). fwht arm is a fresh same-config
-# control (should reproduce ~T4). Identity first — the cheap "does the slot
-# matter at all?" probe. Butterfly (learned orthogonal) deferred to a follow-up.
-
-# Identity: no transform — mixer operates in raw coefficient space.
-# run_ablation "T4_mt_identity_1ep T4 mixer-transform=identity / no transform (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_mt_identity_1ep: mixer-transform ablation — identity (no transform, mixer in raw coeff space); does the FWHT slot matter at all?"
-
-# Learned butterfly: the only LEARNED transform — a butterfly lattice of 2x2
-# rotations (FWHT topology, learnable angles), orthogonal-by-construction so
-# exactly invertible. Lets gradient descent discover the optimal gating basis.
-# Init at angles=0 = identity, so it starts from the no-transform behaviour and
-# learns rotations only if they help. Placed right after identity so it runs
-# next. Adds only log2(Cp)*Cp/2 = 11,264 angle params (~0.003%).
-# run_ablation "T4_mt_learned_butterfly_1ep T4 mixer-transform=learned_butterfly (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
-#     "T4_mt_learned_butterfly_1ep: mixer-transform ablation — learned orthogonal butterfly (model picks its own gating basis); init=identity"
-
-# # FWHT control: fresh same-config reference (crawl off, norms on, lr 0.0225).
-# run_ablation "T4_mt_fwht_1ep T4 mixer-transform=fwht control (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "fwht"}' \
-#     "T4_mt_fwht_1ep: mixer-transform ablation — FWHT control (same config as identity/dht/dct); in-section reference"
-
-# # DHT: Discrete Hartley (orthonormal, self-inverse).
-# run_ablation "T4_mt_dht_1ep T4 mixer-transform=dht / Hartley (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dht"}' \
-#     "T4_mt_dht_1ep: mixer-transform ablation — DHT (Hartley) basis"
-
-# # DCT: DCT-II/III (orthonormal; inverse = transpose).
-# run_ablation "T4_mt_dct_1ep T4 mixer-transform=dct (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "dct"}' \
-#     "T4_mt_dct_1ep: mixer-transform ablation — DCT basis"
-
-# # ---- Crawl x Transform combination runs ---------------------------------------
-# # The transform sweep ran crawl-off for cleanliness; crawl is worth -0.0181 at T4.
-# # These two test whether the transform findings survive with crawl on. The
-# # crawl+identity run is the consequential one: if it matches T4 (crawl+fwht,
-# # 1.1311), the FWHT can be deleted from the headline config entirely. It also
-# # becomes the K=3 reference for the crawl-K sweep below.
-
-# run_ablation "T4_crawl_butterfly_1ep T4 crawl ON + learned_butterfly (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "learned_butterfly"}' \
-#     "T4_crawl_butterfly_1ep: crawl x transform — learned butterfly with crawl on; does the within-noise butterfly edge stack with crawl?"
-
-# run_ablation "T4_crawl_identity_1ep T4 crawl ON + identity/no transform (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawl_identity_1ep: crawl x transform — NO transform with crawl on; if ~= T4 (1.1311) the FWHT is deletable from the headline config. K=3 reference for the crawl-K sweep."
-
-# # ---- Wavelet Crawl Dilation Window (K) Sweep -----------------------------------
-# # Crawl = learned K-tap softmax look-back per level (levels x K logits; 21 params
-# # at K=3, worth -0.0181 at T4 — the largest component win on the T4 line). This
-# # sweep widens the window: K odd, geometric spacing, identity transform (the
-# # T5-bound lineage; reference = T4_crawl_identity_1ep above). Extend to K=33 only
-# # if K=17 still improves. If crawl+identity unexpectedly regresses vs T4, switch
-# # these to mixer_transform=fwht and compare against T4 (1.1311) instead.
-
-# run_ablation "T4_crawlk5_1ep T4 crawl K=5 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 5, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk5_1ep: crawl-K sweep — K=5 (window +-2 around each level dilation), identity transform"
-
-# run_ablation "T4_crawlk9_1ep T4 crawl K=9 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 9, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk9_1ep: crawl-K sweep — K=9 (window +-4), identity transform"
-
-# run_ablation "T4_crawlk17_1ep T4 crawl K=17 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 17, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk17_1ep: crawl-K sweep — K=17 (window +-8), identity transform"
-
-# Ladder extension (K=5: 1.1248, K=9: 1.1194 — monotone, prediction confirmed).
-# Geometric to the hard cap K=255 (window [1..255] at all levels; clamping makes
-# all windows identical at K>=129, scale hierarchy then lives in the recursive
-# cascade — the K axis interpolates dyadic wavelet -> depth-7 learned long-conv).
-# Stop the ladder at the first clear regression vs the previous K.
-
-# run_ablation "T4_crawlk33_1ep T4 crawl K=33 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk33_1ep: crawl-K sweep — K=33 (levels 0-4 clamp to [1..33]), identity transform"
-
-# run_ablation "T4_crawlk65_1ep T4 crawl K=65 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 65, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk65_1ep: crawl-K sweep — K=65 (six of seven levels clamp to [1..65]), identity transform"
-
-# run_ablation "T4_crawlk129_1ep T4 crawl K=129 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 129, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk129_1ep: crawl-K sweep — K=129 (ALL windows identical [1..129]; hierarchy via cascade only), identity transform"
-
-# run_ablation "T4_crawlk255_1ep T4 crawl K=255 + identity (1ep)" \
-#     "$BASE_PATCH_1EP" \
-#     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 255, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity"}' \
-#     "T4_crawlk255_1ep: crawl-K sweep — K=255 (hard cap; full-block windows, depth-7 learned long-conv limit), identity transform"
-
-# ---- T5 Baseline: regularization 2x2 factorial --------------------------------
-# T5 recipe locked from the ablation arc: identity transform, crawl on, K=33
-# (knee; tied w/ 65 sub-noise, best val, most scale structure preserved).
-# The (old/old) corner is ALREADY MEASURED: the K=33 run (1.1156 / 3.4679,
-# logs/wikitext-103_2026-06-11_11-36-16) used T4 dropout defaults + WD=1e-6.
-# Three remaining cells below. Reading per README "T5 Baseline" section.
-# Dropout descent stack: emb .18 / proj .09 / mix .09 / mlp .10 / lm_head .216.
-
-# run_ablation "T5_reg_dropout_1ep T5 2x2 — descent dropout stack, WD=1e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216}'     "T5_reg_dropout_1ep: T5 2x2 cell — descent dropout stack only; transfer test vs T5 base (1.1156)"
-
-# run_ablation "T5_reg_wd_1ep T5 2x2 — T4 dropouts, WD=2e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "weight_decay": 2e-6}'     "T5_reg_wd_1ep: T5 2x2 cell — WD=2e-6 only; transfer test vs T5 base (1.1156)"
-
-# run_ablation "T5_reg_both_1ep T5 2x2 — descent dropouts + WD=2e-6 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6}'     "T5_reg_both_1ep: T5 2x2 cell — both axes; additivity vs coupling test"
-
-# # Recurrence stacking test (user-elected baseline candidate): input-anchored
-# # N=5 K=1 (the 1.1240 / -0.0071 winner on the OLD recipe, logs/...05-30_04-52-42)
-# # x the NEW recipe (identity, K=33). Interaction untested: recurrence iterates
-# # the channel mixer, crawl widens time taps — plausibly independent, but both
-# # enrich temporal processing. Folds into the declared baseline only if it clears
-# # the noise floor vs the pre-baseline (1.1156). Cost if adopted: ~+53% train
-# # time, ~1.3x inference latency (with the N'=4-free / N'=3-cheap --infer_n
-# # fallback measured in the inference-depth study). residuals=true (input-
-# # anchored), no gate caching.
-# run_ablation "T5_recur_n5k1_1ep T5 recurrence stacking — N=5 K=1 on K=33+identity (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mixer_recurrence_steps": 5, "mixer_recurrence_distinct_mixer_count": 1, "mixer_recurrence_residuals": true, "mixer_recurrence_cache_gate": false}'     "T5_recur_n5k1_1ep: recurrence x new-recipe stacking test; folds into declared baseline iff > noise vs 1.1156"
-
 # # ---- Capacity restoration (vs shared pre-baseline 1.1156) ---------------------
 # # Each production-capacity component restored individually on the pre-baseline
 # # recipe (identity, K=33, T4 dropouts, WD=1e-6, no recurrence), then all four.
@@ -433,12 +294,32 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # inert-or-harmful at 1ep, deferred to a 5ep re-test). This run confirms the
 # wins stack and becomes the declared T5 baseline. Expectation: reg(-0.0038) +
 # MLP(-0.0075) on 1.1156, sub-additive -> ~1.105-1.107.
-run_ablation "T5_baseline_combined_1ep T5 declared baseline — identity+K33+reg+MLP20 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6}'     "T5_baseline_combined_1ep: declared T5 baseline confirmation — identity + crawl K=33 + dropout stack + WD=2e-6 + MLP-20; capacity MLP-only"
+# run_ablation "T5_baseline_combined_1ep T5 declared baseline — identity+K33+reg+MLP20 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6}'     "T5_baseline_combined_1ep: declared T5 baseline confirmation — identity + crawl K=33 + dropout stack + WD=2e-6 + MLP-20; capacity MLP-only"
 
-# Paired FwPKM ablation: the combined baseline MINUS FwPKM (fwpkm_enabled=false),
-# else identical. First test of FwPKM-vs-nothing on the new recipe (prior runs
-# only tested widening / a 2nd memory). If within noise of the combined run,
-# the declared baseline drops FwPKM for a smaller config; if it regresses, the
-# one carried memory module is confirmed to earn its slot. 1ep verdict is
-# provisional for memory (pending 5ep re-test).
-run_ablation "T5_baseline_nofwpkm_1ep T5 combined baseline MINUS FwPKM (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false}'     "T5_baseline_nofwpkm_1ep: combined baseline minus FwPKM — FwPKM-vs-nothing on the new recipe; drop it if within noise of the combined run"
+# # Paired FwPKM ablation: the combined baseline MINUS FwPKM (fwpkm_enabled=false),
+# # else identical. First test of FwPKM-vs-nothing on the new recipe (prior runs
+# # only tested widening / a 2nd memory). If within noise of the combined run,
+# # the declared baseline drops FwPKM for a smaller config; if it regresses, the
+# # one carried memory module is confirmed to earn its slot. 1ep verdict is
+# # provisional for memory (pending 5ep re-test).
+# run_ablation "T5_baseline_nofwpkm_1ep T5 combined baseline MINUS FwPKM (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false}'     "T5_baseline_nofwpkm_1ep: combined baseline minus FwPKM — FwPKM-vs-nothing on the new recipe; drop it if within noise of the combined run"
+
+
+# ==============================================================================
+# More Layers (1ep depth gate on the locked no-memory T5 recipe)
+# Declared T5 baseline = L=1 (1.1073 / 455.55M, logs/...06-14_16-08-56). These
+# add L=2/3/4 (lean, no memory) + an L=3 learned_residual=off control + an L=4
+# FULL-CAPACITY probe (restores PKM@16384 + FwPKM@16384 + untied) as a cheap 1ep
+# preview of capacity-at-depth before the 5ep ceiling arm. lean-L4 vs full-L4
+# isolates capacity at L=4. L=2 first (overnight timing scope on the A5000).
+# ==============================================================================
+
+run_ablation "T5_L2_1ep More Layers — L=2 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 2}'     "T5_L2_1ep: More Layers depth gate — L=2, no-memory T5 recipe; vs declared L=1 baseline (1.1073)"
+
+run_ablation "T5_L3_1ep More Layers — L=3 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3}'     "T5_L3_1ep: More Layers depth gate — L=3, no-memory T5 recipe"
+
+run_ablation "T5_L4_1ep More Layers — L=4 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4}'     "T5_L4_1ep: More Layers depth gate — L=4, no-memory T5 recipe"
+
+run_ablation "T5_L3_nores_1ep More Layers — L=3 learned_residual OFF (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "learned_residual": false}'     "T5_L3_nores_1ep: learned-residual contribution control at depth — L=3 with residual off vs L=3 on"
+
+run_ablation "T5_L4_fullcap_1ep More Layers — L=4 FULL capacity (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4, "pkm_enabled": true, "pkm_num_keys": 16384, "fwpkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false}'     "T5_L4_fullcap_1ep: capacity-at-depth probe — L=4 + MLP20 + PKM@16384 + FwPKM@16384 + untied; vs lean L=4 isolates capacity; 1ep preview of the 5ep ceiling arm"
