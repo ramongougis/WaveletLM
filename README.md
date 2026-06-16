@@ -1654,18 +1654,20 @@ Adding layers again after most of the tuning and architectural test ablations �
 
 1-epoch sweep at the T5 recipe (A5000-feasible; ~linear runtime in L). L=4 included if VRAM permits (expected to fit at the reduced ablation base — verify at launch). These 1ep runs double as the **pruning gate for [More Epochs](#more-epochs)**: only depths that hold up here graduate to the 5-epoch B200 arms.
 
-| Layers | Capacity | learned_residual | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | Run log |
-|---|---|---|---|---|---|---|---|---|
-| 1 (T5 base) | no-memory | on | 455.55M | 1.1073 | 3.4479 | (ref) | 8,918 MiB | [link](logs/wikitext-103_2026-06-14_16-08-56/log.txt) |
-| 2 | no-memory | on | 690.66M | 1.1014 | 3.4370 | −0.0059 | 13,403 MiB | [link](logs/wikitext-103_2026-06-14_22-31-13/log.txt) |
-| 3 | no-memory | on | 925.78M | 1.0945 | 3.4098 | −0.0128 | 17,887 MiB | [link](logs/wikitext-103_2026-06-15_06-58-47/log.txt) |
-| 3 (residual off) | no-memory | **off** | — | queued | queued | — | queued | queued |
-| 4 | no-memory | on | — | queued | queued | — | queued | queued |
-| **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | — | queued | queued | — | queued | queued |
-| **5** | [L=4 winner: no-memory or full] | on | — | queued | queued | — | queued | queued |
-| **6+ (iterative)** | [same as L=5] | on | — | as needed | as needed | — | — | — |
+| Layers | Capacity | learned_residual | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | VM | Run log |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 (T5 base) | no-memory | on | 455.55M | 1.1073 | 3.4479 | (ref) | 8,918 MiB | A5000 | [link](logs/wikitext-103_2026-06-14_16-08-56/log.txt) |
+| 2 | no-memory | on | 690.66M | 1.1014 | 3.4370 | −0.0059 | 13,403 MiB | A5000 | [link](logs/wikitext-103_2026-06-14_22-31-13/log.txt) |
+| 3 | no-memory | on | 925.78M | 1.0945 | 3.4098 | −0.0128 | 17,887 MiB | A5000 | [link](logs/wikitext-103_2026-06-15_06-58-47/log.txt) |
+| 3 (residual off) | no-memory | **off** | — | queued | queued | — | queued | 4090 | queued |
+| 4 | no-memory | on | — | queued | queued | — | queued | 4090 | queued |
+| **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | — | queued | queued | — | queued | 4090† | queued |
+| **5** | [L=4 winner: no-memory or full] | on | — | queued | queued | — | queued | 5090/B200‡ | queued |
+| **6+ (iterative)** | [same as L=5] | on | — | as needed | as needed | — | — | 5090/B200‡ | — |
 
-**Iterative deepening protocol (search for the max depth).** Depth's non-diminishing returns through L=3 mean the ceiling is unknown, so we find it greedily: run **L=5** with the memory setting that won the **L=4 lean-vs-full** comparison; if it beats the previous depth by **more than the ~0.0010 BPB noise floor**, bump to **L=6** (same setting), and repeat — L=7, L=8, … — stopping when either (a) a depth's gain falls within noise of the previous, or (b) budget/VRAM runs out. The deepest depth that still cleared noise is the **max**, which feeds the [More Epochs](#more-epochs) "Max from More Layers" row and the [More Width](#more-width-c) "max layers" cells. ⚠️ **VRAM ceiling per GPU** (the run grows ~+4.5 GB/layer at C=2048): **A5000 (24 GB) ≈ L=4**, **5090 (32 GB) ≈ L=5–6**, **B200 for L=7+** — so "budget" includes VRAM, not just time. (Data-starvation caveat: this is a 1ep search; the winner gets its 5ep confirmation in More Epochs, where the optimum may shift.)
+† L=4 full-capacity ≈ 23.8 GB — borderline on the 24 GB 4090 (may OOM; `runs.sh` continues past it, but if it fails it needs a ≥32 GB card, since it's the capacity-at-depth datapoint that gates the L=5 memory setting). ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
+
+**Iterative deepening protocol (search for the max depth).** Depth's non-diminishing returns through L=3 mean the ceiling is unknown, so we find it greedily: run **L=5** with the memory setting that won the **L=4 lean-vs-full** comparison; if it beats the previous depth by **more than the ~0.0010 BPB noise floor**, bump to **L=6** (same setting), and repeat — L=7, L=8, … — stopping when either (a) a depth's gain falls within noise of the previous, or (b) budget/VRAM runs out. The deepest depth that still cleared noise is the **max**, which feeds the [More Epochs](#more-epochs) "Max from More Layers" row and the [More Width](#more-width-c) "max layers" cells. ⚠️ **VRAM ceiling per GPU** (the run grows ~+4.5 GB/layer at C=2048): **A5000 / 4090 (24 GB) ≈ L=4**, **5090 (32 GB) ≈ L=5–6**, **B200 for L=7+** — so "budget" includes VRAM, not just time. (Data-starvation caveat: this is a 1ep search; the winner gets its 5ep confirmation in More Epochs, where the optimum may shift.)
 
 **Learned-residual contribution at depth (the L=3 ± residual control).** The old depth verdict ("little gained past L=2") was measured *before* `learned_residual` existed — so it may have been confounded: L=3 with no good cross-layer information path, not L=3 inherently. The learned residual acts as a **memory bus** carrying state across layers (per-sublayer `α·x + f(x)`, plus per-layer embedding re-injection — confirmed on in config). The controlled test runs L=3 with it **off** against L=3 with it **on** (default): if `on ≫ off`, the residual is the load-bearing depth mechanism, and L=3 may now beat L=2 where it previously didn't — which is what would justify a deeper headline. All other runs keep `learned_residual=true`; this single off-run is the isolation control.
 
