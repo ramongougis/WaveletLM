@@ -564,6 +564,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [T5 Baseline](#t5-baseline)
 - [More Layers](#more-layers)
 - [More Epochs](#more-epochs)
+- [More Width (C)](#more-width-c)
 - [Cross-Layer Skip Connections](#cross-layer-skip-connections)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
@@ -1656,11 +1657,15 @@ Adding layers again after most of the tuning and architectural test ablations �
 | Layers | Capacity | learned_residual | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|
 | 1 (T5 base) | no-memory | on | 455.55M | 1.1073 | 3.4479 | (ref) | 8,918 MiB | [link](logs/wikitext-103_2026-06-14_16-08-56/log.txt) |
-| 2 | no-memory | on | — | queued | queued | — | queued | queued |
-| 3 | no-memory | on | — | queued | queued | — | queued | queued |
+| 2 | no-memory | on | 690.66M | 1.1014 | 3.4370 | −0.0059 | 13,403 MiB | [link](logs/wikitext-103_2026-06-14_22-31-13/log.txt) |
+| 3 | no-memory | on | 925.78M | 1.0945 | 3.4098 | −0.0128 | 17,887 MiB | [link](logs/wikitext-103_2026-06-15_06-58-47/log.txt) |
 | 3 (residual off) | no-memory | **off** | — | queued | queued | — | queued | queued |
 | 4 | no-memory | on | — | queued | queued | — | queued | queued |
 | **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | — | queued | queued | — | queued | queued |
+| **5** | [L=4 winner: no-memory or full] | on | — | queued | queued | — | queued | queued |
+| **6+ (iterative)** | [same as L=5] | on | — | as needed | as needed | — | — | — |
+
+**Iterative deepening protocol (search for the max depth).** Depth's non-diminishing returns through L=3 mean the ceiling is unknown, so we find it greedily: run **L=5** with the memory setting that won the **L=4 lean-vs-full** comparison; if it beats the previous depth by **more than the ~0.0010 BPB noise floor**, bump to **L=6** (same setting), and repeat — L=7, L=8, … — stopping when either (a) a depth's gain falls within noise of the previous, or (b) budget/VRAM runs out. The deepest depth that still cleared noise is the **max**, which feeds the [More Epochs](#more-epochs) "Max from More Layers" row and the [More Width](#more-width-c) "max layers" cells. ⚠️ **VRAM ceiling per GPU** (the run grows ~+4.5 GB/layer at C=2048): **A5000 (24 GB) ≈ L=4**, **5090 (32 GB) ≈ L=5–6**, **B200 for L=7+** — so "budget" includes VRAM, not just time. (Data-starvation caveat: this is a 1ep search; the winner gets its 5ep confirmation in More Epochs, where the optimum may shift.)
 
 **Learned-residual contribution at depth (the L=3 ± residual control).** The old depth verdict ("little gained past L=2") was measured *before* `learned_residual` existed — so it may have been confounded: L=3 with no good cross-layer information path, not L=3 inherently. The learned residual acts as a **memory bus** carrying state across layers (per-sublayer `α·x + f(x)`, plus per-layer embedding re-injection — confirmed on in config). The controlled test runs L=3 with it **off** against L=3 with it **on** (default): if `on ≫ off`, the residual is the load-bearing depth mechanism, and L=3 may now beat L=2 where it previously didn't — which is what would justify a deeper headline. All other runs keep `learned_residual=true`; this single off-run is the isolation control.
 
@@ -1684,11 +1689,37 @@ The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per 
 | 2 | 5 | lean | queued | queued | queued |
 | 3 | 5 | lean | queued | queued | queued |
 | 4 | 5 | lean | queued | queued | queued |
-| **5** | 5 | **full** (MLP-20 + PKM@16384 + FwPKM@16384 + untied) | queued | queued | queued |
+| **Max from More Layers section** | 5 | **[L=4 winner: no-memory or full]** | queued | queued | queued |
 
 **These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity form:** settled upstream — the [T5 capacity-restoration ablations](#t5-baseline) (component-wise at L=1) and the [More Layers](#more-layers) restored-capacity confirmations decide which form these arms run; if the reduced recipe beats the old headline outright, that is itself a headline result (better BPB at substantially fewer parameters) and both forms may warrant a 5ep arm. Headline claims additionally require the 3-seed protocol.
 
-**The full-capacity ceiling arm (L=5, 5ep, all capacity restored) — testing data-starvation vs redundancy.** The capacity sweep's nulls (PKM/FwPKM-widening/untied inert-or-harmful) were all measured at **1 epoch on WikiText-103 — ~0.2 tokens/param, ~100× under Chinchilla-optimal** (~20 tok/param). In that heavily over-parameterized regime, extra capacity *can't* show value (not enough data to fill it) and regularization is inert (the combined baseline confirmed this: more dropout/WD slightly *hurt* at 1ep, the signature of underfitting, not overfitting). This arm restores all capacity at the **most favorable regime** — deepest (L=5), longest-trained (5ep), full capacity — so if the capacity components ever earn their parameters, it is here. ⚠️ **Confound to keep honest:** this single run varies *both* depth (L=5, a new point beyond the L=1–4 sweep) *and* capacity, so a win/loss can't be cleanly attributed. The cheap clean isolation is a **paired full-capacity arm at an already-planned lean depth** (e.g. L=2-full vs the existing L=2-lean row) — far less compute than two L=5 runs, and it isolates capacity at fixed depth. Note also L=5 skips the 1ep [More Layers](#more-layers) gate; adding an L=5 point there first (cheap) would confirm depth-5 is worth the 5ep spend before committing it. The deeper implication either way: WaveletLM has *always* trained data-starved on WT103 (even the old headline at ~0.6 tok/param), so the capacity question is most fairly settled on the **larger scale-up datasets** (PG-19 ~2.5 tok/param, the multi-dataset mix higher), not on WT103 — this arm is the WT103 ceiling check, not the final word.
+**Data-starvation re-test (full capacity at max depth, 5ep).** The memory setting for the Max row is decided upstream by the **L=4 lean-vs-full** comparison; if that winner is *no-memory* (likely, given the redundancy finding), this arm — full capacity restored at max-depth/5ep — is the re-test of whether memory pays once data-richer. The capacity sweep's nulls (PKM/FwPKM-widening/untied inert-or-harmful) were all measured at **1 epoch on WikiText-103 — ~0.2 tokens/param, ~100× under Chinchilla-optimal** (~20 tok/param). In that heavily over-parameterized regime, extra capacity *can't* show value (not enough data to fill it) and regularization is inert (the combined baseline confirmed this: more dropout/WD slightly *hurt* at 1ep, the signature of underfitting, not overfitting). This arm restores all capacity at the **most favorable regime** — max depth, longest-trained (5ep), full capacity — so if the capacity components ever earn their parameters, it is here. The clean attribution is already wired upstream: the **L=4 lean-vs-full probe** in [More Layers](#more-layers) isolates capacity at fixed depth (1ep), and L=5+ in the depth sweep gate the 5ep spend — so by the time this 5ep arm runs, both depth and capacity have been isolated at 1ep and only the *epoch-scale* question (does memory pay with 5× the data?) remains. The deeper implication either way: WaveletLM has *always* trained data-starved on WT103 (even the old headline at ~0.6 tok/param), so the capacity question is most fairly settled on the **larger scale-up datasets** (PG-19 ~2.5 tok/param, the multi-dataset mix higher), not on WT103 — this arm is the WT103 ceiling check, not the final word.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### More Width (C)
+
+Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non-diminishingly* through L=3 on the new recipe — overturning the old "little past L=2") and the open question: **is C (width) or layers (depth) the more parameter-efficient expansion axis?** The intuition "C always wins" comes from pre-new-recipe findings (C=1024/4L beat C=512/20L; the old 30L regression) — but those predate the learned residual that *made depth pay*, so they may not transfer.
+
+**Structural asymmetry:** depth scales params *linearly* (~+235M/layer, −0.0064 BPB/layer non-diminishing through L=3); width scales *quadratically* (mixer + MLP ~C²) and lumpily (`Cp = next_pow2(C)`, so only powers of two — C ∈ {2048, 4096, 8192, 16384} — give clean Cp=C points). The C=2048 column already exists (the [More Layers](#more-layers) sweep).
+
+**Scaling matrix.** Each C at three points: **L=1/1ep** (cheap width-response anchor), **max-layers/1ep** (width at the depth optimum), **max-layers/5ep** (headline-scale). "max" = the [More Layers](#more-layers) depth winner; all rows use the **[L=4 memory winner]** setting. C=8192/16384 are opened for the [B200 scale-up](#scaled-up-model-b200) when budget permits.
+
+| C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Run log |
+|---|---|---|---|---|---|---|---|
+| 4096 | 1 | 1 | 5090 / B200 | queued | queued | queued | queued |
+| 4096 | max | 1 | B200 | queued | queued | queued | queued |
+| 4096 | max | 5 | B200 | queued | queued | queued | queued |
+| 8192 | 1 | 1 | B200 | open | open | open | open |
+| 8192 | max | 1 | B200 | open | open | open | open |
+| 8192 | max | 5 | B200 | open | open | open | open |
+| 16384 | 1 | 1 | B200 | open | open | open | open |
+| 16384 | max | 1 | B200 | open | open | open | open |
+| 16384 | max | 5 | B200 | open | open | open | open |
+
+The **max-layers/5ep** rows are **provisional headline candidates** — established with the *current* (not-yet-final) regularization, so if the [final regularization sweep](#final-regularization-sweep) revises the recipe, they are re-run. They are therefore the **pre-final-regularization** numbers, retained as the headline fallback if the current dropout/WD settings are not the ones shipped. The **iso-param depth-vs-width** efficiency question (which axis is more BPB-per-param at a matched budget) falls out of the L=1 rows vs the existing depth sweep, accounting for the Cp lumpiness.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
