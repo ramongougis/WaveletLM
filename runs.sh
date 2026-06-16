@@ -318,9 +318,23 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 
 # run_ablation "T5_L3_1ep More Layers — L=3 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3}'     "T5_L3_1ep: More Layers depth gate — L=3, no-memory T5 recipe"
 
-run_ablation "T5_L4_1ep More Layers — L=4 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4}'     "T5_L4_1ep: More Layers depth gate — L=4, no-memory T5 recipe"
+# run_ablation "T5_L4_1ep More Layers — L=4 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4}'     "T5_L4_1ep: More Layers depth gate — L=4, no-memory T5 recipe"
 
-run_ablation "T5_L3_nores_1ep More Layers — L=3 learned_residual OFF (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "learned_residual": false}'     "T5_L3_nores_1ep: learned-residual contribution control at depth — L=3 with residual off vs L=3 on"
+# run_ablation "T5_L3_nores_1ep More Layers — L=3 learned_residual OFF (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "learned_residual": false}'     "T5_L3_nores_1ep: learned-residual contribution control at depth — L=3 with residual off vs L=3 on"
+
+# ---- L=3 TRUE no-residual control (disable_residual) — RUNS FIRST -----------
+# The CORRECTED residual test. learned_residual=false (commented run above) only
+# drops the per-sublayer learned alpha (init 1.0); the residual x = x + f(x)
+# STAYS, which is why on/off came out near-identical. disable_residual=true
+# removes the carry entirely (x <- f(x)) in every forward path. per_layer_embedding
+# is also turned OFF so the per-block token-embedding re-injection can't stand in
+# for the residual (the cross-block analog of input anchoring). If L=3 no-residual
+# collapses toward L=1 (1.1073), the residual stream is the load-bearing depth
+# mechanism. ~17.9 GB (fits 4090/5090).
+# REQUIRES the updated model.py (disable_residual flag) on the pod — a stale
+# model.py silently IGNORES the key (config.get default False) and runs WITH the
+# residual. git pull before launching.
+run_ablation "T5_L3_nores_true_1ep More Layers — L=3 TRUE no-residual (disable_residual, 1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "disable_residual": true, "per_layer_embedding": false}'     "T5_L3_nores_true_1ep: TRUE no-residual control at depth — disable_residual=true + per_layer_embedding=false (x<-f(x), no carry, no embedding skip); vs L=3 baseline 1.0945. Tests whether the residual stream is the load-bearing depth mechanism."
 
 run_ablation "T5_L4_fullcap_1ep More Layers — L=4 FULL capacity (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4, "pkm_enabled": true, "pkm_num_keys": 16384, "fwpkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false}'     "T5_L4_fullcap_1ep: capacity-at-depth probe — L=4 + MLP20 + PKM@16384 + FwPKM@16384 + untied; vs lean L=4 isolates capacity; 1ep preview of the 5ep ceiling arm"
 
@@ -335,3 +349,38 @@ run_ablation "T5_L4_fullcap_1ep More Layers — L=4 FULL capacity (1ep)"     "$B
 run_ablation "T5_L5_1ep More Layers — L=5 (1ep, >=32GB GPU)"      "$BASE_PATCH_1EP"      '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 5}'      "T5_L5_1ep: iterative depth — L=5, no-memory (switch to full if L=4-full won); needs >=32GB"
 
 run_ablation "T5_L6_1ep More Layers — L=6 (1ep, >=32GB GPU, gated on L=5)"      "$BASE_PATCH_1EP"      '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 6}'      "T5_L6_1ep: iterative depth — L=6, only if L=5 beat L=4 by > noise; ~31GB (5090 tight / B200)"
+
+
+# ==============================================================================
+# More Epochs (5ep confirmation arms — the headline candidates)
+# 5-epoch re-runs of the lean depth sweep, L=1..4, all of which cleared the
+# ~0.0010 noise floor at 1ep. Same lean no-memory T5 recipe; only epochs differ
+# (BASE_PATCH_5EP, epochs=5). warmup_fraction=0.3 auto-scales the warmup to the
+# longer schedule. The "Max from More Layers" 5ep row is deferred until the depth
+# ceiling is known (L=5+ still pending). 5090, sequential — runtime ~5x the 1ep
+# arms (L=4 ~50h), so this is the big compute block; comment out any arm to defer
+# it. (Optional: bump eval_interval 250->1000 to save ~2h/arm.)
+# ==============================================================================
+
+run_ablation "T5_L1_5ep More Epochs — L=1 lean (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1}'     "T5_L1_5ep: More Epochs confirmation — L=1, no-memory T5 recipe, 5 epochs"
+
+run_ablation "T5_L2_5ep More Epochs — L=2 lean (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 2}'     "T5_L2_5ep: More Epochs confirmation — L=2, no-memory T5 recipe, 5 epochs"
+
+run_ablation "T5_L3_5ep More Epochs — L=3 lean (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3}'     "T5_L3_5ep: More Epochs confirmation — L=3, no-memory T5 recipe, 5 epochs"
+
+run_ablation "T5_L4_5ep More Epochs — L=4 lean (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4}'     "T5_L4_5ep: More Epochs confirmation — L=4, no-memory T5 recipe, 5 epochs"
+
+
+# ==============================================================================
+# More Width (C) — C=4096, L=1 width-response anchor (1ep)
+# First width scale-up point. Est. ~1.6B params (embedding ~2x linear; layers +
+# wavelets ~4x quadratic in Cp), ~26-29 GB peak on the 5090 — SHOULD fit 32 GB
+# but it's TIGHT; VERIFY AT LAUNCH. If it OOMs, drop micro_batch_size 8->4 (set
+# grad_accum 1->2 to hold the effective batch) — sheds ~3-4 GB of activations.
+# LR inherited at 0.0225 (no width-LR retune yet — this anchor measures the width
+# response at the depth-tuned LR; a width-LR sweep is a separate step). C=8192/
+# 16384 and the max-depth/5ep width cells need the B200 (deferred per the 32 GB
+# ceiling).
+# ==============================================================================
+
+run_ablation "T5_C4096_L1_1ep More Width — C=4096 L=1 (1ep, 5090 ~tight)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_L1_1ep: More Width anchor — C=4096, L=1, no-memory T5 recipe; ~1.6B params; verify VRAM fits 32GB at launch (MBS 8->4 fallback if OOM)"
