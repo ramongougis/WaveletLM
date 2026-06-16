@@ -28,6 +28,15 @@ git_commit_push() {
     git commit --no-edit -m "${MSG}" || true
     git pull --no-rebase --no-edit -X theirs || true
     git push || true
+
+    # Mirror the working tree to S3 after every push so a wiped volume disk loses
+    # nothing (logs + best_model.pt checkpoints + .cache tokenized tensors). sync is
+    # incremental (only changed/new files upload); hf_cache excluded (large, re-
+    # downloadable). Runs even if the push above failed — S3 is the backup of record.
+    # NEVER add --delete: on a fresh volume-disk pod the local tree holds ONLY the
+    # current run, so --delete would erase every other run from the S3 archive.
+    aws s3 sync /workspace/EXARCH s3://exarch-ai-model/EXARCH --exclude "hf_cache/*" \
+        || echo "[runs.sh] WARNING: aws s3 sync failed — S3 backup NOT updated this run"
 }
 
 # 1-epoch sweep base — Baseline 3 (B3) defaults.
