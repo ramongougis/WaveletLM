@@ -1479,6 +1479,7 @@ class WaveletLMBlock(nn.Module):
         lifting_linear_only: bool = False,
         skip_proj_out: bool = False,
         learned_residual: bool = False,
+        disable_residual: bool = False,
         shared_lifting_module: 'LiftingWaveletDecompose' = None,
         shared_lifting_reconstruct: nn.Module = None,
         complex_mixer_activation: str = "split",
@@ -2008,7 +2009,14 @@ class WaveletLMBlock(nn.Module):
                 self.proj_out.bias.zero_()
 
         self.learned_residual = learned_residual
-        if learned_residual:
+        # disable_residual: TRUE no-residual ablation. Removes the cross-layer carry
+        # entirely (x <- f(x), no `+ x`) in every forward path, unlike learned_residual=False
+        # which keeps the residual and only drops the learned alpha. Tests whether the
+        # residual STREAM is the load-bearing depth mechanism. Takes precedence over
+        # learned_residual; the alpha params are not created when disabled (avoids unused
+        # params under DDP).
+        self.disable_residual = disable_residual
+        if learned_residual and not disable_residual:
             self.residual_alpha_spectral = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
             self.residual_alpha_mlp = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
 
@@ -2300,7 +2308,9 @@ class WaveletLMBlock(nn.Module):
             projected = reconstructed_padded
         else:
             projected = self.proj_out(reconstructed_padded)
-        if self.learned_residual:
+        if self.disable_residual:
+            x = self.dropout_proj(projected)
+        elif self.learned_residual:
             x = self.residual_alpha_spectral * x + self.dropout_proj(projected)
         else:
             x = x + self.dropout_proj(projected)
@@ -2315,7 +2325,9 @@ class WaveletLMBlock(nn.Module):
             mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
         if self.fwpkm_enabled:
             mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
-        if self.learned_residual:
+        if self.disable_residual:
+            x = mem_out
+        elif self.learned_residual:
             x = self.residual_alpha_mlp * x + mem_out
         else:
             x = x + mem_out
@@ -2390,7 +2402,9 @@ class WaveletLMBlock(nn.Module):
             projected = reconstructed_padded
         else:
             projected = self.proj_out(reconstructed_padded)
-        if self.learned_residual:
+        if self.disable_residual:
+            x = self.dropout_proj(projected)
+        elif self.learned_residual:
             x = self.residual_alpha_spectral * x + self.dropout_proj(projected)
         else:
             x = x + self.dropout_proj(projected)
@@ -2405,7 +2419,9 @@ class WaveletLMBlock(nn.Module):
             mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
         if self.fwpkm_enabled:
             mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
-        if self.learned_residual:
+        if self.disable_residual:
+            x = mem_out
+        elif self.learned_residual:
             x = self.residual_alpha_mlp * x + mem_out
         else:
             x = x + mem_out
@@ -2717,7 +2733,9 @@ class WaveletLMBlock(nn.Module):
         else:
             projected = self.proj_out(reconstructed_padded)
 
-        if self.learned_residual:
+        if self.disable_residual:
+            x = self.dropout_proj(projected)
+        elif self.learned_residual:
             x = self.residual_alpha_spectral * x + self.dropout_proj(projected)
         else:
             x = x + self.dropout_proj(projected)
@@ -2734,7 +2752,9 @@ class WaveletLMBlock(nn.Module):
         if self.fwpkm_enabled:
             mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
 
-        if self.learned_residual:
+        if self.disable_residual:
+            x = mem_out
+        elif self.learned_residual:
             x = self.residual_alpha_mlp * x + mem_out
         else:
             x = x + mem_out
@@ -2804,6 +2824,7 @@ class WaveletLM(nn.Module):
         lifting_linear_only = config.get("lifting_linear_only", True)
         skip_proj_out = config.get("skip_proj_out", True)
         learned_residual = config.get("learned_residual", True)
+        disable_residual = config.get("disable_residual", False)
 
         # Off-diagonal structural / top-k prior config (Option B unified flag).
         lifting_offdiag_structure = config.get("lifting_offdiag_structure", "none")
@@ -3031,7 +3052,9 @@ class WaveletLM(nn.Module):
             saved = config['layers'] * (Cp * C + C)
             print(f"[proj_out] Skipped (C={C} == Cp={Cp}): saves {saved/1e6:.2f}M params")
 
-        if learned_residual:
+        if disable_residual:
+            print(f"[Residual] DISABLED (no-residual ablation: x <- f(x), no cross-layer carry)")
+        elif learned_residual:
             print(f"[Residual] Learned alpha (init=1.0, per-block spectral+MLP)")
 
         self.per_layer_embedding = config.get("per_layer_embedding", False)
@@ -3099,6 +3122,7 @@ class WaveletLM(nn.Module):
                 lifting_linear_only=lifting_linear_only,
                 skip_proj_out=skip_proj_out,
                 learned_residual=learned_residual,
+                disable_residual=disable_residual,
                 shared_lifting_module=shared_lifting,
                 shared_lifting_reconstruct=shared_lifting_reconstruct,
                 complex_mixer_activation=config.get("complex_mixer_activation", "split"),

@@ -579,6 +579,8 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Final Regularization Sweep](#final-regularization-sweep)
 - [Scaled-Up Model (B200)](#scaled-up-model-b200)
 - [Scaled-Up Model with PTQ and other Infernece Strategies](#scaled-up-model-with-ptq-and-other-infernece-strategies)
+- [Downstream Transfer Fine-Tuning](#downstream-transfer-fine-tuning)
+- [Instruction-Tuning Chat Demo](#instruction-tuning-chat-demo)
 - [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
@@ -1659,7 +1661,8 @@ Adding layers again after most of the tuning and architectural test ablations �
 | 1 (T5 base) | no-memory | on | 455.55M | 1.1073 | 3.4479 | (ref) | 8,918 MiB | A5000 | [link](logs/wikitext-103_2026-06-14_16-08-56/log.txt) |
 | 2 | no-memory | on | 690.66M | 1.1014 | 3.4370 | −0.0059 | 13,403 MiB | A5000 | [link](logs/wikitext-103_2026-06-14_22-31-13/log.txt) |
 | 3 | no-memory | on | 925.78M | 1.0945 | 3.4098 | −0.0128 | 17,887 MiB | A5000 | [link](logs/wikitext-103_2026-06-15_06-58-47/log.txt) |
-| 3 (residual off) | no-memory | **off** | — | queued | queued | — | queued | 4090 | queued |
+| 3 (learned-α off)§ | no-memory | **off** | — | queued | queued | — | queued | 4090 | queued |
+| 3 (no residual)¶ | no-memory | n/a | — | queued | queued | — | queued | 4090 | queued |
 | 4 | no-memory | on | — | queued | queued | — | queued | 4090 | queued |
 | **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | — | queued | queued | — | queued | 4090† | queued |
 | **5** | [L=4 winner: no-memory or full] | on | — | queued | queued | — | queued | 5090/B200‡ | queued |
@@ -1667,9 +1670,13 @@ Adding layers again after most of the tuning and architectural test ablations �
 
 † L=4 full-capacity ≈ 23.8 GB — borderline on the 24 GB 4090 (may OOM; `runs.sh` continues past it, but if it fails it needs a ≥32 GB card, since it's the capacity-at-depth datapoint that gates the L=5 memory setting). ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
 
+§ `learned_residual=false` — drops only the per-sublayer learned scalar α (init 1.0); the residual `x = x + f(x)` is unchanged. This is the α-*scaling* control (does the model want to rescale the residual?), **not** a residual ablation. ¶ `disable_residual=true` (+ `per_layer_embedding=false`) — the genuine no-residual ablation: `x = f(x)`, no cross-layer carry *and* no embedding re-injection. Both rows are isolation controls, not headline candidates.
+
 **Iterative deepening protocol (search for the max depth).** Depth's non-diminishing returns through L=3 mean the ceiling is unknown, so we find it greedily: run **L=5** with the memory setting that won the **L=4 lean-vs-full** comparison; if it beats the previous depth by **more than the ~0.0010 BPB noise floor**, bump to **L=6** (same setting), and repeat — L=7, L=8, … — stopping when either (a) a depth's gain falls within noise of the previous, or (b) budget/VRAM runs out. The deepest depth that still cleared noise is the **max**, which feeds the [More Epochs](#more-epochs) "Max from More Layers" row and the [More Width](#more-width-c) "max layers" cells. ⚠️ **VRAM ceiling per GPU** (the run grows ~+4.5 GB/layer at C=2048): **A5000 / 4090 (24 GB) ≈ L=4**, **5090 (32 GB) ≈ L=5–6**, **B200 for L=7+** — so "budget" includes VRAM, not just time. (Data-starvation caveat: this is a 1ep search; the winner gets its 5ep confirmation in More Epochs, where the optimum may shift.)
 
-**Learned-residual contribution at depth (the L=3 ± residual control).** The old depth verdict ("little gained past L=2") was measured *before* `learned_residual` existed — so it may have been confounded: L=3 with no good cross-layer information path, not L=3 inherently. The learned residual acts as a **memory bus** carrying state across layers (per-sublayer `α·x + f(x)`, plus per-layer embedding re-injection — confirmed on in config). The controlled test runs L=3 with it **off** against L=3 with it **on** (default): if `on ≫ off`, the residual is the load-bearing depth mechanism, and L=3 may now beat L=2 where it previously didn't — which is what would justify a deeper headline. All other runs keep `learned_residual=true`; this single off-run is the isolation control.
+**Residual contribution at depth (corrected control).** The old depth verdict ("little gained past L=2") predates `learned_residual`, so it may have been confounded — L=3 with a weak cross-layer path, not L=3 inherently. Isolating that needs care, and the first control was mis-specified: **`learned_residual=false` does not remove the residual.** It drops only the per-sublayer learned scalar α (init 1.0); the connection `x = x + f(x)` is unchanged ([model.py](model.py) — the non-α branch is still additive). So the L=3 on-vs-off `learned_residual` pair tests *α-scaled vs plain (unscaled) residual* with the stream fully intact in **both** — which is exactly why they came out near-identical (off even slightly ahead): α initializes at 1.0 = plain residual and the model keeps it there. The finding is that the **learned scaling is inert** (the residual wants no rescaling) — *not* that the residual is inert; the depth question is untouched.
+
+The genuine test is the new **`disable_residual=true`** flag: it removes the carry entirely (`x = f(x)`, no `+ x`) in all three forward paths, so each layer *replaces* the stream instead of correcting it. One confound must be closed first — `per_layer_embedding` (**on** in config) re-injects the token embedding at every block (`x += γ·token_embeddings`), a learnable input→layer skip that can stand in for the residual; it is the cross-block analog of the input-anchoring that flipped recurrence depth from harmful to helpful ([Recurrence with residual](#done-recurrence-with-adagrad-with-residual)). So the clean arm also sets **`per_layer_embedding=false`**. Reading: if no-residual L=3 collapses toward (or below) L=1, the residual stream is the load-bearing depth mechanism — the expected outcome, consistent with the transformer residual-stream literature; if it holds up, depth survives without a residual here, the genuinely surprising result, and *only then* are the flat-structure / C-as-primary-axis implications on the table. All headline runs keep the production residual on; the α-off and no-residual rows are isolation controls.
 
 Caveat carried from the [final regularization sweep](#final-regularization-sweep): regularization needs likely grow with depth, so a depth winner here gets its dropout/WD re-checked before any headline claim.
 
@@ -1892,6 +1899,24 @@ Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with 
 Once trained, test the best model versions with PTQ to ascertain generation speeds and VRAM requirements on a variety of systems.
 
 Insert a collection of tables here later for each dataset, configuration, GPU type, and their associated inference VRAM and generation speeds in tokens/s for public consumption.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Downstream Transfer Fine-Tuning
+
+The first **post-training** step (everything above is *pretraining* — self-supervised next-token prediction producing a base model; BPB is the pretraining objective). Standard architecture-paper validation: show the learned representations transfer beyond perplexity. Take each **headline base model** (the new WT-103 and PG-19 versions, and the scaled-up variants) and fine-tune on a handful of standard *labeled* downstream tasks — GLUE subsets, a classification task, plus the already-planned LAMBADA — reporting transfer accuracy. Cheap (small labeled sets, 1–3 epochs), and conventional: it's the expected way to demonstrate "good representations, not just a good perplexity number," directly comparable to how transformer baselines report transfer. Uses separate labeled datasets (not the raw pretraining corpora — there are no task labels in raw WikiText/PG-19). Run **per headline model** so transfer is reported for each pretraining corpus.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Instruction-Tuning Chat Demo
+
+The second post-training step, and a tangible **release artifact**: SFT the headline base on an open instruction set (Alpaca / Dolly / OASST, ~tens of thousands of examples, 1–3 epochs) to produce an **attention-free wavelet *assistant*** you can actually chat with — far more demoable than a perplexity table. Cheap *relative to pretraining*: ~40M instruction tokens vs. the 100M+ pretraining corpus, a few hours at the headline scale. The instruction data is separate and small (not the pretraining corpus). Note the data-starvation lesson applies in reverse: post-training pays off most on a *strong* base, so the **richest demo is on the scaled-up model**, with the WT-103 / PG-19 headline demos as valid pre-release artifacts on the smaller bases. Optional interpretability bonus: comparing the base vs. instruction-tuned model's *readable* structure (crawl logits, scale routing) is a clean "what does instruction-tuning change mechanistically?" study unique to this architecture.
+
+**Multi-dataset note (deferred to post-release).** The ideal base is one pretrained on **as many concatenated datasets as possible at once** (WT-103 + PG-19 + Pile-ArXiv + BookCorpusOpen + OpenWebText + …) — the richest, least data-starved base, and the best foundation for both post-training steps above. That concatenated-corpus base is a **post-release** effort (it's a larger pretraining run). Pre-release, the two post-training steps are applied **separately to each of the WT-103 and PG-19 headline models** once those have their new headline versions — giving per-corpus transfer + demo now, with the unified multi-dataset base (and its stronger post-training) following after release.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
