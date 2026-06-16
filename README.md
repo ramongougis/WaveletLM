@@ -1661,7 +1661,7 @@ Adding layers again after most of the tuning and architectural test ablations �
 | 1 (T5 base) | no-memory | on | 455.55M | 1.1073 | 3.4479 | (ref) | 8,918 MiB | A5000 | [link](logs/wikitext-103_2026-06-14_16-08-56/log.txt) |
 | 2 | no-memory | on | 690.66M | 1.1014 | 3.4370 | −0.0059 | 13,403 MiB | A5000 | [link](logs/wikitext-103_2026-06-14_22-31-13/log.txt) |
 | 3 | no-memory | on | 925.78M | 1.0945 | 3.4098 | −0.0128 | 17,887 MiB | A5000 | [link](logs/wikitext-103_2026-06-15_06-58-47/log.txt) |
-| 3 (learned-α off)§ | no-memory | **off** | — | queued | queued | — | queued | 4090 | queued |
+| 3 (learned-α off)§ | no-memory | **off** | 925.78M | 1.0933 | 3.4060 | −0.0140 | 17,887 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_14-15-11/log.txt) |
 | 3 (no residual)¶ | no-memory | n/a | — | queued | queued | — | queued | 4090 | queued |
 | 4 | no-memory | on | 1160.89M | 1.0890 | 3.4032 | −0.0183 | 22,372 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_04-11-30/log.txt) |
 | **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | — | queued | queued | — | queued | 4090† | queued |
@@ -1674,7 +1674,7 @@ Adding layers again after most of the tuning and architectural test ablations �
 
 **Iterative deepening protocol (search for the max depth).** Depth's non-diminishing returns through L=4 (lean L=4 landed at 1.0890, −0.0055 on L=3 — the per-layer gain holding ~constant at ≈−0.006) mean the ceiling is unknown, so we find it greedily: run **L=5** with the memory setting that won the **L=4 lean-vs-full** comparison; if it beats the previous depth by **more than the ~0.0010 BPB noise floor**, bump to **L=6** (same setting), and repeat — L=7, L=8, … — stopping when either (a) a depth's gain falls within noise of the previous, or (b) budget/VRAM runs out. The deepest depth that still cleared noise is the **max**, which feeds the [More Epochs](#more-epochs) "Max from More Layers" row and the [More Width](#more-width-c) "max layers" cells. ⚠️ **VRAM ceiling per GPU** (the run grows ~+4.5 GB/layer at C=2048): **A5000 / 4090 (24 GB) ≈ L=4**, **5090 (32 GB) ≈ L=5–6**, **B200 for L=7+** — so "budget" includes VRAM, not just time. (Data-starvation caveat: this is a 1ep search; the winner gets its 5ep confirmation in More Epochs, where the optimum may shift.)
 
-**Residual contribution at depth (corrected control).** The old depth verdict ("little gained past L=2") predates `learned_residual`, so it may have been confounded — L=3 with a weak cross-layer path, not L=3 inherently. Isolating that needs care, and the first control was mis-specified: **`learned_residual=false` does not remove the residual.** It drops only the per-sublayer learned scalar α (init 1.0); the connection `x = x + f(x)` is unchanged ([model.py](model.py) — the non-α branch is still additive). So the L=3 on-vs-off `learned_residual` pair tests *α-scaled vs plain (unscaled) residual* with the stream fully intact in **both** — which is exactly why they came out near-identical (off even slightly ahead): α initializes at 1.0 = plain residual and the model keeps it there. The finding is that the **learned scaling is inert** (the residual wants no rescaling) — *not* that the residual is inert; the depth question is untouched.
+**Residual contribution at depth (corrected control).** The old depth verdict ("little gained past L=2") predates `learned_residual`, so it may have been confounded — L=3 with a weak cross-layer path, not L=3 inherently. Isolating that needs care, and the first control was mis-specified: **`learned_residual=false` does not remove the residual.** It drops only the per-sublayer learned scalar α (init 1.0); the connection `x = x + f(x)` is unchanged ([model.py](model.py) — the non-α branch is still additive). So the L=3 on-vs-off `learned_residual` pair tests *α-scaled vs plain (unscaled) residual* with the stream fully intact in **both** — which is exactly why they came out near-identical — now measured: α-off **1.0933** vs α-on **1.0945**, a −0.0012 gap right at the 0.0010 noise floor (off marginally ahead): α initializes at 1.0 = plain residual and the model keeps it there. The finding is that the **learned scaling is inert** (the residual wants no rescaling) — *not* that the residual is inert; the depth question is untouched.
 
 The genuine test is the new **`disable_residual=true`** flag: it removes the carry entirely (`x = f(x)`, no `+ x`) in all three forward paths, so each layer *replaces* the stream instead of correcting it. One confound must be closed first — `per_layer_embedding` (**on** in config) re-injects the token embedding at every block (`x += γ·token_embeddings`), a learnable input→layer skip that can stand in for the residual; it is the cross-block analog of the input-anchoring that flipped recurrence depth from harmful to helpful ([Recurrence with residual](#done-recurrence-with-adagrad-with-residual)). So the clean arm also sets **`per_layer_embedding=false`**. Reading: if no-residual L=3 collapses toward (or below) L=1, the residual stream is the load-bearing depth mechanism — the expected outcome, consistent with the transformer residual-stream literature; if it holds up, depth survives without a residual here, the genuinely surprising result, and *only then* are the flat-structure / C-as-primary-axis implications on the table. All headline runs keep the production residual on; the α-off and no-residual rows are isolation controls.
 
@@ -1692,13 +1692,13 @@ Caveat carried from the [final regularization sweep](#final-regularization-sweep
 
 The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per the cost analysis: ~$0.99/hr, identical recipe so directly comparable; B200 reserved for the C scale-up). Layers 1-4 at 5 epochs on the lean T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here. Plus a **full-capacity ceiling arm** (last row) motivated by the data-starvation finding below.
 
-| Layers | Epochs | Capacity | BPB sliding | Best val | Run log |
-|---|---|---|---|---|---|
-| 1 | 5 | lean | queued | queued | queued |
-| 2 | 5 | lean | queued | queued | queued |
-| 3 | 5 | lean | queued | queued | queued |
-| 4 | 5 | lean | queued | queued | queued |
-| **Max from More Layers section** | 5 | **[L=4 winner: no-memory or full]** | queued | queued | queued |
+| Layers | Epochs | Capacity | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | VM | Run log |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 5 | lean | 455.55M | queued | queued | (ref) | queued | 5090 | queued |
+| 2 | 5 | lean | 690.66M | queued | queued | queued | queued | 5090 | queued |
+| 3 | 5 | lean | 925.78M | queued | queued | queued | queued | 5090 | queued |
+| 4 | 5 | lean | 1160.89M | queued | queued | queued | queued | 5090 | queued |
+| **Max from More Layers section** | 5 | **[L=4 winner: no-memory or full]** | queued | queued | queued | queued | queued | 5090 | queued |
 
 **These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity form:** settled upstream — the [T5 capacity-restoration ablations](#t5-baseline) (component-wise at L=1) and the [More Layers](#more-layers) restored-capacity confirmations decide which form these arms run; if the reduced recipe beats the old headline outright, that is itself a headline result (better BPB at substantially fewer parameters) and both forms may warrant a 5ep arm. Headline claims additionally require the 3-seed protocol.
 
@@ -1716,19 +1716,19 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 
 **Scaling matrix.** Each C at three points: **L=1/1ep** (cheap width-response anchor), **max-layers/1ep** (width at the depth optimum), **max-layers/5ep** (headline-scale). "max" = the [More Layers](#more-layers) depth winner; all rows use the **[L=4 memory winner]** setting. C=8192/16384 are opened for the [B200 scale-up](#scaled-up-model-b200) when budget permits.
 
-| C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Run log |
-|---|---|---|---|---|---|---|---|
-| 4096 | 1 | 1 | 5090 / B200 | queued | queued | queued | queued |
-| 4096 | max | 1 | B200 | queued | queued | queued | queued |
-| 4096 | max | 5 | B200 | queued | queued | queued | queued |
-| 8192 | 1 | 1 | B200 | open | open | open | open |
-| 8192 | max | 1 | B200 | open | open | open | open |
-| 8192 | max | 5 | B200 | open | open | open | open |
-| 16384 | 1 | 1 | B200 | open | open | open | open |
-| 16384 | max | 1 | B200 | open | open | open | open |
-| 16384 | max | 5 | B200 | open | open | open | open |
+| C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
+|---|---|---|---|---|---|---|---|---|---|
+| 4096 | 1 | 1 | 5090 / B200 | queued | queued | queued | queued | queued | queued |
+| 4096 | max | 1 | B200 | queued | queued | queued | queued | queued | queued |
+| 4096 | max | 5 | B200 | queued | queued | queued | queued | queued | queued |
+| 8192 | 1 | 1 | B200 | open | open | open | open | open | open |
+| 8192 | max | 1 | B200 | open | open | open | open | open | open |
+| 8192 | max | 5 | B200 | open | open | open | open | open | open |
+| 16384 | 1 | 1 | B200 | open | open | open | open | open | open |
+| 16384 | max | 1 | B200 | open | open | open | open | open | open |
+| 16384 | max | 5 | B200 | open | open | open | open | open | open |
 
-The **max-layers/5ep** rows are **provisional headline candidates** — established with the *current* (not-yet-final) regularization, so if the [final regularization sweep](#final-regularization-sweep) revises the recipe, they are re-run. They are therefore the **pre-final-regularization** numbers, retained as the headline fallback if the current dropout/WD settings are not the ones shipped. The **iso-param depth-vs-width** efficiency question (which axis is more BPB-per-param at a matched budget) falls out of the L=1 rows vs the existing depth sweep, accounting for the Cp lumpiness.
+**Delta vs C=2048** compares each cell to the matching (same L, same epochs) point in the C=2048 [More Layers](#more-layers) / [More Epochs](#more-epochs) sweeps — the width payoff at fixed depth and budget. The **max-layers/5ep** rows are **provisional headline candidates** — established with the *current* (not-yet-final) regularization, so if the [final regularization sweep](#final-regularization-sweep) revises the recipe, they are re-run. They are therefore the **pre-final-regularization** numbers, retained as the headline fallback if the current dropout/WD settings are not the ones shipped. The **iso-param depth-vs-width** efficiency question (which axis is more BPB-per-param at a matched budget) falls out of the L=1 rows vs the existing depth sweep, accounting for the Cp lumpiness.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

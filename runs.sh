@@ -111,7 +111,13 @@ run_inference_vram_latest() {
     # for diagnosing strategies-only generation issues (e.g. the levels=9
     # strategies-mode anomaly observed on the NB stack).
     local LATEST_RUN
-    LATEST_RUN=$(ls -td logs/wikitext-103_*/ 2>/dev/null | head -1)
+    # Select by NAME, not mtime. Run-dir names are fixed-width timestamps, so a
+    # lexical sort is chronological and the just-trained run is always last. mtime
+    # (`ls -td`) is unreliable: pulling or re-benchmarking an OLDER run from AWS
+    # bumps its mtime, so `ls -td | head -1` can pick that stale dir instead of the
+    # run train.py just produced — observed 2026-06-16, when generations.txt was
+    # written to a re-pulled L=4 run instead of the just-finished L=3 control.
+    LATEST_RUN=$(ls -d logs/wikitext-103_*/ 2>/dev/null | sort | tail -1)
     if [ -z "$LATEST_RUN" ]; then
         echo "[runs.sh] Skipping inference VRAM measurement (no log dir found)"
         return
@@ -334,7 +340,7 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # REQUIRES the updated model.py (disable_residual flag) on the pod — a stale
 # model.py silently IGNORES the key (config.get default False) and runs WITH the
 # residual. git pull before launching.
-run_ablation "T5_L3_nores_true_1ep More Layers — L=3 TRUE no-residual (disable_residual, 1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "disable_residual": true, "per_layer_embedding": false}'     "T5_L3_nores_true_1ep: TRUE no-residual control at depth — disable_residual=true + per_layer_embedding=false (x<-f(x), no carry, no embedding skip); vs L=3 baseline 1.0945. Tests whether the residual stream is the load-bearing depth mechanism."
+# run_ablation "T5_L3_nores_true_1ep More Layers — L=3 TRUE no-residual (disable_residual, 1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "disable_residual": true, "per_layer_embedding": false}'     "T5_L3_nores_true_1ep: TRUE no-residual control at depth — disable_residual=true + per_layer_embedding=false (x<-f(x), no carry, no embedding skip); vs L=3 baseline 1.0945. Tests whether the residual stream is the load-bearing depth mechanism."
 
 run_ablation "T5_L4_fullcap_1ep More Layers — L=4 FULL capacity (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 4, "pkm_enabled": true, "pkm_num_keys": 16384, "fwpkm_enabled": true, "fwpkm_num_keys": 16384, "tie_embedding_to_lm_head": false}'     "T5_L4_fullcap_1ep: capacity-at-depth probe — L=4 + MLP20 + PKM@16384 + FwPKM@16384 + untied; vs lean L=4 isolates capacity; 1ep preview of the 5ep ceiling arm"
 
