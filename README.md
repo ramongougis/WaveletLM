@@ -1664,11 +1664,11 @@ Adding layers again after most of the tuning and architectural test ablations �
 | 3 (learned-α off)§ | no-memory | **off** | 925.78M | 1.0933 | 3.4060 | −0.0140 | 17,887 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_14-15-11/log.txt) |
 | 3 (no residual)¶ | no-memory | n/a | — | queued | queued | — | queued | 4090 | queued |
 | 4 | no-memory | on | 1160.89M | 1.0890 | 3.4032 | −0.0183 | 22,372 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_04-11-30/log.txt) |
-| **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | 1567.91M | pending re-bench† | 3.4010 | — | 30,647 MiB | 5090 | [link](logs/wikitext-103_2026-06-16_21-27-14/log.txt) |
-| **5** | [L=4 winner: no-memory or full] | on | — | queued | queued | — | queued | 5090/B200‡ | queued |
-| **6+ (iterative)** | [same as L=5] | on | — | as needed | as needed | — | — | 5090/B200‡ | — |
+| **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | 1567.91M | 1.0908 | 3.4010 | −0.0165 | 30,647 MiB† | 5090 | [link](logs/wikitext-103_2026-06-16_21-27-14/log.txt) |
+| **5** | no-memory | on | — | queued | queued | — | queued | 5090/B200‡ | queued |
+| **6+ (iterative)** | no-memory | on | — | as needed | as needed | — | — | 5090/B200‡ | — |
 
-† L=4 full-capacity measured **30,647 MiB** on the 5090 (32 GB) — well above the earlier ~23.8 GB estimate, so it does **not** fit a 24 GB card, and even L=5 *full* would exceed 32 GB (lean L=5/L=6 still fit). Its in-process benchmark OOM'd on the checkpoint reload (training state still resident) and silently reported a garbage BPB (PPL 61k vs val 3.40); `train.py` now frees the optimizer/model before the reload, so this row's BPB (and the lean-vs-full verdict that gates the L=5 memory setting) awaits a fresh `benchmark_only` pass. ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
+† L=4 full-capacity measured **30,647 MiB** on the 5090 (32 GB) — well above the earlier ~23.8 GB estimate, so it does **not** fit a 24 GB card, and even L=5 *full* would exceed 32 GB (lean L=5/L=6 still fit). Its in-process benchmark first OOM'd on the checkpoint reload (training state still resident) and silently reported a garbage BPB (PPL 61k vs val 3.40); recovered via a fresh `benchmark_only` pass (BPB 1.0908), and `train.py` now frees the optimizer/model before the reload so future large runs won't repeat it. ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
 
 § `learned_residual=false` — drops only the per-sublayer learned scalar α (init 1.0); the residual `x = x + f(x)` is unchanged. This is the α-*scaling* control (does the model want to rescale the residual?), **not** a residual ablation. ¶ `disable_residual=true` (+ `per_layer_embedding=false`) — the genuine no-residual ablation: `x = f(x)`, no cross-layer carry *and* no embedding re-injection. Both rows are isolation controls, not headline candidates.
 
@@ -1680,7 +1680,7 @@ The genuine test is the new **`disable_residual=true`** flag: it removes the car
 
 Caveat carried from the [final regularization sweep](#final-regularization-sweep): regularization needs likely grow with depth, so a depth winner here gets its dropout/WD re-checked before any headline claim.
 
-**Full-capacity probe (L=4, last row):** a cheap 1ep preview of capacity-at-depth before the expensive [L=5/5ep ceiling arm](#more-epochs) — restores all the memory the declared baseline dropped (PKM@16384 + FwPKM@16384 + untied). Paired with the **lean L=4** row it isolates capacity at fixed depth: if full-L4 ≈ lean-L4, the memory-redundancy finding holds at depth too (and the ceiling arm is unlikely to surprise); if full-L4 pulls ahead, capacity-at-depth is real and the ceiling arm is well-motivated. (1ep/WT103 data-starved caveat still applies — the 5ep arm is the data-richer re-test.)
+**Full-capacity probe (L=4, last row):** a cheap 1ep preview of capacity-at-depth before the expensive [L=5/5ep ceiling arm](#more-epochs) — restores all the memory the declared baseline dropped (PKM@16384 + FwPKM@16384 + untied). Paired with the **lean L=4** row it isolates capacity at fixed depth: if full-L4 ≈ lean-L4, the memory-redundancy finding holds at depth too (and the ceiling arm is unlikely to surprise); if full-L4 pulls ahead, capacity-at-depth is real and the ceiling arm is well-motivated. (1ep/WT103 data-starved caveat still applies — the 5ep arm is the data-richer re-test.) **Result:** full-L4 **1.0908** vs lean-L4 **1.0890** — full is **0.0018 worse** (above noise) at +407M params / +8 GB VRAM, so the memory-redundancy finding **holds at depth**; L=5 runs **no-memory**. Val *diverges* (full 3.4010 < lean 3.4032 — ranked by BPB, lean wins; the val-vs-BPB non-correlation again). The 5ep full-capacity ceiling arm stays the fair data-richer re-test, but on this evidence it is unlikely to overturn the verdict.
 
 **Capacity arms:** the sweep above runs at the reduced base for cost; depths that survive re-run with the **T5-winning capacity form** (per the [capacity-restoration table](#t5-baseline)) before graduating — giving the depth × capacity corner the B200 arms need, with A5000 VRAM/runtime recorded as scaling reference points.
 
@@ -1690,7 +1690,7 @@ Caveat carried from the [final regularization sweep](#final-regularization-sweep
 
 ### More Epochs
 
-The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per the cost analysis: ~$0.99/hr, identical recipe so directly comparable; B200 reserved for the C scale-up). Layers 1-4 at 5 epochs on the lean T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here. Plus a **full-capacity ceiling arm** (last row) motivated by the data-starvation finding below.
+The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per the cost analysis: ~$0.99/hr, identical recipe so directly comparable; B200 reserved for the C scale-up). Layers 1-4 at 5 epochs on the lean (no PKM/FwPKM) T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here. Plus a **max-layers arm** (last row).
 
 | Layers | Epochs | Capacity | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | VM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
@@ -1698,7 +1698,7 @@ The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per 
 | 2 | 5 | lean | 690.66M | queued | queued | queued | queued | 5090 | queued |
 | 3 | 5 | lean | 925.78M | queued | queued | queued | queued | 5090 | queued |
 | 4 | 5 | lean | 1160.89M | queued | queued | queued | queued | 5090 | queued |
-| **Max from More Layers section** | 5 | **[L=4 winner: no-memory or full]** | queued | queued | queued | queued | queued | 5090 | queued |
+| **Max from More Layers section** | 5 | lean | queued | queued | queued | queued | queued | 5090 | queued |
 
 **These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity form:** settled upstream — the [T5 capacity-restoration ablations](#t5-baseline) (component-wise at L=1) and the [More Layers](#more-layers) restored-capacity confirmations decide which form these arms run; if the reduced recipe beats the old headline outright, that is itself a headline result (better BPB at substantially fewer parameters) and both forms may warrant a 5ep arm. Headline claims additionally require the 3-seed protocol.
 
@@ -1714,7 +1714,7 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 
 **Structural asymmetry:** depth scales params *linearly* (~+235M/layer, ~−0.0061 BPB/layer non-diminishing through L=4); width scales *quadratically* (mixer + MLP ~C²) and lumpily (`Cp = next_pow2(C)`, so only powers of two — C ∈ {2048, 4096, 8192, 16384} — give clean Cp=C points). The C=2048 column already exists (the [More Layers](#more-layers) sweep).
 
-**Scaling matrix.** Each C at three points: **L=1/1ep** (cheap width-response anchor), **max-layers/1ep** (width at the depth optimum), **max-layers/5ep** (headline-scale). "max" = the [More Layers](#more-layers) depth winner; all rows use the **[L=4 memory winner]** setting. C=8192/16384 are opened for the [B200 scale-up](#scaled-up-model-b200) when budget permits.
+**Scaling matrix.** Each C at three points: **L=1/1ep** (cheap width-response anchor), **max-layers/1ep** (width at the depth optimum), **max-layers/5ep** (headline-scale). "max" = the [More Layers](#more-layers) depth winner; all rows use the **no-memory** setting (the L=4 lean-vs-full probe winner). C=8192/16384 are opened for the [B200 scale-up](#scaled-up-model-b200) when budget permits.
 
 | C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
