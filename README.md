@@ -1749,7 +1749,7 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 | C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
 | 1024 (lr 0.04) | 1 | 1 | 6000 | 139.69M | 1.1378 | 3.5423 | +0.0305 | 3,423 MiB | [link](logs/wikitext-103_2026-06-17_18-16-32/log.txt) |
-| 1024 (lr 0.05) | 1 | 1 | 6000 | 139.69M | queued | queued | queued | queued | queued |
+| 1024 (lr 0.05) | 1 | 1 | 6000 | 139.69M | 1.1368 | 3.5302 | +0.0295 | 3,423 MiB | [link](logs/wikitext-103_2026-06-17_19-32-01/log.txt) |
 | 512 | 1 | 1 | — | — | not pursued | — | — | — | — |
 
 **Result.** C=1024 = **1.1378** — **+0.0305 *worse* than C=2048** (1.1073), ~30× the noise floor, so a quarter-width model is **not** equivalent; it loses real capacity. But the *shape* is the payoff — the width curve is **steeply convex**: C=1024→2048 buys **−0.0305** (a lot), C=2048→4096 only **−0.0110** (little). So **C=2048 sits right at the width knee** — the maximally effective width. Per added parameter it's even starker:
