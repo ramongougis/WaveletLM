@@ -1665,7 +1665,7 @@ Adding layers again after most of the tuning and architectural test ablations �
 | 3 (no residual)¶ | no-memory | n/a | 925.77M | queued (re-run) | queued | — | queued | 5090 | queued |
 | 4 | no-memory | on | 1160.89M | 1.0890 | 3.4032 | −0.0183 | 22,372 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_04-11-30/log.txt) |
 | **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | 1567.91M | 1.0908 | 3.4010 | −0.0165 | 30,647 MiB† | 5090 | [link](logs/wikitext-103_2026-06-16_21-27-14/log.txt) |
-| **5** | no-memory | on | — | queued | queued | — | queued | 5090/B200‡ | queued |
+| **5** | no-memory | on | 1396.01M | 1.0831 | 3.3887 | −0.0242 | 26,856 MiB | 5090 | [link](logs/wikitext-103_2026-06-17_10-06-29/log.txt) |
 | **6+ (iterative)** | no-memory | on | — | as needed | as needed | — | — | 5090/B200‡ | — |
 
 † L=4 full-capacity measured **30,647 MiB** on the 5090 (32 GB) — well above the earlier ~23.8 GB estimate, so it does **not** fit a 24 GB card, and even L=5 *full* would exceed 32 GB (lean L=5/L=6 still fit). Its in-process benchmark first OOM'd on the checkpoint reload (training state still resident) and silently reported a garbage BPB (PPL 61k vs val 3.40); recovered via a fresh `benchmark_only` pass (BPB 1.0908), and `train.py` now frees the optimizer/model before the reload so future large runs won't repeat it. ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
@@ -1721,8 +1721,8 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 | C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
 | 4096 (lr 0.0225) | 1 | 1 | 6000 | 1615.73M | diverged (NaN @lr~0.016) | 4.30→NaN | — | — | [link](logs/wikitext-103_2026-06-17_10-07-16/log.txt) |
-| 4096 (lr 0.014) | 1 | 1 | 6000 | 1615.73M | queued | queued | queued | queued | queued |
-| 4096 (lr 0.01125) | 1 | 1 | 6000 | 1615.73M | queued | queued | queued | queued | queued |
+| 4096 (lr 0.014) | 1 | 1 | 6000 | 1615.73M | 1.0963 | 3.4142 | −0.0110 | 31,063 MiB | [link](logs/wikitext-103_2026-06-17_12-01-47/log.txt) |
+| 4096 (lr 0.015) | 1 | 1 | 6000 | 1615.73M | queued | queued | queued | queued | queued |
 | 4096 | max | 1 | B200 | queued | queued | queued | queued | queued | queued |
 | 4096 | max | 5 | B200 | queued | queued | queued | queued | queued | queued |
 | 8192 | 1 | 1 | B200 | open | open | open | open | open | open |
@@ -1732,9 +1732,26 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 | 16384 | max | 1 | B200 | open | open | open | open | open | open |
 | 16384 | max | 5 | B200 | open | open | open | open | open | open |
 
-**C=4096 LR sweep (L=1/1ep, on the 6000).** Tunes the LR for the wider model — the optimal LR drifts down with width under standard parametrization (the landscape smooths). **Result so far: lr=0.0225 diverged** — NaN at step ~12.5k (lr≈0.016, mid-warmup) *after* a clean descent to val **4.30**, so the wider model optimizes fine; it's purely an LR ceiling, measured at **~0.0155** (clean at 0.0154, spiked at 0.0157). The √width point (0.0159) sits *on* that ceiling, so it was **replaced by 0.014** (clear margin); the live sweep is **0.014 vs 0.01125** (=0.0225/2, 1/width). `min_lr` tracks at lr/50. The win is a **transferable LR** for C=8192 (scale the same way → ~0.007–0.0099) and the data-rich runs; expect modest 1ep BPB deltas (data-starved). Note the healthy pre-NaN descent (vs the no-residual run's stall) — width helps optimization when the LR is in range.
+**C=4096 LR sweep (L=1/1ep, on the 6000).** Tunes the LR for the wider model. **Results:** lr=0.0225 **diverged** (NaN @ lr≈0.016 — cliff **~0.0155**, clean at 0.0154 / spiked at 0.0157); **lr=0.014 = 1.0963** (−0.0110 vs C=2048) and *converged* (train loss flat at the tail). So the sweep goes **higher, not lower** — a lower LR under-converges in the 1ep budget (0.01125 dropped). Active point: **0.015**, the highest LR demonstrably below the cliff — the √width value 0.0159 sits *on* it and would NaN, and the ~6% gain isn't worth the gamble. `min_lr` tracks at lr/50. Expect a **small** 1ep gain at most (0.014 is likely near the data-limited floor); the durable win is a **transferable LR** for C=8192 (scaled the same way) and the data-rich runs.
 
 **Delta vs C=2048** compares each cell to the matching (same L, same epochs) point in the C=2048 [More Layers](#more-layers) / [More Epochs](#more-epochs) sweeps — the width payoff at fixed depth and budget. The **max-layers/5ep** rows are **provisional headline candidates** — established with the *current* (not-yet-final) regularization, so if the [final regularization sweep](#final-regularization-sweep) revises the recipe, they are re-run. They are therefore the **pre-final-regularization** numbers, retained as the headline fallback if the current dropout/WD settings are not the ones shipped. The **iso-param depth-vs-width** efficiency question (which axis is more BPB-per-param at a matched budget) falls out of the L=1 rows vs the existing depth sweep, accounting for the Cp lumpiness.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Less Width (smaller C)
+
+The flip side of [More Width](#more-width-c), motivated by the **compute-allocation** question its first result raised: C=2048→4096 buys only **−0.0110 BPB for 3.5× the params**, while depth buys **−0.006 BPB/layer for a linear +235M**. Width looks like a *poor* use of compute next to depth — so if a **leaner C** stays ~equivalent to C=2048, the saved compute (smaller width trains much faster, far less VRAM) is better spent going **deeper**. This section probes **smaller C** to find the **maximally effective width**: the smallest C that doesn't materially lose vs C=2048, as the base for depth scaling.
+
+The LR scales the *opposite* way from More Width — smaller C tolerates and wants a **higher** LR. C=1024 starts at **lr 0.04** (≈ C=2048's 0.0225 scaled up ~1/width; if it NaNs, the small-C cliff is lower than expected → drop it).
+
+| C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
+|---|---|---|---|---|---|---|---|---|---|
+| 1024 (lr 0.04) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
+| 512 (lr ~0.08) | 1 | 1 | — | open | open | open | open | open | open |
+
+**Reading.** If **C=1024 ≈ C=2048** (within ~noise), width has flat returns below 2048 and a **lean-and-deep** config (small C, many fast layers) becomes the compute-optimal headline candidate — confirmed by stacking depth on the winning small C. If C=1024 **degrades materially**, 2048 is near the width floor and depth-on-2048 stays the plan. Either way it pins the **width knee** for allocating a fixed budget across depth × width. (Same 1ep/WT103 data-starvation caveat — the knee is most meaningful on the data-rich runs, but the 1ep probe is a cheap first read.)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

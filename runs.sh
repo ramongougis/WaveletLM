@@ -124,14 +124,15 @@ run_inference_vram_latest() {
     # Peak GPU memory line. The strategies-mode pass is also a useful canary
     # for diagnosing strategies-only generation issues (e.g. the levels=9
     # strategies-mode anomaly observed on the NB stack).
-    local LATEST_RUN
-    # Select by NAME, not mtime. Run-dir names are fixed-width timestamps, so a
-    # lexical sort is chronological and the just-trained run is always last. mtime
-    # (`ls -td`) is unreliable: pulling or re-benchmarking an OLDER run from AWS
-    # bumps its mtime, so `ls -td | head -1` can pick that stale dir instead of the
-    # run train.py just produced — observed 2026-06-16, when generations.txt was
-    # written to a re-pulled L=4 run instead of the just-finished L=3 control.
-    LATEST_RUN=$(ls -d logs/wikitext-103_*/ 2>/dev/null | sort | tail -1)
+    # The EXACT run dir is passed in by run_ablation (the dir train.py just created).
+    # Don't GUESS it — name-sort/mtime both misfire in TANDEM: a git pull brings the
+    # other pod's newer run into logs/ and generate.py targets the wrong one (observed
+    # 2026-06-16 with mtime, then 2026-06-17 with name-sort — the 5090's L=5 missed
+    # its own generations). $1 is authoritative; name-sort below is a fallback only.
+    local LATEST_RUN="$1"
+    if [ -z "$LATEST_RUN" ]; then
+        LATEST_RUN=$(ls -d logs/wikitext-103_*/ 2>/dev/null | sort | tail -1)
+    fi
     if [ -z "$LATEST_RUN" ]; then
         echo "[runs.sh] Skipping inference VRAM measurement (no log dir found)"
         return
@@ -163,16 +164,22 @@ run_ablation() {
     echo "============================================================"
 
     build_run_config "$BASE_JSON" "$OVERRIDE_JSON"
-    # Diagnostic: capture train.py's actual exit code so we can SEE what's
-    # happening when the queue halts unexpectedly. With `set -e` removed at
-    # script top, a non-zero exit no longer halts the queue, but we still
-    # want it visible in the log.
+    # Snapshot run dirs BEFORE train.py so we can hand run_inference_vram_latest the
+    # EXACT dir it creates (set difference), instead of guessing "latest" — which
+    # misfires in tandem when a git pull brings the other pod's newer run into logs/.
+    local DIRS_BEFORE; DIRS_BEFORE=$(ls -d logs/wikitext-103_*/ 2>/dev/null)
     python train.py --config "$TMP_CFG"
     local TRAIN_EXIT=$?
     if [ "$TRAIN_EXIT" -ne 0 ]; then
         echo "[runs.sh] train.py exited with code $TRAIN_EXIT; continuing to next ablation"
     fi
-    run_inference_vram_latest
+    local RUN_DIR
+    if [ -z "$DIRS_BEFORE" ]; then
+        RUN_DIR=$(ls -d logs/wikitext-103_*/ 2>/dev/null | tail -1)
+    else
+        RUN_DIR=$(ls -d logs/wikitext-103_*/ 2>/dev/null | grep -vxF "$DIRS_BEFORE" | tail -1)
+    fi
+    run_inference_vram_latest "${RUN_DIR%/}"
     git_commit_push "${COMMIT_MSG}"
 }
 

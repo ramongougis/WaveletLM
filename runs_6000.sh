@@ -66,8 +66,13 @@ run_inference_vram_latest() {
     # checkpoint, for inference VRAM + tok/s. Select by NAME (timestamped dir names
     # sort chronologically) so the just-finished run is always picked, regardless of
     # mtime churn from S3 pulls.
-    local LATEST_RUN
-    LATEST_RUN=$(ls -d logs/wikitext-103_*/ 2>/dev/null | sort | tail -1)
+    # The EXACT run dir is passed in by run_ablation ($1). Don't guess it — name-sort
+    # misfires in tandem (a git pull brings the other pod's newer run into logs/, so
+    # generate.py targets the wrong one). $1 is authoritative; name-sort is a fallback.
+    local LATEST_RUN="$1"
+    if [ -z "$LATEST_RUN" ]; then
+        LATEST_RUN=$(ls -d logs/wikitext-103_*/ 2>/dev/null | sort | tail -1)
+    fi
     if [ -z "$LATEST_RUN" ]; then
         echo "[runs_6000.sh] Skipping inference VRAM measurement (no log dir found)"
         return
@@ -99,12 +104,21 @@ run_ablation() {
     echo "============================================================"
 
     build_run_config "$BASE_JSON" "$OVERRIDE_JSON"
+    # Snapshot run dirs BEFORE train.py so we hand run_inference_vram_latest the EXACT
+    # dir it creates (set difference), not a guessed "latest" (misfires in tandem).
+    local DIRS_BEFORE; DIRS_BEFORE=$(ls -d logs/wikitext-103_*/ 2>/dev/null)
     python train.py --config "$TMP_CFG"
     local TRAIN_EXIT=$?
     if [ "$TRAIN_EXIT" -ne 0 ]; then
         echo "[runs_6000.sh] train.py exited with code $TRAIN_EXIT; continuing"
     fi
-    run_inference_vram_latest
+    local RUN_DIR
+    if [ -z "$DIRS_BEFORE" ]; then
+        RUN_DIR=$(ls -d logs/wikitext-103_*/ 2>/dev/null | tail -1)
+    else
+        RUN_DIR=$(ls -d logs/wikitext-103_*/ 2>/dev/null | grep -vxF "$DIRS_BEFORE" | tail -1)
+    fi
+    run_inference_vram_latest "${RUN_DIR%/}"
     git_commit_push "${COMMIT_MSG}"
 }
 
@@ -144,17 +158,32 @@ BASE_PATCH_1EP='{
 
 # run_ablation "T5_C4096_L1_1ep More Width — C=4096 L=1 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_L1_1ep: More Width anchor — C=4096, L=1, no-memory T5 recipe; ~1.6B params; run on RTX PRO 6000"
 
-# ---- C=4096 LR sweep (L=1/1ep) — width-scaled LR tuning ----------------------
-# RESULT: lr=0.0225 DIVERGED — NaN at step ~12.5k (lr~0.016, mid-warmup) AFTER a
-# healthy descent to val 4.30, so the wider model optimizes fine; it's purely an LR
-# ceiling, measured at ~0.0155 (clean at 0.0154, spiked at 0.0157). The sqrt-width
-# point (0.0159) sits ON that ceiling and would also NaN, so it's replaced by 0.014
-# (clear margin). Sweep is now 0.014 vs 0.01125 (=0.0225/2, 1/width). min_lr=lr/50.
-# Winner transfers to C=8192 (~0.007-0.0099) + the 5ep/PG-19 runs. If 0.014 also
-# wobbles, the optimum is lower still — drop to ~0.012.
-run_ablation "T5_C4096_lr014_1ep More Width — C=4096 L=1 lr=0.014 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.014, "min_lr": 0.00028, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr014_1ep: C=4096 LR sweep — lr=0.014 (just under the ~0.0155 NaN ceiling); 6000"
+# ==============================================================================
+# Less Width (smaller C) — C=1024 L=1 lr=0.04 (1ep, 6000)
+# Compute-allocation probe. Width pays only ~-0.011 BPB for 3.5x params (C=2048->
+# 4096); depth pays ~-0.006/layer for +235M (linear). So a LEANER C that stays
+# ~equivalent to C=2048 frees compute to spend on DEPTH (which scales cleanly
+# through L=5). C=1024 = ~quarter the C=2048 params (~140M), much faster. LR scaled
+# UP for the smaller width (0.04 ~ 0.0225 x ~1/width; smaller C tolerates higher LR).
+# If 0.04 NaNs, the C=1024 cliff is lower than expected -> drop it. Goal: find the
+# "maximally effective C" -- smallest width without material loss vs C=2048 -- then
+# stack depth on it. Next rung if promising: C=512 @ lr~0.08.
+# ==============================================================================
+run_ablation "T5_C1024_L1_1ep Less Width — C=1024 L=1 lr=0.04 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.04, "min_lr": 0.0008, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 1024}'     "T5_C1024_L1_1ep: Less Width probe — C=1024, L=1, lr=0.04 (LR scaled UP for smaller width); is a leaner C ~equivalent to C=2048? if so, spend the saved compute on depth"
 
-run_ablation "T5_C4096_lr01125_1ep More Width — C=4096 L=1 lr=0.01125 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.01125, "min_lr": 0.000225, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr01125_1ep: C=4096 LR sweep — lr=0.01125 (=0.0225/2, 1/width rule); 6000"
+
+# ---- C=4096 LR sweep (L=1/1ep) — width-scaled LR tuning ----------------------
+# RESULTS: lr=0.0225 DIVERGED (NaN @ lr~0.016; cliff ~0.0155). lr=0.014 = 1.0963
+# (-0.0110 vs C=2048), and it CONVERGED — so go HIGHER, not lower (a lower LR would
+# under-converge in the 1ep budget). Active point: 0.015, the highest LR demonstrably
+# below the ~0.0155 cliff (0.0159 sits ON it and would NaN; the 6% gain isn't worth
+# the gamble). 0.014 and 0.01125 commented (done / dropped). min_lr=lr/50. Winner
+# transfers to C=8192 (scaled the same way) + the 5ep/PG-19 runs.
+# run_ablation "T5_C4096_lr014_1ep More Width — C=4096 L=1 lr=0.014 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.014, "min_lr": 0.00028, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr014_1ep: C=4096 LR sweep — lr=0.014 (just under the ~0.0155 NaN ceiling); 6000"
+
+# run_ablation "T5_C4096_lr01125_1ep More Width — C=4096 L=1 lr=0.01125 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.01125, "min_lr": 0.000225, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr01125_1ep: C=4096 LR sweep — lr=0.01125 (=0.0225/2, 1/width rule); 6000"
+
+run_ablation "T5_C4096_lr015_1ep More Width — C=4096 L=1 lr=0.015 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.015, "min_lr": 0.0003, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr015_1ep: C=4096 LR sweep — lr=0.015 (highest LR below the ~0.0155 NaN cliff; 0.014 converged at 1.0963, this probes a small higher-LR gain); 6000"
 
 
 # ==============================================================================
