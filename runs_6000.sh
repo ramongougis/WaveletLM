@@ -42,7 +42,12 @@ git_commit_push() {
         echo "[runs_6000.sh] Reverting config.json before commit (canonical preserved)."
         git checkout -- config.json
     fi
-    git add . || true
+    # Stage ONLY run outputs (logs/) — NOT the scripts or README. A blanket
+    # `git add .` makes the pod commit runs.sh/runs_6000.sh/README, and with
+    # `-X theirs` on pull the pod's copy clobbers your workstation edits (the
+    # "local changes would be overwritten" friction). Scripts/README flow one-way:
+    # workstation -> GitHub -> pod.
+    git add logs/ || true
     git commit --no-edit -m "${MSG}" || true
     git pull --no-rebase --no-edit -X theirs || true
     git push || true
