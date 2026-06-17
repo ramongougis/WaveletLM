@@ -2000,7 +2000,17 @@ class WaveletLMBlock(nn.Module):
         if not self.skip_proj_out:
             self.proj_out = nn.Linear(self.Cp, self.C)
             with torch.no_grad():
-                if stab_proj_out_scaling:
+                if disable_residual:
+                    # No-residual: keep proj_out at its default ~O(1) init. The
+                    # near-zero "spectral epsilon" inits below are a residual-regime
+                    # trick — they start the spectral sublayer as a tiny perturbation
+                    # to the carried residual. With no residual the spectral output
+                    # IS the signal, so a 1e-3 init starves it to ~1e-3, and ln2's
+                    # backward (1/std) then amplifies gradients ~100-300x per layer
+                    # → the NaN observed in the first disable_residual run. Default
+                    # nn.Linear init (~1/sqrt(fan_in)) keeps the spectral output O(1).
+                    pass
+                elif stab_proj_out_scaling:
                     # GPT-2-style residual scaling: 1/sqrt(C * num_layers) keeps
                     # the residual stream from growing through L layers.
                     self.proj_out.weight.mul_(1.0 / math.sqrt(self.C * num_layers))

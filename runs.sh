@@ -334,6 +334,17 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # isolates capacity at L=4. L=2 first (overnight timing scope on the A5000).
 # ==============================================================================
 
+# ---- L=3 TRUE no-residual — RE-TEST (spectral-epsilon init removed) — RUNS FIRST
+# The first disable_residual run (07-28, NaN @5k) was confounded: proj_out's 1e-3
+# "spectral epsilon" init (a residual-regime "start-near-identity" trick) starved
+# the spectral output to ~1e-3 with no residual to carry it, so ln2's backward
+# (1/std) amplified gradients ~100-300x/layer -> NaN. model.py now drops that 1e-3
+# init when disable_residual=true (proj_out keeps its O(1) default). FAIR test now:
+# does depth collapse without the residual, or degrade gracefully? REQUIRES the
+# updated model.py on the pod (git pull). LR 0.0225 matched to the residual runs;
+# if it still NaNs near peak, lower the LR (the dominant amplifier is now gone).
+run_ablation "T5_L3_nores_v2_1ep More Layers — L=3 no-residual, spectral-eps removed (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3, "disable_residual": true, "per_layer_embedding": false}'     "T5_L3_nores_v2_1ep: corrected no-residual control — disable_residual + per_layer_embedding=false, proj_out 1e-3 spectral-epsilon dropped via model.py guard (prior NaN source); fair test of whether depth needs the residual. vs L=3 baseline 1.0945."
+
 # run_ablation "T5_L2_1ep More Layers — L=2 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 2}'     "T5_L2_1ep: More Layers depth gate — L=2, no-memory T5 recipe; vs declared L=1 baseline (1.1073)"
 
 # run_ablation "T5_L3_1ep More Layers — L=3 lean (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 3}'     "T5_L3_1ep: More Layers depth gate — L=3, no-memory T5 recipe"
@@ -366,7 +377,7 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # switch these to full capacity (pkm/fwpkm @16384 + untied). L=6 is gated on L=5
 # clearing the ~0.0010 noise floor vs L=4; L=7+ added iteratively as results come.
 
-run_ablation "T5_L5_1ep More Layers — L=5 (1ep, >=32GB GPU)"      "$BASE_PATCH_1EP"      '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 5}'      "T5_L5_1ep: iterative depth — L=5, no-memory (switch to full if L=4-full won); needs >=32GB"
+# run_ablation "T5_L5_1ep More Layers — L=5 (1ep, >=32GB GPU)"      "$BASE_PATCH_1EP"      '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 5}'      "T5_L5_1ep: iterative depth — L=5, no-memory (switch to full if L=4-full won); needs >=32GB"
 
 # L=6 → moved to runs_6000.sh (6000), right after C=4096 — its ~31.3 GB has
 # headroom on the 96 GB 6000 (borderline on the 5090), and the 6000 continues the
