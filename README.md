@@ -1748,10 +1748,28 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 
 | C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
-| 1024 (lr 0.04) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
-| 512 (lr ~0.08) | 1 | 1 | — | open | open | open | open | open | open |
+| 1024 (lr 0.04) | 1 | 1 | 6000 | 139.69M | 1.1378 | 3.5423 | +0.0305 | 3,423 MiB | [link](logs/wikitext-103_2026-06-17_18-16-32/log.txt) |
+| 1024 (lr 0.05) | 1 | 1 | 6000 | 139.69M | queued | queued | queued | queued | queued |
+| 512 | 1 | 1 | — | — | not pursued | — | — | — | — |
 
-**Reading.** If **C=1024 ≈ C=2048** (within ~noise), width has flat returns below 2048 and a **lean-and-deep** config (small C, many fast layers) becomes the compute-optimal headline candidate — confirmed by stacking depth on the winning small C. If C=1024 **degrades materially**, 2048 is near the width floor and depth-on-2048 stays the plan. Either way it pins the **width knee** for allocating a fixed budget across depth × width. (Same 1ep/WT103 data-starvation caveat — the knee is most meaningful on the data-rich runs, but the 1ep probe is a cheap first read.)
+**Result.** C=1024 = **1.1378** — **+0.0305 *worse* than C=2048** (1.1073), ~30× the noise floor, so a quarter-width model is **not** equivalent; it loses real capacity. But the *shape* is the payoff — the width curve is **steeply convex**: C=1024→2048 buys **−0.0305** (a lot), C=2048→4096 only **−0.0110** (little). So **C=2048 sits right at the width knee** — the maximally effective width. Per added parameter it's even starker:
+
+| step | ΔBPB | Δparams | BPB per M-param |
+|---|---|---|---|
+| width C=1024→2048 | −0.0305 | +316M | **−9.7e-5** (best) |
+| depth L=1→L=2 | −0.0059 | +235M | −2.5e-5 |
+| width C=2048→4096 | −0.0110 | +1160M | −0.95e-5 (worst) |
+
+**Verdict:** don't shrink below 2048 (you *crater* — it's the most valuable single step in the table) and don't widen above it (you *stall*); from 2048, **depth is ~2.6× more param-efficient than more width**. So the compute-optimal path is **depth at C=2048** — exactly the current plan. (C=512 not pursued — the curve only steepens below 1024. LR was fine: 0.04 converged cleanly, no NaN, confirming the ~1/width ceiling estimate. 1ep/WT103 data-starvation caveat still applies, but C=1024 is *capacity*-limited, not data-limited, so its drop is a real width effect.)
+
+**Iso-param — depth vs MLP-width vs model-width (lr 0.05).** The width-knee above is *fixed-depth*; the dual is **fixed *params*, traded three ways.** Hold C=1024 and reach the C=2048/L=1 (455M) and C=4096/L=1 (1616M) param counts by **stacking layers** (depth) *or* **fattening the MLP** (`mlp_expansion`), then compare both to the **model-width** reference (the actual C=2048/4096 runs). All at lr 0.05 (the residual stream stays C=1024, so the ~0.062 cliff holds even for the fat-MLP runs).
+
+| iso target | depth (C=1024) | MLP-width (C=1024) | model-width (ref) |
+|---|---|---|---|
+| **~455M** | L=6 (~433M) → queued | L=1, E=171 (~456M) → queued | C=2048/L=1 = **1.1073** |
+| **~1616M** | L=26 (~1609M) → queued | L=1, E=724 (~1615M) → queued | C=4096/L=1 = **1.0963** |
+
+**Reading.** Three ways to spend the same parameters; the *ranking* is the prize. If **depth wins** (L=6/L=26 beat both other columns), narrow-deep is the compute-optimal shape — *and* the cheapest to train (C=1024 layers ~4× cheaper). If **MLP-width wins**, capacity wants the FFN, not depth or model-width — a cheap way to scale a shallow model. If **model-width (C) wins**, the 2048 width genuinely buys something the others can't replicate. The **~1616M row is the high-value one** — if depth keeps paying partway to L=26, narrow-very-deep could *clear* C=4096/L=1 by a wide margin and rewrite the scaling plan. (lr 0.05 throughout; the deep L=26 and fat E=724 runs are the NaN watches — drop the LR if either spikes. The **C=1024/L=1 @ 0.05** row above also confirms 0.04 wasn't under-tuned — expected ≈1.1378.)
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
