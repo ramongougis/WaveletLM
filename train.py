@@ -1382,6 +1382,21 @@ def train():
     # BENCHMARKS & GENERATION (runs after training or in benchmark_only mode)
     # =========================================================================
 
+    # Free training-time GPU state before the inference rebuild + reload below.
+    # A large model that nearly fills VRAM during training otherwise OOMs the
+    # checkpoint reload — the `except` clause then swallows the error and the
+    # benchmark silently runs on an UNLOADED (garbage) model, reporting a
+    # meaningless BPB/PPL (observed: L=4 full-cap at 30.6/32 GB on the 5090, PPL
+    # 61k vs val 3.40). Dropping the training model + optimizer accumulators frees
+    # ~optimizer-state-sized VRAM for a clean rebuild. No-op in benchmark_only
+    # mode (optimizer was never created; the redundant model rebuild is harmless).
+    model = None
+    optimizer = None
+    import gc
+    gc.collect()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+
     # Rebuild model from config for inference
     logger.log("\nLoading best model for benchmarks...")
     best_model_path = os.path.join(log_dir, "best_model.pt")

@@ -1664,11 +1664,11 @@ Adding layers again after most of the tuning and architectural test ablations �
 | 3 (learned-α off)§ | no-memory | **off** | 925.78M | 1.0933 | 3.4060 | −0.0140 | 17,887 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_14-15-11/log.txt) |
 | 3 (no residual)¶ | no-memory | n/a | — | queued | queued | — | queued | 4090 | queued |
 | 4 | no-memory | on | 1160.89M | 1.0890 | 3.4032 | −0.0183 | 22,372 MiB | 4090 | [link](logs/wikitext-103_2026-06-16_04-11-30/log.txt) |
-| **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | — | queued | queued | — | queued | 4090† | queued |
+| **4 (full capacity)** | **MLP-20 + PKM@16384 + FwPKM@16384 + untied** | on | 1567.91M | pending re-bench† | 3.4010 | — | 30,647 MiB | 5090 | [link](logs/wikitext-103_2026-06-16_21-27-14/log.txt) |
 | **5** | [L=4 winner: no-memory or full] | on | — | queued | queued | — | queued | 5090/B200‡ | queued |
 | **6+ (iterative)** | [same as L=5] | on | — | as needed | as needed | — | — | 5090/B200‡ | — |
 
-† L=4 full-capacity ≈ 23.8 GB — borderline on the 24 GB 4090 (may OOM; `runs.sh` continues past it, but if it fails it needs a ≥32 GB card, since it's the capacity-at-depth datapoint that gates the L=5 memory setting). ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
+† L=4 full-capacity measured **30,647 MiB** on the 5090 (32 GB) — well above the earlier ~23.8 GB estimate, so it does **not** fit a 24 GB card, and even L=5 *full* would exceed 32 GB (lean L=5/L=6 still fit). Its in-process benchmark OOM'd on the checkpoint reload (training state still resident) and silently reported a garbage BPB (PPL 61k vs val 3.40); `train.py` now frees the optimizer/model before the reload, so this row's BPB (and the lean-vs-full verdict that gates the L=5 memory setting) awaits a fresh `benchmark_only` pass. ‡ L≥5 exceeds 24 GB (~+4.5 GB/layer → L=5 ~26.9 GB, L=6 ~31.4 GB): needs a 5090 (32 GB, ~L=5–6) or B200 (L=7+). Hardware ladder: **A5000 / 4090 (24 GB) ≈ L=4 ceiling**, 5090 ≈ L=5–6, B200 for deeper.
 
 § `learned_residual=false` — drops only the per-sublayer learned scalar α (init 1.0); the residual `x = x + f(x)` is unchanged. This is the α-*scaling* control (does the model want to rescale the residual?), **not** a residual ablation. ¶ `disable_residual=true` (+ `per_layer_embedding=false`) — the genuine no-residual ablation: `x = f(x)`, no cross-layer carry *and* no embedding re-injection. Both rows are isolation controls, not headline candidates.
 
