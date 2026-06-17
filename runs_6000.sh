@@ -137,7 +137,18 @@ BASE_PATCH_1EP='{
 # column from More Layers to give the first depth-vs-width efficiency datapoint.
 # ==============================================================================
 
-run_ablation "T5_C4096_L1_1ep More Width — C=4096 L=1 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_L1_1ep: More Width anchor — C=4096, L=1, no-memory T5 recipe; ~1.6B params; run on RTX PRO 6000"
+# run_ablation "T5_C4096_L1_1ep More Width — C=4096 L=1 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_L1_1ep: More Width anchor — C=4096, L=1, no-memory T5 recipe; ~1.6B params; run on RTX PRO 6000"
+
+# ---- C=4096 LR sweep (L=1/1ep) — width-scaled LR tuning ----------------------
+# The C=2048-tuned lr=0.0225 may sit too high at 2x width (optimal LR drifts down
+# with width under standard parametrization). These two bracket the standard rules:
+# 0.0159 = 0.0225/sqrt(2) (sqrt-width), 0.01125 = 0.0225/2 (1/width). With the run
+# above (lr 0.0225) that's a 3-point sweep. min_lr kept at lr/50. Winner transfers
+# to C=8192 (scale the same way) + the 5ep/PG-19 runs. Judge by val BPB (1ep data-
+# starved → modest deltas; also watch warmup stability + the train-loss trajectory).
+run_ablation "T5_C4096_lr0159_1ep More Width — C=4096 L=1 lr=0.0159 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0159, "min_lr": 0.000318, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr0159_1ep: C=4096 LR sweep — lr=0.0159 (=0.0225/sqrt2, sqrt-width rule); 6000"
+
+run_ablation "T5_C4096_lr01125_1ep More Width — C=4096 L=1 lr=0.01125 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.01125, "min_lr": 0.000225, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr01125_1ep: C=4096 LR sweep — lr=0.01125 (=0.0225/2, 1/width rule); 6000"
 
 
 # ==============================================================================

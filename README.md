@@ -1720,7 +1720,9 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 
 | C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
-| 4096 | 1 | 1 | 5090 / B200 | queued | queued | queued | queued | queued | queued |
+| 4096 (lr 0.0225) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
+| 4096 (lr 0.0159) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
+| 4096 (lr 0.01125) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
 | 4096 | max | 1 | B200 | queued | queued | queued | queued | queued | queued |
 | 4096 | max | 5 | B200 | queued | queued | queued | queued | queued | queued |
 | 8192 | 1 | 1 | B200 | open | open | open | open | open | open |
@@ -1729,6 +1731,8 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 | 16384 | 1 | 1 | B200 | open | open | open | open | open | open |
 | 16384 | max | 1 | B200 | open | open | open | open | open | open |
 | 16384 | max | 5 | B200 | open | open | open | open | open | open |
+
+**C=4096 LR sweep (L=1/1ep, on the 6000).** The three C=4096/L=1 rows tune the learning rate for the wider model — **0.0225** (the C=2048 value, unscaled), **0.0159** (=0.0225/√2, the √width rule), and **0.01125** (=0.0225/2, the 1/width rule) — since the optimal LR drifts down with width under standard parametrization (the landscape smooths). `min_lr` tracks at lr/50. Judge by val BPB, but expect modest 1ep deltas (data-starved); the win is mainly **stability** and a **transferable LR** for C=8192 (scale it the same way) and the data-rich runs. Also watch the warmup for NaN and the train-loss trajectory.
 
 **Delta vs C=2048** compares each cell to the matching (same L, same epochs) point in the C=2048 [More Layers](#more-layers) / [More Epochs](#more-epochs) sweeps — the width payoff at fixed depth and budget. The **max-layers/5ep** rows are **provisional headline candidates** — established with the *current* (not-yet-final) regularization, so if the [final regularization sweep](#final-regularization-sweep) revises the recipe, they are re-run. They are therefore the **pre-final-regularization** numbers, retained as the headline fallback if the current dropout/WD settings are not the ones shipped. The **iso-param depth-vs-width** efficiency question (which axis is more BPB-per-param at a matched budget) falls out of the L=1 rows vs the existing depth sweep, accounting for the Cp lumpiness.
 
