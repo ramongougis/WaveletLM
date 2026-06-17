@@ -1720,9 +1720,9 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 
 | C | Layers | Epochs | Hardware | Params | BPB sliding | Best val | Delta vs C=2048 | Train VRAM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
-| 4096 (lr 0.0225) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
-| 4096 (lr 0.0159) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
-| 4096 (lr 0.01125) | 1 | 1 | 6000 | queued | queued | queued | queued | queued | queued |
+| 4096 (lr 0.0225) | 1 | 1 | 6000 | 1615.73M | diverged (NaN @lr~0.016) | 4.30→NaN | — | — | [link](logs/wikitext-103_2026-06-17_10-07-16/log.txt) |
+| 4096 (lr 0.014) | 1 | 1 | 6000 | 1615.73M | queued | queued | queued | queued | queued |
+| 4096 (lr 0.01125) | 1 | 1 | 6000 | 1615.73M | queued | queued | queued | queued | queued |
 | 4096 | max | 1 | B200 | queued | queued | queued | queued | queued | queued |
 | 4096 | max | 5 | B200 | queued | queued | queued | queued | queued | queued |
 | 8192 | 1 | 1 | B200 | open | open | open | open | open | open |
@@ -1732,7 +1732,7 @@ Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non
 | 16384 | max | 1 | B200 | open | open | open | open | open | open |
 | 16384 | max | 5 | B200 | open | open | open | open | open | open |
 
-**C=4096 LR sweep (L=1/1ep, on the 6000).** The three C=4096/L=1 rows tune the learning rate for the wider model — **0.0225** (the C=2048 value, unscaled), **0.0159** (=0.0225/√2, the √width rule), and **0.01125** (=0.0225/2, the 1/width rule) — since the optimal LR drifts down with width under standard parametrization (the landscape smooths). `min_lr` tracks at lr/50. Judge by val BPB, but expect modest 1ep deltas (data-starved); the win is mainly **stability** and a **transferable LR** for C=8192 (scale it the same way) and the data-rich runs. Also watch the warmup for NaN and the train-loss trajectory.
+**C=4096 LR sweep (L=1/1ep, on the 6000).** Tunes the LR for the wider model — the optimal LR drifts down with width under standard parametrization (the landscape smooths). **Result so far: lr=0.0225 diverged** — NaN at step ~12.5k (lr≈0.016, mid-warmup) *after* a clean descent to val **4.30**, so the wider model optimizes fine; it's purely an LR ceiling, measured at **~0.0155** (clean at 0.0154, spiked at 0.0157). The √width point (0.0159) sits *on* that ceiling, so it was **replaced by 0.014** (clear margin); the live sweep is **0.014 vs 0.01125** (=0.0225/2, 1/width). `min_lr` tracks at lr/50. The win is a **transferable LR** for C=8192 (scale the same way → ~0.007–0.0099) and the data-rich runs; expect modest 1ep BPB deltas (data-starved). Note the healthy pre-NaN descent (vs the no-residual run's stall) — width helps optimization when the LR is in range.
 
 **Delta vs C=2048** compares each cell to the matching (same L, same epochs) point in the C=2048 [More Layers](#more-layers) / [More Epochs](#more-epochs) sweeps — the width payoff at fixed depth and budget. The **max-layers/5ep** rows are **provisional headline candidates** — established with the *current* (not-yet-final) regularization, so if the [final regularization sweep](#final-regularization-sweep) revises the recipe, they are re-run. They are therefore the **pre-final-regularization** numbers, retained as the headline fallback if the current dropout/WD settings are not the ones shipped. The **iso-param depth-vs-width** efficiency question (which axis is more BPB-per-param at a matched budget) falls out of the L=1 rows vs the existing depth sweep, accounting for the Cp lumpiness.
 

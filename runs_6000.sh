@@ -140,13 +140,14 @@ BASE_PATCH_1EP='{
 # run_ablation "T5_C4096_L1_1ep More Width — C=4096 L=1 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_L1_1ep: More Width anchor — C=4096, L=1, no-memory T5 recipe; ~1.6B params; run on RTX PRO 6000"
 
 # ---- C=4096 LR sweep (L=1/1ep) — width-scaled LR tuning ----------------------
-# The C=2048-tuned lr=0.0225 may sit too high at 2x width (optimal LR drifts down
-# with width under standard parametrization). These two bracket the standard rules:
-# 0.0159 = 0.0225/sqrt(2) (sqrt-width), 0.01125 = 0.0225/2 (1/width). With the run
-# above (lr 0.0225) that's a 3-point sweep. min_lr kept at lr/50. Winner transfers
-# to C=8192 (scale the same way) + the 5ep/PG-19 runs. Judge by val BPB (1ep data-
-# starved → modest deltas; also watch warmup stability + the train-loss trajectory).
-run_ablation "T5_C4096_lr0159_1ep More Width — C=4096 L=1 lr=0.0159 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0159, "min_lr": 0.000318, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr0159_1ep: C=4096 LR sweep — lr=0.0159 (=0.0225/sqrt2, sqrt-width rule); 6000"
+# RESULT: lr=0.0225 DIVERGED — NaN at step ~12.5k (lr~0.016, mid-warmup) AFTER a
+# healthy descent to val 4.30, so the wider model optimizes fine; it's purely an LR
+# ceiling, measured at ~0.0155 (clean at 0.0154, spiked at 0.0157). The sqrt-width
+# point (0.0159) sits ON that ceiling and would also NaN, so it's replaced by 0.014
+# (clear margin). Sweep is now 0.014 vs 0.01125 (=0.0225/2, 1/width). min_lr=lr/50.
+# Winner transfers to C=8192 (~0.007-0.0099) + the 5ep/PG-19 runs. If 0.014 also
+# wobbles, the optimum is lower still — drop to ~0.012.
+run_ablation "T5_C4096_lr014_1ep More Width — C=4096 L=1 lr=0.014 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.014, "min_lr": 0.00028, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr014_1ep: C=4096 LR sweep — lr=0.014 (just under the ~0.0155 NaN ceiling); 6000"
 
 run_ablation "T5_C4096_lr01125_1ep More Width — C=4096 L=1 lr=0.01125 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.01125, "min_lr": 0.000225, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr01125_1ep: C=4096 LR sweep — lr=0.01125 (=0.0225/2, 1/width rule); 6000"
 
