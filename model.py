@@ -3209,6 +3209,32 @@ class WaveletLM(nn.Module):
             for _ in range(layer_build_count)
         ])
 
+        # Cross-layer dense skips (design #1): each layer reads a learned
+        # lower-triangular combination of all prior layer outputs (plus the input
+        # embedding x0), init-to-identity so it reproduces the plain
+        # accumulative-sequential residual stream at step 0 and learns away from it
+        # only if it helps. Lifted from the mixer-step `recur_dense_A` to the layer
+        # axis. Stacked mode only (no looped_blocks); meaningful at L>=3.
+        self.cross_layer_dense_skips = config.get("cross_layer_dense_skips", False)
+        self.cross_layer_dense_normalize = config.get("cross_layer_dense_normalize", False)
+        self.layer_dense_A = None
+        if self.cross_layer_dense_skips:
+            if self.looped_blocks:
+                raise ValueError(
+                    "cross_layer_dense_skips requires stacked layers (looped_blocks must be off)")
+            if self.stochastic_depth_rate > 0:
+                raise ValueError(
+                    "cross_layer_dense_skips is incompatible with stochastic_depth_rate>0 "
+                    "(dropped layers break the per-layer state indexing)")
+            if effective_layer_count >= 2:
+                # states at layer t are [x0, out0, ..., out_{t-1}] (len t+1), so layer
+                # t reads row A[t, :t+1]. Identity init (diagonal=1) => layer t reads
+                # out_{t-1} == the plain stream. Lower triangle holds the skip weights.
+                self.layer_dense_A = nn.Parameter(
+                    torch.eye(effective_layer_count, device=device))
+                print(f"[CrossLayerSkip] dense layer-axis skips ON "
+                      f"(L={effective_layer_count}, normalize={self.cross_layer_dense_normalize})")
+
         # Final LN and LM head
         self.final_ln = nn.LayerNorm(C)
         self.lm_head = nn.Linear(C, vocab_size, bias=False)
@@ -3347,7 +3373,12 @@ class WaveletLM(nn.Module):
         eff_count = self.effective_layer_count
         get_layer = (lambda i: self.layers[0]) if self.looped_blocks else (lambda i: self.layers[i])
 
+        use_dense_skips = self.layer_dense_A is not None
+
         for loop in range(self.loop_iterations):
+            # Running list of prior layer outputs for cross-layer dense skips:
+            # skip_states[0] = x0 (embedding), then each layer's output appended.
+            skip_states = [x] if use_dense_skips else None
             for layer_idx in range(eff_count):
                 layer = get_layer(layer_idx)
 
@@ -3357,12 +3388,29 @@ class WaveletLM(nn.Module):
                     if random.random() < self._drop_probs[layer_idx]:
                         continue
 
+                # Cross-layer dense skips: this layer's input is a learned
+                # lower-triangular combination of all prior outputs. Identity init
+                # => layer_in == the previous layer's output (the plain stream).
+                if use_dense_skips:
+                    row = self.layer_dense_A[layer_idx, :len(skip_states)]
+                    if self.cross_layer_dense_normalize:
+                        row = torch.softmax(row.float(), dim=0)
+                    row = row.to(skip_states[0].dtype)
+                    layer_in = skip_states[0] * row[0]
+                    for k in range(1, len(skip_states)):
+                        layer_in = layer_in + skip_states[k] * row[k]
+                else:
+                    layer_in = x
+
                 if self.gradient_checkpointing and self.training:
                     def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
                         return _layer(lx, _state, token_embeddings=_ple)
-                    x, current_state = checkpoint(layer_wrapper, x, use_reentrant=False)
+                    x, current_state = checkpoint(layer_wrapper, layer_in, use_reentrant=False)
                 else:
-                    x, current_state = layer(x, current_state, token_embeddings=ple)
+                    x, current_state = layer(layer_in, current_state, token_embeddings=ple)
+
+                if use_dense_skips:
+                    skip_states.append(x)
 
             # Produce logits at each loop iteration for multi-iteration loss
             if all_logits is not None:
