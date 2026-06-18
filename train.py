@@ -1546,8 +1546,8 @@ def train():
     logger.log(f"Prompt: {prompt}")
     if hasattr(model, 'reset_semantic_state'):
         model.reset_semantic_state()
-    txt = generate_one(model, enc, input_tensor, **base_kwargs)
-    logger.log(f"Generated:\n{txt}\n")
+    std_txt = generate_one(model, enc, input_tensor, **base_kwargs)
+    logger.log(f"Generated:\n{std_txt}\n")
 
     # Generation with all strategies
     logger.log("=== GENERATION — Strategies ===")
@@ -1561,11 +1561,27 @@ def train():
         entropy_adaptive=True,
         entropy_temp_max=0.9,
     )
-    txt, token_ids, stats = generate_one(
+    strat_txt, token_ids, stats = generate_one(
         model, enc, input_tensor, return_stats=True, **strategies_kwargs)
     metrics = compute_quality_metrics(token_ids, stats['log_probs'], stats['entropies'])
-    logger.log(f"Generated:\n{txt}\n")
+    logger.log(f"Generated:\n{strat_txt}\n")
     logger.log(f"Metrics: {format_metrics(metrics)}")
+
+    # Always write the in-process generations to generations.txt so the file
+    # exists regardless of launch path. Previously only generate.py (via runs.sh's
+    # run_inference_vram_latest) created it, so a manual `python train.py` launch
+    # produced no generations.txt at all. runs.sh's fresh-process generate.py pass
+    # still appends its accurate "Peak GPU memory" line on top of this when it runs.
+    try:
+        gen_path = os.path.join(log_dir, "generations.txt")
+        with open(gen_path, "a", encoding="utf-8") as gf:
+            gf.write("=== IN-PROCESS GENERATION (train.py) ===\n")
+            gf.write(f"Prompt: {prompt}\n\n")
+            gf.write(f"--- Standard ---\n{std_txt}\n\n")
+            gf.write(f"--- Strategies ---\n{strat_txt}\n")
+            gf.write(f"Metrics: {format_metrics(metrics)}\n\n")
+    except Exception as e:
+        logger.log(f"[train.py] Could not write generations.txt: {e}")
 
     if device == 'cuda':
         # Note: train.py used to log an "Inference VRAM (approx)" estimate

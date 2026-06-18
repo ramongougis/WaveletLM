@@ -1696,15 +1696,17 @@ Caveat carried from the [final regularization sweep](#final-regularization-sweep
 
 ### More Epochs
 
-The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per the cost analysis: ~$0.99/hr, identical recipe so directly comparable; B200 reserved for the C scale-up). Layers 1-4 at 5 epochs on the lean (no PKM/FwPKM) T5 recipe, **gated on [More Layers](#more-layers)**: only depths that don't regress at 1ep run here. Plus a **max-layers arm** (last row).
+The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per the cost analysis: ~$0.99/hr, identical recipe so directly comparable; B200 reserved for the C scale-up). **L=1 and L=2 reference points** plus the **max-layers arm (L=5)** — the depth-frontier 5ep run, which doubles as the C=2048 Medium [release](#release-pipeline) config. **L=3 / L=4 at 5ep are scrapped** for budget (2026-06-18 decision): the 1ep depth trend plus the L=2→L=5 5ep span already establish that depth keeps paying at 5ep. Lean (no PKM/FwPKM) T5 recipe, gated on [More Layers](#more-layers).
 
 | Layers | Epochs | Capacity | Params | BPB sliding | Best val | Delta vs L=1 | Train VRAM | VM | Run log |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | 5 | lean | 455.55M | queued | queued | (ref) | queued | 5090 | queued |
-| 2 | 5 | lean | 690.66M | queued | queued | queued | queued | 5090 | queued |
-| 3 | 5 | lean | 925.78M | queued | queued | queued | queued | 5090 | queued |
-| 4 | 5 | lean | 1160.89M | queued | queued | queued | queued | 5090 | queued |
-| **Max from More Layers section** | 5 | lean | queued | queued | queued | queued | queued | 5090 | queued |
+| 2 | 5 | lean | 690.66M | **0.9868** | 3.0666 | queued | 13,403 MiB | 5090 | [link](logs/wikitext-103_2026-06-17_20-42-32/log.txt) |
+| ~~3~~ | 5 | — | — | scrapped (→ L=5) | — | — | — | — | — |
+| ~~4~~ | 5 | — | — | scrapped (→ L=5) | — | — | — | — | — |
+| **5 (Max from More Layers)** | 5 | lean | 1396.01M | queued | queued | queued | ~26,856 MiB | 5090 | queued |
+
+**L=2 / 5ep = 0.9868** (best val 3.0666) — **sub-1.0, and −0.0272 under the old headline** (1.0140, the old recipe's L=2/5ep), the new lean recipe at the same depth/epochs. Confirms depth pays at 5ep; **L=5/5ep (the Max row) is the next run** and the expected Medium headline.
 
 **These are the headline-candidate runs.** The current production headline (L=2, 5ep, 3-seed best 1.0140) predates every win on the T4 line — the FWHT deletion (−0.0024), crawl-K widening (−0.0125 at K=17 and counting), and the regularization verdicts — so the winning cell here is expected to set the new headline for the Results section, with PG-19 following on the same winner ([Longer PG-19 Training](#longer-pg-19-training)). **Capacity:** settled lean — the [L=4 lean-vs-full probe](#more-layers) showed full capacity (PKM/FwPKM/untied) *hurt* at depth, so these run the no-memory recipe; beating the old headline at **substantially fewer parameters** is itself a headline result. Headline claims additionally require the 3-seed protocol.
 
@@ -1785,20 +1787,19 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 
 ### Untied Lifting (Shared Lifting Weights Off)
 
-> **Status (2026-06-18): ep=1 running (6000), ep=5 queued — fill-in.** Directly motivated by the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured): the lifting wavelet — and with it the crawl dilation profile — is **shared across all layers by default** (`shared_lifting_weights=True`, [model.py:2877](model.py#L2877)). So the L=5 probe's five blocks are the *same* parameter, and per-layer temporal specialisation is architecturally foreclosed; depth is pure re-mixing of one global decomposition.
+> **Status (2026-06-18): DEFERRED to post-release — the ep=1 run [NaN'd](logs/wikitext-103_2026-06-18_11-43-52/log.txt).** An as-yet-unexplored avenue; **shared lifting stays the default.** Untied lifting at lr=0.0225 trained cleanly through warmup (val 4.10) then diverged as the LR hit peak — the no-residual signature (untying removes a shared-weight regulariser, leaving the model LR-intolerant) — and it peaked at **35.8 GB** (6000-only, not the 5090). A proper evaluation needs lower-LR re-runs, and prior low-layer tests showed no substantial gain, so untying is parked as a post-release investigation rather than a release-path ablation.
 
-**The test.** Flip `shared_lifting_weights=false` at **C=2048 / L=5**, so each layer gets its *own* lifting (own crawl profile + predict/update nets). A clean A/B against the shared L=5 — identical recipe and LR, only the flag changes — run at **both ep=1 and ep=5** (the dual-cadence policy: ep=1 transfers to the single-epoch large-dataset runs, ep=5 is the headline-scale read). Lifting is small relative to mixer+MLP, so the param/VRAM bump is modest and fits the 5090 without gradient checkpointing.
+**Motivation (from the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured)).** The lifting wavelet — and with it the crawl dilation profile — is **shared across all layers by default** (`shared_lifting_weights=True`, [model.py:2877](model.py#L2877)), so the L=5 probe's five blocks are the *same* parameter and per-layer temporal specialisation is architecturally foreclosed; depth is pure re-mixing of one global decomposition. Untying (`shared_lifting_weights=false`) gives each layer its own lifting (own crawl profile + predict/update nets) — the open question is whether per-layer temporal bases pay enough to justify the added instability.
 
-| Run | Epochs | shared_lifting | Params | BPB sliding | Best val | vs shared | Run log |
+| Run | Epochs | shared_lifting | Params | BPB sliding | Best val | Notes | Run log |
 |---|---|---|---|---|---|---|---|
-| shared (ref) | 1 | true | 1396.01M | **1.0831** | 3.3887 | (ref) | [link](logs/wikitext-103_2026-06-17_10-06-29/log.txt) |
-| untied | 1 | false | queued | queued | queued | queued | queued |
-| shared (ref) | 5 | true | 1396.01M | queued | queued | (ref) | queued |
-| untied | 5 | false | queued | queued | queued | queued | queued |
+| shared (ref) | 1 | true | 1396.01M | **1.0831** | 3.3887 | the default | [link](logs/wikitext-103_2026-06-17_10-06-29/log.txt) |
+| untied | 1 | false | — | **NaN @ lr 0.0225** | diverged post-warmup | 35.8 GB; needs lower LR | [link](logs/wikitext-103_2026-06-18_11-43-52/log.txt) |
+| untied | 5 | false | — | deferred (post-release) | — | — | — |
 
 **What it measures (two informative outcomes, both useful).** (1) **BPB** — does a per-layer temporal decomposition pay, or is one shared basis a sufficient (and regularising) inductive bias? At 1ep/data-starved, untie's extra params + loss of the shared-weight regulariser make a clear win uncertain; the value may be larger at 5ep. (2) **Re-probe** the untied checkpoint with [`probe_crawl_dilations.py`](interpretability/probe_crawl_dilations.py): under untie the five blocks will no longer be identical — if the per-layer `dilation_logits` **converge**, the shared default is validated as sufficient (a parsimony result + the clean claim "depth is pure re-mixing on a fixed basis"); if they **diverge**, depth wants its own view of time (a new lever, and it sharpens *why* depth pays non-diminishingly).
 
-**Feeds the T6 baseline.** Untie is promoted into the [next baseline](#more-layers) only if it clears the noise floor *in isolation* here; if it doesn't help alone, the combined T6 test is skipped (the result is already recorded). Note the possible **redundancy with [cross-layer skip connections](#cross-layer-skip-connections)** below — both enrich cross-layer expressiveness, so they may not be additive; the combined arm is what tests compounding.
+**Post-release plan (not on the release path).** Untie is **not** part of T6 or the first release. To evaluate it later: re-run untied ep=1 at a **lower LR (~0.014) on the 6000**; if it trains cleanly, **re-probe** the checkpoint (see the paragraph above) and compare to shared L=5 (1.0831). Only a clear win re-opens it. The release-path cross-layer-flow lever is [cross-layer skip connections](#cross-layer-skip-connections) (shared lifting + init-to-identity skips), which sidesteps the untie instability entirely.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1831,7 +1832,7 @@ Richer cross-layer information flow, motivated by the [learned-residual depth re
 **Sizes.** WaveletLM **Small** (C=1024) and **Medium** (C=2048) ship first; **Large** (C=4096, ~3.7B at L=5 — B200-class) is deferred to a later release on cost. All at L=5 (the depth-sweep frontier).
 
 **Pipeline (in order):**
-1. **Lock the architecture (→ T6) on WT-103.** Test [untied lifting](#untied-lifting-shared-lifting-weights-off) and [cross-layer dense skips](#cross-layer-skip-connections) *in isolation* (ep=1 and ep=5); whichever clear the ~0.0010 noise floor graduate into the **T6 baseline**. The combined arm checks for redundancy (both enrich cross-layer flow, so they may not compound); if neither helps alone, T6 = T5 and no combined run is needed. WT-103 is the cheap ablation ground — architecture decisions transfer to big-data far better than reg/capacity, but spot-check on the combined set anyway.
+1. **Lock the architecture (→ T6) on WT-103.** Test [cross-layer dense skips](#cross-layer-skip-connections) *in isolation* (ep=1 and ep=5); if they clear the ~0.0010 noise floor they graduate into the **T6 baseline**, else T6 = T5. ([Untied lifting](#untied-lifting-shared-lifting-weights-off) was the other candidate but **NaN'd at the shared LR — deferred to post-release**, so shared lifting stays default and cross-layer skips are the sole release-path cross-layer-flow lever.) WT-103 is the cheap ablation ground — architecture decisions transfer to big-data far better than reg/capacity, but spot-check on the combined set anyway.
 2. **As-is baselines across datasets.** Run the locked T6 recipe *unchanged* (no per-size dropout/MLP tuning) on **WT-103, PG-19, and the combined dataset** × {Small, Medium}, for recipe-transfer baselines. ⚠️ The **combined as-is run is a floor**, not a datapoint — it carries WT-103's too-high dropout, so it *understates* big-data performance; run it on a representative **subset** (its only job is the baseline), and read the as-is→tuned jump as "we stopped over-regularizing."
 3. **Tune for big-data on a subset.** On a representative **10–20% sample** of the combined set, tune **dropout** (expect ↓, possibly toward 0) and **MLP** — the scientifically interesting one: does "[MLP is the worst axis](#less-width)" *reverse* once data can fill it? A finding either way. Per size; **LR** is a light recheck only. Lock the recipe, then spend full-dataset compute only on the headlines. Subset-tuning is the key cost control — full-corpus sweeps are the budget sink.
 4. **Multi-seed headlines.** Run the tuned config at **3 seeds** on the *full* WT-103, PG-19, and combined sets × {Small, Medium} for the reported figures (mean ± std).
@@ -1999,7 +2000,7 @@ See [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md) for the full 
 3. **Prime-power wavelets: not supported, closed by measurement.** Large primes (11, 13) land in the coarse regime where the model wants *averaging, not specificity* — a dedicated lag-13 subband would be smoothed away. The only genuine non-dyadic pull is **lag 3 at the fine end**, which is **already crawl-covered**. (The `w@primes` column overstates the case: small integers are disproportionately prime, so its fine-scale mass reflects "small lags," not "primes.")
 4. **Two leads surfaced instead:**
    - *Coarse levels look redundant.* Four of seven levels reduce to broad averages — likely duplicating `decompose_bypass`'s global mean. Scale-budget question: do the coarse dyadic levels reduce to the bypass plus a few fine scales, or to single SSM poles (`decompose_bypass_ssm`)?
-   - *The temporal basis is shared across depth.* `shared_lifting_weights` defaults **True** ([model.py:2877](model.py#L2877)), so all layers reference one lifting module — the L=5 probe's five identical blocks are the *same* parameter, and per-layer lag specialisation is architecturally foreclosed. The real follow-up is the **untie test** (`shared_lifting_weights=false`): does per-layer temporal decomposition improve BPB, and do layers then specialise to different lags? A config flag, not new code.
+   - *The temporal basis is shared across depth.* `shared_lifting_weights` defaults **True** ([model.py:2877](model.py#L2877)), so all layers reference one lifting module — the L=5 probe's five identical blocks are the *same* parameter, and per-layer lag specialisation is architecturally foreclosed. The follow-up — the **[untie test](#untied-lifting-shared-lifting-weights-off)** (`shared_lifting_weights=false`) — was run and **NaN'd at the shared LR (deferred to post-release)**; whether per-layer temporal bases help, and whether layers then specialise to different lags, awaits a lower-LR re-run. Shared lifting remains the default.
 
 **Interpretability payoff.** For the cost of one probe we obtained a replicated mechanistic description of how WaveletLM's token-mixer uses relative position — fine scales = precise short-range detectors (incl. the odd lag 3), coarse scales = smoothed context — and caught that the temporal basis is globally shared across depth. Exactly the kind of readable account the wide-single-layer direction is meant to yield. The full (now-shelved) prime-power design is preserved in [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md).
 
