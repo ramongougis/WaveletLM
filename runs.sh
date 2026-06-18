@@ -453,10 +453,24 @@ run_ablation "T5_L5_5ep More Epochs — L=5 lean (5ep, Max/Medium headline)"    
 # (logs/wikitext-103_2026-06-18_11-43-52) NaN'd at lr=0.0225: trained fine through
 # warmup (val 4.10) then diverged as the LR hit peak — the no-residual signature
 # (untie removes a regulariser, leaving the model LR-intolerant). It also peaked at
-# 35,821 MiB (> 5090). So untied lifting needs (a) a LOWER LR (~0.014) and (b) the
-# 6000. Re-run untied ep=1 at the lower LR FIRST; only schedule ep=5 once it trains.
+# 35,821 MiB (> 5090). UPDATE: the NaN onset was lr=0.0205 (step 16000), only ~11%
+# below shared's 0.0225 — a MILD cliff, not a steep LR/L or LR/sqrt(L) drop. So untied
+# needs only (a) a small LR haircut to ~0.018 (just under the 0.020 cliff) and (b)
+# MBS 8->4 + GA 1->2 to fit the 5090. An ACTIVE ep=1 retry at lr=0.018 is queued at the
+# END of this file (T5_L5_untied_lr018_1ep). This ep=5 row stays deferred until it trains.
 # run_ablation "T5_L5_untied_5ep Untied Lifting — C=2048 L=5 shared_lifting_weights=false (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "shared_lifting_weights": false, "layers": 5}'     "T5_L5_untied_5ep: untied per-layer lifting at 5ep — pairs with the 6000 ep=1 run; A/B vs shared L=5; re-probe per-layer dilation_logits"
 
 run_ablation "T6_L5_xskip_1ep Cross-Layer Skip — C=2048 L=5 dense skips (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "cross_layer_dense_skips": true, "layers": 5}'     "T6_L5_xskip_1ep: cross-layer dense skips (init-to-identity) at L=5/1ep; A/B vs shared no-skip L=5 (1.0831); smoke-test first eval == baseline then diverge"
 
 run_ablation "T6_L5_xskip_5ep Cross-Layer Skip — C=2048 L=5 dense skips (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "cross_layer_dense_skips": true, "layers": 5}'     "T6_L5_xskip_5ep: cross-layer dense skips at L=5/5ep; A/B vs shared no-skip L=5 (5ep TBD)"
+
+# ---- Untied lifting RETRY at the LR-cliff-corrected rate (last in queue) ----------
+# The first untied ep=1 run NaN'd at lr=0.0225, but the cliff was measured MILD: NaN
+# onset at lr=0.0205 (step 16000), only ~11% below shared's 0.0225 — not the steep
+# LR/L drop one might assume (LR/L=0.0045, LR/sqrt(L)=0.010 are both far too low). So
+# this retries at lr=0.018 (just under the 0.020 cliff, with margin). MBS 8->4 + GA
+# 1->2 holds the effective batch while shedding activations to fit untied's ~35.8 GB
+# under the 5090's 32 GB — VERIFY at launch; if it OOMs, drop to MBS=2/GA=4. If it now
+# trains AND beats shared L=5 (1.0831), untied re-enters the conversation; else it
+# stays a post-release item.
+run_ablation "T5_L5_untied_lr018_1ep Untied Lifting retry — C=2048 L=5 shared_lifting_weights=false lr=0.018 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.018, "min_lr": 0.00036, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "shared_lifting_weights": false, "layers": 5}'     "T5_L5_untied_lr018_1ep: untied retry at lr=0.018 (just below the measured 0.020 NaN cliff; onset 0.0205 at shared-tuned 0.0225); (set MBS=4/GA=2 if OOM); A/B vs shared L=5 (1.0831)"
