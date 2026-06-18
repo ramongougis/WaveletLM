@@ -565,6 +565,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [More Layers](#more-layers)
 - [More Epochs](#more-epochs)
 - [More Width (C)](#more-width-c)
+- [Untied Lifting (Shared Lifting Weights Off)](#untied-lifting-shared-lifting-weights-off)
 - [Cross-Layer Skip Connections](#cross-layer-skip-connections)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
@@ -576,6 +577,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
 - [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
 - [Prime-Power Wavelet Filterbank](#prime-power-wavelet-filterbank)
+- [Crawl Dilation Probe: Prime-Power Wavelets, Measured](#crawl-dilation-probe-prime-power-wavelets-measured)
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
 - [Final Regularization Sweep](#final-regularization-sweep)
 - [Scaled-Up Model (B200)](#scaled-up-model-b200)
@@ -1780,6 +1782,27 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Untied Lifting (Shared Lifting Weights Off)
+
+> **Status (2026-06-18): ep=1 running (6000), ep=5 queued — fill-in.** Directly motivated by the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured): the lifting wavelet — and with it the crawl dilation profile — is **shared across all layers by default** (`shared_lifting_weights=True`, [model.py:2877](model.py#L2877)). So the L=5 probe's five blocks are the *same* parameter, and per-layer temporal specialisation is architecturally foreclosed; depth is pure re-mixing of one global decomposition.
+
+**The test.** Flip `shared_lifting_weights=false` at **C=2048 / L=5**, so each layer gets its *own* lifting (own crawl profile + predict/update nets). A clean A/B against the shared L=5 — identical recipe and LR, only the flag changes — run at **both ep=1 and ep=5** (the dual-cadence policy: ep=1 transfers to the single-epoch large-dataset runs, ep=5 is the headline-scale read). Lifting is small relative to mixer+MLP, so the param/VRAM bump is modest and fits the 5090 without gradient checkpointing.
+
+| Run | Epochs | shared_lifting | Params | BPB sliding | Best val | vs shared | Run log |
+|---|---|---|---|---|---|---|---|
+| shared (ref) | 1 | true | 1396.01M | **1.0831** | 3.3887 | (ref) | [link](logs/wikitext-103_2026-06-17_10-06-29/log.txt) |
+| untied | 1 | false | queued | queued | queued | queued | queued |
+| shared (ref) | 5 | true | 1396.01M | queued | queued | (ref) | queued |
+| untied | 5 | false | queued | queued | queued | queued | queued |
+
+**What it measures (two informative outcomes, both useful).** (1) **BPB** — does a per-layer temporal decomposition pay, or is one shared basis a sufficient (and regularising) inductive bias? At 1ep/data-starved, untie's extra params + loss of the shared-weight regulariser make a clear win uncertain; the value may be larger at 5ep. (2) **Re-probe** the untied checkpoint with [`probe_crawl_dilations.py`](interpretability/probe_crawl_dilations.py): under untie the five blocks will no longer be identical — if the per-layer `dilation_logits` **converge**, the shared default is validated as sufficient (a parsimony result + the clean claim "depth is pure re-mixing on a fixed basis"); if they **diverge**, depth wants its own view of time (a new lever, and it sharpens *why* depth pays non-diminishingly).
+
+**Feeds the T6 baseline.** Untie is promoted into the [next baseline](#more-layers) only if it clears the noise floor *in isolation* here; if it doesn't help alone, the combined T6 test is skipped (the result is already recorded). Note the possible **redundancy with [cross-layer skip connections](#cross-layer-skip-connections)** below — both enrich cross-layer expressiveness, so they may not be additive; the combined arm is what tests compounding.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Cross-Layer Skip Connections
 
 Richer cross-layer information flow, motivated by the [learned-residual depth result](#more-layers): if the residual stream is the *memory bus* that makes depth pay (the L=3 ± residual control measures this), then enriching that bus is the obvious next lever. Both designs below are **additive and init-to-identity** — they reproduce the plain sequential residual stream exactly at initialization and learn away from it only if it helps, so they are strict, safe generalizations under the [structure-factoring](#structure-factoring) design rule (cross-layer flow added in parallel, not an in-series re-encoding).
@@ -1906,7 +1929,7 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 
 ### Prime-Power Wavelet Filterbank
 
-> **Status (2026-06-18): proposed, pre-research.** No code yet. To be undertaken only after thorough study of the M-band / à-trous / rational-dilation filterbank literature listed in the plan doc.
+> **Status (2026-06-18): largely resolved by measurement — see [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured) below.** Reading the learned crawl weights showed the model wants precise *small* lags (incl. the odd lag 3, already crawl-covered) plus coarse *smoothing*, not dedicated prime subbands. The proposal is retained below as the design reference; the empirical writeup that closed it is the next section.
 
 The decomposition currently uses dyadic (radix-2) dilations only — 1, 2, 4, 8, …. The motivating concern is **skip-bigrams** `a … b` (b = current token, `…` = a gap ≥ 1) whose gap distance is not a power of 2 (e.g. a dependency at gap 3, 5, or 6), and whether such a dependency is captured by any dyadic scale. The proposal builds parallel **undecimated à-trous filterbanks at prime-power radices** (2, 3, 5, 7, and if lightweight 11, 13) and feeds them into the per-scale mixer in a weighted-sum fashion alongside the dyadic scales. Because the decomposition is undecimated (every scale stays at full length `T`), the prime-radix banks are just dilation-`m` filtered copies that concatenate on the scale axis with no resampling.
 
@@ -1927,11 +1950,43 @@ See [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md) for the full 
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Crawl Dilation Probe: Prime-Power Wavelets, Measured
+
+> **Status (2026-06-18): resolved by measurement — prime-power dilations not pursued.** A worked example of letting data overturn a prior *without training*: a ~60-line interpretability probe on existing checkpoints answered the question the [Prime-Power Wavelet Filterbank](#prime-power-wavelet-filterbank) proposal was built to test.
+
+**The question.** Prime-power dilations were motivated by a worry that skip-bigram dependencies `a … b` at *non-power-of-2* gaps (3, 5, 7, …) might be invisible to the dyadic (1, 2, 4, 8, …) decomposition. Before building parallel prime-radix filterbanks, one fact reframes the test: the **wavelet crawl** (`LiftingWaveletDecompose`, `wavelet_crawl_k=33`) already gives *every* dyadic level a learned softmax over **33 contiguous integer lags** centred on `2^level` ([model.py:535-539](model.py#L535-L539), [model.py:796-806](model.py#L796-L806)). So levels 0–4 each carry a learnable weight on *every* lag from 1 to 33 — primes included. The crawl is already a dense learnable relative-position mixer; the cheap test is to **read what it learned** rather than add subbands.
+
+**The probe.** [`interpretability/probe_crawl_dilations.py`](interpretability/probe_crawl_dilations.py) reads `dilation_logits` from a trained checkpoint, softmaxes per level, and reports per level the argmax lag, centre-of-mass lag, weight on the dyadic base, weight off it, and weight on prime lags. Zero training cost; it reconstructs the offset windows exactly as `model.py` builds them, so it needs no model import.
+
+**The data.** Two K=33 checkpoints (the current recipe) plus three older K=3 runs (narrow ±1 window), all WT103 1ep:
+
+| Run (checkpoint) | Crawl K | Fine scales (lags 1–4) | Coarse scales (8–64) | Mean wt. off dyadic |
+|---|---|---|---|---|
+| [C=2048 / L=1 baseline](logs/wikitext-103_2026-06-14_16-08-56/) | 33 | concentrated — lag1 **0.87**, lag2 **0.63**, **lag3 ≈ lag4** at L2 | near-uniform smears (w@dyadic **0.07–0.12**) | **0.70** |
+| [L=5 (shared lifting)](logs/wikitext-103_2026-06-17_10-06-29/) | 33 | more concentrated — lag1 **0.95**, lag2 **0.83**, **lag3 0.32** at L2 | near-uniform smears | **0.63** |
+| [older A](logs/wikitext-103_2026-05-24_19-22-19/) · [B](logs/wikitext-103_2026-04-22_01-36-47/) · [C](logs/wikitext-103_2026-04-19_13-16-24/) | 3 | lag1 ~**0.99** | spread to base±1; prefers **7>8, 15>16, 31>32** | 0.36–0.55 |
+
+**Conclusions.**
+1. **Two regimes, replicated across two independently-trained K=33 models.** *Fine* scales are precise short-range lag detectors — the adjacent-token bigram (lag 1) dominates, and level 2 puts real weight on the *odd* lag 3. *Coarse* scales (8–64) collapse to **near-uniform smears** — broad context averaging, not lag selection. No sharp peaks on large primes anywhere.
+2. **The flattening is deliberate, not undertraining.** `dilation_logits` initialise *peaked* (logit 5.0 on the dyadic base ≈ 0.82 weight); training drove the coarse levels *down* to ~0.08 — the model spent gradient to **flatten toward smoothing** while keeping the fine scales sharp. A learned preference: precision at small lags, smoothing at large ones.
+3. **Prime-power wavelets: not supported, closed by measurement.** Large primes (11, 13) land in the coarse regime where the model wants *averaging, not specificity* — a dedicated lag-13 subband would be smoothed away. The only genuine non-dyadic pull is **lag 3 at the fine end**, which is **already crawl-covered**. (The `w@primes` column overstates the case: small integers are disproportionately prime, so its fine-scale mass reflects "small lags," not "primes.")
+4. **Two leads surfaced instead:**
+   - *Coarse levels look redundant.* Four of seven levels reduce to broad averages — likely duplicating `decompose_bypass`'s global mean. Scale-budget question: do the coarse dyadic levels reduce to the bypass plus a few fine scales, or to single SSM poles (`decompose_bypass_ssm`)?
+   - *The temporal basis is shared across depth.* `shared_lifting_weights` defaults **True** ([model.py:2877](model.py#L2877)), so all layers reference one lifting module — the L=5 probe's five identical blocks are the *same* parameter, and per-layer lag specialisation is architecturally foreclosed. The real follow-up is the **untie test** (`shared_lifting_weights=false`): does per-layer temporal decomposition improve BPB, and do layers then specialise to different lags? A config flag, not new code.
+
+**Interpretability payoff.** For the cost of one probe we obtained a replicated mechanistic description of how WaveletLM's token-mixer uses relative position — fine scales = precise short-range detectors (incl. the odd lag 3), coarse scales = smoothed context — and caught that the temporal basis is globally shared across depth. Exactly the kind of readable account the wide-single-layer direction is meant to yield. The full (now-shelved) prime-power design is preserved in [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md).
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Multinodal Mode (Product-of-Experts)
 
 WaveletLM supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever — a capstone for pure scale-up once the rest of the architectural roadmap settles. Distinct from [Multi-Transform Parallelization](#multi-transform-parallelization) above (which parallelizes inside a single model at the FWHT slot); the PoE mode parallelizes whole models. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
 
 **Heterogeneous p-adic cells (proposed 2026-06-11, gated on the [crawl-K sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)).** A multinodal variant where cells differ not by seed but by **wavelet dilation lattice**: one dyadic cell (1, 2, 4, …, 64), one triadic (1, 3, 9, 27, 81), optionally 5-adic (1, 5, 25), 7-adic, etc.: prime bases, because their lattices are multiplicatively independent (log p rationally independent ⇒ offsets never collide except at 1), so each cell contributes genuinely complementary timescale coverage. All cells keep the same `block_size` (the à trous lifting has no divisibility requirement; truncating blocks to fit a base's powers was considered and rejected — it *worsens* coarse-level pad-dominance, since the fraction of positions with full history at dilation D is (T−D)/T) with each base capped at dilations ≲ T/4, recombined by the existing PoE machinery on aligned positions. Rationale for why this survives where multi-transform fell: it diversifies the **time axis**, where the architecture demonstrably cares (crawl's −0.0181 is time-axis structure), not the channel axis the transform ablation showed to be gauge. Cost-ascending ladder before committing to full heterogeneous cells: (1) single trunk with a mixed dilation schedule (config-only, param-matched), (2) dual parallel lifting stacks (`multi_basis_lifting` pattern), (3) heterogeneous PoE cells. **Gate:** if the crawl-K sweep shows K=3 remains best (off-dyadic offsets carry no signal), this branch closes cheaply; if wide windows win, rung 1 is one 1ep run. Multiple recombination schemes (logit averaging, cross-cell gating, per-scale fusion) may merit comparison by the time this is reached.
+
+**Update (2026-06-18, from the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured)):** off-dyadic offsets *do* carry signal — the crawl relocates 63–70% of its weight off the dyadic base at K=33 — so the gate's "K=3 stays best → close cheaply" branch does **not** fire. But the relocated weight is coarse-scale *smoothing*, not selection of specific lags, which undercuts the prime-lattice premise (that the model wants *distinct, multiplicatively-independent taps*). If pursued, the live form is **denser/smoother time coverage**, not prime lattices per se.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>

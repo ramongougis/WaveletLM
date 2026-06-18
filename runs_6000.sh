@@ -207,6 +207,21 @@ BASE_PATCH_1EP='{
 # run_ablation "T5_C4096_lr015_1ep More Width — C=4096 L=1 lr=0.015 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.015, "min_lr": 0.0003, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_lr015_1ep: C=4096 LR sweep — lr=0.015 (highest LR below the ~0.0155 NaN cliff; 0.014 converged at 1.0963, this probes a small higher-LR gain); 6000"
 
 
+# ---- Untied lifting (shared_lifting_weights=false) at L=5 — on the 6000 ------------
+# Motivated by the crawl dilation probe (README "Crawl Dilation Probe"): the lifting
+# wavelet (incl. the crawl dilation profile) is SHARED across layers by default
+# (shared_lifting_weights=True), so per-layer lag specialization is architecturally
+# foreclosed — the L=5 probe's 5 blocks are the SAME parameter. Untie it: each layer
+# gets its own temporal decomposition. CLEAN A/B vs the SHARED L=5 (1.0831,
+# logs/wikitext-103_2026-06-17_10-06-29) — identical recipe + lr, only the flag flips.
+# Two informative outcomes: per-layer profiles CONVERGE (-> shared default sufficient,
+# parsimony validated) or DIVERGE (-> depth wants its own temporal view, a new lever).
+# THEN re-run probe_crawl_dilations.py on the resulting best_model.pt (it already prints
+# per-layer; under untie the 5 blocks will differ). Lifting is small, so the param/VRAM
+# bump over shared L=5 (~26.9 GB) is modest — comfortable on the 96 GB 6000.
+run_ablation "T5_L5_untied_lifting_1ep More Layers — L=5 shared_lifting_weights=false (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "shared_lifting_weights": false, "layers": 5}'     "T5_L5_untied_lifting_1ep: untied per-layer lifting — shared_lifting_weights=false at L=5; A/B vs shared L=5 (1.0831); re-probe per-layer dilation_logits for depth-specialization"
+
+
 # ---- C=4096 MLP-capacity probe (L=1/1ep) — does a wider C want a leaner MLP? -----
 # MLP params = 2*E*C^2 (QUADRATIC in C): at E=20, C=4096's MLP is 671M — 4x C=2048's
 # 168M. Over-provisioning HURT at 1ep (C=1024 iso E-sweep 20->171->724 worsened
@@ -219,7 +234,7 @@ BASE_PATCH_1EP='{
 # lr015 row above. Compare vs C=2048/L=5 (1.0831). Follow-up: an L=5 C=4096 at best E.
 run_ablation "T5_C4096_E10_1ep More Width — C=4096 L=1 mlp_exp=10 lr=0.015 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.015, "min_lr": 0.0003, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 10, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_E10_1ep: MLP-capacity probe — C=4096 L=1 mlp_exp=10 (~1280M, MLP halved to 336M) vs E=20 (1.0963); does a wider C want a leaner MLP at 1ep?"
 
-run_ablation "T5_C4096_E5_1ep More Width — C=4096 L=1 mlp_exp=5 lr=0.015 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.015, "min_lr": 0.0003, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 5, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_E5_1ep: MLP-capacity probe — C=4096 L=1 mlp_exp=5 (~1112M, MLP=168M = exactly C=2048/E=20's MLP) vs E=20 (1.0963) and C=2048/L=5 (1.0831)"
+# run_ablation "T5_C4096_E5_1ep More Width — C=4096 L=1 mlp_exp=5 lr=0.015 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.015, "min_lr": 0.0003, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 5, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 1, "C": 4096}'     "T5_C4096_E5_1ep: MLP-capacity probe — C=4096 L=1 mlp_exp=5 (~1112M, MLP=168M = exactly C=2048/E=20's MLP) vs E=20 (1.0963) and C=2048/L=5 (1.0831)"
 
 
 # ==============================================================================
@@ -230,7 +245,8 @@ run_ablation "T5_C4096_E5_1ep More Width — C=4096 L=1 mlp_exp=5 lr=0.015 (1ep,
 # each deeper rung as the previous clears the ~0.0010 BPB noise floor.
 # ==============================================================================
 
-run_ablation "T5_L6_1ep More Layers — L=6 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 6}'     "T5_L6_1ep: iterative depth — L=6, no-memory T5 recipe; 6000 (tandem with L=5 on the 5090); ~31.3 GB"
+# run_ablation "T5_L6_1ep More Layers — L=6 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 6}'     "T5_L6_1ep: iterative depth — L=6, no-memory T5 recipe; 6000 (tandem with L=5 on the 5090); ~31.3 GB"
+
 
 # Staged deeper rungs (skip-layer dive) — uncomment as each clears noise vs the prior:
 # run_ablation "T5_L10_1ep More Layers — L=10 (1ep, 6000)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 10}'     "T5_L10_1ep: iterative depth — L=10, no-memory; 6000; ~49 GB"
