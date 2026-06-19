@@ -567,6 +567,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [More Width (C)](#more-width-c)
 - [Untied Lifting (Shared Lifting Weights Off)](#untied-lifting-shared-lifting-weights-off)
 - [Cross-Layer Skip Connections](#cross-layer-skip-connections)
+- [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Dataset Comparisons](#dataset-comparisons)
@@ -1824,6 +1825,52 @@ Richer cross-layer information flow, motivated by the [learned-residual depth re
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Block-Size Extension & Length Generalization
+
+> **Status (2026-06-19): proposed prototype.** Motivated by SubQ-1.1-Small / Subquadratic Sparse Attention (train at 1–2M tokens, generalize retrieval to 12M). WaveletLM is *natively* subquadratic — the wavelet mixer is ≈O(T·log T) end-to-end with **no selector/indexer** — so it wins the *scaling* argument by construction. The open questions are whether it (a) extends context **gracefully** and (b) **length-generalizes** (train short, eval long). Now that the wavelet norms bought real stability headroom, this is the moment to prototype it cheaply.
+
+**The deeper gate is retrieval, not length.** WaveletLM is a fixed-basis *position* mixer (the crawl learns lags, not content), which puts it in the SSM camp that struggles on NIAH/RULER. So before any multi-million-token work, the make-or-break is whether WaveletLM can needle-retrieve at modest long context *at all* — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md). This section is the *scaling-robustness* prototype that runs in parallel; it does not by itself settle retrieval.
+
+**The experiment.** Extend the **training block size** at C=1024 / L=5 and measure how quality holds as context grows. At these scales (thousands of tokens, not millions) **memory is *not* the constraint** — at block 4096 the activations are still small (~17 GB on the 5090 at **MBS=8**), so MBS stays at 8 throughout and the 5090's MBS=8 ceiling is closer to **block ~8192** (~16384 at MBS=4). (MBS=1 only matters at multi-*million*-token context, where the undecimated `T·S` blowup hits — the [decimation](plans/long_context_waveletlm.md) story, not this one.) Each power-of-2 block increase brings **+1 level** and **+1 per-scale-width entry** (`levels = log2(block_size) − 1`):
+
+| block_size | levels | per-scale widths (S = levels+1) |
+|---|---|---|
+| 256 (current) | 7 | [1×4, 0.5×4] (8) |
+| 1024 | 9 | [1×4, 0.5×6] (10) |
+| 2048 | 10 | [1×4, 0.5×7] (11) |
+| 4096 | 11 | [1×4, 0.5×8] (12) |
+
+The schedule above is **C-agnostic** (levels/widths depend only on block size). The two width variants differ only in LR and hardware:
+
+| C | LR (1/C ceiling) | Block reach | Status |
+|---|---|---|---|
+| **1024** | 0.05 | ~2048–4096 on the 5090 | active prototype |
+| **2048** | 0.0225 | larger, on a 6000/B200 | deferred (cost); same schedule |
+
+**LR note (corrected).** C=1024 wants a *higher* LR than C=2048 (~**0.05**, by the measured 1/C ceiling), and the block-size increase itself needs **no** LR change — LR is width-bound and context-invariant (the per-block norms normalize regardless of T, the same reason depth doesn't move it). Set 0.05 and decrease only if a NaN appears, not as a planned function of context.
+
+**Two measurements:**
+1. **Block-size robustness** — does BPB hold (or degrade tolerably) as the *training* block grows?
+2. **Length generalization** — train at block 256/512, then *evaluate* at 1024/2048/4096 (plus a small NIAH probe). The **train-short / eval-long curve** is the SubQ-relevant property: it decides whether the 2M-train → 12M-eval story is even open for WaveletLM.
+
+**Width-proxy validation — is C=1024 a reliable cheap stand-in for C=2048?** The width gap at L=1/1ep is **+0.0305** (C=1024 = 1.1378 vs C=2048 = 1.1073). The *hope* is that at L=5/5ep the gap **shrinks** — making the ~4×-cheaper C=1024 a trustworthy rapid-prototyping width and justifying its use as the default for future tests. The runs that settle it: C=1024 and C=2048 at **L=5, ep=1 and ep=5** (C=2048/L=5/5ep is the [More Epochs](#more-epochs) Max row; C=1024/L=5 at both epoch counts is new). **Honest caveat — the data we have leans the *other* way.** At 1ep the gap appears to *widen* with depth: C=1024/L=6 = **1.1198** vs C=2048/L=5 = **1.0831** is already ~0.04, larger than the L=1 gap; and the [data-starvation findings](#less-width) predict more epochs widen it further, since the wider model only realizes its extra C² capacity once it's fed (5ep should help C=2048 *more*). So C=1024/L=5/5ep may be a **conservative-but-biased** proxy that *underestimates* C=2048's headroom rather than a clean stand-in. Either outcome is useful: a small gap validates a cheap default width; a widening gap *quantifies the bias* so cheap C=1024 prototypes can be read with a known correction.
+
+**Queued runs (`runs2.sh`, a second 5090 in tandem; ~34–35 h total).** Budget triage — block sizes **256 and 4096 only**:
+
+| Run | block | levels | per-scale widths | ep | MBS | ~time | Compares to |
+|---|---|---|---|---|---|---|---|
+| C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | ~13.5 h | C=2048/L=5/5ep ([Max row](#more-epochs)) — width proxy |
+| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | 8 | ~3.4 h | bs256 (block-size robustness) |
+| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | 8 | ~17 h | bs256/5ep + length-gen eval |
+
+All at C=1024, LR 0.05. Per-epoch time is ~flat in block size (fixed WT-103 token count → fewer/bigger steps), so bs4096 costs about the same per epoch as bs256. The widths use **[1×6, 0.5×6]** (50%-full, matching the block-256 *fraction*); **[1×4, 0.5×8]** (matching the block-256 *count* of 4 full-width scales) is the more conservative "isolate block size only" alternative.
+
+**Memory / decimation.** This runs on the current **undecimated** (à-trous) transform, which is fine at these scales (1–2M undecimated C=2048 fits 8 B200s sharded). The undecimated `[B,T,S,Cp]` cost only becomes a wall past a few million tokens, where the fix is **decimating the wavelet transform** (memory/compute O(T·S) → O(T)) — and the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured) motivates a **coarse-decimation hybrid** (decimate the coarse scales, which are smoothers; keep the fine scales, which carry precise lags). That redesign is deferred to [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md); it is **not** needed for this prototype.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Release Pipeline
 
 > **Status (2026-06-18): plan of record for the first release.** Sequences architecture-lock → cross-dataset baselines → big-data tuning → multi-seed headlines. Supersedes the per-size MLP/LR/Dropout sweep grid on WT-103 (deferred to the big-data regime, below).
@@ -2086,6 +2133,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 - Wavelet Packet Decomposition (WPD)
 - Top-K / hard thresholding in the Hadamard domain
 - Complete Muon sweep
+- Long-context scaling: **decimated wavelet transform** (coarse-decimation hybrid) + content-dependent **retrieval** / **length-generalization** study — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md)
 
 
 ## License
