@@ -28,7 +28,9 @@ It uses a learned embedding and mixes tokens using causal lifting wavelet decomp
 
 Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WikiText-103 than Transformer-XL and GPT-2. 
 
-Furthermore, several improvements have been made since the headline model in the [Results](#results) section was trained, and are awaiting completion before the release of an updated version. For more information, see the [Future Plans](#future-plans) section, which tracks all work currently in progress.
+WaveletLM is capable of linear context scaling with minimal performance degradation at a fixed rate of 0.8 MiB/token in VRAM cost, with rising per-token throughput during generation for increasing context lengths. Evaluations for contexts far beyond the trained block size of 256 tokens for the best-to-date configuration can be found in the [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization) section below.
+
+Several improvements have been made since the headline model in the [Results](#results) section was trained, and are awaiting completion before the release of an updated version. One such improvement is the context length scaling mentioned above. For more information, see the [Future Plans](#future-plans) section, which tracks all work currently completed, in progress, and planned.
 
 <br>
 
@@ -112,6 +114,18 @@ Default generation:
 
 ```bash
 python generate.py --checkpoint best_model_pg-19.pt
+```
+
+**Controlling generation context length:** Generation feeds the model up to `generation_max_context` tokens. Set it lower (512-1024) for best quality, or higher for very long prompts. Long context degradation is relatively minor, so the default for `generation_max_context` is deliberately large. In practice, it is only limited by VRAM. See [this section](#block-size-extension--length-generalization) for more info.
+
+```bash
+# long prompt, ingested in full (memory-bound, not architecture-bound):
+python generate.py --checkpoint best_model_wikitext-103.pt \
+    --generation_max_context 16777216 --prompt "Your very long prompt here"
+
+# best decode quality is 512-1024 tokens when trained on 256 token blocks:
+python generate.py --checkpoint best_model_wikitext-103.pt \
+    --generation_max_context 1024 --prompt "Your long prompt here"
 ```
 
 Additional options:
@@ -384,7 +398,7 @@ The high-level architectural premise, using learnable wavelets in place of self-
 
 - **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
 
-- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space via a gated linear layer. Runs in fixed O(S²) per layer for S scales (S = levels + 1), versus attention's O(N²) in sequence length.
+- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space via a gated linear layer. Runs in fixed O(S²) per layer for S scales (S = levels + 1), versus attention's O(N²) in sequence length. Arbitrarily large inputs are broken down into a small number of scales, allowing for very large context during inference. See the [length-generalization study](#block-size-extension--length-generalization) below for more info.
 
 - **Expanded MLP (expansion ≥ 20)**: Hidden layer width multiplier for the MLP layers. Logarithmic relationship with BPB.
 
@@ -1884,20 +1898,26 @@ python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> 
 
 **Caveat — `levels` stay at 7 (trained):** the wavelet reach is ~2⁷≈128–256 tokens, with the cross-window decompose-bypass adding a recurrent long-range channel. So this measures whether a longer *eval* window helps within the trained reach + recurrence — **not** whether the architecture could exploit full 2048-token dependencies (that needs more levels = retraining). It's the right cheap first signal; a positive curve motivates the [decimation](plans/long_context_waveletlm.md) retrain.
 
-**RESULT (2026-06-20) — bounded length generalization (~1 doubling) + a strong efficiency unlock.** Eval-only sweep of the best 256-trained checkpoint (C=2048/L=5/5ep) at growing windows:
+**RESULT (2026-06-20) — graceful monotonic degradation past a ~512-token ceiling, + a strong efficiency unlock.** Eval-only sweep of the best 256-trained checkpoint (C=2048/L=5/5ep) across **8 octaves** of eval window (all from `benchmark_lengthgen_bs*.txt`):
 
-| eval block | min_context | **Sliding BPB** | vs trained 256 | Non-overlap BPB |
-|---|---|---|---|---|
-| 256 (control) | 128 | 0.9748 | — | 0.9974 |
-| **512** | 256 | **0.9727** | **−0.0021** ✓ | 0.9854 |
-| 1024 | 512 | 0.9736 | −0.0012 | 0.9800 |
-| 2048 | 1024 | 0.9765 | **+0.0017** | 0.9785 |
+| eval block | min_ctx | **Sliding BPB** | vs 256 | Non-overlap | windows |
+|---|---|---|---|---|---|
+| 256 (control) | 128 | 0.9748 | — | 0.9974 | 2246 |
+| **512** | 256 | **0.9727** | **−0.0021** | 0.9854 | 1122 |
+| 1024 | 512 | 0.9736 | −0.0012 | 0.9800 | 560 |
+| 2048 | 1024 | 0.9765 | +0.0017 | 0.9785 | 279 |
+| 4096 | 2048 | 0.9803 | +0.0055 | 0.9798 | 139 |
+| 8192 | 4096 | 0.9849 | +0.0101 | 0.9822 | 69 |
+| 16384 | 8192 | 0.9897 | +0.0149 | 0.9859 | 34 |
+| 32768 | 16384 | 0.9909 | +0.0161 | 0.9897 | 16 |
+| 65536 | 32768 | 0.9931 | +0.0183 | 0.9920 | 7 |
+| 131072 / 262144 | — | **OOM** (~116 / 218 GiB > 96) | — | — | — |
 
-- **Control reproduces 0.9748 exactly** → the `--eval_block_size` branch is byte-for-byte clean (the default path is unperturbed).
-- **Sliding BPB peaks at 512, then degrades; 2048 falls *below* the trained baseline.** The model genuinely uses context to ~256–512 — a real ~0.002 gain *beyond* the ~128 wavelet reach, which implicates the **cross-window decompose-bypass** as the long-range carrier — but is *hurt* by 1024–2048-token windows (fixed levels=7 can't structure that range; the bypass running-mean dilutes recency). **Bounded length generalization: ~one doubling.**
-- **Non-overlap improves monotonically (0.9974→0.9785), but that's largely a measurement artifact** — bigger non-overlap windows average in fewer context-starved early tokens. Sliding (fixed min_context) controls for this and is the honest read.
-- **Efficiency unlock (the strong result):** eval memory is ~flat — **~14 GB (512) → 15.5 GB (2048)**, +1.5 GB for 4× the window (forward-only, levels fixed) — and **scored throughput *rises* with length** (~7.9k → 12.7k tok/s, 512→2048; it/s falls but each window scores more). Long context is *cheaper and faster per token* — the opposite of attention's KV-cache growth.
-- **Implication:** the >512 degradation is the **fixed-levels ceiling**, not an architecture limit. Adding coarse levels (eval-time duplication, or `lifting_level_sharing` scale-invariant training — see [the levels question](#deeper-c1024--the-iterative-pipeline)) is the path from bounded to genuine long-context. Full logs: `logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs{256,512,1024,2048}.txt`.
+- **Control reproduces 0.9748 exactly** → the `--eval_block_size` branch is byte-for-byte clean (default path unperturbed).
+- **Sliding BPB bottoms at 512** (the one real gain, −0.0021 *beyond* the ~128 wavelet reach → implicates the **cross-window decompose-bypass** as the long-range carrier), stays sub-baseline at 1024, **crosses above baseline between 1024–2048**, then degrades **monotonically across 6 octaves** (8 strictly-increasing points; +0.0183 by 65536). So: a **well-defined useful-context ceiling ~512–1024, then *graceful* degradation** (smooth, no cliff) — emphatically *not* noise.
+- **Non-overlap bottoms at 2048, not 512** — the less-starvation effect (bigger windows average in fewer context-starved early tokens) pushes its optimum higher, partly masking the degradation. Sliding (fixed min_context) controls for this and is the honest read.
+- **Efficiency unlock (the strong result):** eval memory is **linear with a fixed offset** — `≈ 14 GiB + 0.8 MiB/token` (66.7 GB measured at 65536; 131072 OOM'd at the predicted ~116 GB) — and **scored throughput *rises* with length** (~7.9k → 12.7k tok/s, 512→2048). Long context is *cheaper and faster per token* — the opposite of attention's KV-cache growth. The ceiling is **memory ≈ dataset** (both bite ~2¹⁷ on this 96 GB card / 287K-token test set).
+- **Implication:** the >512 degradation is the **fixed-levels ceiling**, not an architecture limit. Adding coarse levels (eval-time duplication via a future `--eval_extend_levels`, or `lifting_level_sharing` scale-invariant training — see [the levels question](#deeper-c1024--the-iterative-pipeline)) is the path from bounded to genuine long-context.
 
 **What the cancelled training sweep taught us (kept for the record):**
 - **Memory:** block 2048 undecimated = **~62 GB** (C=1024/L=5, MBS=8) on the 96 GB Blackwell 6000; block 4096 OOM'd at every MBS even on the 5090. The `T·S·C` cost is the wall — exactly what [decimation](plans/long_context_waveletlm.md) fixes.

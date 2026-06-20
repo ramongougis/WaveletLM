@@ -683,6 +683,12 @@ def main():
     parser.add_argument("--prompt", default="The history of",
                         help="Generation prompt")
     parser.add_argument("--num_tokens", type=int, default=512)
+    parser.add_argument("--generation_max_context", type=int, default=None,
+                        help="Max context (a CEILING, not a buffer) fed to the model during "
+                             "generation; overrides config 'generation_max_context'. A prompt "
+                             "<= this is processed in full; default (config, else 2^24) never "
+                             "truncates. Lower it (~512-1024) for best quality since the model "
+                             "degrades past its useful context; raise it for long-prompt tests.")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--repetition_penalty", type=float, default=1.1)
@@ -871,7 +877,18 @@ def main():
         # this length is handled inside generate_one / _score_lookahead.
         context_len = int(config['block_size_compressed'])
     else:
-        context_len = config.get('block_size', 512)
+        # Max context fed during generation: a CEILING, not a buffer — idx[:, -context_len:]
+        # keeps the whole sequence when it's shorter, so any prompt <= this is processed in
+        # FULL (the old code capped at block_size=256, silently truncating long prompts).
+        # Default is "realistically yet absurdly long" (2^24) so prompts are never truncated;
+        # actual length is still memory-bound (~128K on a 96GB card). For best generation
+        # QUALITY set this nearer the useful-context (~512-1024), since the model degrades
+        # past that (see README length-gen); raise it for long-prompt experiments.
+        context_len = (
+            args.generation_max_context
+            if getattr(args, 'generation_max_context', None) is not None
+            else config.get('generation_max_context', 16_777_216)
+        )
 
     gen_kwargs = dict(
         temperature=args.temperature,
