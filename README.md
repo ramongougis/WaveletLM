@@ -1879,10 +1879,10 @@ Both the BPB and val-loss gaps **narrowed ~13–14%** (≈3× the comparison noi
 | Run | block | levels | widths | ep | MBS | GA | Status |
 |---|---|---|---|---|---|---|---|
 | C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | 1 | **done: 1.0002** (width proxy; see table above) |
-| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | 8 | 1 | 5090 OOM'd at **every** MBS (8/4/2) — **moved to a bigger VM** |
-| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | 8 | 1 | 5090 OOM'd at every MBS — **bigger VM**, MBS=8/GA=1 |
+| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | 4 | 2 | 48GB RTX 6000: MBS=8 OOMs (~60GB), **runs at MBS=4** (~30.75GB) |
+| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | 4 | 2 | 48GB RTX 6000, MBS=4/GA=2 |
 
-All at C=1024, LR 0.05, effective batch **8** (MBS×GA) on every row. **Correction — the 5090 cannot do block 4096 at *any* micro-batch:** OOM at MBS=8 (torch.compile autotuning), MBS=4 (runtime forward, ~30.75 GB, over by 32 MiB), *and* MBS=2 — a high **MBS-independent memory floor** from the undecimated `T·S·C` coefficients at T=4096/S=12 (my ~17/~18 GB estimates were both wrong). **Resolution: a bigger VM at MBS=8/GA=1**, rather than shrinking MBS further (diminishing returns once the floor stops moving). Note this changes *nothing* about the result: GA had held effective batch at 8 throughout, so BPB is the same at any MBS — micro-batch is quality-neutral here (LayerNorm, not BatchNorm; grad-accum is exact). Per-epoch time is ~flat in block size at constant MBS. Widths use **[1×6, 0.5×6]**; **[1×4, 0.5×8]** is the cleaner "isolate block size only" alternative.
+All at C=1024, LR 0.05, effective batch **8** (MBS×GA) on every row. **Correction — the 5090 cannot do block 4096 at *any* micro-batch:** OOM at MBS=8 (torch.compile autotuning), MBS=4 (runtime forward, ~30.75 GB, over by 32 MiB), *and* MBS=2 — a high **MBS-independent memory floor** from the undecimated `T·S·C` coefficients at T=4096/S=12 (my ~17/~18 GB estimates were both wrong). **Resolution: a 48 GB RTX 6000 at MBS=4/GA=2** — MBS=8 still OOMs there too (~60 GB > 48 GB), but MBS=4 (~30.75 GB) fits with margin. Block 4096 simply needs a ≥40 GB card. Note this changes *nothing* about the result: GA had held effective batch at 8 throughout, so BPB is the same at any MBS — micro-batch is quality-neutral here (LayerNorm, not BatchNorm; grad-accum is exact). Per-epoch time is ~flat in block size at constant MBS. Widths use **[1×6, 0.5×6]**; **[1×4, 0.5×8]** is the cleaner "isolate block size only" alternative.
 
 ### Deeper C=1024 — the iterative pipeline
 
