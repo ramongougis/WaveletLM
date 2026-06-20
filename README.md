@@ -1842,7 +1842,7 @@ Richer cross-layer information flow, motivated by the [learned-residual depth re
 
 **The deeper gate is retrieval, not length.** WaveletLM is a fixed-basis *position* mixer (the crawl learns lags, not content), which puts it in the SSM camp that struggles on NIAH/RULER. So before any multi-million-token work, the make-or-break is whether WaveletLM can needle-retrieve at modest long context *at all* — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md). This section is the *scaling-robustness* prototype that runs in parallel; it does not by itself settle retrieval.
 
-**The experiment.** Extend the **training block size** at C=1024 / L=5 and measure how quality holds as context grows. **Correction — memory *is* a constraint at block 4096, more than expected:** it OOM'd at MBS=8 *and* MBS=4 (measured **~30.75 GB** at MBS=4, over the 5090 by a hair), so it runs at **MBS=2 / GA=4** (~18 GB est). I mis-estimated this three times — the driver is the **undecimated `T·S·C` activation cost**: at block 4096 with 12 scales kept full-length, the wavelet coefficients dominate, scaling with `T·S`, *not* the small per-token cost I'd assumed. Crucially, **GA holds the effective batch at 8**, so the block-size BPB is unaffected (see [the MBS/GA discussion below](#deeper-c1024--the-iterative-pipeline)); the fix is a fitting concern, not a science one. (The `T·S` blowup that bites here at 4096 is a milder version of the multi-*million*-token wall that motivates [decimation](plans/long_context_waveletlm.md).) Each power-of-2 block increase brings **+1 level** and **+1 per-scale-width entry** (`levels = log2(block_size) − 1`):
+**The experiment.** Extend the **training block size** at C=1024 / L=5 and measure how quality holds as context grows. **Target block 2048, not 4096 — the saner incremental step.** Block 4096 turned out memory-bound far beyond my estimates: it OOM'd at *every* micro-batch (MBS=8/4/2) on the 5090 and still needs MBS<8 even on a 48 GB card — a high **MBS-independent floor** from the undecimated `T·S·C` activation cost (at T=4096, 12 full-length scales dominate, scaling with `T·S`, not the small per-token cost I'd assumed; I mis-estimated it three times). So we expand to **block 2048 first** (8× the 256 baseline, levels 10), which fits **MBS=8** at ~28–29 GB est — no micro-batch fiddling, effective batch stays 8, and block 4096 waits for a bigger card. (That `T·S` blowup is a milder version of the multi-*million*-token wall that motivates [decimation](plans/long_context_waveletlm.md).) Each power-of-2 block increase brings **+1 level** and **+1 per-scale-width entry** (`levels = log2(block_size) − 1`):
 
 | block_size | levels | per-scale widths (S = levels+1) |
 |---|---|---|
@@ -1855,7 +1855,7 @@ The schedule above is **C-agnostic** (levels/widths depend only on block size). 
 
 | C | LR (1/C ceiling) | Block reach | Status |
 |---|---|---|---|
-| **1024** | 0.05 | ~2048–4096 on the 5090 | active prototype |
+| **1024** | 0.05 | ~2048 at MBS=8 (4096 needs ≥64 GB) | active prototype |
 | **2048** | 0.0225 | larger, on a 6000/B200 | deferred (cost); same schedule |
 
 **LR note (corrected).** C=1024 wants a *higher* LR than C=2048 (~**0.05**, by the measured 1/C ceiling), and the block-size increase itself needs **no** LR change — LR is width-bound and context-invariant (the per-block norms normalize regardless of T, the same reason depth doesn't move it). Set 0.05 and decrease only if a NaN appears, not as a planned function of context.
@@ -1874,15 +1874,15 @@ The schedule above is **C-agnostic** (levels/widths depend only on block size). 
 
 Both the BPB and val-loss gaps **narrowed ~13–14%** (≈3× the comparison noise) — so **C=1024 is a usable rapid-prototyping width with a stable, slightly-shrinking ~0.025 BPB offset**: prototype ~4× cheaper, add ~0.025 to estimate C=2048. The Small at **375M / 1.0002 BPB / 22.75 PPL beats the old 883M headline** outright. **Correction to an earlier hedge:** this section previously leaned toward the gap *widening*, off the *mismatched* C=1024/L=6-vs-C=2048/L=5 point (~0.04, different depth *and* params); the clean *matched* L=5/5ep comparison supersedes it and confirms the shrink. One caveat survives: more *epochs* ≠ more *data* (same WT-103), so this tightening on fixed data does **not** settle whether wider-C pulls ahead on a bigger corpus — that's the big-data pilot's job.
 
-**Queued runs (`runs2.sh`, a second 5090 in tandem; ~34–35 h total).** Budget triage — block sizes **256 and 4096 only**:
+**Queued runs (`runs.sh`).** Budget triage — block sizes **256 and 2048 only** (4096 deferred — see below):
 
 | Run | block | levels | widths | ep | MBS | GA | Status |
 |---|---|---|---|---|---|---|---|
 | C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | 1 | **done: 1.0002** (width proxy; see table above) |
-| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | 4 | 2 | 48GB RTX 6000: MBS=8 OOMs (~60GB), **runs at MBS=4** (~30.75GB) |
-| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | 4 | 2 | 48GB RTX 6000, MBS=4/GA=2 |
+| C=1024/L=5 bs2048 1ep | 2048 | 10 | [1×6, 0.5×5] | 1 | 8 | 1 | queued (~28–29 GB est; fits the 48 GB 6000) |
+| C=1024/L=5 bs2048 5ep | 2048 | 10 | [1×6, 0.5×5] | 5 | 8 | 1 | queued |
 
-All at C=1024, LR 0.05, effective batch **8** (MBS×GA) on every row. **Correction — the 5090 cannot do block 4096 at *any* micro-batch:** OOM at MBS=8 (torch.compile autotuning), MBS=4 (runtime forward, ~30.75 GB, over by 32 MiB), *and* MBS=2 — a high **MBS-independent memory floor** from the undecimated `T·S·C` coefficients at T=4096/S=12 (my ~17/~18 GB estimates were both wrong). **Resolution: a 48 GB RTX 6000 at MBS=4/GA=2** — MBS=8 still OOMs there too (~60 GB > 48 GB), but MBS=4 (~30.75 GB) fits with margin. Block 4096 simply needs a ≥40 GB card. Note this changes *nothing* about the result: GA had held effective batch at 8 throughout, so BPB is the same at any MBS — micro-batch is quality-neutral here (LayerNorm, not BatchNorm; grad-accum is exact). Per-epoch time is ~flat in block size at constant MBS. Widths use **[1×6, 0.5×6]**; **[1×4, 0.5×8]** is the cleaner "isolate block size only" alternative.
+All at C=1024, LR 0.05, MBS=8/GA=1 (effective batch 8). **Why block 2048, not 4096:** block 4096 OOM'd at *every* micro-batch (MBS=8/4/2) on the 5090 and still needs MBS=4 on a 48 GB 6000 — a high **MBS-independent floor** from the undecimated `T·S·C` coefficients at T=4096/S=12 (my ~17/~18 GB estimates were wrong three times). Rather than fight it with ever-smaller micro-batches, we expand to **block 2048**, which fits **MBS=8** at ~28–29 GB (comfortable on a 48 GB card, tight on a 32 GB 5090 — verify at launch given the estimate ran low three times). Block 4096 is deferred to a ≥64 GB card. Either way it changes *nothing* about the science: BPB is the same at any MBS — micro-batch is quality-neutral here (LayerNorm, not BatchNorm; grad-accum is exact). Per-epoch time is ~flat in block size at constant MBS. Widths use **[1×6, 0.5×5]** (block-4096's [1×6, 0.5×6] minus the coarsest scale); the schedule table above shows the [1×4, 0.5×7] count-convention alternative.
 
 ### Deeper C=1024 — the iterative pipeline
 

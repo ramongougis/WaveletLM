@@ -318,27 +318,27 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 
 
 # ==============================================================================
-# Block-Size Extension & Length Generalization (C=1024 / L=5, 5090) — runs2.sh ONLY
-# See README "Block-Size Extension & Length Generalization". block_size 256 vs 4096
-# only (budget triage). Per-epoch wall-clock is ~flat in block size (fixed WT-103
-# token count → fewer, bigger steps), so BS=4096 costs ~the same as BS=256 per epoch.
+# Block-Size Extension & Length Generalization (C=1024 / L=5) — runs.sh
+# See README "Block-Size Extension & Length Generalization". block_size 256 vs 2048 —
+# the saner INCREMENTAL step: block 4096 OOM'd at every MBS on the 5090 (MBS-independent
+# T·S·C floor) and needs MBS<8 even on a 48GB card, so we expand to 2048 first (8x context,
+# still fits MBS=8). Per-epoch wall-clock is ~flat in block size (fixed WT-103 tokens).
 #   levels = log2(block) - 1 ; per_scale_mixer_widths length = levels + 1.
 #   LR = 0.05 (C=1024's 1/C ceiling; context-invariant — NOT lowered for block size).
-#   MBS: BS=256 fits MBS=8. BS=4096 does NOT — measured 30.7 GB (> the 5090's 32 GB once
-#   torch.compile's autotuner buffer is added; the earlier ~17 GB estimate was WRONG). The
-#   BS=4096 runs use MBS=4 / GA=2 (~18 GB); drop to MBS=2/GA=4 if still OOM. Per-epoch time
-#   is ~flat in block size only AT CONSTANT MBS — the forced cut at BS=4096 adds some.
-# Runs on a 5090: BS256/5ep (~13.5h, DONE = 1.0002) + BS4096/1ep + BS4096/5ep (both MBS=4).
+#   MBS=8/GA=1 throughout: BS=2048 fits at ~28-29 GB est (comfortable on a 48GB 6000;
+#   tight on a 32GB 5090 — verify at launch given the block-4096 estimate ran low 3x).
+#   Widths = block-4096's [1x6, 0.5x6] minus the coarsest scale -> [1x6, 0.5x5] (S=11).
+# Runs: BS256/5ep (DONE = 1.0002) + BS2048/1ep + BS2048/5ep.
 # ==============================================================================
 
 # (1) BS=256, 5ep — the width-proxy baseline: A/B vs C=2048/L=5/5ep (runs.sh More Epochs Max row).
 # run_ablation "T5_C1024_L5_bs256_5ep Block-Size — C=1024 L=5 block=256 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs256_5ep: block-size baseline + width proxy — C=1024 L=5 block=256 5ep; A/B vs C=2048/L=5/5ep; ~13.5h on 5090"
 
-# (2) BS=4096, 1ep — context extension, fast signal. levels 11, widths [1x6, 0.5x6] (S=12).
-run_ablation "T5_C1024_L5_bs4096_1ep Block-Size — C=1024 L=5 block=4096 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 11, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 4096, "micro_batch_size": 4, "grad_accum": 2, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs4096_1ep: block-size extension — C=1024 L=5 block=4096 (levels 11, widths [1x6,0.5x6]) 1ep; MBS=4/GA=2 on the 48GB RTX 6000 (MBS=8 OOMs ~60GB; MBS=4 ~30.75GB fits w/ margin); eff-batch 8"
+# (2) BS=2048, 1ep — context extension, fast signal. levels 10, widths [1x6, 0.5x5] (S=11).
+run_ablation "T5_C1024_L5_bs2048_1ep Block-Size — C=1024 L=5 block=2048 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 10, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 2048, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs2048_1ep: block-size extension — C=1024 L=5 block=2048 (levels 10, widths [1x6,0.5x5]) 1ep; MBS=8/GA=1 (~28-29GB est, fits 48GB 6000; verify on 32GB)"
 
-# (3) BS=4096, 5ep — context extension at headline scale.
-run_ablation "T5_C1024_L5_bs4096_5ep Block-Size — C=1024 L=5 block=4096 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 11, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 4096, "micro_batch_size": 4, "grad_accum": 2, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs4096_5ep: block-size extension — C=1024 L=5 block=4096 5ep; MBS=4/GA=2 on the 48GB RTX 6000 (MBS=8 OOMs ~60GB; MBS=4 ~30.75GB fits); eff-batch 8"
+# (3) BS=2048, 5ep — context extension at headline scale.
+run_ablation "T5_C1024_L5_bs2048_5ep Block-Size — C=1024 L=5 block=2048 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 10, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 2048, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs2048_5ep: block-size extension — C=1024 L=5 block=2048 5ep; MBS=8/GA=1 (~28-29GB est, fits 48GB 6000)"
 
 
 
