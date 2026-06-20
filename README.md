@@ -1809,7 +1809,18 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 
 ### Cross-Layer Skip Connections
 
-> **Status (2026-06-18): design #1 (dense skips) implemented + queued.** The residual was confirmed **load-bearing** (the `disable_residual` collapse), which is the documented promotion trigger (case b). Design #1 is now wired — `cross_layer_dense_skips` ([model.py](model.py): `layer_dense_A`, the layer loop), an init-to-identity `(L,L)` lower-triangular combine over prior layer outputs, lifted from the mixer-step `recur_dense_A`. Verified: at identity init it reproduces the plain stream **byte-for-byte** (max-diff 0.0), and off-diagonal weights change the output. Queued as a [T6](#more-layers)-candidate ablation at C=2048/L=5 (ep=1 and ep=5) in `runs.sh`. #2 (U-Net) and #3 (stacking) remain unbuilt.
+> **Status (2026-06-18): design #1 (dense skips) implemented + queued.** The residual was confirmed **load-bearing** (the `disable_residual` collapse), which is the documented promotion trigger (case b). Design #1 is now wired — `cross_layer_dense_skips` ([model.py](model.py): `layer_dense_A`, the layer loop), an init-to-identity `(L,L)` lower-triangular combine over prior layer outputs, lifted from the mixer-step `recur_dense_A`. Verified: at identity init it reproduces the plain stream **byte-for-byte** (max-diff 0.0), and off-diagonal weights change the output. Queued as a [T6](#more-layers)-candidate ablation at C=2048/L=5 (ep=1 and ep=5) in `runs.sh`. **First result (2026-06-20): the 1ep arm helps** — see table below. #2 (U-Net) and #3 (stacking) remain unbuilt.
+
+**Results.** Dense skips are properly iso-param (`layer_dense_A` is an `(L,L)` ≈ 25-param routing matrix), so any delta is the mechanism, not capacity.
+
+| Config | params | ep | MBS | GA | BPB | vs no-skip |
+|---|---|---|---|---|---|---|
+| C=2048/L=5 + skip | 1396.01M | 1 | 8 | 1 | **1.0797** | **−0.0034** vs 1.0831 ✓ (~3× noise) |
+| C=2048/L=5 + skip | 1396.01M | 5 | 8 | 1 | queued | vs no-skip 5ep |
+| C=1024/L=5 + skip | 375.04M | 1 | 8 | 1 | queued | C=1024 transfer |
+| C=1024/L=5 + skip | 375.04M | 5 | 8 | 1 | queued | vs C=1024/L=5/5ep = 1.0002 |
+
+The 1ep win is real but modest, and 1ep is data-starved — wait for the 5ep and C=1024 arms before folding skips into the [deep ladder](#deeper-c1024--the-iterative-pipeline). MBS/GA are listed because cross-layer skips add no activation memory (the routing combine is over already-stored layer outputs), so these fit MBS=8; only a deeper/wider host would force them down.
 
 Richer cross-layer information flow, motivated by the [learned-residual depth result](#more-layers): if the residual stream is the *memory bus* that makes depth pay (the L=3 ± residual control measures this), then enriching that bus is the obvious next lever. Both designs below are **additive and init-to-identity** — they reproduce the plain sequential residual stream exactly at initialization and learn away from it only if it helps, so they are strict, safe generalizations under the [structure-factoring](#structure-factoring) design rule (cross-layer flow added in parallel, not an in-series re-encoding).
 
@@ -1831,7 +1842,7 @@ Richer cross-layer information flow, motivated by the [learned-residual depth re
 
 **The deeper gate is retrieval, not length.** WaveletLM is a fixed-basis *position* mixer (the crawl learns lags, not content), which puts it in the SSM camp that struggles on NIAH/RULER. So before any multi-million-token work, the make-or-break is whether WaveletLM can needle-retrieve at modest long context *at all* — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md). This section is the *scaling-robustness* prototype that runs in parallel; it does not by itself settle retrieval.
 
-**The experiment.** Extend the **training block size** at C=1024 / L=5 and measure how quality holds as context grows. At these scales (thousands of tokens, not millions) **memory is *not* the constraint** — at block 4096 the activations are still small (~17 GB on the 5090 at **MBS=8**), so MBS stays at 8 throughout and the 5090's MBS=8 ceiling is closer to **block ~8192** (~16384 at MBS=4). (MBS=1 only matters at multi-*million*-token context, where the undecimated `T·S` blowup hits — the [decimation](plans/long_context_waveletlm.md) story, not this one.) Each power-of-2 block increase brings **+1 level** and **+1 per-scale-width entry** (`levels = log2(block_size) − 1`):
+**The experiment.** Extend the **training block size** at C=1024 / L=5 and measure how quality holds as context grows. **Correction — memory *is* a constraint at block 4096, more than expected:** it OOM'd at MBS=8 *and* MBS=4 (measured **~30.75 GB** at MBS=4, over the 5090 by a hair), so it runs at **MBS=2 / GA=4** (~18 GB est). I mis-estimated this three times — the driver is the **undecimated `T·S·C` activation cost**: at block 4096 with 12 scales kept full-length, the wavelet coefficients dominate, scaling with `T·S`, *not* the small per-token cost I'd assumed. Crucially, **GA holds the effective batch at 8**, so the block-size BPB is unaffected (see [the MBS/GA discussion below](#deeper-c1024--the-iterative-pipeline)); the fix is a fitting concern, not a science one. (The `T·S` blowup that bites here at 4096 is a milder version of the multi-*million*-token wall that motivates [decimation](plans/long_context_waveletlm.md).) Each power-of-2 block increase brings **+1 level** and **+1 per-scale-width entry** (`levels = log2(block_size) − 1`):
 
 | block_size | levels | per-scale widths (S = levels+1) |
 |---|---|---|
@@ -1865,24 +1876,26 @@ Both the BPB and val-loss gaps **narrowed ~13–14%** (≈3× the comparison noi
 
 **Queued runs (`runs2.sh`, a second 5090 in tandem; ~34–35 h total).** Budget triage — block sizes **256 and 4096 only**:
 
-| Run | block | levels | widths | ep | MBS | Status |
-|---|---|---|---|---|---|---|
-| C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | **done: 1.0002** (width proxy; see table above) |
-| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | **4** | **OOM at MBS=8 (30.7 GB)** — rerun at MBS=4/GA=2 |
-| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | **4** | OOM at MBS=8 — rerun at MBS=4/GA=2 |
+| Run | block | levels | widths | ep | MBS | GA | Status |
+|---|---|---|---|---|---|---|---|
+| C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | 1 | **done: 1.0002** (width proxy; see table above) |
+| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | 8 | 1 | 5090 OOM'd at **every** MBS (8/4/2) — **moved to a bigger VM** |
+| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | 8 | 1 | 5090 OOM'd at every MBS — **bigger VM**, MBS=8/GA=1 |
 
-All at C=1024, LR 0.05. **Correction:** bs4096 does **not** fit at MBS=8 — measured **30.7 GB** (> the 5090's 32 GB once torch.compile's autotuner buffer is added; my earlier ~17 GB estimate was wrong). Rerun at **MBS=4 / GA=2** (~18 GB). Per-epoch time is ~flat in block size only *at constant MBS*; the forced reduction at bs4096 adds some (worse utilization). Widths use **[1×6, 0.5×6]**; **[1×4, 0.5×8]** is the cleaner "isolate block size only" alternative.
+All at C=1024, LR 0.05, effective batch **8** (MBS×GA) on every row. **Correction — the 5090 cannot do block 4096 at *any* micro-batch:** OOM at MBS=8 (torch.compile autotuning), MBS=4 (runtime forward, ~30.75 GB, over by 32 MiB), *and* MBS=2 — a high **MBS-independent memory floor** from the undecimated `T·S·C` coefficients at T=4096/S=12 (my ~17/~18 GB estimates were both wrong). **Resolution: a bigger VM at MBS=8/GA=1**, rather than shrinking MBS further (diminishing returns once the floor stops moving). Note this changes *nothing* about the result: GA had held effective batch at 8 throughout, so BPB is the same at any MBS — micro-batch is quality-neutral here (LayerNorm, not BatchNorm; grad-accum is exact). Per-epoch time is ~flat in block size at constant MBS. Widths use **[1×6, 0.5×6]**; **[1×4, 0.5×8]** is the cleaner "isolate block size only" alternative.
 
 ### Deeper C=1024 — the iterative pipeline
 
 With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, depth is the next lever. **C=1024 is now the iterative development width; C=2048 / C=4096 are reserved for final headline runs.** `gradient_checkpointing` (recompute activations in backward, ~30 % slower) keeps even L=20 on a single 5090 — **no beefier VM required**, which corrects the earlier assumption that deep runs would need one. Protocol: run each depth at **1 epoch** (cheap ceiling-finder), bump depth only while it clears the ~0.0010 noise floor, then run the **5-epoch headline on the depth winner only** (an L=20/5ep would be ~50 h, so we don't run every depth at 5ep).
 
-| C=1024 layers | ep | grad-ckpt | params | BPB | notes |
-|---|---|---|---|---|---|
-| 5 | 5 | no | 375.04M | **1.0002** | validated baseline (beats old 883M headline) |
-| 10 | 1 | yes | TBD | queued | clears noise vs L=5? |
-| 15 | 1 | yes | TBD | queued | only if L=10 clears |
-| 20 | 1 | yes | TBD | queued | near the prior depth ceiling — only if L=15 clears |
+| C=1024 layers | ep | MBS | GA | grad-ckpt | params | BPB | notes |
+|---|---|---|---|---|---|---|---|
+| 5 | 5 | 8 | 1 | no | 375.04M | **1.0002** | validated baseline (beats old 883M headline) |
+| 10 | 1 | 8 | 1 | yes | TBD | queued | clears noise vs L=5? |
+| 15 | 1 | 8 | 1 | yes | TBD | queued | only if L=10 clears |
+| 20 | 1 | 8 | 1 | yes | TBD | queued | near the prior depth ceiling — only if L=15 clears |
+
+These stay at MBS=8 (block 256 keeps activations small); `gradient_checkpointing` is the memory lever, not MBS. If even checkpointed L=20 OOMs, **drop MBS (→4, GA→2)** as the same equal-quality fitting knob used for bs4096 above — effective batch and BPB are unchanged.
 
 > ⚠ **Depth ceiling is real.** The old-recipe **30L/C=512 run *regressed*** vs 20L (BPB 1.0207 > 1.0136) — depth hurt past ~20 layers. The learned-residual recipe may push the ceiling higher, but L=20 is plausibly near it, so we deepen iteratively and stop when a depth fails to clear noise rather than committing to L=20 blind. Targeting ~800M–1B params (≈10–15 layers) for a GPT-2-XL-class headline is plausible but unproven — and read the cross-model **PPL caveats** before claiming it (word-level vs BPE perplexity are not comparable; use BPB).
 
