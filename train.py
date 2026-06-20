@@ -897,6 +897,13 @@ def train():
                              'identity (no transform), dht (Hartley), dct, or learned_butterfly '
                              '(learned orthogonal). Injected into the run config and persisted '
                              'to the saved config.json.')
+    parser.add_argument('--eval_block_size', type=int, default=None,
+                        help='Length-generalization eval ONLY (benchmark_only mode): evaluate the '
+                             'trained model at this block size instead of its trained one. No effect '
+                             'during training, and a no-op when equal to the trained size — the '
+                             'existing benchmark path is byte-for-byte unchanged. Architecture '
+                             '(levels/widths) stays from the saved config; only the eval window '
+                             'changes. Requires bbce_enabled=false.')
     args = parser.parse_args()
 
     # Load config
@@ -1007,6 +1014,23 @@ def train():
         log_dir = benchmark_run_dir
         logger = Logger(log_dir, filename="benchmark.txt")
         logger.log(f"=== BENCHMARK ONLY MODE ===")
+
+        # Length-generalization eval (opt-in, additive — does NOT touch the default path).
+        # When --eval_block_size is given AND differs from the trained block_size, evaluate
+        # the *unchanged* model at the new window: only the eval window changes; every
+        # architecture key stays from the checkpoint's saved config. WaveletLM has no
+        # positional embedding (a-trous levels are length-independent) and, with bbce off,
+        # no block_size-dependent buffer, so a model trained at one block size runs at a
+        # larger one with no mismatch. No-op when the arg is absent or equals the trained
+        # size, so the existing benchmark stays byte-for-byte unchanged.
+        if args.eval_block_size is not None and int(args.eval_block_size) != int(config['block_size']):
+            if config.get('bbce_enabled', False):
+                raise ValueError("--eval_block_size (length-gen eval) is not supported with bbce_enabled=true")
+            _trained_bs = int(config['block_size'])
+            config['block_size'] = int(args.eval_block_size)
+            logger.log(f"[LENGTH-GEN] Eval block_size overridden: trained={_trained_bs} -> "
+                       f"eval={config['block_size']} (architecture unchanged; sliding-window BPB "
+                       f"uses the new window).")
         logger.log(f"Run directory: {benchmark_run_dir}")
         # Inference-time mixer-recurrence depth override (eval-only). Injected as
         # a NEW config key on top of the run's own config — it never modifies a

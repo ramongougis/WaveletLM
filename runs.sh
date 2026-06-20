@@ -301,6 +301,42 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 ###########
 ########### RUNS ##
 
+# ==============================================================================
+# LENGTH-GENERALIZATION EVAL (eval-only — NO training) — RUNS FIRST (curious about it)
+# Evaluate the best 256-trained checkpoint at growing eval windows for the
+# train-short / eval-long BPB curve. Uses the opt-in --eval_block_size flag (the
+# benchmark path is unchanged at the trained size). Forward-only, so it does NOT hit
+# the 62GB training wall. Architecture stays as trained (levels=7), so this measures
+# whether a longer window helps WITHIN the trained wavelet reach (~2^7≈128-256 tokens)
+# plus the cross-window decompose-bypass recurrence — NOT full 2048-token dependency
+# use (that needs more levels = retraining).
+#   block 256 is the CONTROL: --eval_block_size 256 == trained → no-op branch, so it
+#   must reproduce the run's original sliding BPB (~0.9748), proving the default path
+#   is untouched.
+#   PREREQUISITE — pull the checkpoint from S3 first (config.json + best_model.pt):
+#     aws s3 sync s3://exarch-ai-model/EXARCH/logs/wikitext-103_2026-06-18_19-18-42/ \
+#                 /workspace/EXARCH/logs/wikitext-103_2026-06-18_19-18-42/
+#   If best_model.pt is absent the sweep SKIPS (guarded) and training proceeds.
+# ==============================================================================
+LENGTHGEN_CKPT="logs/wikitext-103_2026-06-18_19-18-42"   # C=2048/L=5/5ep, BPB 0.9748 (trained block 256)
+if [ -f "$LENGTHGEN_CKPT/best_model.pt" ]; then
+    for EVAL_BS in 256 512 1024 2048; do
+        echo ""
+        echo "=== [length-gen] eval $LENGTHGEN_CKPT at block_size=$EVAL_BS ==="
+        build_run_config "{\"benchmark_only\": true, \"benchmark_run_dir\": \"$LENGTHGEN_CKPT\"}"
+        python train.py --config "$TMP_CFG" --eval_block_size "$EVAL_BS" \
+            || echo "[runs.sh] length-gen eval at block_size=$EVAL_BS exited non-zero; continuing"
+        # benchmark.txt is overwritten on each benchmark_only run — snapshot it per
+        # block size so the whole sweep survives.
+        [ -f "$LENGTHGEN_CKPT/benchmark.txt" ] && \
+            cp "$LENGTHGEN_CKPT/benchmark.txt" "$LENGTHGEN_CKPT/benchmark_lengthgen_bs${EVAL_BS}.txt"
+    done
+    git_commit_push "length-gen eval sweep: $LENGTHGEN_CKPT at block 256/512/1024/2048"
+else
+    echo "[runs.sh] length-gen sweep SKIPPED — $LENGTHGEN_CKPT/best_model.pt not found."
+    echo "[runs.sh]   Pull it first: aws s3 sync s3://exarch-ai-model/EXARCH/$LENGTHGEN_CKPT/ /workspace/EXARCH/$LENGTHGEN_CKPT/"
+fi
+
 # run_ablation "T6_L5_xskip_1ep Cross-Layer Skip — C=2048 L=5 dense skips (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "cross_layer_dense_skips": true, "layers": 5}'     "T6_L5_xskip_1ep: cross-layer dense skips (init-to-identity) at L=5/1ep; A/B vs shared no-skip L=5 (1.0831); smoke-test first eval == baseline then diverge"
 
 # run_ablation "T6_L5_xskip_5ep Cross-Layer Skip — C=2048 L=5 dense skips (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "cross_layer_dense_skips": true, "layers": 5}'     "T6_L5_xskip_5ep: cross-layer dense skips at L=5/5ep; A/B vs shared no-skip L=5 (5ep TBD)"
@@ -334,11 +370,18 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # (1) BS=256, 5ep — the width-proxy baseline: A/B vs C=2048/L=5/5ep (runs.sh More Epochs Max row).
 # run_ablation "T5_C1024_L5_bs256_5ep Block-Size — C=1024 L=5 block=256 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs256_5ep: block-size baseline + width proxy — C=1024 L=5 block=256 5ep; A/B vs C=2048/L=5/5ep; ~13.5h on 5090"
 
-# (2) BS=2048, 1ep — context extension, fast signal. levels 10, widths [1x6, 0.5x5] (S=11).
-run_ablation "T5_C1024_L5_bs2048_1ep Block-Size — C=1024 L=5 block=2048 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 10, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.00625, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 2048, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs2048_1ep: block-size extension — C=1024 L=5 block=2048 (levels 10, widths [1x6,0.5x5]) 1ep; MBS=8/GA=1 (~28-29GB est, fits 48GB 6000; verify on 32GB)"
+# (1b) BS=256, 1ep — the MISSING C=1024/L=5/1ep baseline (fills the depth×epoch grid:
+#      we have L=1/1ep=1.1368 and L=5/5ep=1.0002, but no L=5/1ep). Cheap, block-256 speed.
+run_ablation "T5_C1024_L5_bs256_1ep Baseline — C=1024 L=5 block=256 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs256_1ep: missing baseline — C=1024 L=5 block=256 1ep; A/B vs L=1/1ep (1.1368) and L=5/5ep (1.0002)"
 
-# (3) BS=2048, 5ep — context extension at headline scale.
-run_ablation "T5_C1024_L5_bs2048_5ep Block-Size — C=1024 L=5 block=2048 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 10, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.00625, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 2048, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs2048_5ep: block-size extension — C=1024 L=5 block=2048 5ep; MBS=8/GA=1 (~28-29GB est, fits 48GB 6000)"
+# (2) CANCELLED — BS=2048 TRAINING dropped (eval-only pivot). Reasons: ~62 GB on a 96 GB
+#     card (undecimated T·S·C wall), NaN cliff drops to ~0.011, and the steps/LR confound
+#     makes 1ep uninterpretable. We now do length-GENERALIZATION evals on the 256 model and
+#     defer real long context to decimation. Commented runs kept for the record.
+# run_ablation "T5_C1024_L5_bs2048_1ep Block-Size — C=1024 L=5 block=2048 (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 10, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.00625, "min_lr": 0.000125, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 2048, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs2048_1ep: block-size extension — C=1024 L=5 block=2048 1ep; lr 0.00625 (NaN cliff ~0.011 at this block per log 16-31-05 — block 2048 LOWERS the LR ceiling vs block 256's ~0.05); min_lr=lr/50; MBS=8 used ~62GB on the 96GB Blackwell 6000"
+
+# (3) CANCELLED — BS=2048/5ep training dropped (see (2) above).
+# run_ablation "T5_C1024_L5_bs2048_5ep Block-Size — C=1024 L=5 block=2048 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 10, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.00625, "min_lr": 0.000125, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "block_size": 2048, "layers": 5, "C": 1024}'     "T5_C1024_L5_bs2048_5ep: block-size extension — C=1024 L=5 block=2048 5ep; lr 0.00625 (cliff ~0.011 — see 1ep), min_lr=lr/50; MBS=8 ~62GB on the 96GB Blackwell 6000"
 
 
 
@@ -373,3 +416,6 @@ run_ablation "T5_C1024_L10_1ep Deep C=1024 — L=10 (1ep, grad-ckpt)"     "$BASE
 run_ablation "T5_C1024_L15_1ep Deep C=1024 — L=15 (1ep, grad-ckpt)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 15, "C": 1024}'     "T5_C1024_L15_1ep: deep C=1024 — L=15, grad-ckpt; only run if L=10 cleared noise"
 
 run_ablation "T5_C1024_L20_1ep Deep C=1024 — L=20 (1ep, grad-ckpt)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 20, "C": 1024}'     "T5_C1024_L20_1ep: deep C=1024 — L=20, grad-ckpt; near the prior ~20L ceiling, only if L=15 cleared noise"
+
+
+# (length-gen eval sweep MOVED to the top of the RUNS section so it runs FIRST — see there)
