@@ -1884,6 +1884,21 @@ python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> 
 
 **Caveat — `levels` stay at 7 (trained):** the wavelet reach is ~2⁷≈128–256 tokens, with the cross-window decompose-bypass adding a recurrent long-range channel. So this measures whether a longer *eval* window helps within the trained reach + recurrence — **not** whether the architecture could exploit full 2048-token dependencies (that needs more levels = retraining). It's the right cheap first signal; a positive curve motivates the [decimation](plans/long_context_waveletlm.md) retrain.
 
+**RESULT (2026-06-20) — bounded length generalization (~1 doubling) + a strong efficiency unlock.** Eval-only sweep of the best 256-trained checkpoint (C=2048/L=5/5ep) at growing windows:
+
+| eval block | min_context | **Sliding BPB** | vs trained 256 | Non-overlap BPB |
+|---|---|---|---|---|
+| 256 (control) | 128 | 0.9748 | — | 0.9974 |
+| **512** | 256 | **0.9727** | **−0.0021** ✓ | 0.9854 |
+| 1024 | 512 | 0.9736 | −0.0012 | 0.9800 |
+| 2048 | 1024 | 0.9765 | **+0.0017** | 0.9785 |
+
+- **Control reproduces 0.9748 exactly** → the `--eval_block_size` branch is byte-for-byte clean (the default path is unperturbed).
+- **Sliding BPB peaks at 512, then degrades; 2048 falls *below* the trained baseline.** The model genuinely uses context to ~256–512 — a real ~0.002 gain *beyond* the ~128 wavelet reach, which implicates the **cross-window decompose-bypass** as the long-range carrier — but is *hurt* by 1024–2048-token windows (fixed levels=7 can't structure that range; the bypass running-mean dilutes recency). **Bounded length generalization: ~one doubling.**
+- **Non-overlap improves monotonically (0.9974→0.9785), but that's largely a measurement artifact** — bigger non-overlap windows average in fewer context-starved early tokens. Sliding (fixed min_context) controls for this and is the honest read.
+- **Efficiency unlock (the strong result):** eval memory is ~flat — **~14 GB (512) → 15.5 GB (2048)**, +1.5 GB for 4× the window (forward-only, levels fixed) — and **scored throughput *rises* with length** (~7.9k → 12.7k tok/s, 512→2048; it/s falls but each window scores more). Long context is *cheaper and faster per token* — the opposite of attention's KV-cache growth.
+- **Implication:** the >512 degradation is the **fixed-levels ceiling**, not an architecture limit. Adding coarse levels (eval-time duplication, or `lifting_level_sharing` scale-invariant training — see [the levels question](#deeper-c1024--the-iterative-pipeline)) is the path from bounded to genuine long-context. Full logs: `logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs{256,512,1024,2048}.txt`.
+
 **What the cancelled training sweep taught us (kept for the record):**
 - **Memory:** block 2048 undecimated = **~62 GB** (C=1024/L=5, MBS=8) on the 96 GB Blackwell 6000; block 4096 OOM'd at every MBS even on the 5090. The `T·S·C` cost is the wall — exactly what [decimation](plans/long_context_waveletlm.md) fixes.
 - **LR is *not* context-invariant:** NaN cliff ~0.05 (block 256) → **~0.011** (block 2048) — see the LR note above.

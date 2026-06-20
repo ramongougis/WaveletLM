@@ -320,7 +320,11 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # ==============================================================================
 LENGTHGEN_CKPT="logs/wikitext-103_2026-06-18_19-18-42"   # C=2048/L=5/5ep, BPB 0.9748 (trained block 256)
 if [ -f "$LENGTHGEN_CKPT/best_model.pt" ]; then
-    for EVAL_BS in 256 512 1024 2048; do
+    # Full degradation map. NOTE: the ceiling is the WT-103 TEST SET (287K tokens), NOT
+    # VRAM — batch=1 is forced for benchmarks (train.py:605) and levels stay at 7, so eval
+    # memory stays low even at 128K. Blocks >=2^16 are statistically THIN (<=8 windows),
+    # >=2^17 very thin (2-4). Any block that OOMs or can't form a full window is skipped.
+    for EVAL_BS in 256 512 1024 2048 4096 8192 16384 32768 65536 131072 262144; do
         echo ""
         echo "=== [length-gen] eval $LENGTHGEN_CKPT at block_size=$EVAL_BS ==="
         build_run_config "{\"benchmark_only\": true, \"benchmark_run_dir\": \"$LENGTHGEN_CKPT\"}"
@@ -331,10 +335,23 @@ if [ -f "$LENGTHGEN_CKPT/best_model.pt" ]; then
         [ -f "$LENGTHGEN_CKPT/benchmark.txt" ] && \
             cp "$LENGTHGEN_CKPT/benchmark.txt" "$LENGTHGEN_CKPT/benchmark_lengthgen_bs${EVAL_BS}.txt"
     done
-    git_commit_push "length-gen eval sweep: $LENGTHGEN_CKPT at block 256/512/1024/2048"
+    git_commit_push "length-gen eval sweep: $LENGTHGEN_CKPT at block 256..262144 (degradation map)"
 else
     echo "[runs.sh] length-gen sweep SKIPPED — $LENGTHGEN_CKPT/best_model.pt not found."
     echo "[runs.sh]   Pull it first: aws s3 sync s3://exarch-ai-model/EXARCH/$LENGTHGEN_CKPT/ /workspace/EXARCH/$LENGTHGEN_CKPT/"
+fi
+
+# --- generate.py inference efficiency profile (decode VRAM + tok/s vs generation length) ---
+# Profiles AUTOREGRESSIVE DECODE (generate N new tokens) — a DIFFERENT axis from the eval
+# sweep above (which profiled long-INPUT prefill/scoring). Both characterize the efficiency.
+if [ -f "$LENGTHGEN_CKPT/best_model.pt" ]; then
+    for NT in 256 1024 4096; do
+        echo ""
+        echo "=== [gen-profile] $LENGTHGEN_CKPT --num_tokens $NT --metrics ==="
+        python generate.py --checkpoint "$LENGTHGEN_CKPT/best_model.pt" --num_tokens "$NT" --metrics \
+            || echo "[runs.sh] gen-profile at num_tokens=$NT exited non-zero; continuing"
+    done
+    git_commit_push "gen-profile: $LENGTHGEN_CKPT decode VRAM + tok/s at num_tokens 256/1024/4096"
 fi
 
 # run_ablation "T6_L5_xskip_1ep Cross-Layer Skip — C=2048 L=5 dense skips (1ep)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.02250, "min_lr": 0.000450, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "cross_layer_dense_skips": true, "layers": 5}'     "T6_L5_xskip_1ep: cross-layer dense skips (init-to-identity) at L=5/1ep; A/B vs shared no-skip L=5 (1.0831); smoke-test first eval == baseline then diverge"
