@@ -178,6 +178,37 @@ Companion architecture design (2026-06-11) for *any* of the frozen constructions
 - **Mandatory ablation arm — ±PE:** WaveletLM's mixing machinery already encodes relative position structurally, so the PE channel may be redundant. If frozen-E-no-PE matches frozen-E⊕PE, that is itself a mechanistic finding (position lives in the mixing structure, not the representation) and simplifies the architecture.
 - **First runs:** frozen-E⊕PE + identity transform + scalar-gain head vs frozen-E-no-PE, 1ep, then branch. Combine with the transform-reintroduction test (± fwht/butterfly) from the README's Semantic Embedding section — the same runs localize where basis-adaptation lives.
 
+## Honesty / deception features + causal validation (safety-interpretability axis)
+
+A small, named feature set on the safety axis (2026-06-19), motivated by Bengio's "safe superintelligence" direction — a probe-able internal truth/honesty structure makes a model *auditable* — but scoped honestly. Two framing corrections up front: (1) Bengio's strongest move is **non-agency** (a goal-less predictor has no instrumental incentive to deceive); truth-labeling is a *piece*, not the whole. (2) A truth *representation* does **not** by itself guarantee honest *output* — a capable agent can represent "what's true" and "what to say" separately. So the portable, achievable version here is **not** corpus-wide factuality (unlabelable at scale — we reject it, as does the project lead) but **honesty/deception as named embedding dimensions**: style/context markers, the natural extension of the "corpus frequency in deceptive contexts" example dimension above. There is real grounding that such structure is linearly decodable in LLMs (Marks & Tegmark, *The Geometry of Truth*; Azaria & Mitchell, *The Internal State of an LLM Knows When It's Lying*; Zou et al., *Representation Engineering*).
+
+**Feature set (small, named):**
+- `deception / dishonesty` — association with deceptive contexts (scams, propaganda, unreliable-narrator fiction, mislead-by-hedging).
+- `honesty / forthrightness` — association with candid, sincere, disclosure-heavy contexts.
+- *(optional)* `evasiveness / manipulation`, `sincerity`, `confidence-vs-hedging`.
+
+Coefficient assignment per the methods above: **corpus-statistical** (deceptive-context co-occurrence frequency, $0) as the base, optionally **LLM-scored** for the abstract end. Explicitly **not** factuality/truth-value.
+
+**The differentiator — name the feature, then *prove causality* (don't stop at correlation).** A corpus-derived "dishonesty" dimension is by default only a *correlate*: it fires for deceptive content but may not be what the model's deceptive *generation* routes through. WaveletLM's existing **FDA / dimensional-suppression / SOW** machinery does exactly the needed intervention — ablate or amplify the dishonesty dimension(s) and measure whether deceptive output **causally** changes. Two outcomes, both reportable:
+- *Causal* → a load-bearing honesty handle (probe **and** steer) — a genuine MI/safety result.
+- *Not causal* → the dimension is a surface correlate; say so honestly.
+
+This intervention loop — name → ablate/amplify → measure causal effect on generation — is what separates a real result from a comfortable story, and WaveletLM is unusually well-equipped to run it (named features + dimensional-intervention tools on the same rails).
+
+**Honest caveats (so the claim stays scoped):**
+- **Monitor, not control.** A correlational feature is a smoke detector, not a suppressant — it flags deceptive *content*, doesn't prevent deceptive *generation*, and a capable model could deceive without lighting it up.
+- **Use/mention contamination.** The dim fires for honest *discussion of* lying ("the scammer lied") as much as for lying — corpus co-occurrence can't separate use from mention. The [homonym separation](#homonym-separation-sense-disambiguated-tokens) machinery above may help (sense-split `lie_falsehood` vs `lie_recline`, etc.).
+- **Token-level vs intention-level.** Deception is a sequence/output-level intention; a lie can be built from honest-seeming tokens. Per-token features catch loaded markers, not the deeper "is this statement a lie" structure.
+- **Goodhart.** If the feature ever becomes a training *penalty*, the model optimizes to avoid the feature, not to be honest. Keep it a passive monitor or a causally-grounded steer — never a trainable proxy.
+
+**Data dependence.** Like every capacity lever in this project, the correlations between deceptive behaviour and the feature only form robustly with *volume* — at WT-103/1ep this is a weak, noisy signal. The fair test is the [big-combined-dataset](../README.md#release-pipeline) regime; treat WT-103 results as a smoke test of the plumbing, not a verdict on the feature.
+
+**Open questions:**
+- Does the causal intervention move *generation-level* deception (held-out deceptive-task probes), or only token-level markers?
+- Does sense-splitting deception-related tokens sharpen the dim (use/mention separation)?
+- Is a single "honesty axis" enough, or does deception decompose into separable sub-features (evasion vs fabrication vs manipulation) that each need their own dim?
+- Does the handle transfer across datasets, or is it corpus-specific?
+
 ## Key differences from EXARCH's current approach
 
 1. **Feature construction**: Statistical/structural extraction from corpus, not LLM-based concept labeling. Much cheaper ($0 vs $200+/concept for FDA).

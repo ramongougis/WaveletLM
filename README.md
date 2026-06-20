@@ -1705,7 +1705,7 @@ The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per 
 | 2 | 5 | lean | 690.66M | **0.9868** | 3.0666 | queued | 13,403 MiB | 5090 | [link](logs/wikitext-103_2026-06-17_20-42-32/log.txt) |
 | ~~3~~ | 5 | — | — | scrapped (→ L=5) | — | — | — | — | — |
 | ~~4~~ | 5 | — | — | scrapped (→ L=5) | — | — | — | — | — |
-| **5 (Max from More Layers)** | 5 | lean | 1396.01M | queued | queued | queued | ~26,856 MiB | 5090 | queued |
+| **5 (Max from More Layers)** | 5 | lean | 1396.01M | **0.9748** | 3.0468 | queued | ~26,856 MiB | 5090 | [link](logs/wikitext-103_2026-06-18_19-18-42/log.txt) |
 
 **L=2 / 5ep = 0.9868** (best val 3.0666) — **sub-1.0, and −0.0272 under the old headline** (1.0140, the old recipe's L=2/5ep), the new lean recipe at the same depth/epochs. Confirms depth pays at 5ep; **L=5/5ep (the Max row) is the next run** and the expected Medium headline.
 
@@ -1853,17 +1853,38 @@ The schedule above is **C-agnostic** (levels/widths depend only on block size). 
 1. **Block-size robustness** — does BPB hold (or degrade tolerably) as the *training* block grows?
 2. **Length generalization** — train at block 256/512, then *evaluate* at 1024/2048/4096 (plus a small NIAH probe). The **train-short / eval-long curve** is the SubQ-relevant property: it decides whether the 2M-train → 12M-eval story is even open for WaveletLM.
 
-**Width-proxy validation — is C=1024 a reliable cheap stand-in for C=2048?** The width gap at L=1/1ep is **+0.0305** (C=1024 = 1.1378 vs C=2048 = 1.1073). The *hope* is that at L=5/5ep the gap **shrinks** — making the ~4×-cheaper C=1024 a trustworthy rapid-prototyping width and justifying its use as the default for future tests. The runs that settle it: C=1024 and C=2048 at **L=5, ep=1 and ep=5** (C=2048/L=5/5ep is the [More Epochs](#more-epochs) Max row; C=1024/L=5 at both epoch counts is new). **Honest caveat — the data we have leans the *other* way.** At 1ep the gap appears to *widen* with depth: C=1024/L=6 = **1.1198** vs C=2048/L=5 = **1.0831** is already ~0.04, larger than the L=1 gap; and the [data-starvation findings](#less-width) predict more epochs widen it further, since the wider model only realizes its extra C² capacity once it's fed (5ep should help C=2048 *more*). So C=1024/L=5/5ep may be a **conservative-but-biased** proxy that *underestimates* C=2048's headroom rather than a clean stand-in. Either outcome is useful: a small gap validates a cheap default width; a widening gap *quantifies the bias* so cheap C=1024 prototypes can be read with a known correction.
+**Width-proxy validation — RESULT: C=1024 is a validated cheap stand-in (the gap *shrinks*).** The matched comparison landed (each C at its width LR — C=1024 @ 0.05, C=2048 @ 0.0225):
+
+| | C=1024 | C=2048 | BPB gap | C=1024 val | C=2048 val | val gap |
+|---|---|---|---|---|---|---|
+| L=1 / 1ep | 1.1368 | 1.1073 | +0.0295 | 3.5302 | 3.4479 | +0.0823 |
+| **L=5 / 5ep** | **1.0002** | **0.9748** | **+0.0254** | **3.1187** | **3.0468** | **+0.0719** |
+| change | | | **−0.0041 (~14%)** | | | **−0.0104 (~13%)** |
+
+Both the BPB and val-loss gaps **narrowed ~13–14%** (≈3× the comparison noise) — so **C=1024 is a usable rapid-prototyping width with a stable, slightly-shrinking ~0.025 BPB offset**: prototype ~4× cheaper, add ~0.025 to estimate C=2048. The Small at **375M / 1.0002 BPB / 22.75 PPL beats the old 883M headline** outright. **Correction to an earlier hedge:** this section previously leaned toward the gap *widening*, off the *mismatched* C=1024/L=6-vs-C=2048/L=5 point (~0.04, different depth *and* params); the clean *matched* L=5/5ep comparison supersedes it and confirms the shrink. One caveat survives: more *epochs* ≠ more *data* (same WT-103), so this tightening on fixed data does **not** settle whether wider-C pulls ahead on a bigger corpus — that's the big-data pilot's job.
 
 **Queued runs (`runs2.sh`, a second 5090 in tandem; ~34–35 h total).** Budget triage — block sizes **256 and 4096 only**:
 
-| Run | block | levels | per-scale widths | ep | MBS | ~time | Compares to |
-|---|---|---|---|---|---|---|---|
-| C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | ~13.5 h | C=2048/L=5/5ep ([Max row](#more-epochs)) — width proxy |
-| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | 8 | ~3.4 h | bs256 (block-size robustness) |
-| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | 8 | ~17 h | bs256/5ep + length-gen eval |
+| Run | block | levels | widths | ep | MBS | Status |
+|---|---|---|---|---|---|---|
+| C=1024/L=5 bs256 5ep | 256 | 7 | [1×4, 0.5×4] | 5 | 8 | **done: 1.0002** (width proxy; see table above) |
+| C=1024/L=5 bs4096 1ep | 4096 | 11 | [1×6, 0.5×6] | 1 | **4** | **OOM at MBS=8 (30.7 GB)** — rerun at MBS=4/GA=2 |
+| C=1024/L=5 bs4096 5ep | 4096 | 11 | [1×6, 0.5×6] | 5 | **4** | OOM at MBS=8 — rerun at MBS=4/GA=2 |
 
-All at C=1024, LR 0.05. Per-epoch time is ~flat in block size (fixed WT-103 token count → fewer/bigger steps), so bs4096 costs about the same per epoch as bs256. The widths use **[1×6, 0.5×6]** (50%-full, matching the block-256 *fraction*); **[1×4, 0.5×8]** (matching the block-256 *count* of 4 full-width scales) is the more conservative "isolate block size only" alternative.
+All at C=1024, LR 0.05. **Correction:** bs4096 does **not** fit at MBS=8 — measured **30.7 GB** (> the 5090's 32 GB once torch.compile's autotuner buffer is added; my earlier ~17 GB estimate was wrong). Rerun at **MBS=4 / GA=2** (~18 GB). Per-epoch time is ~flat in block size only *at constant MBS*; the forced reduction at bs4096 adds some (worse utilization). Widths use **[1×6, 0.5×6]**; **[1×4, 0.5×8]** is the cleaner "isolate block size only" alternative.
+
+### Deeper C=1024 — the iterative pipeline
+
+With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, depth is the next lever. **C=1024 is now the iterative development width; C=2048 / C=4096 are reserved for final headline runs.** `gradient_checkpointing` (recompute activations in backward, ~30 % slower) keeps even L=20 on a single 5090 — **no beefier VM required**, which corrects the earlier assumption that deep runs would need one. Protocol: run each depth at **1 epoch** (cheap ceiling-finder), bump depth only while it clears the ~0.0010 noise floor, then run the **5-epoch headline on the depth winner only** (an L=20/5ep would be ~50 h, so we don't run every depth at 5ep).
+
+| C=1024 layers | ep | grad-ckpt | params | BPB | notes |
+|---|---|---|---|---|---|
+| 5 | 5 | no | 375.04M | **1.0002** | validated baseline (beats old 883M headline) |
+| 10 | 1 | yes | TBD | queued | clears noise vs L=5? |
+| 15 | 1 | yes | TBD | queued | only if L=10 clears |
+| 20 | 1 | yes | TBD | queued | near the prior depth ceiling — only if L=15 clears |
+
+> ⚠ **Depth ceiling is real.** The old-recipe **30L/C=512 run *regressed*** vs 20L (BPB 1.0207 > 1.0136) — depth hurt past ~20 layers. The learned-residual recipe may push the ceiling higher, but L=20 is plausibly near it, so we deepen iteratively and stop when a depth fails to clear noise rather than committing to L=20 blind. Targeting ~800M–1B params (≈10–15 layers) for a GPT-2-XL-class headline is plausible but unproven — and read the cross-model **PPL caveats** before claiming it (word-level vs BPE perplexity are not comparable; use BPB).
 
 **Memory / decimation.** This runs on the current **undecimated** (à-trous) transform, which is fine at these scales (1–2M undecimated C=2048 fits 8 B200s sharded). The undecimated `[B,T,S,Cp]` cost only becomes a wall past a few million tokens, where the fix is **decimating the wavelet transform** (memory/compute O(T·S) → O(T)) — and the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured) motivates a **coarse-decimation hybrid** (decimate the coarse scales, which are smoothers; keep the fine scales, which carry precise lags). That redesign is deferred to [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md); it is **not** needed for this prototype.
 
