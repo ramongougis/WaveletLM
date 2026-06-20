@@ -116,7 +116,7 @@ Default generation:
 python generate.py --checkpoint best_model_pg-19.pt
 ```
 
-**Controlling generation context length:** Generation feeds the model up to `generation_max_context` tokens. Set it lower (512-1024) for best quality, or higher for very long prompts. Long context degradation is relatively minor, so the default for `generation_max_context` is deliberately large. In practice, it is only limited by VRAM. See [this section](#block-size-extension--length-generalization) for more info.
+**Controlling generation context length:** Generation feeds the model up to `generation_max_context` tokens. Set it lower (512-1024) for best quality, or higher for very long prompts. Long context degradation is relatively minor, so the default for `generation_max_context` is deliberately large. In practice, it is only limited by VRAM, and scales linearly with it at a rate of 0.8 MiB/token. See [this section](#block-size-extension--length-generalization) for more info.
 
 ```bash
 # long prompt, ingested in full (memory-bound, not architecture-bound):
