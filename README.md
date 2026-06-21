@@ -1812,6 +1812,7 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 | untied | 1 | false | — | **NaN @ lr 0.0225** | NaN onset lr 0.0205 (step 16k) | 35.8 GB | [link](logs/wikitext-103_2026-06-18_11-43-52/log.txt) |
 | **untied (retry @ lr 0.018)** | 1 | false | — | queued | — | below the 0.020 cliff; MBS 4 / GA 2 | queued |
 | untied | 5 | false | — | deferred (post-release) | — | — | — |
+| untied @ C=1024 | 1 | false | 492.60M | 8.7579 ✗ | 4.2837 | broken (val 4.28 ≫ plain 3.49; BPB inconsistent w/ val → eval instability); "more stable at lower C" refuted | [link](logs/wikitext-103_2026-06-21_13-16-56/log.txt) |
 
 **What it measures (two informative outcomes, both useful).** (1) **BPB** — does a per-layer temporal decomposition pay, or is one shared basis a sufficient (and regularising) inductive bias? At 1ep/data-starved, untie's extra params + loss of the shared-weight regulariser make a clear win uncertain; the value may be larger at 5ep. (2) **Re-probe** the untied checkpoint with [`probe_crawl_dilations.py`](interpretability/probe_crawl_dilations.py): under untie the five blocks will no longer be identical — if the per-layer `dilation_logits` **converge**, the shared default is validated as sufficient (a parsimony result + the clean claim "depth is pure re-mixing on a fixed basis"); if they **diverge**, depth wants its own view of time (a new lever, and it sharpens *why* depth pays non-diminishingly).
 
@@ -1832,9 +1833,9 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 | C=2048/L=5 + skip | 1396.01M | 1 | 8 | 1 | **1.0797** | **−0.0034** vs 1.0831 ✓ (~3× noise) |
 | C=2048/L=5 + skip | 1396.01M | 5 | 8 | 1 | queued | vs no-skip 5ep |
 | C=1024/L=5 + skip | 375.04M | 1 | 8 | 1 | **1.1183** | **−0.0023** vs 1.1206 ✓ (~2× noise) |
-| C=1024/L=5 + skip | 375.04M | 5 | 8 | 1 | queued | vs C=1024/L=5/5ep = 1.0002 |
+| C=1024/L=5 + skip | 375.04M | 5 | 8 | 1 | 1.0008 | +0.0006 vs 1.0002 ✗ (washes out) |
 
-The 1ep win is real but modest and **transfers to C=1024** (−0.0023, mirroring C=2048's −0.0034) — but 1ep is data-starved, so wait for the **5ep arms** before folding skips into the [deep ladder](#deeper-c1024--the-iterative-pipeline) (where they should help *most*, with more layers to route across). MBS/GA are listed because cross-layer skips add no activation memory (the routing combine is over already-stored layer outputs), so these fit MBS=8; only a deeper/wider host would force them down.
+The 1ep win (−0.0023 at C=1024, −0.0034 at C=2048) **washed out at 5ep**: C=1024/L=5/5ep + skip = 1.0008 vs the plain 1.0002 (+0.0006, within noise). So cross-layer skip is a **data-starvation artifact, not a real gain** — it does not graduate into the headline recipe (T6 = T5, shared / no-skip), and the [deep ladder](#deeper-c1024--the-iterative-pipeline) stays plain. (The C=2048/5ep arm is still queued, but given the C=1024 wash-out it is not expected to change the verdict.) MBS/GA are listed because cross-layer skips add no activation memory, so they fit MBS=8.
 
 Richer cross-layer information flow, motivated by the [learned-residual depth result](#more-layers): if the residual stream is the *memory bus* that makes depth pay (the L=3 ± residual control measures this), then enriching that bus is the obvious next lever. Both designs below are **additive and init-to-identity** — they reproduce the plain sequential residual stream exactly at initialization and learn away from it only if it helps, so they are strict, safe generalizations under the [structure-factoring](#structure-factoring) design rule (cross-layer flow added in parallel, not an in-series re-encoding).
 
