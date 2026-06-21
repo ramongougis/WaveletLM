@@ -1852,11 +1852,11 @@ Richer cross-layer information flow, motivated by the [learned-residual depth re
 
 ### Block-Size Extension & Length Generalization
 
-> **Status (2026-06-20): block-size TRAINING cancelled → length-generalization EVAL.** The training-side block-size sweep is dropped. At C=1024/L=5, block 2048 hit **~62 GB** on a 96 GB card (undecimated `T·S·C` wall), the **NaN cliff fell to ~0.011** (vs block-256's ~0.05 — so LR is *not* context-invariant; see learnings below), and the 8×-fewer-steps / forced-lower-LR confound makes a 1-epoch block comparison uninterpretable. Because WaveletLM has **no positional embedding** (à-trous levels are length-independent), the better and far cheaper test is **length generalization** — train at block 256, *evaluate* at 512/1024/2048: no retrain, no memory wall, no LR retune. Real long-context *training* waits for [decimation](plans/long_context_waveletlm.md) (O(T·S)→O(T)). The [width-proxy result](#width-proxy-validation) below stands; it was the valuable output of this line of work.
+> **Status (2026-06-20): block-size TRAINING cancelled → length-generalization EVAL.** The training-side block-size sweep is dropped. At C=1024/L=5, block 2048 hit ~62 GB on a 96 GB card (undecimated `T·S·C` wall), the NaN cliff fell to ~0.011 (vs block-256's ~0.05 — so LR is *not* context-invariant; see learnings below), and the 8×-fewer-steps / forced-lower-LR confound makes a 1-epoch block comparison uninterpretable. Because WaveletLM has no positional embedding (à-trous levels are length-independent), the better and far cheaper test is **length generalization** — train at block 256, *evaluate* at 512/1024/2048: no retrain, no memory wall, no LR retune. Real long-context *training* waits for [decimation](plans/long_context_waveletlm.md) (O(T·S)→O(T)). The [width-proxy result](#width-proxy-validation) below stands; it was the valuable output of this line of work.
 
 **The deeper gate is retrieval, not length.** WaveletLM is a fixed-basis *position* mixer (the crawl learns lags, not content), which puts it in the SSM camp that struggles on NIAH/RULER. So before any multi-million-token work, the make-or-break is whether WaveletLM can needle-retrieve at modest long context *at all* — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md). This section is the *scaling-robustness* prototype that runs in parallel; it does not by itself settle retrieval.
 
-**The block schedule (reference).** Each power-of-2 block increase brings **+1 level** and **+1 per-scale-width entry** (`levels = log2(block_size) − 1`); the added scales are coarse, so they take 0.5. *Block-size training is cancelled* (status above) — this table is kept as reference for the eventual decimated path:
+**The block schedule (reference).** Each power-of-2 block increase brings +1 level and +1 per-scale-width entry (`levels = log2(block_size) − 1`); the added scales are coarse, so they take 0.5. *Block-size training is cancelled* (status above) — this table is kept as reference for the eventual decimated path:
 
 | block_size | levels | per-scale widths (S = levels+1) |
 |---|---|---|
@@ -1869,25 +1869,25 @@ The schedule above is **C-agnostic** (levels/widths depend only on block size). 
 
 | C | LR (1/C ceiling) | Block reach | Status |
 |---|---|---|---|
-| **1024** | 0.05 | ~2048 at MBS=8 (4096 needs ≥64 GB) | active prototype |
-| **2048** | 0.0225 | larger, on a 6000/B200 | deferred (cost); same schedule |
+| 1024 | 0.05 | ~2048 at MBS=8 (4096 needs ≥64 GB) | active prototype |
+| 2048 | 0.0225 | larger, on a 6000/B200 | deferred (cost); same schedule |
 
-**LR note (context-invariance FALSIFIED — 2026-06-20).** C=1024 wants a higher base LR than C=2048 (~**0.05** at block 256, by the 1/C ceiling) — that part holds. But LR is **not** context-invariant after all: at block 2048 the NaN cliff fell to **~0.011** (~5× lower), measured in [log 16-31-05](logs/wikitext-103_2026-06-20_16-31-05/log.txt) (NaN during warmup at lr≈0.0114). More full-length coarse scales raise activation magnitudes and lower the fp16 stability ceiling. So bigger blocks **do** need an LR cut (≈1/5 here for an 8× block) *plus* a proportional `min_lr` cut. Width sets the base ceiling; block size lowers it from there.
+**LR note (context-invariance FALSIFIED — 2026-06-20).** C=1024 wants a higher base LR than C=2048 (~0.05 at block 256, by the 1/C ceiling) — that part holds. But LR is *not* context-invariant after all: at block 2048 the NaN cliff fell to **~0.011** (~5× lower), measured in [log 16-31-05](logs/wikitext-103_2026-06-20_16-31-05/log.txt) (NaN during warmup at lr≈0.0114). More full-length coarse scales raise activation magnitudes and lower the fp16 stability ceiling. So bigger blocks do need an LR cut (≈1/5 here for an 8× block) *plus* a proportional `min_lr` cut. Width sets the base ceiling; block size lowers it from there.
 
-**The measurement (now eval-only):** block-size robustness *via training* is **cancelled** (the memory wall + LR-cliff + step/LR confounds above). What remains — cheaper and cleaner — is **length generalization**: train at block 256, then *evaluate* at 512/1024/2048 (plus a small NIAH probe). The **train-short / eval-long curve** is the SubQ-relevant property: it decides whether the 2M-train → 12M-eval story is even open for WaveletLM, with no retrain and no memory wall.
+**The measurement (now eval-only):** block-size robustness *via training* is cancelled (the memory wall + LR-cliff + step/LR confounds above). What remains — cheaper and cleaner — is **length generalization**: train at block 256, then *evaluate* at 512/1024/2048 (plus a small NIAH probe). The train-short / eval-long curve is the SubQ-relevant property: it decides whether the 2M-train → 12M-eval story is even open for WaveletLM, with no retrain and no memory wall.
 
 **Width-proxy validation — RESULT: C=1024 is a validated cheap stand-in; the gap shrinks *net* (depth widens it, epochs shrink it more).** The matched grid (each C at its width LR — C=1024 @ 0.05, C=2048 @ 0.0225):
 
 | | C=1024 | C=2048 | BPB gap | C=1024 val | C=2048 val | val gap |
 |---|---|---|---|---|---|---|
-| L=1 / 1ep | 1.1368 | 1.1073 | +0.0295 | 3.5302 | 3.4479 | +0.0823 |
-| L=5 / 1ep | 1.1206 | 1.0831 | **+0.0375** | 3.4902 | 3.3887 | **+0.1015** |
-| **L=5 / 5ep** | **1.0002** | **0.9748** | **+0.0254** | **3.1187** | **3.0468** | **+0.0719** |
-| net (L1/1ep → L5/5ep) | | | **−0.0041** | | | **−0.0104** |
+| L=1 / 1ep | [1.1368](logs/wikitext-103_2026-06-17_19-32-01/log.txt) | [1.1073](logs/wikitext-103_2026-06-14_16-08-56/log.txt) | +0.0295 | 3.5302 | 3.4479 | +0.0823 |
+| L=5 / 1ep | [1.1206](logs/wikitext-103_2026-06-20_20-21-15/log.txt) | [1.0831](logs/wikitext-103_2026-06-17_10-06-29/log.txt) | +0.0375 | 3.4902 | 3.3887 | +0.1015 |
+| **L=5 / 5ep** | [1.0002](logs/wikitext-103_2026-06-19_13-21-20/log.txt) | [0.9748](logs/wikitext-103_2026-06-18_19-18-42/log.txt) | +0.0254 | 3.1187 | 3.0468 | +0.0719 |
+| net (L1/1ep → L5/5ep) | | | −0.0041 | | | −0.0104 |
 
-The L=5/1ep point **decomposes** the net shrink into two opposing forces: **depth alone *widens* the gap** (+0.0295 → +0.0375 at fixed 1ep, ≈0.008) while **epochs *shrink* it more** (+0.0375 → +0.0254, ≈0.012) — both several× the noise floor, and the **val-loss gap traces the same shape** (+0.0823 → +0.1015 → +0.0719), so it isn't a BPB-vs-val artifact. So **C=1024 stays a usable rapid-prototyping width with a ~0.025 BPB offset at the trained depth+epochs** (prototype ~4× cheaper, add ~0.025 to estimate C=2048), but the depth-widens term is a **caveat for the deep proxy**: standing in for a *deeper* C=2048 at fixed epochs would carry a *larger* offset than 0.025. The Small at **375M / 1.0002 BPB / 22.75 PPL beats the old 883M headline** outright. **Correction to an earlier hedge:** this section once leaned toward the gap *widening* off the *mismatched* C=1024/L=6-vs-C=2048/L=5 point — the clean matched grid shows the truth is *both*: depth widens, epochs (more than) compensate. One caveat survives: more *epochs* ≠ more *data* (same WT-103), so this does **not** settle whether wider-C pulls ahead on a bigger corpus — the big-data pilot's job.
+The L=5/1ep point decomposes the net shrink into two opposing forces: **depth alone widens the gap** (+0.0295 → +0.0375 at fixed 1ep, ≈0.008) while **epochs shrink it more** (+0.0375 → +0.0254, ≈0.012) — both several× the noise floor, and the val-loss gap traces the same shape (+0.0823 → +0.1015 → +0.0719), so it isn't a BPB-vs-val artifact. So C=1024 stays a usable rapid-prototyping width with a ~0.025 BPB offset at the trained depth+epochs (prototype ~4× cheaper, add ~0.025 to estimate C=2048), but the depth-widens term is a caveat for the deep proxy: standing in for a *deeper* C=2048 at fixed epochs would carry a *larger* offset than 0.025. The Small at 375M / 1.0002 BPB / 22.75 PPL beats the old 883M headline outright. *Correction to an earlier hedge:* this section once leaned toward the gap *widening* off the *mismatched* C=1024/L=6-vs-C=2048/L=5 point — the clean matched grid shows the truth is *both*: depth widens, epochs (more than) compensate. One caveat survives: more *epochs* ≠ more *data* (same WT-103), so this does not settle whether wider-C pulls ahead on a bigger corpus — the big-data pilot's job.
 
-**Length-generalization eval — IMPLEMENTED (the active plan).** Train at block 256, evaluate the *same checkpoint* at growing windows. `evaluate_sliding_window` takes the eval window from `block_size` (independent of training), stride auto-set to window/2, and WaveletLM has no positional embedding, so a 256-trained model runs unchanged at longer T. **Design (safety):** the existing benchmark path is **byte-for-byte unchanged when the eval block size equals the trained size** — a new **opt-in `--eval_block_size` flag** ([train.py](train.py)) is the *only* new branch; when set and ≠ trained it overrides just the eval window (architecture keys stay from the checkpoint's saved config; guarded against `bbce_enabled`). **Base model: the best checkpoint, C=2048/L=5/5ep = 0.9748** (trained at block 256); **zero new training.** The [runs.sh](runs.sh) sweep evals at 256/512/1024/2048 — block 256 is the *control* that must reproduce ~0.9748, proving the default path is untouched:
+**Length-generalization eval — IMPLEMENTED (the active plan).** Train at block 256, evaluate the *same checkpoint* at growing windows. `evaluate_sliding_window` takes the eval window from `block_size` (independent of training), stride auto-set to window/2, and WaveletLM has no positional embedding, so a 256-trained model runs unchanged at longer T. *Design (safety):* the existing benchmark path is **byte-for-byte unchanged when the eval block size equals the trained size** — a new **opt-in `--eval_block_size` flag** ([train.py](train.py)) is the *only* new branch; when set and ≠ trained it overrides just the eval window (architecture keys stay from the checkpoint's saved config; guarded against `bbce_enabled`). Base model: the best checkpoint, C=2048/L=5/5ep = 0.9748 (trained at block 256); zero new training. The [runs.sh](runs.sh) sweep evals at 256/512/1024/2048 — block 256 is the *control* that must reproduce ~0.9748, proving the default path is untouched:
 
 ```
 # 1) pull the checkpoint's weights onto the pod (config.json + best_model.pt):
@@ -1897,34 +1897,34 @@ aws s3 sync s3://exarch-ai-model/EXARCH/logs/wikitext-103_2026-06-18_19-18-42/ \
 python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> --eval_block_size 2048
 ```
 
-**Caveat — `levels` stay at 7 (trained):** the wavelet reach is ~2⁷≈128–256 tokens, with the cross-window decompose-bypass adding a recurrent long-range channel. So this measures whether a longer *eval* window helps within the trained reach + recurrence — **not** whether the architecture could exploit full 2048-token dependencies (that needs more levels = retraining). It's the right cheap first signal; a positive curve motivates the [decimation](plans/long_context_waveletlm.md) retrain.
+**Caveat — `levels` stay at 7 (trained):** the wavelet reach is ~2⁷≈128–256 tokens, with the cross-window decompose-bypass adding a recurrent long-range channel. So this measures whether a longer *eval* window helps within the trained reach + recurrence — *not* whether the architecture could exploit full 2048-token dependencies (that needs more levels = retraining). It's the right cheap first signal; a positive curve motivates the [decimation](plans/long_context_waveletlm.md) retrain.
 
-**RESULT (2026-06-20) — graceful monotonic degradation past a ~512-token ceiling, + a strong efficiency unlock.** Eval-only sweep of the best 256-trained checkpoint (C=2048/L=5/5ep) across **8 octaves** of eval window (all from `benchmark_lengthgen_bs*.txt`):
+**RESULT (2026-06-20) — graceful monotonic degradation past a ~512-token ceiling, + a strong efficiency unlock.** Eval-only sweep of the best 256-trained checkpoint (C=2048/L=5/5ep) across 8 octaves of eval window (all from `benchmark_lengthgen_bs*.txt`):
 
-| eval block | min_ctx | **Sliding BPB** | vs 256 | Non-overlap | windows |
+| eval block | min_ctx | Sliding BPB | vs 256 | Non-overlap | windows |
 |---|---|---|---|---|---|
-| 256 (control) | 128 | 0.9748 | — | 0.9974 | 2246 |
-| **512** | 256 | **0.9727** | **−0.0021** | 0.9854 | 1122 |
-| 1024 | 512 | 0.9736 | −0.0012 | 0.9800 | 560 |
-| 2048 | 1024 | 0.9765 | +0.0017 | 0.9785 | 279 |
-| 4096 | 2048 | 0.9803 | +0.0055 | 0.9798 | 139 |
-| 8192 | 4096 | 0.9849 | +0.0101 | 0.9822 | 69 |
-| 16384 | 8192 | 0.9897 | +0.0149 | 0.9859 | 34 |
-| 32768 | 16384 | 0.9909 | +0.0161 | 0.9897 | 16 |
-| 65536 | 32768 | 0.9931 | +0.0183 | 0.9920 | 7 |
-| 131072 / 262144 | — | **OOM** (~116 / 218 GiB > 96) | — | — | — |
+| [256](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs256.txt) (control) | 128 | 0.9748 | — | 0.9974 | 2246 |
+| [512](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs512.txt) | 256 | **0.9727** | −0.0021 | 0.9854 | 1122 |
+| [1024](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs1024.txt) | 512 | 0.9736 | −0.0012 | 0.9800 | 560 |
+| [2048](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs2048.txt) | 1024 | 0.9765 | +0.0017 | 0.9785 | 279 |
+| [4096](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs4096.txt) | 2048 | 0.9803 | +0.0055 | 0.9798 | 139 |
+| [8192](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs8192.txt) | 4096 | 0.9849 | +0.0101 | 0.9822 | 69 |
+| [16384](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs16384.txt) | 8192 | 0.9897 | +0.0149 | 0.9859 | 34 |
+| [32768](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs32768.txt) | 16384 | 0.9909 | +0.0161 | 0.9897 | 16 |
+| [65536](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs65536.txt) | 32768 | 0.9931 | +0.0183 | 0.9920 | 7 |
+| [131072](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs131072.txt) / [262144](logs/wikitext-103_2026-06-18_19-18-42/benchmark_lengthgen_bs262144.txt) | — | OOM (~116 / 218 GiB > 96) | — | — | — |
 
 - **Control reproduces 0.9748 exactly** → the `--eval_block_size` branch is byte-for-byte clean (default path unperturbed).
-- **Sliding BPB bottoms at 512** (the one real gain, −0.0021 *beyond* the ~128 wavelet reach → implicates the **cross-window decompose-bypass** as the long-range carrier), stays sub-baseline at 1024, **crosses above baseline between 1024–2048**, then degrades **monotonically across 6 octaves** (8 strictly-increasing points; +0.0183 by 65536). So: a **well-defined useful-context ceiling ~512–1024, then *graceful* degradation** (smooth, no cliff) — emphatically *not* noise.
+- **Sliding BPB bottoms at 512** (the one real gain, −0.0021 *beyond* the ~128 wavelet reach → implicates the cross-window decompose-bypass as the long-range carrier), stays sub-baseline at 1024, crosses above baseline between 1024–2048, then degrades monotonically across 6 octaves (8 strictly-increasing points; +0.0183 by 65536). So: a well-defined useful-context ceiling ~512–1024, then *graceful* degradation (smooth, no cliff) — emphatically *not* noise.
 - **Non-overlap bottoms at 2048, not 512** — the less-starvation effect (bigger windows average in fewer context-starved early tokens) pushes its optimum higher, partly masking the degradation. Sliding (fixed min_context) controls for this and is the honest read.
-- **Efficiency unlock (the strong result):** eval memory is **linear with a fixed offset** — `≈ 14 GiB + 0.8 MiB/token` (66.7 GB measured at 65536; 131072 OOM'd at the predicted ~116 GB) — and **scored throughput *rises* with length** (~7.9k → 12.7k tok/s, 512→2048). Long context is cheaper and faster per token, unlike attention's KV-cache growth. The ceiling is **memory ≈ dataset** (both bite ~2¹⁷ on this 96 GB card / 287K-token test set).
-- **Implication:** the >512 degradation is the **fixed-levels ceiling**, not an architecture limit. Adding coarse levels (eval-time duplication via a future `--eval_extend_levels`, or `lifting_level_sharing` scale-invariant training — see [the levels question](#deeper-c1024--the-iterative-pipeline)) is the path from bounded to genuine long-context.
+- **Efficiency unlock (the strong result):** eval memory is linear with a fixed offset — `≈ 14 GiB + 0.8 MiB/token` (66.7 GB measured at 65536; 131072 OOM'd at the predicted ~116 GB) — and scored throughput *rises* with length (~7.9k → 12.7k tok/s, 512→2048). Long context is cheaper and faster per token, unlike attention's KV-cache growth. The ceiling is memory ≈ dataset (both bite ~2¹⁷ on this 96 GB card / 287K-token test set).
+- **Implication:** the >512 degradation is the fixed-levels ceiling, not an architecture limit. Adding coarse levels (eval-time duplication via a future `--eval_extend_levels`, or `lifting_level_sharing` scale-invariant training — see [the levels question](#deeper-c1024--the-iterative-pipeline)) is the path from bounded to genuine long-context.
 
 **What the cancelled training sweep taught us (kept for the record):**
-- **Memory:** block 2048 undecimated = **~62 GB** (C=1024/L=5, MBS=8) on the 96 GB Blackwell 6000; block 4096 OOM'd at every MBS even on the 5090. The `T·S·C` cost is the wall — exactly what [decimation](plans/long_context_waveletlm.md) fixes.
-- **LR is *not* context-invariant:** NaN cliff ~0.05 (block 256) → **~0.011** (block 2048) — see the LR note above.
-- The confounded bs2048/1ep run (suboptimal LR + `min_lr` left 8× too high + 8× fewer steps) is **not recorded** — uninterpretable, not a block-size verdict.
-- **Missing baseline queued:** a C=1024/L=5/**1ep** block-256 run now fills the depth×epoch grid (we had L=1/1ep and L=5/5ep, not L=5/1ep).
+- **Memory:** block 2048 undecimated = ~62 GB (C=1024/L=5, MBS=8) on the 96 GB Blackwell 6000; block 4096 OOM'd at every MBS even on the 5090. The `T·S·C` cost is the wall — exactly what [decimation](plans/long_context_waveletlm.md) fixes.
+- **LR is *not* context-invariant:** NaN cliff ~0.05 (block 256) → ~0.011 (block 2048) — see the LR note above.
+- **Confounded run not recorded:** the bs2048/1ep run (suboptimal LR + `min_lr` left 8× too high + 8× fewer steps) is uninterpretable, not a block-size verdict.
+- **Missing baseline queued:** a C=1024/L=5/1ep block-256 run now fills the depth×epoch grid (we had L=1/1ep and L=5/5ep, not L=5/1ep).
 
 ### Deeper C=1024 — the iterative pipeline
 
