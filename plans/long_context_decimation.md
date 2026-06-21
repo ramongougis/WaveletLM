@@ -1,4 +1,6 @@
-# Post-release: Long-context WaveletLM (decimated transform, retrieval, length generalization)
+# Post-release: Long-context WaveletLM — decimation, scaling & length generalization
+
+> The **retrieval mechanism** is split into the sibling [long_context_retrieval.md](long_context_retrieval.md) (wavelet-keyed kNN-LM / FSRR). This doc keeps the *engineering* side — the decimated transform, the memory ladder, and length generalization.
 
 ## Status
 
@@ -41,7 +43,9 @@ way pure SSMs do. Two outcomes, both useful:
   retrieval pitch, and the honest one to claim. A content-addressed mechanism (scaled PKM/FwPKM, or a
   new component) would be the path to close the gap — and PKM/FwPKM are **data-hungry** (associative
   memory only earns its parameters when not data-starved; see the iso-param / MLP-capacity findings),
-  so they get their fair test only in the big-combined-dataset regime, not on WT-103.
+  so they get their fair test only in the big-combined-dataset regime, not on WT-103. The concrete
+  proposal for that content-addressed mechanism — a **wavelet-keyed kNN-LM / fine-scale retrieval
+  (FSRR)** — is the sibling [long_context_retrieval.md](long_context_retrieval.md).
 - **It can** (even partially). Then the length-generalization story (train short, eval long) becomes
   worth the engineering, and the rest of this plan applies.
 

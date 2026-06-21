@@ -1853,9 +1853,9 @@ Richer cross-layer information flow, motivated by the [learned-residual depth re
 
 ### Block-Size Extension & Length Generalization
 
-> **Status (2026-06-20): block-size TRAINING cancelled → length-generalization EVAL.** The training-side block-size sweep is dropped. At C=1024/L=5, block 2048 hit ~62 GB on a 96 GB card (undecimated `T·S·C` wall), the NaN cliff fell to ~0.011 (vs block-256's ~0.05 — so LR is *not* context-invariant; see learnings below), and the 8×-fewer-steps / forced-lower-LR confound makes a 1-epoch block comparison uninterpretable. Because WaveletLM has no positional embedding (à-trous levels are length-independent), the better and far cheaper test is **length generalization** — train at block 256, *evaluate* at 512/1024/2048: no retrain, no memory wall, no LR retune. Real long-context *training* waits for [decimation](plans/long_context_waveletlm.md) (O(T·S)→O(T)). The [width-proxy result](#width-proxy-validation) below stands; it was the valuable output of this line of work.
+> **Status (2026-06-20): block-size TRAINING cancelled → length-generalization EVAL.** The training-side block-size sweep is dropped. At C=1024/L=5, block 2048 hit ~62 GB on a 96 GB card (undecimated `T·S·C` wall), the NaN cliff fell to ~0.011 (vs block-256's ~0.05 — so LR is *not* context-invariant; see learnings below), and the 8×-fewer-steps / forced-lower-LR confound makes a 1-epoch block comparison uninterpretable. Because WaveletLM has no positional embedding (à-trous levels are length-independent), the better and far cheaper test is **length generalization** — train at block 256, *evaluate* at 512/1024/2048: no retrain, no memory wall, no LR retune. Real long-context *training* waits for [decimation](plans/long_context_decimation.md) (O(T·S)→O(T)). The [width-proxy result](#width-proxy-validation) below stands; it was the valuable output of this line of work.
 
-**The deeper gate is retrieval, not length.** WaveletLM is a fixed-basis *position* mixer (the crawl learns lags, not content), which puts it in the SSM camp that struggles on NIAH/RULER. So before any multi-million-token work, the make-or-break is whether WaveletLM can needle-retrieve at modest long context *at all* — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md). This section is the *scaling-robustness* prototype that runs in parallel; it does not by itself settle retrieval.
+**The deeper gate is retrieval, not length.** WaveletLM is a fixed-basis *position* mixer (the crawl learns lags, not content), which puts it in the SSM camp that struggles on NIAH/RULER. So before any multi-million-token work, the make-or-break is whether WaveletLM can needle-retrieve at modest long context *at all* — see [plans/long_context_decimation.md](plans/long_context_decimation.md). This section is the *scaling-robustness* prototype that runs in parallel; it does not by itself settle retrieval.
 
 **The block schedule (reference).** Each power-of-2 block increase brings +1 level and +1 per-scale-width entry (`levels = log2(block_size) − 1`); the added scales are coarse, so they take 0.5. *Block-size training is cancelled* (status above) — this table is kept as reference for the eventual decimated path:
 
@@ -1898,7 +1898,7 @@ aws s3 sync s3://exarch-ai-model/EXARCH/logs/wikitext-103_2026-06-18_19-18-42/ \
 python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> --eval_block_size 2048
 ```
 
-**Caveat — `levels` stay at 7 (trained):** the wavelet reach is ~2⁷≈128–256 tokens, with the cross-window decompose-bypass adding a recurrent long-range channel. So this measures whether a longer *eval* window helps within the trained reach + recurrence — *not* whether the architecture could exploit full 2048-token dependencies (that needs more levels = retraining). It's the right cheap first signal; a positive curve motivates the [decimation](plans/long_context_waveletlm.md) retrain.
+**Caveat — `levels` stay at 7 (trained):** the wavelet reach is ~2⁷≈128–256 tokens, with the cross-window decompose-bypass adding a recurrent long-range channel. So this measures whether a longer *eval* window helps within the trained reach + recurrence — *not* whether the architecture could exploit full 2048-token dependencies (that needs more levels = retraining). It's the right cheap first signal; a positive curve motivates the [decimation](plans/long_context_decimation.md) retrain.
 
 **RESULT (2026-06-20) — graceful monotonic degradation past a ~512-token ceiling, + a strong efficiency unlock.** Eval-only sweep of the best 256-trained checkpoint (C=2048/L=5/5ep) across 8 octaves of eval window (all from `benchmark_lengthgen_bs*.txt`):
 
@@ -1922,7 +1922,7 @@ python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> 
 - **Implication:** the >512 degradation is the fixed-levels ceiling, not an architecture limit. Adding coarse levels (eval-time duplication via a future `--eval_extend_levels`, or `lifting_level_sharing` scale-invariant training — see [the levels question](#deeper-c1024--the-iterative-pipeline)) is the path from bounded to genuine long-context.
 
 **What the cancelled training sweep taught us (kept for the record):**
-- **Memory:** block 2048 undecimated = ~62 GB (C=1024/L=5, MBS=8) on the 96 GB Blackwell 6000; block 4096 OOM'd at every MBS even on the 5090. The `T·S·C` cost is the wall — exactly what [decimation](plans/long_context_waveletlm.md) fixes.
+- **Memory:** block 2048 undecimated = ~62 GB (C=1024/L=5, MBS=8) on the 96 GB Blackwell 6000; block 4096 OOM'd at every MBS even on the 5090. The `T·S·C` cost is the wall — exactly what [decimation](plans/long_context_decimation.md) fixes.
 - **LR is *not* context-invariant:** NaN cliff ~0.05 (block 256) → ~0.011 (block 2048) — see the LR note above.
 - **Confounded run not recorded:** the bs2048/1ep run (suboptimal LR + `min_lr` left 8× too high + 8× fewer steps) is uninterpretable, not a block-size verdict.
 - **Missing baseline queued:** a C=1024/L=5/1ep block-256 run now fills the depth×epoch grid (we had L=1/1ep and L=5/5ep, not L=5/1ep).
@@ -1942,7 +1942,7 @@ These stay at MBS=8 (block 256 keeps activations small); `gradient_checkpointing
 
 > ⚠ **Depth ceiling is real.** The old-recipe **30L/C=512 run *regressed*** vs 20L (BPB 1.0207 > 1.0136) — depth hurt past ~20 layers. The learned-residual recipe may push the ceiling higher, but L=20 is plausibly near it, so we deepen iteratively and stop when a depth fails to clear noise rather than committing to L=20 blind. Targeting ~800M–1B params (≈10–15 layers) for a GPT-2-XL-class headline is plausible but unproven — and read the cross-model **PPL caveats** before claiming it (word-level vs BPE perplexity are not comparable; use BPB).
 
-**Memory / decimation.** This runs on the current **undecimated** (à-trous) transform, which is fine at these scales (1–2M undecimated C=2048 fits 8 B200s sharded). The undecimated `[B,T,S,Cp]` cost only becomes a wall past a few million tokens, where the fix is **decimating the wavelet transform** (memory/compute O(T·S) → O(T)) — and the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured) motivates a **coarse-decimation hybrid** (decimate the coarse scales, which are smoothers; keep the fine scales, which carry precise lags). That redesign is deferred to [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md); it is **not** needed for this prototype.
+**Memory / decimation.** This runs on the current **undecimated** (à-trous) transform, which is fine at these scales (1–2M undecimated C=2048 fits 8 B200s sharded). The undecimated `[B,T,S,Cp]` cost only becomes a wall past a few million tokens, where the fix is **decimating the wavelet transform** (memory/compute O(T·S) → O(T)) — and the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured) motivates a **coarse-decimation hybrid** (decimate the coarse scales, which are smoothers; keep the fine scales, which carry precise lags). That redesign is deferred to [plans/long_context_decimation.md](plans/long_context_decimation.md); it is **not** needed for this prototype.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2210,7 +2210,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 - Wavelet Packet Decomposition (WPD)
 - Top-K / hard thresholding in the Hadamard domain
 - Complete Muon sweep
-- Long-context scaling: **decimated wavelet transform** (coarse-decimation hybrid) + content-dependent **retrieval** / **length-generalization** study — see [plans/long_context_waveletlm.md](plans/long_context_waveletlm.md)
+- Long-context scaling: **decimated wavelet transform** (coarse-decimation hybrid) + content-dependent **retrieval** / **length-generalization** study — see [plans/long_context_decimation.md](plans/long_context_decimation.md)
 
 
 ## License

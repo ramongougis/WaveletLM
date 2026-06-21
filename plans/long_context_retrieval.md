@@ -3,7 +3,7 @@
 ## Status
 
 **Proposed — post-release.** Captures the retrieval deliberations of 2026-06-21. Sibling to
-[long_context_waveletlm.md](long_context_waveletlm.md) (decimation + length-generalization). That file
+[long_context_decimation.md](long_context_decimation.md) (decimation + length-generalization). That file
 is about making the *model* cheaper at length; **this file is about content-addressed retrieval** to get
 past the **~512-token useful-context ceiling** the length-gen sweep measured.
 
