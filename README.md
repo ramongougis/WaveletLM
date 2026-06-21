@@ -1831,10 +1831,10 @@ The LR scales the *opposite* way from More Width — smaller C tolerates and wan
 |---|---|---|---|---|---|---|
 | C=2048/L=5 + skip | 1396.01M | 1 | 8 | 1 | **1.0797** | **−0.0034** vs 1.0831 ✓ (~3× noise) |
 | C=2048/L=5 + skip | 1396.01M | 5 | 8 | 1 | queued | vs no-skip 5ep |
-| C=1024/L=5 + skip | 375.04M | 1 | 8 | 1 | queued | C=1024 transfer |
+| C=1024/L=5 + skip | 375.04M | 1 | 8 | 1 | **1.1183** | **−0.0023** vs 1.1206 ✓ (~2× noise) |
 | C=1024/L=5 + skip | 375.04M | 5 | 8 | 1 | queued | vs C=1024/L=5/5ep = 1.0002 |
 
-The 1ep win is real but modest, and 1ep is data-starved — wait for the 5ep and C=1024 arms before folding skips into the [deep ladder](#deeper-c1024--the-iterative-pipeline). MBS/GA are listed because cross-layer skips add no activation memory (the routing combine is over already-stored layer outputs), so these fit MBS=8; only a deeper/wider host would force them down.
+The 1ep win is real but modest and **transfers to C=1024** (−0.0023, mirroring C=2048's −0.0034) — but 1ep is data-starved, so wait for the **5ep arms** before folding skips into the [deep ladder](#deeper-c1024--the-iterative-pipeline) (where they should help *most*, with more layers to route across). MBS/GA are listed because cross-layer skips add no activation memory (the routing combine is over already-stored layer outputs), so these fit MBS=8; only a deeper/wider host would force them down.
 
 Richer cross-layer information flow, motivated by the [learned-residual depth result](#more-layers): if the residual stream is the *memory bus* that makes depth pay (the L=3 ± residual control measures this), then enriching that bus is the obvious next lever. Both designs below are **additive and init-to-identity** — they reproduce the plain sequential residual stream exactly at initialization and learn away from it only if it helps, so they are strict, safe generalizations under the [structure-factoring](#structure-factoring) design rule (cross-layer flow added in parallel, not an in-series re-encoding).
 
@@ -1876,15 +1876,16 @@ The schedule above is **C-agnostic** (levels/widths depend only on block size). 
 
 **The measurement (now eval-only):** block-size robustness *via training* is **cancelled** (the memory wall + LR-cliff + step/LR confounds above). What remains — cheaper and cleaner — is **length generalization**: train at block 256, then *evaluate* at 512/1024/2048 (plus a small NIAH probe). The **train-short / eval-long curve** is the SubQ-relevant property: it decides whether the 2M-train → 12M-eval story is even open for WaveletLM, with no retrain and no memory wall.
 
-**Width-proxy validation — RESULT: C=1024 is a validated cheap stand-in (the gap *shrinks*).** The matched comparison landed (each C at its width LR — C=1024 @ 0.05, C=2048 @ 0.0225):
+**Width-proxy validation — RESULT: C=1024 is a validated cheap stand-in; the gap shrinks *net* (depth widens it, epochs shrink it more).** The matched grid (each C at its width LR — C=1024 @ 0.05, C=2048 @ 0.0225):
 
 | | C=1024 | C=2048 | BPB gap | C=1024 val | C=2048 val | val gap |
 |---|---|---|---|---|---|---|
 | L=1 / 1ep | 1.1368 | 1.1073 | +0.0295 | 3.5302 | 3.4479 | +0.0823 |
+| L=5 / 1ep | 1.1206 | 1.0831 | **+0.0375** | 3.4902 | 3.3887 | **+0.1015** |
 | **L=5 / 5ep** | **1.0002** | **0.9748** | **+0.0254** | **3.1187** | **3.0468** | **+0.0719** |
-| change | | | **−0.0041 (~14%)** | | | **−0.0104 (~13%)** |
+| net (L1/1ep → L5/5ep) | | | **−0.0041** | | | **−0.0104** |
 
-Both the BPB and val-loss gaps **narrowed ~13–14%** (≈3× the comparison noise) — so **C=1024 is a usable rapid-prototyping width with a stable, slightly-shrinking ~0.025 BPB offset**: prototype ~4× cheaper, add ~0.025 to estimate C=2048. The Small at **375M / 1.0002 BPB / 22.75 PPL beats the old 883M headline** outright. **Correction to an earlier hedge:** this section previously leaned toward the gap *widening*, off the *mismatched* C=1024/L=6-vs-C=2048/L=5 point (~0.04, different depth *and* params); the clean *matched* L=5/5ep comparison supersedes it and confirms the shrink. One caveat survives: more *epochs* ≠ more *data* (same WT-103), so this tightening on fixed data does **not** settle whether wider-C pulls ahead on a bigger corpus — that's the big-data pilot's job.
+The L=5/1ep point **decomposes** the net shrink into two opposing forces: **depth alone *widens* the gap** (+0.0295 → +0.0375 at fixed 1ep, ≈0.008) while **epochs *shrink* it more** (+0.0375 → +0.0254, ≈0.012) — both several× the noise floor, and the **val-loss gap traces the same shape** (+0.0823 → +0.1015 → +0.0719), so it isn't a BPB-vs-val artifact. So **C=1024 stays a usable rapid-prototyping width with a ~0.025 BPB offset at the trained depth+epochs** (prototype ~4× cheaper, add ~0.025 to estimate C=2048), but the depth-widens term is a **caveat for the deep proxy**: standing in for a *deeper* C=2048 at fixed epochs would carry a *larger* offset than 0.025. The Small at **375M / 1.0002 BPB / 22.75 PPL beats the old 883M headline** outright. **Correction to an earlier hedge:** this section once leaned toward the gap *widening* off the *mismatched* C=1024/L=6-vs-C=2048/L=5 point — the clean matched grid shows the truth is *both*: depth widens, epochs (more than) compensate. One caveat survives: more *epochs* ≠ more *data* (same WT-103), so this does **not** settle whether wider-C pulls ahead on a bigger corpus — the big-data pilot's job.
 
 **Length-generalization eval — IMPLEMENTED (the active plan).** Train at block 256, evaluate the *same checkpoint* at growing windows. `evaluate_sliding_window` takes the eval window from `block_size` (independent of training), stride auto-set to window/2, and WaveletLM has no positional embedding, so a 256-trained model runs unchanged at longer T. **Design (safety):** the existing benchmark path is **byte-for-byte unchanged when the eval block size equals the trained size** — a new **opt-in `--eval_block_size` flag** ([train.py](train.py)) is the *only* new branch; when set and ≠ trained it overrides just the eval window (architecture keys stay from the checkpoint's saved config; guarded against `bbce_enabled`). **Base model: the best checkpoint, C=2048/L=5/5ep = 0.9748** (trained at block 256); **zero new training.** The [runs.sh](runs.sh) sweep evals at 256/512/1024/2048 — block 256 is the *control* that must reproduce ~0.9748, proving the default path is untouched:
 
