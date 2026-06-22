@@ -66,7 +66,7 @@ Requires Python 3.10+, PyTorch 2.11+, and CUDA.
 ```bash
 git clone https://github.com/ramongougis/WaveletLM.git
 cd WaveletLM
-pip install "torch>=2.11" "datasets<3.0" tiktoken sentencepiece tqdm numpy --extra-index-url https://download.pytorch.org/whl/cu128
+pip install "torch>=2.11" "datasets<3.0" tiktoken sentencepiece tqdm torchao numpy --extra-index-url https://download.pytorch.org/whl/cu128
 ```
 
 ## Training
@@ -2026,7 +2026,7 @@ Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other moder
 
 ### Generation Decode Speedup (compile / CUDA graphs)
 
-> **Tested 2026-06-22 (A5000): `torch.compile` *fails* here — the opposite of the original prediction.** Eager baseline **12.2 tok/s** (the 1396M C=2048/L=5 model); `torch.compile` default **3.7 tok/s** and `reduce-overhead` (CUDA graphs) **3.4 tok/s** — a **~3.3× slowdown**. The prediction below assumed a *static* `[1, context_len]` decode, but with the (deliberately uncapped) `generation_max_context` the decode re-processes a **growing** context — the shape changes every token, so compile recompiles / runs slow dynamic kernels and CUDA graphs can't engage. *All recent inference numbers here are on an A5000* (the current dev card), which is partly why tok/s sits below the earlier 5090 figures (the rest being the larger model).
+> **Tested 2026-06-22 (A5000): `torch.compile` *fails* here — the opposite of the original prediction.** Eager baseline **12.2 tok/s** (the 1396M C=2048/L=5 model); `torch.compile` default **3.7 tok/s** and `reduce-overhead` (CUDA graphs) **3.4 tok/s** — a **~3.3× slowdown**. It *did* cut peak VRAM **8900 → 6441 MiB (~28%)** via activation fusion (more than int8 PTQ's weight-side savings), but the speed cost makes it a memory-*emergency* knob only, never a speed one. The prediction below assumed a *static* `[1, context_len]` decode, but with the (deliberately uncapped) `generation_max_context` the decode re-processes a **growing** context — the shape changes every token, so compile recompiles / runs slow dynamic kernels and CUDA graphs can't engage. *All recent inference numbers here are on an A5000* (the current dev card), which is partly why tok/s sits below the earlier 5090 figures (the rest being the larger model).
 
 So the easy route (compile / CUDA graphs) is a **dead end without a fixed-shape decode**. The genuine win is **incremental / stateful decode** — a KV-cache-equivalent that caches the causal wavelet / crawl / decompose-bypass state so each step runs at a *fixed* shape instead of recomputing the whole growing window. That static shape is *also* what would finally let compile / CUDA graphs help; until then they hurt. It's the architecturally harder option but the one that matters for long-context generation. The separate, orthogonal lever is the bandwidth win from [PTQ kernels](#bit-packed-ptq-kernels) below. Full design and the (now-corrected) measurement protocol: [plans/generation_decode_speedup.md](plans/generation_decode_speedup.md).
 
