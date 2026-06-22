@@ -38,7 +38,7 @@ NOTE: These headline results were achieved well before the most recent model wor
 
 WaveletLM is also capable of robust linear context length scaling with minimal performance degradation at a fixed rate of 0.8 MiB/token in VRAM cost, with rising per-token throughput during generation for increasing context lengths. Evaluations for contexts far beyond the trained block size of 256 tokens for the best-to-date configuration can be found in the [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization) section below. 
 
-So far, a prompt length of 65536 tokens, limited here only by personally-available memory budget, was achieved on the 256-token block size-trained model with a BPB of 0.9931 versus a baseline of 0.9748. This equates to a mere 6% BPB increase for a 25,500% increase in context. BPB gain additionally diminishes per doubling of context length: a context of 32768 achieves 0.9909 BPB, a 0.2215% increase for double the context at the high end, demonstrating continued effectiveness at increasingly longer contexts.
+So far, a prompt length of 65536 tokens, limited here only by personally-available memory budget, was achieved on the 256-token block size-trained model with a BPB of 0.9931 versus a baseline of 0.9748. This equates to a mere 1.9% BPB increase for a 25,500% increase in context. BPB gain additionally diminishes per doubling of context length: a context of 32768 achieves 0.9909 BPB, a 0.2215% increase for double the context at the high end, demonstrating continued effectiveness at increasingly longer contexts.
 
 **Future Plans**
 
