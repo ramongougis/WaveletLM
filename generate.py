@@ -876,15 +876,21 @@ def main():
 
     if getattr(args, 'ptq8_fast', False):
         try:
-            from torchao.quantization import quantize_, int8_weight_only
-            quantize_(model, int8_weight_only())
-            log("[PTQ-fast] Applied torchao int8_weight_only (fused int8-weight GEMV) to nn.Linear modules "
-                "(MLP / lm_head). Custom mixer/lifting layers stay fp16 — Phase 2. Decode is memory-bound, "
-                "so the win comes from loading int8 weights, not int8 compute.")
-        except ImportError:
-            log("[PTQ-fast] torchao not installed — run `pip install torchao`. Skipping (model stays fp16).")
+            from torchao.quantization import quantize_
+            try:                                  # torchao >= 0.x config-style API
+                from torchao.quantization import Int8WeightOnlyConfig
+                _int8_cfg = Int8WeightOnlyConfig()
+            except ImportError:                   # older function-style API
+                from torchao.quantization import int8_weight_only
+                _int8_cfg = int8_weight_only()
+            quantize_(model, _int8_cfg)
+            log("[PTQ-fast] Applied torchao int8 weight-only to nn.Linear (MLP / lm_head). "
+                "Custom mixer/lifting stay fp16 — Phase 2. Decode is memory-bound, so the win is "
+                "loading int8 weights, not int8 compute.")
         except Exception as e:
-            log(f"[PTQ-fast] torchao int8 failed ({e}); model stays fp16.")
+            log(f"[PTQ-fast] torchao int8 UNAVAILABLE ({type(e).__name__}: {e}); model stays fp16. "
+                "Note: torchao IS installed if pip succeeded — this is an import/API/kernel issue, not a "
+                "missing package.")
 
     if getattr(args, 'compile', False):
         log(f"[Compile] torch.compile(mode={args.compile_mode}, dynamic=True). First call pays compile "
