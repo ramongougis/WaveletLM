@@ -596,6 +596,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
+- [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
 - [Dataset Comparisons](#dataset-comparisons)
 - [Model Comparisons](#model-comparisons)
 - [Generation Decode Speedup (compile / CUDA graphs)](#generation-decode-speedup-compile--cuda-graphs)
@@ -608,7 +609,8 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Crawl Dilation Probe: Prime-Power Wavelets, Measured](#crawl-dilation-probe-prime-power-wavelets-measured)
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
 - [Final Regularization Sweep](#final-regularization-sweep)
-- [Scaled-Up Model (B200)](#scaled-up-model-b200)
+- [Headline Models with C=1024 (WaveletLM-Small) and C=2048 (WaveletLM-Medium)](#headline-models-with-c1024-waveletlm-small-and-c2048-waveletlm-medium)
+- [Scaled-Up Model with C=4096 (WaveletLM-Large)](#scaled-up-model-with-c4096-waveletlm-large)
 - [Scaled-Up Model with PTQ and other Infernece Strategies](#scaled-up-model-with-ptq-and-other-infernece-strategies)
 - [Downstream Transfer Fine-Tuning](#downstream-transfer-fine-tuning)
 - [Instruction-Tuning Chat Demo](#instruction-tuning-chat-demo)
@@ -1941,16 +1943,16 @@ python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> 
 
 ### Deeper C=1024 — the iterative pipeline
 
-With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, depth is the next lever. **C=1024 is now the iterative development width; C=2048 / C=4096 are reserved for final headline runs.** `gradient_checkpointing` (recompute activations in backward, ~30 % slower) keeps even L=20 on a single 5090 — **no beefier VM required**, which corrects the earlier assumption that deep runs would need one. Protocol: run each depth at **1 epoch** (cheap ceiling-finder), bump depth only while it clears the ~0.0010 noise floor, then run the **5-epoch headline on the depth winner only** (an L=20/5ep would be ~50 h, so we don't run every depth at 5ep).
+With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, depth is the next lever. **C=1024 is now the iterative development width; C=2048 / C=4096 are reserved for final headline runs.** Deep runs fit a single card without `gradient_checkpointing` on the RTX 6000 (the card has the memory; enable it only on smaller cards). Protocol: run each depth at **1 epoch** (cheap ceiling-finder), bump depth only while it clears the ~0.0010 noise floor, then run the **5-epoch headline on the depth winner only** (an L=20/5ep would be ~50 h, so we don't run every depth at 5ep).
 
 | C=1024 layers | ep | MBS | GA | grad-ckpt | params | BPB | notes |
 |---|---|---|---|---|---|---|---|
-| 5 | 5 | 8 | 1 | no | 375.04M | **1.0002** | validated baseline (beats old 883M headline) |
-| 10 | 1 | 8 | 1 | yes | TBD | queued | clears noise vs L=5? |
-| 15 | 1 | 8 | 1 | yes | TBD | queued | only if L=10 clears |
-| 20 | 1 | 8 | 1 | yes | TBD | queued | near the prior depth ceiling — only if L=15 clears |
+| 5 | 5 | 8 | 1 | no | 375.04M | **1.0002** | validated Small baseline (beats old 883M headline) |
+| 10 | 1 | 8 | 1 | no | 669.24M | 1.1113 | −0.0093 vs L=5/1ep (1.1206); depth pays, diminishing |
+| 15 | 1 | 8 | 1 | no | 963.43M | 1.1099 | −0.0014 vs L=10 (~noise) → 1ep ceiling ≈ L=10 |
+| 20 | — | — | — | — | — | cancelled | L=15 plateaued; not worth it |
 
-These stay at MBS=8 (block 256 keeps activations small); `gradient_checkpointing` is the memory lever, not MBS. If even checkpointed L=20 OOMs, **drop MBS (→4, GA→2)** as the same equal-quality fitting knob used for bs4096 above — effective batch and BPB are unchanged.
+**RESULT (2026-06-22): depth pays through ~L=10 at 1ep, then plateaus.** L=5→L=10 = −0.0093 (real), L=10→L=15 = −0.0014 (within noise) — so the 1ep depth ceiling is ~L=10 (L=20 cancelled). But **width beats depth**: the C=1024 1ep curve asymptotes ~1.10, while C=2048/L=5/1ep = 1.0831 at similar params, so no amount of C=1024 depth catches the wider model — confirming width-to-the-knee-then-depth. So **C=2048/L=5 stays the standard**, and the C=1024 Small headline stays L=5/5ep = 1.0002 (the 5ep deep run is foregone on cost). **Recommended direction (untested):** C=2048/L=10 — width at the knee *plus* the depth that pays — is the likely-superior final baseline, flagged for reviewers, not yet runnable on budget. (`gradient_checkpointing` is off on the RTX 6000; if a deep run OOMs on a smaller card, drop MBS→4/GA→2 — equal-quality.)
 
 > ⚠ **Depth ceiling is real.** The old-recipe **30L/C=512 run *regressed*** vs 20L (BPB 1.0207 > 1.0136) — depth hurt past ~20 layers. The learned-residual recipe may push the ceiling higher, but L=20 is plausibly near it, so we deepen iteratively and stop when a depth fails to clear noise rather than committing to L=20 blind. Targeting ~800M–1B params (≈10–15 layers) for a GPT-2-XL-class headline is plausible but unproven — and read the cross-model **PPL caveats** before claiming it (word-level vs BPE perplexity are not comparable; use BPB).
 
@@ -1989,6 +1991,18 @@ These stay at MBS=8 (block 256 keeps activations small); `gradient_checkpointing
 The PG-19 run above was trained for a single epoch using the WikiText-optimized config. Published baselines for other models on the same dataset were likely trained for many more epochs or with much more effective compute. 
 
 Once it is possible, the first post-release goal will be to train on PG-19 for 2 epochs, and loss permitting, 5 epochs, in order to better gauge language modeling on a large dataset at the current parameter size.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Long-Context Retrieval (wavelet-keyed kNN-LM)
+
+The [length-generalization result](#block-size-extension--length-generalization) showed WaveletLM *ingests* arbitrary-length context cheaply but only *exploits* ~512 tokens — the expected weakness of a fixed-basis position mixer (the crawl learns lags, not content). So the post-release path to long-range *factual* ability is **content-addressed retrieval**, not a longer model.
+
+The proposal is a **wavelet-keyed kNN-LM** built *after* training on the frozen model (retrieve neighbors → interpolate with the LM). The refined form, **Fine-Scale Resolution Retrieval (FSRR)**, is a retrieve-and-rerank pipeline: sparse first-stage retrieval on rare high-IDF *anchors* (entities / years — and NIAH needles *are* anchors), fine-scale-wavelet reranking of the candidates (order-robust, unlike a coarse whole-passage summary), then kNN-LM interpolation. The likely contribution is a **compressed datastore** — strided/coarse wavelet keys are far smaller than kNN-LM's one-vector-per-token store, its main practical wall. Decisive test: a 4-way rerank ablation (anchor-only vs +BM25 vs +hidden-state vs +wavelet-fine) — does the wavelet leg earn its keep?
+
+Full plan, caveats (augmentation not intrinsic reach; verbatim vs paraphrased needles; continuation vs QA), and the test ladder: [plans/long_context_retrieval.md](plans/long_context_retrieval.md). The sibling track — [decimation](plans/long_context_decimation.md) (process long sequences cheaply) — is deferred to post-release.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2165,15 +2179,35 @@ Do a final regularization sweep building on the results of the [Dropout](#dropou
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Scaled-Up Model (B200)
+### Headline Models with C=1024 (WaveletLM-Small) and C=2048 (WaveletLM-Medium)
 
-Conditional on the architectural research roadmap above (multi-transform parallelization, dropout sweep, semantic embedding, combined interpretability compound) producing meaningful gains, scale up the validated architecture to B200-class hardware. The 883M RTX 5090 headline run scales up naturally to:
+The two release tiers below the scaled-up Large. Both target **L=10, epochs=10** — the depth that pays (the 1-epoch ceiling-finder peaked at ~L=10 before plateauing; see [Deeper C=1024](#deeper-c1024--the-iterative-pipeline)), trained long.
 
-- `C`: 2048 → 4096 
-- `layers`: 2 → 4–8
-- `mlp_expansion`: 20 → 50–200
+| tier | C | layers | epochs | params | current best (L=5/5ep) |
+|---|---|---|---|---|---|
+| **Small** | 1024 | 10 | 10 | 669M | 1.0002 BPB / 22.75 PPL |
+| **Medium** | 2048 | 10 | 10 | ~2.6B (est) | 0.9748 BPB / ~21.0 PPL |
+
+The last column is the *current validated* L=5/5ep config; the **L=10/10ep headline runs are planned, not yet executed** (foregone on current budget). Two honest notes on the target:
+- **Depth (L=10) is grounded, not a guess** — the C=1024 1ep curve peaked at ~L=10 and plateaued by L=15. The wider tiers may support slightly more, but L=10 is a sound shared default.
+- **10 epochs on WT-103 (0.5 GB) risks overfitting** — the train/val gap is already ~0.8 at 5 epochs ([Areas for Improvement](#areas-for-improvement)), so "go long" should pair with a regularization recheck (dropout / weight decay), or the depth gain is eaten. On the big-data corpora more epochs ≈ more data and the risk inverts.
+
+Iso-param, width still beats depth (C=2048/L=5 > C=1024/deep), so **Medium (C=2048/L=10) is the strongest pre-Large tier** — and C=2048/L=10 is the recommended "most superior" direction overall.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Scaled-Up Model with C=4096 (WaveletLM-Large)
+
+Conditional on the architectural research roadmap above (multi-transform parallelization, dropout sweep, semantic embedding, combined interpretability compound) producing meaningful gains, scale up the validated architecture to B200-class hardware. The scaled-up model settings will be:
+
+- `C`: 4096 
+- `layers`: 10
+- `mlp_expansion`: 20 or 50–200 (confirm later)
 - `pkm_num_keys` & `fwpkm_num_keys`: 16384 → 65536 each
 - fp16 → FP8 via Blackwell tensor cores (NYI)
+- `epochs`: 5 or 10
 
 The goal is a 10–15B parameter (or however large it will be) configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. Other possibilities such as LAMBADA will also be considered post-release.
 

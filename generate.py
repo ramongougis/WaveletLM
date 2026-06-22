@@ -689,6 +689,14 @@ def main():
                              "<= this is processed in full; default (config, else 2^24) never "
                              "truncates. Lower it (~512-1024) for best quality since the model "
                              "degrades past its useful context; raise it for long-prompt tests.")
+    parser.add_argument("--compile", action="store_true",
+                        help="Wrap the model in torch.compile for inference. First call pays compile "
+                             "time; the decode re-processes a growing context, so dynamic=True is used "
+                             "to avoid per-token recompiles.")
+    parser.add_argument("--compile_mode", default="default",
+                        choices=["default", "reduce-overhead", "max-autotune"],
+                        help="torch.compile mode. 'reduce-overhead' enables CUDA graphs; 'max-autotune' "
+                             "autotunes kernels (longer compile).")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--repetition_penalty", type=float, default=1.1)
@@ -861,6 +869,14 @@ def main():
         log(f"[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
             f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
             f"({q_stats['compression_ratio']:.2f}x)")
+
+    if getattr(args, 'compile', False):
+        log(f"[Compile] torch.compile(mode={args.compile_mode}, dynamic=True). First call pays compile "
+            f"time; NOTE: the decode re-processes a growing context (variable shape), so dynamic=True "
+            f"avoids per-token recompiles — but that dynamic-shape decode caps the achievable speedup. "
+            f"A fixed-window decode (static shapes) would let CUDA graphs help more, at the cost of "
+            f"capping context.")
+        model = torch.compile(model, mode=args.compile_mode, dynamic=True)
 
     total_params = sum(p.numel() for p in model.parameters())
     log(f"Model: {total_params/1e6:.2f}M parameters")
