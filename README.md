@@ -17,18 +17,30 @@
 
 <br>
 
-WaveletLM is a generative, attention-free language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1][^2] in the following papers:
+WaveletLM is a generative, attention-free, long context language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1][^2] in the following papers:
 
 - **Wavelet Logic Machines**: wavelet-based classification on fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
 - **Learnable Multi-Scale Wavelet Transformer**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
+
+**Structure**
 
 WaveletLM adapts the Wavelet Logic Machine's approach to autoregressive language modeling with the components detailed in the [Architecture](#architecture) section below. Furthermore, a planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters achieved by our [benchmark results](#results) while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
 
 It uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixer with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with a 2-layer, width-expanded MLP and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
 
+**Results**
+
 Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WikiText-103 than Transformer-XL and GPT-2. 
 
-WaveletLM is capable of linear context scaling with minimal performance degradation at a fixed rate of 0.8 MiB/token in VRAM cost, with rising per-token throughput during generation for increasing context lengths. Evaluations for contexts far beyond the trained block size of 256 tokens for the best-to-date configuration can be found in the [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization) section below.
+NOTE: These headline results were achieved well before the most recent model work detailed in the [Future Plans](#future-plans) section below. Currently, the [best-performing test version](logs/wikitext-103_2026-06-18_19-18-42/log.txt) achieves a PPL of 21.0 versus the [Results headline](#results) of 23.8 on WikiText-103. This is expected to improve shortly once improvements are consolidated.
+
+**Long Context**
+
+WaveletLM is also capable of robust linear context length scaling with minimal performance degradation at a fixed rate of 0.8 MiB/token in VRAM cost, with rising per-token throughput during generation for increasing context lengths. Evaluations for contexts far beyond the trained block size of 256 tokens for the best-to-date configuration can be found in the [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization) section below. 
+
+So far, a prompt length of 65536 tokens, limited here only by personally-available memory budget, was achieved on the 256-token block size-trained model with a BPB of 0.9931 versus a baseline of 0.9748. This equates to a mere 6% BPB increase for a 25,500% increase in context. BPB gain additionally diminishes per doubling of context length: a context of 32768 achieves 0.9909 BPB, a 0.2215% increase for double the context at the high end, demonstrating continued effectiveness at increasingly longer contexts.
+
+**Future Plans**
 
 Several improvements have been made since the headline model in the [Results](#results) section was trained, and are awaiting completion before the release of an updated version. One such improvement is the context length scaling mentioned above. For more information, see the [Future Plans](#future-plans) section, which tracks all work currently completed, in progress, and planned.
 
