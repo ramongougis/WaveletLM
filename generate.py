@@ -697,6 +697,10 @@ def main():
                         choices=["default", "reduce-overhead", "max-autotune"],
                         help="torch.compile mode. 'reduce-overhead' enables CUDA graphs; 'max-autotune' "
                              "autotunes kernels (longer compile).")
+    parser.add_argument("--ptq8_fast", action="store_true",
+                        help="Phase-1 fast int8 PTQ via torchao int8_weight_only (fused int8-weight GEMV — "
+                             "a REAL decode speedup on nn.Linear/MLP, unlike --ptq8 which is fake-quant). "
+                             "Requires `pip install torchao`. Custom mixer/lifting stay fp16 (Phase 2).")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--repetition_penalty", type=float, default=1.1)
@@ -869,6 +873,18 @@ def main():
         log(f"[Quantization] Original: {q_stats['original_mib']:.1f} MiB -> "
             f"Quantized: {q_stats['quantized_mib']:.1f} MiB "
             f"({q_stats['compression_ratio']:.2f}x)")
+
+    if getattr(args, 'ptq8_fast', False):
+        try:
+            from torchao.quantization import quantize_, int8_weight_only
+            quantize_(model, int8_weight_only())
+            log("[PTQ-fast] Applied torchao int8_weight_only (fused int8-weight GEMV) to nn.Linear modules "
+                "(MLP / lm_head). Custom mixer/lifting layers stay fp16 — Phase 2. Decode is memory-bound, "
+                "so the win comes from loading int8 weights, not int8 compute.")
+        except ImportError:
+            log("[PTQ-fast] torchao not installed — run `pip install torchao`. Skipping (model stays fp16).")
+        except Exception as e:
+            log(f"[PTQ-fast] torchao int8 failed ({e}); model stays fp16.")
 
     if getattr(args, 'compile', False):
         log(f"[Compile] torch.compile(mode={args.compile_mode}, dynamic=True). First call pays compile "
