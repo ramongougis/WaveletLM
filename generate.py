@@ -883,10 +883,16 @@ def main():
             except ImportError:                   # older function-style API
                 from torchao.quantization import int8_weight_only
                 _int8_cfg = int8_weight_only()
-            quantize_(model, _int8_cfg)
-            log("[PTQ-fast] Applied torchao int8 weight-only to nn.Linear (MLP / lm_head). "
-                "Custom mixer/lifting stay fp16 — Phase 2. Decode is memory-bound, so the win is "
-                "loading int8 weights, not int8 compute.")
+            # Skip the LM head: int8 on the output projection blows up the logits
+            # (inf/nan -> multinomial assert) and un-ties it from the embedding (+vocab*C params).
+            # Quantize the inner Linears only (the MLP is the big win); keep the head fp16.
+            import torch.nn as _nn
+            def _skip_lm_head(mod, fqn):
+                return isinstance(mod, _nn.Linear) and 'lm_head' not in fqn
+            quantize_(model, _int8_cfg, filter_fn=_skip_lm_head)
+            log("[PTQ-fast] Applied torchao int8 weight-only to nn.Linear EXCEPT lm_head "
+                "(MLP = the big win; head kept fp16 to protect the logits). "
+                "Custom mixer/lifting stay fp16 — Phase 2.")
         except Exception as e:
             log(f"[PTQ-fast] torchao int8 UNAVAILABLE ({type(e).__name__}: {e}); model stays fp16. "
                 "Note: torchao IS installed if pip succeeded — this is an import/API/kernel issue, not a "
