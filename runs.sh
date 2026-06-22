@@ -436,4 +436,16 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # run_ablation "T5_C1024_L20_1ep Deep C=1024 — L=20 (1ep, grad-ckpt)"     "$BASE_PATCH_1EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 20, "C": 1024}'     "T5_C1024_L20_1ep: deep C=1024 — L=20, grad-ckpt; near the prior ~20L ceiling, only if L=15 cleared noise"
 
 
+# ==============================================================================
+# C=1024 L=10 HEADLINE — the Small final, 5ep on WT-103 (the depth WINNER's headline run).
+# L=10 cleared the noise floor vs L=5 at 1ep (-0.0093 BPB); L=15 plateaued (depth ceiling ~L=10),
+# so the 5ep headline goes on L=10 ONLY. Identical to the L=10/1ep finder above, just epochs=5
+# (BASE_PATCH_5EP) -> grad-ckpt OFF, MBS=8, GA=1, block 256 all unchanged. Measured peak training
+# VRAM was 16838 MiB at L=10 -> FITS the A5000 (24 GB) with NO grad-ckpt / MBS / GA changes.
+# Expect ~1.5 days on the A5000 (~64K steps/epoch x measured s/it; clock the first ~50 steps).
+# A/B vs C=1024/L=5/5ep = 1.0002 (logs/wikitext-103_2026-06-19_13-21-20). PG-19 5ep is ~20x the
+# tokens (~5-6 days/epoch here) -> run PG-19 at 1ep on a more economical box. UNCOMMENT to launch.
+run_ablation "S1_C1024_L10_5ep Small Headline — C=1024 L=10 (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S1_C1024_L10_5ep: C=1024 L=10 5ep headline on WT-103; depth winner (L=10 cleared noise, L=15 plateaued); 16838 MiB peak -> fits A5000 ckpt-off; A/B vs C=1024/L=5/5ep=1.0002"
+
+
 # (length-gen eval sweep MOVED to the top of the RUNS section so it runs FIRST — see there)

@@ -1945,12 +1945,12 @@ python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> 
 
 With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, depth is the next lever. **C=1024 is now the iterative development width; C=2048 / C=4096 are reserved for final headline runs.** Deep runs fit a single card without `gradient_checkpointing` on the RTX 6000 (the card has the memory; enable it only on smaller cards). Protocol: run each depth at **1 epoch** (cheap ceiling-finder), bump depth only while it clears the ~0.0010 noise floor, then run the **5-epoch headline on the depth winner only** (an L=20/5ep would be ~50 h, so we don't run every depth at 5ep).
 
-| C=1024 layers | ep | MBS | GA | grad-ckpt | params | BPB | notes |
-|---|---|---|---|---|---|---|---|
-| 5 | 5 | 8 | 1 | no | 375.04M | **1.0002** | validated Small baseline (beats old 883M headline) |
-| 10 | 1 | 8 | 1 | no | 669.24M | 1.1113 | −0.0093 vs L=5/1ep (1.1206); depth pays, diminishing |
-| 15 | 1 | 8 | 1 | no | 963.43M | 1.1099 | −0.0014 vs L=10 (~noise) → 1ep ceiling ≈ L=10 |
-| 20 | — | — | — | — | — | cancelled | L=15 plateaued; not worth it |
+| C=1024 layers | ep | MBS | GA | grad-ckpt | params | BPB | notes | log |
+|---|---|---|---|---|---|---|---|---|
+| 5 | 5 | 8 | 1 | no | 375.04M | **1.0002** | validated Small baseline (beats old 883M headline) | [log](logs/wikitext-103_2026-06-19_13-21-20/log.txt) |
+| 10 | 1 | 8 | 1 | no | 669.24M | 1.1113 | −0.0093 vs L=5/1ep (1.1206); depth pays, diminishing | [log](logs/wikitext-103_2026-06-21_18-41-36/log.txt) |
+| 15 | 1 | 8 | 1 | no | 963.43M | 1.1099 | −0.0014 vs L=10 (~noise) → 1ep ceiling ≈ L=10 | [log](logs/wikitext-103_2026-06-21_23-17-03/log.txt) |
+| 20 | — | — | — | — | — | cancelled | L=15 plateaued; not worth it | — |
 
 **RESULT (2026-06-22): depth pays through ~L=10 at 1ep, then plateaus.** L=5→L=10 = −0.0093 (real), L=10→L=15 = −0.0014 (within noise) — so the 1ep depth ceiling is ~L=10 (L=20 cancelled). But **width beats depth**: the C=1024 1ep curve asymptotes ~1.10, while C=2048/L=5/1ep = 1.0831 at similar params, so no amount of C=1024 depth catches the wider model — confirming width-to-the-knee-then-depth. So **C=2048/L=5 stays the standard**, and the C=1024 Small headline stays L=5/5ep = 1.0002 (the 5ep deep run is foregone on cost). **Recommended direction (untested):** C=2048/L=10 — width at the knee *plus* the depth that pays — is the likely-superior final baseline, flagged for reviewers, not yet runnable on budget. (`gradient_checkpointing` is off on the RTX 6000; if a deep run OOMs on a smaller card, drop MBS→4/GA→2 — equal-quality.)
 
@@ -2039,6 +2039,8 @@ So the easy route (compile / CUDA graphs) is a **dead end without a fixed-shape 
 The [current PTQ path](runs.md#ptq-sweep-summary) dequantizes int8 weights to fp16 inside `forward()` and runs a standard fp16 matmul, which pays the dequant cost every step with no bandwidth win - hence the 12% generation slowdown and the fact that sub-8-bit variants compress identically to 8-bit on disk. 
 
 Swapping `QuantizedLinear` / `QuantizedEmbedding` for fused packed-weight kernels (Marlin W8A16 / W4A16, CUTLASS `i8gemm`, bitsandbytes, Triton for the embedding lookup) fixes both: storage scales with bit-width, and each matmul reads half or a quarter as many bytes. Expected generation at batch=1 (fp16 baseline 28.8 tok/s) is **~1.4–1.6× faster** for fused uniform 8-bit and **~1.8–2.2× faster** for fused mixed 8/4/2, with BPB unchanged. See [runs.md](runs.md#post-release-bit-packed-ptq-kernels) for the full plan.
+
+**Status:** a first cut — the `--ptq8_fast` flag (torchao `int8_weight_only` on the inner Linears, with the LM head kept in fp16 to protect the logits) — is wired into `generate.py`, but torchao proved too unstable in the current A5000 environment to engage the kernel (it falls back to fp16). This work is **tabled and continued post-release**; see [Other Post-Release Plans](#other-post-release-plans).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2259,6 +2261,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 - Top-K / hard thresholding in the Hadamard domain
 - Complete Muon sweep
 - Long-context scaling: **decimated wavelet transform** (coarse-decimation hybrid) + content-dependent **retrieval** / **length-generalization** study — see [plans/long_context_decimation.md](plans/long_context_decimation.md)
+- **Fused int8 PTQ kernels** — the `--ptq8_fast` path (torchao `int8_weight_only`, LM head kept fp16) is wired but blocked on torchao instability in the current environment; revisit by pinning a known-good torchao or writing a Triton int8 GEMV — see [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
 
 
 ## License
