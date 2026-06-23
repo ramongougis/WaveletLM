@@ -614,6 +614,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Scaled-Up Model with PTQ and other Infernece Strategies](#scaled-up-model-with-ptq-and-other-infernece-strategies)
 - [Downstream Transfer Fine-Tuning](#downstream-transfer-fine-tuning)
 - [Instruction-Tuning Chat Demo](#instruction-tuning-chat-demo)
+- [Pretraining Data Blend](#pretraining-data-blend)
 - [Other Post-Release Plans](#other-post-release-plans)
 
 <p align="center">
@@ -1952,7 +1953,7 @@ With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, dep
 | 15 | 1 | 8 | 1 | no | 963.43M | 1.1099 | −0.0014 vs L=10 (~noise) → 1ep ceiling ≈ L=10 | [log](logs/wikitext-103_2026-06-21_23-17-03/log.txt) |
 | 20 | — | — | — | — | — | cancelled | L=15 plateaued; not worth it | — |
 
-**RESULT (2026-06-22): depth pays through ~L=10 at 1ep, then plateaus.** L=5→L=10 = −0.0093 (real), L=10→L=15 = −0.0014 (within noise) — so the 1ep depth ceiling is ~L=10 (L=20 cancelled). But **width beats depth**: the C=1024 1ep curve asymptotes ~1.10, while C=2048/L=5/1ep = 1.0831 at similar params, so no amount of C=1024 depth catches the wider model — confirming width-to-the-knee-then-depth. So **C=2048/L=5 stays the standard**, and the C=1024 Small headline stays L=5/5ep = 1.0002 (the 5ep deep run is foregone on cost). **Recommended direction (untested):** C=2048/L=10 — width at the knee *plus* the depth that pays — is the likely-superior final baseline, flagged for reviewers, not yet runnable on budget. (`gradient_checkpointing` is off on the RTX 6000; if a deep run OOMs on a smaller card, drop MBS→4/GA→2 — equal-quality.)
+**RESULT (2026-06-22): depth pays through ~L=10 at 1ep, then plateaus.** L=5→L=10 = −0.0093 (real), L=10→L=15 = −0.0014 (within noise) — so the 1ep depth ceiling is ~L=10 (L=20 cancelled). But **width beats depth**: the C=1024 1ep curve asymptotes ~1.10, while C=2048/L=5/1ep = 1.0831 at similar params, so no amount of C=1024 depth catches the wider model — confirming width-to-the-knee-then-depth. So **C=2048/L=5 stays the standard**, and the C=1024 Small headline was L=5/5ep = 1.0002. **UPDATE 2026-06-23:** that "forego the 5ep deep run on cost" call was reversed — the **C=1024 L=10/5ep headline run is now in progress** (the depth winner earns its 5ep headline after all; see [Release goals](#release-pipeline)). L=10/1ep measured 1.1113 BPB, so at five epochs it should clear 1.0002 — **5ep BPB pending (TBD on completion).** **Recommended direction (untested):** C=2048/L=10 — width at the knee *plus* the depth that pays — is the likely-superior final baseline, flagged for reviewers, not yet runnable on budget. (`gradient_checkpointing` is off on the RTX 6000; if a deep run OOMs on a smaller card, drop MBS→4/GA→2 — equal-quality.)
 
 > ⚠ **Depth ceiling is real.** The old-recipe **30L/C=512 run *regressed*** vs 20L (BPB 1.0207 > 1.0136) — depth hurt past ~20 layers. The learned-residual recipe may push the ceiling higher, but L=20 is plausibly near it, so we deepen iteratively and stop when a depth fails to clear noise rather than committing to L=20 blind. Targeting ~800M–1B params (≈10–15 layers) for a GPT-2-XL-class headline is plausible but unproven — and read the cross-model **PPL caveats** before claiming it (word-level vs BPE perplexity are not comparable; use BPB).
 
@@ -1966,9 +1967,30 @@ With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, dep
 
 > **Status (2026-06-18): plan of record for the first release.** Sequences architecture-lock → cross-dataset baselines → big-data tuning → multi-seed headlines. Supersedes the per-size MLP/LR/Dropout sweep grid on WT-103 (deferred to the big-data regime, below).
 
+**Release goals — concrete scope (2026-06-23).** What ships in the first release, on the current budget. The pipeline below is the *method*; this is the *deliverable list*. Data recipe for every blend run: [Pretraining Data Blend](#pretraining-data-blend).
+
+**WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
+- [ ] **WT-103, E=5** — the headline BPB (*running now*; A/B vs L=5/5ep = 1.0002)
+- [ ] **PG-19, E=1** (run on a separate, cheaper box)
+- [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
+- [ ] **SFT** (SmolTalk + OASST1)
+- [ ] **Functional / toy chatbot**
+- [ ] **Interpretability suite — developed & processed fully here** (the deepest interpretability story rides on Small)
+- [ ] *Nice-to-have:* **Semantic embedding** on WT-103 (maybe PG-19) — PPL comparisons + REAP/SOW concept-token ablations + n-gram processing/prediction
+
+**WaveletLM-Medium (C=2048, L=10):**
+- [ ] **WT-103, E=5** — *required*
+- [ ] *Nice-to-have:* **PG-19** (the big blend isn't affordable here yet)
+- [ ] **Interpretability** processed on C=2048 (WT-103-only → necessarily limited)
+
+**Immediate post-release:**
+- [ ] **C=2048 on the dataset blend, E=1** (single B200) — 1 epoch of ~25–50B is already ~Chinchilla-optimal for 2.6B (~10–19 tok/param), so the rough <15 PPL target plausibly survives the 5→1 epoch cut (*estimate*)
+
+> PPL targets are guesses on a held-out slice of the *blend* (not WikiText, where it runs lower) — the real "useful yet?" signal is the downstream benchmark suite, not PPL.
+
 **Guiding principle: more data beats more regularization.** The [Untied Lifting](#untied-lifting-shared-lifting-weights-off) / [iso-param](#less-width) findings are all *data-starvation* signatures — capacity that 1-epoch WT-103 can't fill — and the WT-103-tuned recipe **does not transfer to the data-rich regime**: dropout need *falls* with data, and the MLP/width verdicts may *reverse* once there's data to fill the capacity. So the data-dependent knobs (**dropout, MLP**) are tuned on the target big-data regime, not on starved WT-103. **LR is the exception** — its ceiling is width-bound (~1/C), so it transfers across datasets and needs only a light recheck.
 
-**Sizes.** WaveletLM **Small** (C=1024) and **Medium** (C=2048) ship first; **Large** (C=4096, ~3.7B at L=5 — B200-class) is deferred to a later release on cost. All at L=5 (the depth-sweep frontier).
+**Sizes.** WaveletLM **Small** (C=1024) and **Medium** (C=2048) ship first; **Large** (C=4096 — B200-class) is deferred to a later release on cost. All at **L=10** (the depth-sweep winner — depth pays through ~L=10, then plateaus).
 
 **Pipeline (in order):**
 1. **Lock the architecture (→ T6) on WT-103.** Test [cross-layer dense skips](#cross-layer-skip-connections) *in isolation* (ep=1 and ep=5); if they clear the ~0.0010 noise floor they graduate into the **T6 baseline**, else T6 = T5. ([Untied lifting](#untied-lifting-shared-lifting-weights-off) was the other candidate but **NaN'd at the shared LR — deferred to post-release**, so shared lifting stays default and cross-layer skips are the sole release-path cross-layer-flow lever.) WT-103 is the cheap ablation ground — architecture decisions transfer to big-data far better than reg/capacity, but spot-check on the combined set anyway.
@@ -2243,7 +2265,54 @@ The first **post-training** step (everything above is *pretraining* — self-sup
 
 The second post-training step, and a tangible **release artifact**: SFT the headline base on an open instruction set (Alpaca / Dolly / OASST, ~tens of thousands of examples, 1–3 epochs) to produce an **attention-free wavelet *assistant*** you can actually chat with — far more demoable than a perplexity table. Cheap *relative to pretraining*: ~40M instruction tokens vs. the 100M+ pretraining corpus, a few hours at the headline scale. The instruction data is separate and small (not the pretraining corpus). Note the data-starvation lesson applies in reverse: post-training pays off most on a *strong* base, so the **richest demo is on the scaled-up model**, with the WT-103 / PG-19 headline demos as valid pre-release artifacts on the smaller bases. Optional interpretability bonus: comparing the base vs. instruction-tuned model's *readable* structure (crawl logits, scale routing) is a clean "what does instruction-tuning change mechanistically?" study unique to this architecture.
 
-**Multi-dataset note (deferred to post-release).** The ideal base is one pretrained on **as many concatenated datasets as possible at once** (WT-103 + PG-19 + Pile-ArXiv + BookCorpusOpen + OpenWebText + …) — the richest, least data-starved base, and the best foundation for both post-training steps above. That concatenated-corpus base is a **post-release** effort (it's a larger pretraining run). Pre-release, the two post-training steps are applied **separately to each of the WT-103 and PG-19 headline models** once those have their new headline versions — giving per-corpus transfer + demo now, with the unified multi-dataset base (and its stronger post-training) following after release.
+**Multi-dataset note (deferred to post-release).** The ideal base is one pretrained on **as many concatenated datasets as possible at once** (WT-103 + PG-19 + Pile-ArXiv + BookCorpusOpen + OpenWebText + …) — the richest, least data-starved base, and the best foundation for both post-training steps above. That concatenated-corpus base is a **post-release** effort (it's a larger pretraining run). Pre-release, the two post-training steps are applied **separately to each of the WT-103 and PG-19 headline models** once those have their new headline versions — giving per-corpus transfer + demo now, with the unified multi-dataset base (and its stronger post-training) following after release. (Recipe: the [Pretraining Data Blend](#pretraining-data-blend) section below.)
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Pretraining Data Blend
+
+The recipe for the **multi-dataset base** referenced above — the richest, least data-starved foundation, and the pretraining half of the chatbot demo. One base blend that **shifts with model size** (small → cleaner / synthetic-heavy; large → more code/math/academic), scaled in absolute tokens per size:
+
+| Source | Role | Small C=1024 | Medium C=2048 | Large C=4096 |
+|---|---|---|---|---|
+| **FineWeb-Edu** | clean web backbone | 55% | 50% | 45% |
+| **Cosmopedia v2** | synthetic textbooks (gold for small models) | 15% | 10% | 5% |
+| **Code** (Python-Edu → The Stack v2) | reasoning / structure | 8% | 12% | 15% |
+| **Math** (FineMath / OpenWebMath) | reasoning | 5% | 8% | 10% |
+| **Books** (PG-19 + BookCorpusOpen) | long-form coherence | 10% | 10% | 10% |
+| **Wikipedia (en)** | factual grounding | 5% | 5% | 5% |
+| **arXiv / academic** | technical depth | 2% | 5% | 10% |
+| **Target tokens** (budget floor) | — | ~10–15B | ~25–50B | ~100B+ |
+
+Proportions matter less than **ordering**: shuffle the bulk i.i.d. (never source-ordered — that forgets the early domain), then a high-quality **annealing phase** over the final ~10–20% as LR decays to near-zero (curated web + Cosmopedia + math + a little instruction data — the one curriculum that reliably helps, à la Llama-3 / OLMo / SmolLM). Upsample small high-value sources, subsample raw web, deduplicate within and across, keep GPT-2 BPE throughout. SFT tail: **SmolTalk** + OASST1. For the **Small** model this is essentially the proven **SmolLM2-corpus** recipe.
+
+**Honest framing.** This is the SOTA recipe, but the budget (~10–15B tokens for Small) is 100–1000× below trillion-token small models — so **tokens, not params, are the bottleneck** (the Small model near its Chinchilla point is budget-optimal; adding params on a fixed small budget just under-trains). Expect a **coherent demo**, not a reliable assistant. The punch-above-weight bet is the **Phi / Cosmopedia** path (high-quality + synthetic data); whether WaveletLM is itself more *token-efficient* than a Transformer is the open question the downstream benchmarks will answer — and the headline if it's positive. Full recipe, anneal schedule, assembly snippet, and the eval/comparison cohort: [plans/pretraining_data_blend.md](plans/pretraining_data_blend.md).
+
+**Comparison suite (where the numbers live).** Evaluate the base model with EleutherAI's `lm-evaluation-harness` zero-shot set — the exact benchmarks GPT-2 / Pythia / OPT / Cerebras-GPT / TinyLlama / SmolLM **and** the attention-free crowd (Mamba / RWKV / Hyena / RetNet) all report, so every row is a ready-made comparison:
+
+| Benchmark | Metric | Why it's in the suite |
+|---|---|---|
+| **LAMBADA** | acc + ppl | last-word prediction; everyone reports it |
+| **HellaSwag** | acc_norm | commonsense cloze |
+| **PIQA** | acc | physical commonsense |
+| **ARC-easy / ARC-challenge** | acc_norm | science QA |
+| **WinoGrande** | acc | coreference / commonsense |
+| **OpenBookQA** | acc_norm | knowledge + reasoning |
+| **BoolQ / SciQ** | acc | reading / QA (optional) |
+
+For **code**: HumanEval pass@1 (~15–20% = starts being useful). **Lead with an iso-budget controlled table** (WaveletLM vs Transformer/Mamba/RWKV/Hyena trained on the *same* corpus + token budget); use published small-model numbers as *annotated* context only.
+
+**Capability ladder (rough, held-out *general-text* PPL — estimates).** Where a given loss lands, for calibration (note: WikiText PPL runs lower than general-text PPL, so don't read your WikiText number against these bands):
+
+| PPL (≈loss) | Class | What it can do |
+|---|---|---|
+| >40 (>3.7) | sub-GPT-2 | barely fluent |
+| 25–40 (3.2–3.7) | GPT-2-small | grammatical, rambling, no task ability |
+| 15–25 (2.7–3.2) | GPT-2-XL / Neo | coherent; simple completion; **post-SFT = toy chatbot** |
+| 10–15 (2.3–2.7) | Pythia-1B | basic QA + simple instructions after SFT; trivial code — *borderline useful* |
+| 7–10 (1.9–2.3) | SmolLM2-1.7B / Qwen-1.5B | **genuinely useful small assistant**; decent common-pattern code |
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
