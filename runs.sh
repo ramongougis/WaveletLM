@@ -448,4 +448,36 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 run_ablation "S1_C1024_L10_5ep Small Headline — C=1024 L=10 (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 20, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S1_C1024_L10_5ep: C=1024 L=10 5ep headline on WT-103; depth winner (L=10 cleared noise, L=15 plateaued); 16838 MiB peak -> fits A5000 ckpt-off; A/B vs C=1024/L=5/5ep=1.0002"
 
 
+# ==============================================================================
+# NO-MLP ABLATION (motivated by Kiruluta's MLP-free Wavelet Logic Machines, his 2026-06-24 review).
+# The MLP is 419.6M of the 669.24M S1 headline (62.7%); mlp_expansion=0 removes it cleanly
+# (model.py:2124, use_mlp = mlp_expansion > 0). LR 0.05 still applies (width-bound ~1/C, not
+# MLP-bound; if it NaNs, drop to 0.04). All A/B vs S1 headline = 0.9894. UNCOMMENT the one(s) to run.
+#
+# (A) all-else-equal: L=10, mlp_expansion=0 -> ~249.6M. The RAW cost of the MLP (-63% params).
+run_ablation "S2a_C1024_L10_noMLP_5ep No-MLP all-equal — C=1024 L=10 mlp_exp=0 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S2a_C1024_L10_noMLP_5ep: MLP removed (mlp_expansion=0), all else equal -> ~249.6M; raw cost of the MLP; A/B vs S1 0.9894"
+#
+# (B) iso-param via DEPTH: L=35, mlp_expansion=0 -> ~671.5M. ISO-PARAM and ISO-COMPUTE (35 no-MLP
+# layers ~= 10 MLP layers in FLOPs -> ~same ~2.4-day wall-clock). Tests if depth can replace the MLP.
+# CAVEAT: L=35 is ~2x past the depth plateau (L=15) -> EXPECT a regression; that itself answers "can
+# depth substitute for the MLP's channel-mixing" (likely not fully). 35 layers of activations may
+# need grad-ckpt on the A5000 -> if it OOMs, set "gradient_checkpointing": true.
+run_ablation "S2b_C1024_L35_noMLP_5ep No-MLP iso-param via depth — C=1024 L=35 mlp_exp=0 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 35, "C": 1024}'     "S2b_C1024_L35_noMLP_5ep: no-MLP iso-param via depth (L=35, ~671.5M, iso-compute); can depth replace the MLP? expect regression past depth ceiling; A/B vs S1 0.9894"
+#
+# (C) FOLLOW-UP — iso-param via WIDER MIXER (more spectral capacity/layer, closer to the paper's
+# coefficient-domain emphasis; likely the no-MLP variant that gets NEAREST 0.9894). mixer_depth~4 at
+# L=10 is the rough target (mixer is 14.73M/layer at depth 1; need ~56.7M to match the MLP) -- VERIFY
+# the printed PARAMETER BREAKDOWN at launch and tune mixer_depth to ~669M; may need "mixer_depth_stabilizers": true.
+run_ablation "S2c_C1024_L10_noMLP_widemixer_5ep No-MLP iso-param via wide mixer — C=1024 L=10 mixer_depth~4 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "mixer_depth": 4, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S2c_C1024_L10_noMLP_widemixer_5ep: no-MLP iso-param via wider mixer (mixer_depth~4, tune to ~669M); spectral substitute for the MLP; A/B vs S1 0.9894"
+#
+# (D) iso-param via MIXTURE — mixer_depth=2 + increased depth (the hybrid: if mixer+depth matches or
+# beats no-MLP, it's a strong case to drop the MLP PERMANENTLY). mixer_depth=2 ~doubles the mixer
+# (~29.5M/layer), so iso-param lands near L=18 (~650M) / L=19 (~681M); L=18 also sits in the known-good
+# depth range (~15-20), unlike S2b's L=35 -> the best-conditioned no-MLP iso-param variant. VERIFY the
+# printed PARAMETER BREAKDOWN and tune layers +/-1 to ~669M; if the depth-2 mixer is unstable, set
+# "mixer_depth_residuals": true.
+run_ablation "S2d_C1024_L18_noMLP_mixer2_5ep No-MLP iso-param via mixer_depth=2 + depth — C=1024 L=18 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "mixer_depth": 2, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 18, "C": 1024}'     "S2d_C1024_L18_noMLP_mixer2_5ep: no-MLP iso-param via mixer_depth=2 + L=18 (~650M, tune to ~669M); the mixer+depth hybrid; if it matches/beats S1 0.9894, strong case to drop the MLP for good"
+# ==============================================================================
+
+
 # (length-gen eval sweep MOVED to the top of the RUNS section so it runs FIRST — see there)

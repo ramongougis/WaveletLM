@@ -17,16 +17,14 @@
 
 <br>
 
-WaveletLM is a generative, attention-free, long context language model based upon the architecture discovered by Andrew Kiruluta et al. (2025)[^1][^2] in the following papers:
-
-- **Wavelet Logic Machines**: wavelet-based classification on fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514))
-- **Learnable Multi-Scale Wavelet Transformer**: wavelet-based machine translation ([arXiv:2504.08801](https://arxiv.org/abs/2504.08801))
+WaveletLM is a generative, attention-free, long-context language model inspired by Andrew Kiruluta's Wavelet Logic Machines[^1] and extended to causal language modeling. Where the original uses learnable wavelets in place of self-attention for classification over fixed, pretrained embeddings ([arXiv:2507.19514](https://arxiv.org/abs/2507.19514)), WaveletLM adapts that approach to autoregressive next-token prediction with a learned embedding and several other differences detailed in the [Architecture](#architecture) section.
 
 **Structure**
 
-WaveletLM adapts the Wavelet Logic Machine's approach to autoregressive language modeling with the components detailed in the [Architecture](#architecture) section below. Furthermore, a planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters achieved by our [benchmark results](#results) while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
+WaveletLM uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, per-scale gated spectral mixer with SwiGLU activation, and wavelet reconstruction. Combined with a 2-layer, width-expanded MLP and an optional Fast-weight Product Key Memory module for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
 
-It uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, a Fast Walsh-Hadamard Transform, per-scale gated spectral mixer with SwiGLU activation, inverse FWHT, and wavelet reconstruction. Combined with a 2-layer, width-expanded MLP and Fast-weight Product Key Memory for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
+A planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters behind our [benchmark results](#results), while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
+
 
 **Results**
 
@@ -402,7 +400,7 @@ Note the typical failure mode with the naive generation: register-coherent meteo
   <img src="assets/waveletlm-architecture.svg" alt="WaveletLM architecture" width="80%"/>
 </p>
 
-The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kiruluta's' Wavelet Logic Machine[^1] and Kiruluta, Burity, and Williams's Learnable Multi-Scale Wavelet Transformer[^2]. WaveletLM extends this approach from sentiment classification to language modeling with several architectural additions and components, detailed below.
+The high-level architectural premise, using learnable wavelets in place of self-attention as a sequence mixer, follows Kiruluta's Wavelet Logic Machines[^1]. WaveletLM extends this approach from sentiment classification to language modeling with several architectural additions and components, detailed below.
 
 ### Key Components
 
@@ -594,6 +592,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Untied Lifting (Shared Lifting Weights Off)](#untied-lifting-shared-lifting-weights-off)
 - [Cross-Layer Skip Connections](#cross-layer-skip-connections)
 - [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization)
+- [No MLP with deep C=1024](#no-mlp-with-deep-c1024)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
@@ -1948,16 +1947,37 @@ With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, dep
 
 | C=1024 layers | ep | MBS | GA | grad-ckpt | params | BPB | notes | log |
 |---|---|---|---|---|---|---|---|---|
-| 5 | 5 | 8 | 1 | no | 375.04M | **1.0002** | validated Small baseline (beats old 883M headline) | [log](logs/wikitext-103_2026-06-19_13-21-20/log.txt) |
+| 5 | 5 | 8 | 1 | no | 375.04M | 1.0002 | validated L=5 baseline (beats old 883M headline) | [log](logs/wikitext-103_2026-06-19_13-21-20/log.txt) |
 | 10 | 1 | 8 | 1 | no | 669.24M | 1.1113 | −0.0093 vs L=5/1ep (1.1206); depth pays, diminishing | [log](logs/wikitext-103_2026-06-21_18-41-36/log.txt) |
+| **10** | **5** | 8 | 1 | no | 669.24M | **0.9894** | **new Small headline** — sub-1.0 BPB; depth pays at 5ep too: −0.0108 vs L=5/5ep (10× noise), *more* than −0.0093 at 1ep | [log](logs/wikitext-103_2026-06-22_22-47-16/log.txt) |
 | 15 | 1 | 8 | 1 | no | 963.43M | 1.1099 | −0.0014 vs L=10 (~noise) → 1ep ceiling ≈ L=10 | [log](logs/wikitext-103_2026-06-21_23-17-03/log.txt) |
 | 20 | — | — | — | — | — | cancelled | L=15 plateaued; not worth it | — |
 
-**RESULT (2026-06-22): depth pays through ~L=10 at 1ep, then plateaus.** L=5→L=10 = −0.0093 (real), L=10→L=15 = −0.0014 (within noise) — so the 1ep depth ceiling is ~L=10 (L=20 cancelled). But **width beats depth**: the C=1024 1ep curve asymptotes ~1.10, while C=2048/L=5/1ep = 1.0831 at similar params, so no amount of C=1024 depth catches the wider model — confirming width-to-the-knee-then-depth. So **C=2048/L=5 stays the standard**, and the C=1024 Small headline was L=5/5ep = 1.0002. **UPDATE 2026-06-23:** that "forego the 5ep deep run on cost" call was reversed — the **C=1024 L=10/5ep headline run is now in progress** (the depth winner earns its 5ep headline after all; see [Release goals](#release-pipeline)). L=10/1ep measured 1.1113 BPB, so at five epochs it should clear 1.0002 — **5ep BPB pending (TBD on completion).** **Recommended direction (untested):** C=2048/L=10 — width at the knee *plus* the depth that pays — is the likely-superior final baseline, flagged for reviewers, not yet runnable on budget. (`gradient_checkpointing` is off on the RTX 6000; if a deep run OOMs on a smaller card, drop MBS→4/GA→2 — equal-quality.)
+**RESULT (2026-06-22): depth pays through ~L=10 at 1ep, then plateaus.** L=5→L=10 = −0.0093 (real), L=10→L=15 = −0.0014 (within noise) — so the 1ep depth ceiling is ~L=10 (L=20 cancelled). But **width beats depth**: the C=1024 1ep curve asymptotes ~1.10, while C=2048/L=5/1ep = 1.0831 at similar params, so no amount of C=1024 depth catches the wider model — confirming width-to-the-knee-then-depth. So **C=2048/L=5 stays the standard**, and the C=1024 Small headline was L=5/5ep = 1.0002. **UPDATE 2026-06-23:** that "forego the 5ep deep run on cost" call was reversed — the **C=1024 L=10/5ep headline run is now in progress** (the depth winner earns its 5ep headline after all; see [Release goals](#release-pipeline)). L=10/1ep measured 1.1113 BPB, so at five epochs it should clear 1.0002 — **and it did: L=10/5ep = 0.9894** (sliding BPB, 2026-06-24), −0.0108 vs L=5/5ep (10× the noise floor) and a touch *more* depth payoff than the −0.0093 at 1ep, so overfitting did not eat it. **0.9894 (sub-1.0 BPB) is the new Small headline.** **Recommended direction (untested):** C=2048/L=10 — width at the knee *plus* the depth that pays — is the likely-superior final baseline, flagged for reviewers, not yet runnable on budget. (`gradient_checkpointing` is off on the RTX 6000; if a deep run OOMs on a smaller card, drop MBS→4/GA→2 — equal-quality.)
 
 > ⚠ **Depth ceiling is real.** The old-recipe **30L/C=512 run *regressed*** vs 20L (BPB 1.0207 > 1.0136) — depth hurt past ~20 layers. The learned-residual recipe may push the ceiling higher, but L=20 is plausibly near it, so we deepen iteratively and stop when a depth fails to clear noise rather than committing to L=20 blind. Targeting ~800M–1B params (≈10–15 layers) for a GPT-2-XL-class headline is plausible but unproven — and read the cross-model **PPL caveats** before claiming it (word-level vs BPE perplexity are not comparable; use BPB).
 
 **Memory / decimation.** This runs on the current **undecimated** (à-trous) transform, which is fine at these scales (1–2M undecimated C=2048 fits 8 B200s sharded). The undecimated `[B,T,S,Cp]` cost only becomes a wall past a few million tokens, where the fix is **decimating the wavelet transform** (memory/compute O(T·S) → O(T)) — and the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured) motivates a **coarse-decimation hybrid** (decimate the coarse scales, which are smoothers; keep the fine scales, which carry precise lags). That redesign is deferred to [plans/long_context_decimation.md](plans/long_context_decimation.md); it is **not** needed for this prototype.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### No MLP with deep C=1024
+
+Kiruluta's **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, is fully spectral and avoids MLPs entirely, carrying the computation through learnable wavelet-coefficient manipulation. WaveletLM, by contrast, currently spends 62.7% of its parameters on a conventional MLP (419.6M of the 669.24M WaveletLM-Small headline). Following the author's review (2026-06-25), this ablation probes that gap head-on: testing whether the model in its current form can, with or without the same number of parameters via increased layers and/or mixer depth, match or surpass the headline's performance without the MLP.
+
+`mlp_expansion=0` removes the MLP cleanly. Variants, all A/B'd against the **L=10 + MLP headline (0.9894 BPB)**:
+
+| variant | layers | MLP | params | BPB | what it tests |
+|---|---|---|---|---|---|
+| headline (with MLP) | 10 | exp=20 | 669.24M | **0.9894** | the baseline |
+| no-MLP, all-equal | 10 | off | ~249.6M | *pending* | raw cost of the MLP (−63% params) |
+| no-MLP, iso-param (depth) | 35 | off | ~671.5M | *pending* | can depth replace the MLP at equal params? |
+| no-MLP, iso-param (wide mixer) | 10 | off | ~669M\* | *follow-up* | can a wider *spectral* mixer replace it? |
+| no-MLP, iso-param (mixer×2 + depth) | 18 | off | ~650M\* | *pending* | the mixer+depth **hybrid** — best-conditioned; if it matches 0.9894, the case to drop the MLP for good |
+
+The depth variant exploits a clean property — **iso-param ≈ iso-compute** (35 MLP-free layers ≈ the FLOPs of 10 MLP layers), so it's a fair, compute-matched test. Honest expectation: **L=35 is ~2× past the depth plateau** (the ladder flattened by L=15), so a regression is likely — and *that is the result*, showing the MLP's per-token channel-mixing is something extra depth can't fully replace. The **wider-mixer** variant (more spectral capacity per layer, closer to the paper's coefficient-domain emphasis) is the follow-up most likely to actually *approach* 0.9894. *(\*mixer width tuned to ~iso-param at launch.)*
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -1970,7 +1990,7 @@ With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, dep
 **Release goals — concrete scope (2026-06-23).** What ships in the first release, on the current budget. The pipeline below is the *method*; this is the *deliverable list*. Data recipe for every blend run: [Pretraining Data Blend](#pretraining-data-blend).
 
 **WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
-- [ ] **WT-103, E=5** — the headline BPB (*running now*; A/B vs L=5/5ep = 1.0002)
+- [x] **WT-103, E=5** — **0.9894 BPB** ✅ (sub-1.0; −0.0108 vs L=5/5ep) — done 2026-06-24
 - [ ] **PG-19, E=1** (run on a separate, cheaper box)
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **SFT** (SmolTalk + OASST1)
@@ -2341,7 +2361,6 @@ Apache License 2.0
 ## References
 
 [^1]: Kiruluta. "Wavelet Logic Machines: Learning and Reasoning in the Spectral Domain Without Neural Networks." [arXiv:2507.19514](https://arxiv.org/abs/2507.19514), 2025. (classification-focused with frozen pretrained embeddings.)
-[^2]: Kiruluta, Burity, and Williams. "Learnable Multi-Scale Wavelet Transformer: A Novel Alternative to Self-Attention." [arXiv:2504.08801](https://arxiv.org/abs/2504.08801), 2025.
 [^3]: Kiruluta, Raju, and Burity. "Breaking Quadratic Barriers: A Non-Attention LLM for Ultra-Long Context Horizons." [arXiv:2506.01963](https://arxiv.org/abs/2506.01963), 2025. (Non-attention LLM on WikiText-103 / Enwik8 using SSM + multi-resolution convolution + RNN supervisor + retrieval — different primitives, same task as WaveletLM.)
 
 [^4]: Dai et al. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context." arXiv:1901.02860, 2019.
