@@ -455,27 +455,50 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # MLP-bound; if it NaNs, drop to 0.04). All A/B vs S1 headline = 0.9894. UNCOMMENT the one(s) to run.
 #
 # (A) all-else-equal: L=10, mlp_expansion=0 -> ~249.6M. The RAW cost of the MLP (-63% params).
-run_ablation "S2a_C1024_L10_noMLP_5ep No-MLP all-equal — C=1024 L=10 mlp_exp=0 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S2a_C1024_L10_noMLP_5ep: MLP removed (mlp_expansion=0), all else equal -> ~249.6M; raw cost of the MLP; A/B vs S1 0.9894"
+# run_ablation "S2a_C1024_L10_noMLP_5ep No-MLP all-equal — C=1024 L=10 mlp_exp=0 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S2a_C1024_L10_noMLP_5ep: MLP removed (mlp_expansion=0), all else equal -> ~249.6M; raw cost of the MLP; A/B vs S1 0.9894"
 #
 # (B) iso-param via DEPTH: L=35, mlp_expansion=0 -> ~671.5M. ISO-PARAM and ISO-COMPUTE (35 no-MLP
 # layers ~= 10 MLP layers in FLOPs -> ~same ~2.4-day wall-clock). Tests if depth can replace the MLP.
 # CAVEAT: L=35 is ~2x past the depth plateau (L=15) -> EXPECT a regression; that itself answers "can
-# depth substitute for the MLP's channel-mixing" (likely not fully). 35 layers of activations may
-# need grad-ckpt on the A5000 -> if it OOMs, set "gradient_checkpointing": true.
-run_ablation "S2b_C1024_L35_noMLP_5ep No-MLP iso-param via depth — C=1024 L=35 mlp_exp=0 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 35, "C": 1024}'     "S2b_C1024_L35_noMLP_5ep: no-MLP iso-param via depth (L=35, ~671.5M, iso-compute); can depth replace the MLP? expect regression past depth ceiling; A/B vs S1 0.9894"
-#
-# (C) FOLLOW-UP — iso-param via WIDER MIXER (more spectral capacity/layer, closer to the paper's
-# coefficient-domain emphasis; likely the no-MLP variant that gets NEAREST 0.9894). mixer_depth~4 at
-# L=10 is the rough target (mixer is 14.73M/layer at depth 1; need ~56.7M to match the MLP) -- VERIFY
-# the printed PARAMETER BREAKDOWN at launch and tune mixer_depth to ~669M; may need "mixer_depth_stabilizers": true.
-run_ablation "S2c_C1024_L10_noMLP_widemixer_5ep No-MLP iso-param via wide mixer — C=1024 L=10 mixer_depth~4 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "mixer_depth": 4, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S2c_C1024_L10_noMLP_widemixer_5ep: no-MLP iso-param via wider mixer (mixer_depth~4, tune to ~669M); spectral substitute for the MLP; A/B vs S1 0.9894"
-#
-# (D) iso-param via MIXTURE — mixer_depth=2 + increased depth (the hybrid: if mixer+depth matches or
-# beats no-MLP, it's a strong case to drop the MLP PERMANENTLY). mixer_depth=2 ~doubles the mixer
-# (~29.5M/layer), so iso-param lands near L=18 (~650M) / L=19 (~681M); L=18 also sits in the known-good
-# depth range (~15-20), unlike S2b's L=35 -> the best-conditioned no-MLP iso-param variant. VERIFY the
-# printed PARAMETER BREAKDOWN and tune layers +/-1 to ~669M; if the depth-2 mixer is unstable, set
-# "mixer_depth_residuals": true.
-run_ablation "S2d_C1024_L18_noMLP_mixer2_5ep No-MLP iso-param via mixer_depth=2 + depth — C=1024 L=18 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "mixer_depth": 2, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 18, "C": 1024}'     "S2d_C1024_L18_noMLP_mixer2_5ep: no-MLP iso-param via mixer_depth=2 + L=18 (~650M, tune to ~669M); the mixer+depth hybrid; if it matches/beats S1 0.9894, strong case to drop the MLP for good"
+# # depth substitute for the MLP's channel-mixing" (likely not fully). 35 layers of activations may
+# # need grad-ckpt on the A5000 -> if it OOMs, set "gradient_checkpointing": true.
+# run_ablation "S2b_C1024_L35_noMLP_5ep No-MLP iso-param via depth — C=1024 L=35 mlp_exp=0 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 35, "C": 1024}'     "S2b_C1024_L35_noMLP_5ep: no-MLP iso-param via depth (L=35, ~671.5M, iso-compute); can depth replace the MLP? expect regression past depth ceiling; A/B vs S1 0.9894"
+# #
+# # (C) FOLLOW-UP — iso-param via WIDER MIXER (more spectral capacity/layer, closer to the paper's
+# # coefficient-domain emphasis; likely the no-MLP variant that gets NEAREST 0.9894). mixer_depth~4 at
+# # L=10 is the rough target (mixer is 14.73M/layer at depth 1; need ~56.7M to match the MLP) -- VERIFY
+# # the printed PARAMETER BREAKDOWN at launch and tune mixer_depth to ~669M; may need "mixer_depth_stabilizers": true.
+# run_ablation "S2c_C1024_L10_noMLP_widemixer_5ep No-MLP iso-param via wide mixer — C=1024 L=10 mixer_depth~4 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "mixer_depth": 4, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "S2c_C1024_L10_noMLP_widemixer_5ep: no-MLP iso-param via wider mixer (mixer_depth~4, tune to ~669M); spectral substitute for the MLP; A/B vs S1 0.9894"
+# #
+# # (D) iso-param via MIXTURE — mixer_depth=2 + increased depth (the hybrid: if mixer+depth matches or
+# # beats no-MLP, it's a strong case to drop the MLP PERMANENTLY). mixer_depth=2 ~doubles the mixer
+# # (~29.5M/layer), so iso-param lands near L=18 (~650M) / L=19 (~681M); L=18 also sits in the known-good
+# # depth range (~15-20), unlike S2b's L=35 -> the best-conditioned no-MLP iso-param variant. VERIFY the
+# # printed PARAMETER BREAKDOWN and tune layers +/-1 to ~669M; if the depth-2 mixer is unstable, set
+# # "mixer_depth_residuals": true.
+# run_ablation "S2d_C1024_L18_noMLP_mixer2_5ep No-MLP iso-param via mixer_depth=2 + depth — C=1024 L=18 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "mixer_depth": 2, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 18, "C": 1024}'     "S2d_C1024_L18_noMLP_mixer2_5ep: no-MLP iso-param via mixer_depth=2 + L=18 (~650M, tune to ~669M); the mixer+depth hybrid; if it matches/beats S1 0.9894, strong case to drop the MLP for good"
+# ==============================================================================
+
+
+# ==============================================================================
+# C=2048 NO-MLP HEADLINE (Medium, 5ep WT-103). The no-MLP win (S2a: 0.9884 BPB at 249.59M, a TIE with
+# the 669M MLP version) makes C=2048 CHEAP: no-MLP C=2048/L=10 ~= 850M-1B (vs 2.6B with MLP) -> fits a
+# 5090 (32GB), ~1 day, ~$25-30. mlp_expansion=0; LR follows the C=2048 width ceiling (0.0225, ~half the
+# C=1024 0.05); min_lr=lr/50. VERIFY the printed PARAMETER BREAKDOWN + VRAM at launch; if it OOMs set
+# gradient_checkpointing: true. A/B vs the C=1024 no-MLP Small headline 0.9884.
+# NOTE: comment out the finished/cancelled S2 runs above (S2a done; S2b/c/d cancelled) so a fresh 5090
+# pod runs ONLY this.
+run_ablation "M1_C2048_L10_noMLP_5ep Medium Headline — C=2048 L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0225, "min_lr": 0.00045, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 2048}'     "M1_C2048_L10_noMLP_5ep: Medium headline C=2048 L=10 no-MLP 5ep WT-103; ~850M-1B (no-MLP makes C=2048 cheap, fits 5090); lr=0.0225 (C=2048 ceiling); A/B vs C=1024 no-MLP 0.9884"
+# ==============================================================================
+
+
+# ==============================================================================
+# PG-19 SMALL (C=1024 L=10 no-MLP, 1 epoch). Queued AFTER M1 -> runs back-to-back on the same 5090.
+# dataset="pg19" auto-selects PG-19's own 32K SentencePiece tokenizer (model.py:3665); the FIRST run
+# TRAINS that SP model + tokenizes PG-19 (~a few hours + ~5-10GB .cache, BEFORE the train clock; syncs
+# to S3, reusable). NOTE: 32K vocab (not GPT-2 50K) -> smaller embedding, AND BPB is on PG-19's OWN
+# scale -> NOT comparable to the 0.9884 WT-103 number. ~2.5-3B+ tokens, 1ep -> ~2.3-2.7 days on a 5090.
+# lr=0.05 (C=1024 width ceiling). mlp_expansion=0.
+run_ablation "P1_C1024_L10_noMLP_pg19_1ep PG-19 Small — C=1024 L=10 no-MLP (1ep)"     "$BASE_PATCH_1EP"     '{"dataset": "pg19", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "P1_C1024_L10_noMLP_pg19_1ep: PG-19 Small C=1024 L=10 no-MLP 1ep (~250M, 32K SP vocab); first run trains PG-19 SentencePiece + tokenizes; runs after M1 on the 5090; BPB not comparable to WT-103"
 # ==============================================================================
 

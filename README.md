@@ -799,7 +799,7 @@ The new baseline shall be named **T2**.
 
 ### (Done) Sequential Block Ordering
 
-Test whether visiting every token in corpus order (stride = `block_size`, no overlap, no shuffling, document boundaries ignored) helps as a standalone feature. Prerequisite for [2D Wavelet over (Batch, Token)](#2d-wavelet-over-batch-token-with-sequential-training); convenient (not strictly required) for efficient [BBCE](#bisected-block-context-extension) compression.
+Test whether visiting every token in corpus order (stride = `block_size`, no overlap, no shuffling, document boundaries ignored) helps as a standalone feature. Prerequisite for [2D Wavelet over (Batch, Token)](#shelved-on-WikiText-103-2d-wavelet-over-batch-token-with-sequential-training); convenient (not strictly required) for efficient [BBCE](#bisected-block-context-extension) compression.
 
 **Results:**
 
@@ -1971,11 +1971,13 @@ Kiruluta's **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, i
 
 | variant | layers | MLP | params | BPB | what it tests |
 |---|---|---|---|---|---|
-| headline (with MLP) | 10 | exp=20 | 669.24M | **0.9894** | the baseline |
-| no-MLP, all-equal | 10 | off | ~249.6M | *pending* | raw cost of the MLP (−63% params) |
-| no-MLP, iso-param (depth) | 35 | off | ~671.5M | *pending* | can depth replace the MLP at equal params? |
+| headline (with MLP) | 10 | exp=20 | 669.24M | 0.9894 | the baseline |
+| **no-MLP, all-equal** | 10 | off | 249.59M | **0.9884** | **ties/beats the MLP at ⅓ the params** (Δ −0.0010 = noise floor) — the MLP buys ~nothing |
+| no-MLP, iso-param (depth) | 35→30 | off | ~671M | *L=35 OOM'd; retry w/ grad-ckpt or L≤30* | can depth replace the MLP at equal params? |
 | no-MLP, iso-param (wide mixer) | 10 | off | ~669M\* | *follow-up* | can a wider *spectral* mixer replace it? |
 | no-MLP, iso-param (mixer×2 + depth) | 18 | off | ~650M\* | *pending* | the mixer+depth **hybrid** — best-conditioned; if it matches 0.9894, the case to drop the MLP for good |
+
+**RESULT (2026-06-27): the MLP is removable.** No-MLP all-equal (L=10, **249.59M**) hit **0.9884 sliding BPB** — a statistical tie with the 669.24M MLP headline (Δ −0.0010, at the noise floor) at **⅓ the params, ⅔ train VRAM, ½ inference VRAM**. The MLP's marginal value is ~zero — the gated SwiGLU mixer already supplies the channel-mixing nonlinearity. The iso-param variants below now test the *bonus* question: whether reallocating the freed ~420M to depth or mixer width pushes *past* 0.9894.
 
 The depth variant exploits a clean property — **iso-param ≈ iso-compute** (35 MLP-free layers ≈ the FLOPs of 10 MLP layers), so it's a fair, compute-matched test. Honest expectation: **L=35 is ~2× past the depth plateau** (the ladder flattened by L=15), so a regression is likely — and *that is the result*, showing the MLP's per-token channel-mixing is something extra depth can't fully replace. The **wider-mixer** variant (more spectral capacity per layer, closer to the paper's coefficient-domain emphasis) is the follow-up most likely to actually *approach* 0.9894. *(\*mixer width tuned to ~iso-param at launch.)*
 
@@ -1994,6 +1996,7 @@ The depth variant exploits a clean property — **iso-param ≈ iso-compute** (3
 - [ ] **PG-19, E=1** (run on a separate, cheaper box)
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **SFT** (SmolTalk + OASST1)
+- [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share.
 - [ ] **Functional / toy chatbot**
 - [ ] **Interpretability suite — developed & processed fully here** (the deepest interpretability story rides on Small)
 - [ ] *Nice-to-have:* **Semantic embedding** on WT-103 (maybe PG-19) — PPL comparisons + REAP/SOW concept-token ablations + n-gram processing/prediction
@@ -2227,18 +2230,16 @@ Do a final regularization sweep building on the results of the [Dropout](#dropou
 
 ### Headline Models with C=1024 (WaveletLM-Small) and C=2048 (WaveletLM-Medium)
 
-The two release tiers below the scaled-up Large. Both target **L=10, epochs=10** — the depth that pays (the 1-epoch ceiling-finder peaked at ~L=10 before plateauing; see [Deeper C=1024](#deeper-c1024--the-iterative-pipeline)), trained long.
+The two release tiers below the scaled-up Large. **As of 2026-06-27 both are MLP-free** — the [MLP ablation](#no-mlp-with-deep-c1024) showed the standalone MLP buys essentially nothing (no-MLP Small *ties* the 669M MLP version at ⅓ the params), so the default config is now **L=10 × 5 epochs × `mlp_expansion=0`**.
 
-| tier | C | layers | epochs | params | current best (L=5/5ep) |
-|---|---|---|---|---|---|
-| **Small** | 1024 | 10 | 10 | 669M | 1.0002 BPB / 22.75 PPL |
-| **Medium** | 2048 | 10 | 10 | ~2.6B (est) | 0.9748 BPB / ~21.0 PPL |
+| tier | C | layers | epochs | MLP | params | BPB (WT-103, sliding) |
+|---|---|---|---|---|---|---|
+| **Small** | 1024 | 10 | 5 | off | **249.59M** | **0.9884** ✅ done |
+| **Medium** | 2048 | 10 | 5 | off | ~850M–1B (est) | *pending — running on a 5090* |
 
-The last column is the *current validated* L=5/5ep config; the **L=10/10ep headline runs are planned, not yet executed** (foregone on current budget). Two honest notes on the target:
-- **Depth (L=10) is grounded, not a guess** — the C=1024 1ep curve peaked at ~L=10 and plateaued by L=15. The wider tiers may support slightly more, but L=10 is a sound shared default.
-- **10 epochs on WT-103 (0.5 GB) risks overfitting** — the train/val gap is already ~0.8 at 5 epochs ([Areas for Improvement](#areas-for-improvement)), so "go long" should pair with a regularization recheck (dropout / weight decay), or the depth gain is eaten. On the big-data corpora more epochs ≈ more data and the risk inverts.
-
-Iso-param, width still beats depth (C=2048/L=5 > C=1024/deep), so **Medium (C=2048/L=10) is the strongest pre-Large tier** — and C=2048/L=10 is the recommended "most superior" direction overall.
+- **Small is done:** C=1024/L=10/no-MLP/5ep = **0.9884 sliding BPB at 249.59M** — sub-1.0, and both leaner than *and* ≥ the old 669M MLP headline (0.9894). The MLP's job (per-token channel mixing) is already covered by the gated SwiGLU mixer.
+- **Medium is cheap now:** dropping the MLP shrinks C=2048/L=10 from ~2.6B to ~850M–1B, so it fits a **5090 (32 GB)** at ~$25–30 / ~1 day instead of a B200. Iso-param, width still beats depth, so it's the strongest pre-Large tier.
+- **Regularization recheck still applies on the big-data corpora** (dropout / weight decay); on WT-103's 0.5 GB the 5-epoch train/val gap is the thing to watch ([Areas for Improvement](#areas-for-improvement)).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2349,6 +2350,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 - Wavelet Packet Decomposition (WPD)
 - Top-K / hard thresholding in the Hadamard domain
 - Complete Muon sweep
+- 2-D Wavelets for PG-19 and other non-chunk-level-independent datasets
 - Long-context scaling: **decimated wavelet transform** (coarse-decimation hybrid) + content-dependent **retrieval** / **length-generalization** study — see [plans/long_context_decimation.md](plans/long_context_decimation.md)
 - **Fused int8 PTQ kernels** — the `--ptq8_fast` path (torchao `int8_weight_only`, LM head kept fp16) is wired but blocked on torchao instability in the current environment; revisit by pinning a known-good torchao or writing a Triton int8 GEMV — see [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
 
