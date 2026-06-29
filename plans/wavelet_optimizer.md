@@ -1,6 +1,6 @@
 # Wavelet-Domain Optimizer for WaveletLM (self-consistent learned-basis GWT)
 
-## Status
+## Status 
 
 **Proposed — candidate for a pre-release test on the C=1024 baseline (2026-06-27).** A memory-efficient
 optimizer that compresses gradients in the wavelet domain (GWT), with a novel twist: use WaveletLM's **own
