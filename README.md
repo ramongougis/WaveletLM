@@ -1995,6 +1995,7 @@ The depth variant exploits a clean property — **iso-param ≈ iso-compute** (3
 - [x] **WT-103, E=5** — Small headline is now the **no-MLP 0.9884 BPB** at 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)); ties the 669M MLP version (0.9894) at ⅓ the params — done 2026-06-27
 - [ ] **PG-19, E=1** (run on a separate, cheaper box)
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
+- [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM-Small config.
 - [ ] **SFT** (SmolTalk + OASST1)
 - [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share.
 - [ ] **Functional / toy chatbot**
