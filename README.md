@@ -81,7 +81,7 @@ Key config options:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `C` | 2048 | Mixer channel width (power of 2 recommended) |
+| `C` | 2048 | Mixer channel width (can be any integer; a power of 2 is NOT required, and is only padded if using the optional & suboptimal Fast Walsh-Hadamard Transform) |
 | `layers` | 2 | Number of WaveletLM blocks |
 | `levels` | 5 | Wavelet decomposition levels (~log2(block_size)) |
 | `mlp_expansion` | 20 | Hidden layer width multiplier |
@@ -425,7 +425,11 @@ Causal lifting decompose (undecimated / à-trous), with $c_0 = h$ and, for each 
 
 $$\mathrm{odd}_k = \sum_{j=1}^{33}\mathrm{softmax}(\theta_k)_j\,\mathrm{shift}_{+o_{k,j}}(c_k), \qquad d_k = \tfrac{1}{\sqrt{2}}\big(\mathrm{odd}_k - P_k(c_k)\big), \qquad c_{k+1} = \tfrac{1}{\sqrt{2}}\big(c_k + U_k(d_k)\big),$$
 
-where $P_k, U_k : \mathbb{R}^{C}\!\to\!\mathbb{R}^{C}$ are 2-layer GELU MLPs, Haar-initialized so $P_k \approx \mathrm{id}$ and $U_k \approx \tfrac12\,\mathrm{id}$. Stack the $S=8$ bands coarse→fine and apply the per-scale decompose-norm:
+where $P_k, U_k : \mathbb{R}^{C}\!\to\!\mathbb{R}^{C}$ are the per-level predict/update networks:
+
+$$P_k(z) = W^{P,2}_k\,\mathrm{GELU}\big(W^{P,1}_k z\big), \qquad U_k(z) = W^{U,2}_k\,\mathrm{GELU}\big(W^{U,1}_k z\big), \qquad W^{\bullet,1}_k, W^{\bullet,2}_k \in \mathbb{R}^{C\times C}$$
+
+(hidden width $=C$, i.e. `lifting_hidden_mult`$=1$; biases and lifting-dropout zero). Haar init sets $W^{P,1}_k=W^{P,2}_k=I$ and $W^{U,1}_k=I,\,W^{U,2}_k=\tfrac12 I$, so the transform begins as $P_k=\mathrm{GELU}$, $U_k=\tfrac12\,\mathrm{GELU}$ and learns away from there. Stack the $S=8$ bands coarse→fine and apply the per-scale decompose-norm:
 
 $$\mathbf{C} = [\,c_7,\, d_6,\, d_5,\, \dots,\, d_0\,], \qquad \mathbf{C}_s \leftarrow \mathrm{LN}^{(\ell)}_{\mathrm{dec},\,s}(\mathbf{C}_s), \quad s = 0,\dots,7 .$$
 
@@ -467,7 +471,7 @@ The gradient then enters the stack and, at each block, the spectral residual spl
 
 $$\delta^{\hat{x}} = \delta^z W, \qquad \delta^{(\ell-1)} \mathrel{+}= \alpha^{(\ell)}_{\mathrm{sp}}\,\delta^{(\ell)}, \qquad \nabla_{W_o^{(\ell)}}\mathcal{L} = \sum_{b,t}\delta^{(\ell)}_{b,t}\,r_{0,b,t}^{\top}.$$
 
-Continuing through the inverse lifting, recon-norm, and the cross-scale gate into each per-scale mixer yields the **mixer gradients** ($M^{(\ell)}_s, G^{(\ell)}_s, U^{(\ell)}_s, V^{(\ell)}_s$) — the bulk of the trainable surface now that the MLP is gone. The **shared lifting** nets are special: each $P_k, U_k$ accumulates gradient from **all $L$ layers at once**, and $U_k$ in particular receives contributions from *both* the decompose path ($c_{k+1}=(c_k+U_k(d_k))/\sqrt2$) and the reconstruct path ($r_k=\sqrt2\,r_{k+1}-U_k(\tilde d_k)$):
+Continuing through the inverse lifting, recon-norm, and the cross-scale gate into each per-scale mixer yields the **mixer gradients** ($M^{(\ell)}_s, G^{(\ell)}_s, U^{(\ell)}_s, V^{(\ell)}_s$) — the bulk of the trainable surface now that the MLP is gone. The **shared lifting** nets are special: each $P_k, U_k$ accumulates gradient from **all $L$ layers at once**, and the update net $U_k$ appears in both the decompose and reconstruct recursions above, so it collects a contribution from each path:
 
 $$\nabla_{U_k}\mathcal{L} = \sum_{\ell=1}^{L}\Big(\nabla_{U_k}^{\text{decompose}}\mathcal{L}^{(\ell)} + \nabla_{U_k}^{\text{reconstruct}}\mathcal{L}^{(\ell)}\Big).$$
 
@@ -481,8 +485,6 @@ So the **GWT-compressible surface** is $\{\,M_s, G_s, U_s, V_s\ (\text{mixers}),
 
 - **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently via a gated linear layer (in identity space by default; Walsh-Hadamard optional). Runs in fixed O(S²) per layer for S scales (S = levels + 1), versus attention's O(N²) in sequence length. Arbitrarily large inputs are broken down into a small number of scales, allowing for very large context during inference. See the [length-generalization study](#block-size-extension--length-generalization) below for more info.
 
-- **Expanded MLP (expansion ≥ 20)**: Hidden layer width multiplier for the MLP layers. Logarithmic relationship with BPB.
-
 - **Decompose bypass**: a causal cumulative mean of pre-decompose hidden states, projected per-scale and added as bias to the post-decompose coefficients.
 
 <details>
@@ -491,7 +493,7 @@ So the **GWT-compressible surface** is $\{\,M_s, G_s, U_s, V_s\ (\text{mixers}),
 - LayerNorms near both ends of each block, and one before the LM head
 - Two residual connections per block with learned scalar gating (`learned_residual` in config.json)
 - Per-scale weights applied after the inverse FHT, one trainable scalar per wavelet scale
-- Feature padding to the next power of 2, required for the Walsh-Hadamard transform (`C` → `Cp = next_pow2(C)`)
+- Optional feature padding to the next power of 2 (`C` → `Cp = next_pow2(C)`), required only by the optional Walsh-Hadamard transform. With the FWHT off (the default), nothing else needs a power-of-two width.
 - Causal zero-padded dilation in the lifting predict/update steps, preserving autoregressive causality at every level
 
 </details>
@@ -499,6 +501,8 @@ So the **GWT-compressible surface** is $\{\,M_s, G_s, U_s, V_s\ (\text{mixers}),
 ### Optional Features
 
 - **Per-Layer Embedding**: a learned per-channel residual of the token embedding added at each block, letting deeper blocks reach back to the input representation.
+
+- **Expanded MLP**: Hidden layer width multiplier for the MLP layers. In the current headline version as of 6/29/2026, it does not have any effect on BPB.
 
 - **Product Key Memory / Fast-Weight Product Key Memory**: sparse key-value memory modules complementing the dense MLP, with optional inference-time fast-weight updates.
 
@@ -664,6 +668,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Cross-Layer Skip Connections](#cross-layer-skip-connections)
 - [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization)
 - [No MLP with deep C=1024](#no-mlp-with-deep-c1024)
+- [Free C Test: C=100](#free-c-test-c100)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
@@ -2056,6 +2061,20 @@ The depth variant exploits a clean property — **iso-param ≈ iso-compute** (3
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Free C Test: C=100
+
+A direct demonstration of the **power-of-two unlock**: with the Walsh–Hadamard transform off (`mixer_transform=identity`, the default), the channel width `C` is no longer padded to a power of two, so **any `C` is valid**. This run trains a deliberately non-power-of-two model — **C=100** — end-to-end on WikiText-103. It is a *capability* check, not a performance one: a 100-dim model is tiny, so the BPB will be poor; the point is that the width runs **un-padded** (`Cp = C = 100`, where before the gate it would have been forced up to `Cp = 128`).
+
+Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion=0`, just `C=100` and `levels=6` (7 scales, widths `[1,1,1,1,0.5,0.5,0.5]`) so the per-scale widths track the smaller model.
+
+| C | Cp (internal) | layers | epochs | MLP | params | sliding BPB |
+|---|---|---|---|---|---|---|
+| **100** | **100 — no padding** | 10 | 5 | off | *pending* | *pending — running* |
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Release Pipeline
 
 > **Status (2026-06-18): plan of record for the first release.** Sequences architecture-lock → cross-dataset baselines → big-data tuning → multi-seed headlines. Supersedes the per-size MLP/LR/Dropout sweep grid on WT-103 (deferred to the big-data regime, below).
@@ -2229,7 +2248,7 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 
 ### Prime-Power Wavelet Filterbank
 
-> **Status (2026-06-18): largely resolved by measurement — see [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured) below.** Reading the learned crawl weights showed the model wants precise *small* lags (incl. the odd lag 3, already crawl-covered) plus coarse *smoothing*, not dedicated prime subbands. The proposal is retained below as the design reference; the empirical writeup that closed it is the next section.
+> **Status (2026-06-18): largely resolved by measurement — see [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured) below.** Reading the learned crawl weights showed the model wants precise *small* lags (incl. the odd lag 3, already crawl-covered) plus coarse *smoothing*, not dedicated prime subbands. The proposal is retained below as the design reference; the empirical writeup that closed it is the next section. **NOTE**: Since the FWHT is the only architectural component which requires C be a power of 2, and pads otherwise, this section's power-of-2 restrictions/recommendations should be edited.
 
 The decomposition currently uses dyadic (radix-2) dilations only — 1, 2, 4, 8, …. The motivating concern is **skip-bigrams** `a … b` (b = current token, `…` = a gap ≥ 1) whose gap distance is not a power of 2 (e.g. a dependency at gap 3, 5, or 6), and whether such a dependency is captured by any dyadic scale. The proposal builds parallel **undecimated à-trous filterbanks at prime-power radices** (2, 3, 5, 7, and if lightweight 11, 13) and feeds them into the per-scale mixer in a weighted-sum fashion alongside the dyadic scales. Because the decomposition is undecimated (every scale stays at full length `T`), the prime-radix banks are just dilation-`m` filtered copies that concatenate on the scale axis with no resampling.
 

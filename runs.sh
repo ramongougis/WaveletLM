@@ -488,12 +488,26 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # gradient_checkpointing: true. A/B vs the C=1024 no-MLP Small headline 0.9884.
 # NOTE: comment out the finished/cancelled S2 runs above (S2a done; S2b/c/d cancelled) so a fresh 5090
 # pod runs ONLY this.
-run_ablation "M1_C2048_L10_noMLP_5ep Medium Headline — C=2048 L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0225, "min_lr": 0.00045, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 2048}'     "M1_C2048_L10_noMLP_5ep: Medium headline C=2048 L=10 no-MLP 5ep WT-103; ~850M-1B (no-MLP makes C=2048 cheap, fits 5090); lr=0.0225 (C=2048 ceiling); A/B vs C=1024 no-MLP 0.9884"
+# run_ablation "M1_C2048_L10_noMLP_5ep Medium Headline — C=2048 L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0225, "min_lr": 0.00045, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 2048}'     "M1_C2048_L10_noMLP_5ep: Medium headline C=2048 L=10 no-MLP 5ep WT-103; ~850M-1B (no-MLP makes C=2048 cheap, fits 5090); lr=0.0225 (C=2048 ceiling); A/B vs C=1024 no-MLP 0.9884"
 # ==============================================================================
 
 
 # ==============================================================================
-# PG-19 SMALL (C=1024 L=10 no-MLP, 1 epoch). Queued AFTER M1 -> runs back-to-back on the same 5090.
+# FREE-C TEST (C=100, non-power-of-2). Validates the pow2 unlock end-to-end: with
+# mixer_transform=identity the FWHT is off, so Cp=C=100 -- NO padding (before the
+# gate this width up-padded to Cp=128). Same recipe as the Small headline, just
+# C=100 + levels=6 (7 scales, widths [1,1,1,1,.5,.5,.5]) so the per-scale widths
+# track the tiny model. lr=0.1 (conservative bump from C=1024's 0.05; the width
+# rule allows more at small C -- raise if it underfits). mlp_expansion=0. Tiny
+# (the V x 100 embedding dominates; mixer/lifting are ~C^2, negligible at C=100)
+# -> a few hours on the 5090 between M1 and PG-19. BPB WILL be poor (100-dim
+# model) -- the POINT is that a non-pow2 C trains at all.
+run_ablation "F1_C100_L10_noMLP_freeC_5ep Free-C Test — C=100 (non-pow2) L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.1, "min_lr": 0.002, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "F1_C100_L10_noMLP_freeC_5ep: Free-C validation — C=100 (non-pow2; Cp=C=100, identity/FWHT off, no padding) L=10 no-MLP 5ep WT-103; embedding-dominated; proves non-pow2 widths train; BPB expected poor (tiny model)"
+# ==============================================================================
+
+
+# ==============================================================================
+# PG-19 SMALL (C=1024 L=10 no-MLP, 1 epoch). Queued AFTER M1 + F1 -> runs back-to-back on the same 5090.
 # dataset="pg19" auto-selects PG-19's own 32K SentencePiece tokenizer (model.py:3665); the FIRST run
 # TRAINS that SP model + tokenizes PG-19 (~a few hours + ~5-10GB .cache, BEFORE the train clock; syncs
 # to S3, reusable). NOTE: 32K vocab (not GPT-2 50K) -> smaller embedding, AND BPB is on PG-19's OWN

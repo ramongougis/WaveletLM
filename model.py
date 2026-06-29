@@ -1544,13 +1544,23 @@ class WaveletLMBlock(nn.Module):
         super().__init__()
         self.C = C
         self.levels = levels
-        self.Cp = next_pow2(C)
+        # Power-of-2 channel padding is needed ONLY by transforms defined on a
+        # 2^n axis: the FWHT and the learned butterfly. For identity/dht/dct the
+        # mixer, lifting, and LayerNorms are all width-agnostic, so C is left
+        # unconstrained and the pad is skipped entirely (Cp = C). A power-of-2 C
+        # (e.g. the C=1024 headline) is unaffected either way.
+        self._needs_pow2 = mixer_transform in ("fwht", "learned_butterfly")
+        self.Cp = next_pow2(C) if self._needs_pow2 else C
         self.decompose_bypass = decompose_bypass
         self.wavelet_mode = wavelet_mode
         self.fht_input_cap_enabled = fht_input_cap_enabled
         self.fht_input_cap_value = fht_input_cap_value
         self.fht_thue_morse_signflips = fht_thue_morse_signflips
-        self.fht = FastHadamardTransform(self.Cp, device=device, dtype=dtype)
+        # Built on a valid 2^n axis regardless of Cp: it is only ever applied on
+        # the fwht / complex paths (where Cp == next_pow2(C)); for the non-pow2
+        # transforms it is constructed but unused. Kept always-present so the
+        # module structure (and existing checkpoints) stay unchanged.
+        self.fht = FastHadamardTransform(next_pow2(C), device=device, dtype=dtype)
 
         # Mixer-transform ablation: the orthonormal transform occupying the
         # per-scale mixer slot (forward before the mixer, inverse after). Default
@@ -2964,7 +2974,9 @@ class WaveletLM(nn.Module):
                 f"shared across all layers: {n_params/1e6:.2f}M params")
 
         if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
-            Cp = next_pow2(C)
+            # Must match the block's self.Cp (this module is passed into every
+            # block): pad to pow2 only when a 2^n-axis transform is in use.
+            Cp = next_pow2(C) if _mt in ("fwht", "learned_butterfly") else C
             shared_lifting = LiftingWaveletDecompose(
                 levels=config['levels'],
                 C=Cp,
@@ -3057,7 +3069,7 @@ class WaveletLM(nn.Module):
             ]
             print(f"[StableParam] Active: {active}")
 
-        Cp = next_pow2(C)
+        Cp = next_pow2(C) if _mt in ("fwht", "learned_butterfly") else C
         if skip_proj_out and Cp == C:
             saved = config['layers'] * (Cp * C + C)
             print(f"[proj_out] Skipped (C={C} == Cp={Cp}): saves {saved/1e6:.2f}M params")
