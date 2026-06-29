@@ -21,7 +21,7 @@ WaveletLM is a generative, attention-free, long-context language model inspired 
 
 **Structure**
 
-WaveletLM uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, per-scale gated spectral mixer with SwiGLU activation, and wavelet reconstruction. Combined with a 2-layer, width-expanded MLP and an optional Fast-weight Product Key Memory module for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
+WaveletLM uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, per-scale gated spectral mixer with SwiGLU activation, and wavelet reconstruction. Combined with an **optional** 2-layer width-expanded MLP (now off by default — an MLP-free model matches it at ⅓ the parameters; see [No MLP with deep C=1024](#no-mlp-with-deep-c1024)) and an optional Fast-weight Product Key Memory module for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
 
 A planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters behind our [benchmark results](#results), while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
 
@@ -406,9 +406,9 @@ The high-level architectural premise, using learnable wavelets in place of self-
 
 - **Learned lifting wavelets**: Haar-initialized MLPs decompose each block into multi-scale coefficients via lifting predict/update steps. Each wavelet scale processes either coarse summaries or fine details across tokens. Reconstruction reuses the same MLPs in reverse with a sign flip, so perfect inversion is structurally guaranteed regardless of what the weights learn. About 16.8M parameters per (predict, update) pair at C=2048, one pair per scale, and shared across all layers via `shared_lifting_weights`.
 
-- **Fast Walsh-Hadamard Transform (FHT)**: a fixed orthogonal O(C log C) cross-channel rotation replacing attention's channel-mixing role. Cost is independent of sequence length.
+- **Fast Walsh-Hadamard Transform (FHT) — _optional, off by default_** (`mixer_transform=identity`): a fixed orthogonal O(C log C) cross-channel rotation. An early channel-mixing component; the per-scale SwiGLU mixer now carries channel mixing, so the FWHT is no longer baseline. Cost is independent of sequence length.
 
-- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently in Walsh-Hadamard space via a gated linear layer. Runs in fixed O(S²) per layer for S scales (S = levels + 1), versus attention's O(N²) in sequence length. Arbitrarily large inputs are broken down into a small number of scales, allowing for very large context during inference. See the [length-generalization study](#block-size-extension--length-generalization) below for more info.
+- **Per-scale gated spectral mixer (SwiGLU)**: mixes each wavelet scale independently via a gated linear layer (in identity space by default; Walsh-Hadamard optional). Runs in fixed O(S²) per layer for S scales (S = levels + 1), versus attention's O(N²) in sequence length. Arbitrarily large inputs are broken down into a small number of scales, allowing for very large context during inference. See the [length-generalization study](#block-size-extension--length-generalization) below for more info.
 
 - **Expanded MLP (expansion ≥ 20)**: Hidden layer width multiplier for the MLP layers. Logarithmic relationship with BPB.
 
@@ -1972,7 +1972,7 @@ Kiruluta's **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, i
 | variant | layers | MLP | params | BPB | what it tests |
 |---|---|---|---|---|---|
 | headline (with MLP) | 10 | exp=20 | 669.24M | 0.9894 | the baseline |
-| **no-MLP, all-equal** | 10 | off | 249.59M | **0.9884** | **ties/beats the MLP at ⅓ the params** (Δ −0.0010 = noise floor) — the MLP buys ~nothing |
+| **no-MLP, all-equal** | 10 | off | 249.59M | **0.9884** | **ties/beats the MLP at ⅓ the params** (Δ −0.0010 = noise floor) — the MLP buys ~nothing ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)) |
 | no-MLP, iso-param (depth) | 35→30 | off | ~671M | *L=35 OOM'd; retry w/ grad-ckpt or L≤30* | can depth replace the MLP at equal params? |
 | no-MLP, iso-param (wide mixer) | 10 | off | ~669M\* | *follow-up* | can a wider *spectral* mixer replace it? |
 | no-MLP, iso-param (mixer×2 + depth) | 18 | off | ~650M\* | *pending* | the mixer+depth **hybrid** — best-conditioned; if it matches 0.9894, the case to drop the MLP for good |
@@ -1992,7 +1992,7 @@ The depth variant exploits a clean property — **iso-param ≈ iso-compute** (3
 **Release goals — concrete scope (2026-06-23).** What ships in the first release, on the current budget. The pipeline below is the *method*; this is the *deliverable list*. Data recipe for every blend run: [Pretraining Data Blend](#pretraining-data-blend).
 
 **WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
-- [x] **WT-103, E=5** — **0.9894 BPB** ✅ (sub-1.0; −0.0108 vs L=5/5ep) — done 2026-06-24
+- [x] **WT-103, E=5** — Small headline is now the **no-MLP 0.9884 BPB** at 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)); ties the 669M MLP version (0.9894) at ⅓ the params — done 2026-06-27
 - [ ] **PG-19, E=1** (run on a separate, cheaper box)
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **SFT** (SmolTalk + OASST1)
@@ -2234,7 +2234,7 @@ The two release tiers below the scaled-up Large. **As of 2026-06-27 both are MLP
 
 | tier | C | layers | epochs | MLP | params | BPB (WT-103, sliding) |
 |---|---|---|---|---|---|---|
-| **Small** | 1024 | 10 | 5 | off | **249.59M** | **0.9884** ✅ done |
+| **Small** | 1024 | 10 | 5 | off | **249.59M** | **0.9884** ✅ ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)) |
 | **Medium** | 2048 | 10 | 5 | off | ~850M–1B (est) | *pending — running on a 5090* |
 
 - **Small is done:** C=1024/L=10/no-MLP/5ep = **0.9884 sliding BPB at 249.59M** — sub-1.0, and both leaner than *and* ≥ the old 669M MLP headline (0.9894). The MLP's job (per-token channel mixing) is already covered by the gated SwiGLU mixer.
