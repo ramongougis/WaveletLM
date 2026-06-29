@@ -2017,6 +2017,15 @@ python train.py --config <cfg: benchmark_only=true, benchmark_run_dir=that dir> 
 - **Confounded run not recorded:** the bs2048/1ep run (suboptimal LR + `min_lr` left 8× too high + 8× fewer steps) is uninterpretable, not a block-size verdict.
 - **Missing baseline queued:** a C=1024/L=5/1ep block-256 run now fills the depth×epoch grid (we had L=1/1ep and L=5/5ep, not L=5/1ep).
 
+**Expanded-context generations (C=2048) — QUEUED.** A qualitative companion to the BPB eval above: generate from the 0.9597-BPB Medium checkpoint at growing windows (512 / 1024 / 2048) beyond its 256 training length, and log where coherence and factuality break down. *Hypothesis:* the tail drift is **generated-depth-driven** (a *trained* coherence-length property), not pinned to absolute token ~256 nor relieved by a bigger window — the [Boat Race sample](logs/wikitext-103_2026-06-27_19-28-04/generations.txt) degraded at ~token 150–200, *inside* the 256 window, so context-availability is not the bottleneck. And because WaveletLM is a *position* mixer, not a retriever (above), a longer window surfaces no new facts to front-load. So we expect the same "coherent first ~150–250 tokens, then drift" profile to **recur at a similar depth** at every window, with tokens past 256 being length-*extrapolation* (graceful-to-worse, not better). The real fix for the tail is longer *training* context (or [decimation](plans/long_context_decimation.md)), not a bigger generation window; this experiment measures whether extrapolation is graceful enough to fund that.
+
+| Generation window | Drift onset (≈ token) | Holds coherence past 256? | Fact density, first half | Sample |
+|---|---|---|---|---|
+| 256 (training length, control) | ~150–200 (1 sample) | — | good | [gen](logs/wikitext-103_2026-06-27_19-28-04/generations.txt) |
+| 512 | *pending* | *pending* | *pending* | |
+| 1024 | *pending* | *pending* | *pending* | |
+| 2048 | *pending* | *pending* | *pending* | |
+
 ### Deeper C=1024 — the iterative pipeline
 
 With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, depth is the next lever. **C=1024 is now the iterative development width; C=2048 / C=4096 are reserved for final headline runs.** Deep runs fit a single card without `gradient_checkpointing` on the RTX 6000 (the card has the memory; enable it only on smaller cards). Protocol: run each depth at **1 epoch** (cheap ceiling-finder), bump depth only while it clears the ~0.0010 noise floor, then run the **5-epoch headline on the depth winner only** (an L=20/5ep would be ~50 h, so we don't run every depth at 5ep).
@@ -2084,6 +2093,7 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 **WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
 - [x] **WT-103, E=5** — Small headline is now the **no-MLP 0.9884 BPB** at 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)); ties the 669M MLP version (0.9894) at ⅓ the params — done 2026-06-27
 - [ ] **PG-19, E=1** (run on a separate, cheaper box)
+- [ ] **Expanded-context generations (C=2048 Medium)** — qualitative length-extrapolation on the 0.9597-BPB checkpoint: generate at 512 / 1024 / 2048 windows and log where coherence/factuality degrades vs the 256-trained control (tests whether the tail drift is fixed at ~token 256, set by generated-depth, or pushed out by more context — see [Block-Size Extension](#block-size-extension--length-generalization)). Run after the PG-19 Small run.
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM-Small config.
 - [ ] **SFT** (SmolTalk + OASST1)
