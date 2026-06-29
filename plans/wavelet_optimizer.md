@@ -24,7 +24,17 @@ self-consistent, learned** basis. No prior work does this.
 
 - Already a frequency-domain model (the mixer operates per-scale) → GWT *completes* the picture, not grafts on.
 - The lifting is **shared across all layers** → one basis for every gradient; clean.
-- No MLP / no attention → the GWT surface is the **mixer** (the bulk now) + lifting + embedding.
+- No MLP / no attention → the GWT surface is the **mixer** (the bulk now), `proj_out`, and lifting — **not** the tied embedding/LM head (see *Where to apply GWT* below).
+
+## Where to apply GWT — leave the tied head full-rank
+
+The tied **W** is now the **biggest single parameter** (51M of 250M ≈ 20% with no MLP) and it learns **hardest
+and earliest** (it's the last linear before the loss). Its gradient is structurally weird — **output-side
+dense** (every vocab row gets a gradient through the logits), **input-side sparse** (only the batch's tokens).
+That doesn't fit GWT's "compress a dense, smooth weight-matrix gradient" assumption. **Recommendation: leave
+the tied head full-rank — do NOT GWT it** (matching the paper, which only GWTs attention/MLP). Apply GWT to the
+**mixer** (the bulk of the rest) and possibly **`proj_out` / lifting**. Compressing the most-critical,
+earliest-learning parameter's gradient is exactly where you'd lose the most.
 
 ## Two tiers (risk / effort spectrum)
 
