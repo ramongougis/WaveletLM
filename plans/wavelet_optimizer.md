@@ -20,6 +20,33 @@ wavelet** as `H` — the *same* basis the model learned for its forward pass now
 the backward pass. A frequency-domain model trained by a frequency-domain optimizer, in a **single,
 self-consistent, learned** basis. No prior work does this.
 
+## What actually differs from SGD / Adagrad
+
+The cleanest framing is **rotation-invariance**, and it pins down exactly where the difference lives:
+
+- **Plain SGD is rotation-invariant.** Transform the gradient by any invertible basis, take an SGD step,
+  transform back → *the identical update*. So a "wavelet SGD" with no other machinery **is** SGD; the wavelet
+  alone does nothing.
+- **Adaptive methods (Adagrad/Adam) are NOT basis-invariant.** Adagrad's per-coordinate step `gᵢ/√(Σgᵢ²)`
+  depends on what the coordinates *are*; rotate the basis and the accumulators differ, so the preconditioner
+  differs. **This is the hinge.**
+
+So GWT differs from vanilla Adagrad by running the adaptive second-moment accumulation **in the wavelet basis**
+(a genuinely different, scale-aware preconditioner), then adds two asymmetries:
+
+1. **State only on the approximation coefficients** — the accumulator is kept for the coarse half, not the
+   detail → optimizer memory ~½ (Adagrad) or more (Adam). The headline practical win.
+2. **The detail coefficients are suppressed/scaled, not independently adapted** → a low-pass filter on the
+   gradient. High-frequency gradient components are usually noise, so this is **implicit regularization** — the
+   reason GWT can match/beat full-rank rather than just trade memory for quality.
+
+Net: vs **SGD** it differs exactly as much as any adaptive method does, but in a multi-scale basis; vs
+**Adagrad** it's the same adaptivity in a coordinate system that separates coarse-structural from fine-noisy
+gradient directions, with state compressed onto the coarse part and the fine part denoised. The
+**learned-lifting twist** makes that coordinate system the model's *own* basis — the bet being it separates
+signal-from-noise in the model's gradients better than a generic Haar. (The lifting's non-orthonormality is the
+reason the moment math needs care — see *The hard part* — not a bonus.)
+
 ## Why WaveletLM is the natural host
 
 - Already a frequency-domain model (the mixer operates per-scale) → GWT *completes* the picture, not grafts on.
@@ -70,6 +97,21 @@ earliest-learning parameter's gradient is exactly where you'd lose the most.
 | Testing on C=1024 (memory: instant; convergence A/B @1ep: ~½ day each; full 5ep BPB A/B: ~2–4 days) | **~1 week** | — |
 | **Full head-turner story** | **~3–4 weeks** | — |
 | **Floor (vanilla win + unification story)** | **~1 week** | low |
+
+**Code surface (what actually gets written).** A PyTorch optimizer is a clean plug point — you wrap the
+gradient→update step and **never touch the model's forward/backward**, so it's purely additive: ~one new file +
+light wiring.
+
+| Piece | ~LOC | notes |
+|---|---|---|
+| New optimizer module (GWT-wrapped Adagrad: transform → coarse accumulator → detail scaling → reconstruct → step) | ~150–250 | core loop; adapt from the reference repo |
+| Tier-1 basis (fixed Haar transform) | ~50 | provided by the reference |
+| Tier-2 basis (learned lifting as the gradient transform: apply predict/update over the gradient column axis + orthogonality handling) | ~150–250 | the novel part + the research-risk surface |
+| Frozen lifting snapshot load + config keys (`optimizer="gwt_adagrad"`, `gwt_basis`, level) + `train.py` wiring | ~50–80 | pass the snapshot into the optimizer ctor |
+| `runs.sh` ablation entry | 1 recipe | clean A/B: same model, swap optimizer |
+
+**~400–600 LOC total** (Tier-1 ~300 of it, low-risk; Tier-2 adds the rest). The LOC is small; the real risk is
+the orthogonality / moment-correction rework above — iteration time, not lines.
 
 ## Adagrad vs Adam caveat
 
