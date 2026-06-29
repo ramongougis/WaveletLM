@@ -497,12 +497,16 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # mixer_transform=identity the FWHT is off, so Cp=C=100 -- NO padding (before the
 # gate this width up-padded to Cp=128). Same recipe as the Small headline, just
 # C=100 + levels=6 (7 scales, widths [1,1,1,1,.5,.5,.5]) so the per-scale widths
-# track the tiny model. lr=0.1 (conservative bump from C=1024's 0.05; the width
-# rule allows more at small C -- raise if it underfits). mlp_expansion=0. Tiny
+# track the tiny model. MBS=64 (8x the base batch): the C=100 model idles the GPU
+# (~27% util, 8% VRAM) on tiny matmuls, so a big batch amortizes kernel-launch
+# overhead -- memory is NOT the limit, update count is, so we stop at 64 (not
+# max-RAM, which would starve the optimizer on WT-103). lr=0.3 = ~sqrt(8)x the 0.1
+# base for the 8x batch (linear 0.8 would top the C=100 width ceiling; the bigger
+# batch raises it anyway). eval_interval=500 (steps/epoch drop ~8x). mlp_expansion=0. Tiny
 # (the V x 100 embedding dominates; mixer/lifting are ~C^2, negligible at C=100)
 # -> a few hours on the 5090 between M1 and PG-19. BPB WILL be poor (100-dim
 # model) -- the POINT is that a non-pow2 C trains at all.
-run_ablation "F1_C100_L10_noMLP_freeC_5ep Free-C Test — C=100 (non-pow2) L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.1, "min_lr": 0.002, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "F1_C100_L10_noMLP_freeC_5ep: Free-C validation — C=100 (non-pow2; Cp=C=100, identity/FWHT off, no padding) L=10 no-MLP 5ep WT-103; embedding-dominated; proves non-pow2 widths train; BPB expected poor (tiny model)"
+run_ablation "F1_C100_L10_noMLP_freeC_5ep Free-C Test — C=100 (non-pow2) L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.3, "min_lr": 0.006, "micro_batch_size": 64, "eval_interval": 500, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "F1_C100_L10_noMLP_freeC_5ep: Free-C validation — C=100 (non-pow2; Cp=C=100, identity/FWHT off, no padding) L=10 no-MLP 5ep WT-103; embedding-dominated; proves non-pow2 widths train; BPB expected poor (tiny model)"
 # ==============================================================================
 
 

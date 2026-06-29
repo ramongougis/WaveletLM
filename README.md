@@ -598,15 +598,15 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 | GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 17.5[^5] |
 | Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | 18.3[^4]* |
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 19.3[^5] |
+| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **20.0†** |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 1024* | 20.9[^6]* |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 22.1[^5] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **883M** | **256†** | **23.8†** |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | 24.0[^4]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 29.4[^5] |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
-† Best of 3 seeds PPL of 23.749 with mean PPL of 23.818. Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
+† C=2048 / L=10 / no-MLP, single seed: **sliding-window PPL 20.04** (non-overlapping 21.54) at a **256-token context** — 4× shorter than the 1024-context baselines — under only 5 epochs with light regularization ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)). Earlier 3-seed L=2 headline: 23.8 (mean 23.82). Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
 
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
@@ -1825,7 +1825,7 @@ The 5-epoch confirmation arms for the depth sweep — **5090, sequential** (per 
 
 Motivated by the [More Layers](#more-layers) result (depth pays cleanly and *non-diminishingly* through L=4 on the new recipe — overturning the old "little past L=2") and the open question: **is C (width) or layers (depth) the more parameter-efficient expansion axis?** The intuition "C always wins" comes from pre-new-recipe findings (C=1024/4L beat C=512/20L; the old 30L regression) — but those predate the learned residual that *made depth pay*, so they may not transfer.
 
-**Structural asymmetry:** depth scales params *linearly* (~+235M/layer, ~−0.0061 BPB/layer non-diminishing through L=4); width scales *quadratically* (mixer + MLP ~C²) and lumpily (`Cp = next_pow2(C)`, so only powers of two — C ∈ {2048, 4096, 8192, 16384} — give clean Cp=C points). The C=2048 column already exists (the [More Layers](#more-layers) sweep).
+**Structural asymmetry:** depth scales params *linearly* (~+235M/layer, ~−0.0061 BPB/layer non-diminishing through L=4); width scales *quadratically* (mixer ~C²). Width *used to* be **lumpy** — `Cp = next_pow2(C)` gave clean points only at powers of two — but that padding is needed **only when the FWHT is enabled**, and the FWHT is now off by default, so **`C` can be any width** (`Cp = C`; see [Free C Test: C=100](#free-c-test-c100)). The C ∈ {2048, 4096, 8192, 16384} points used below are just convenient round widths now, not a constraint. The C=2048 column already exists (the [More Layers](#more-layers) sweep).
 
 **Scaling matrix.** Each C at three points: **L=1/1ep** (cheap width-response anchor), **max-layers/1ep** (width at the depth optimum), **max-layers/5ep** (headline-scale). "max" = the [More Layers](#more-layers) depth winner; all rows use the **no-memory** setting (the L=4 lean-vs-full probe winner). C=8192/16384 are opened for the [B200 scale-up](#scaled-up-model-b200) when budget permits.
 
@@ -2065,7 +2065,7 @@ The depth variant exploits a clean property — **iso-param ≈ iso-compute** (3
 
 A direct demonstration of the **power-of-two unlock**: with the Walsh–Hadamard transform off (`mixer_transform=identity`, the default), the channel width `C` is no longer padded to a power of two, so **any `C` is valid**. This run trains a deliberately non-power-of-two model — **C=100** — end-to-end on WikiText-103. It is a *capability* check, not a performance one: a 100-dim model is tiny, so the BPB will be poor; the point is that the width runs **un-padded** (`Cp = C = 100`, where before the gate it would have been forced up to `Cp = 128`).
 
-Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion=0`, just `C=100` and `levels=6` (7 scales, widths `[1,1,1,1,0.5,0.5,0.5]`) so the per-scale widths track the smaller model.
+Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion=0`, just `C=100` and `levels=6` (7 scales, widths `[1,1,1,1,0.5,0.5,0.5]`) so the per-scale widths track the smaller model. Run at `MBS=64` / `lr=0.3` (√8-scaled): the 100-dim model barely loads the GPU at the base batch, so a larger effective batch keeps it busy.
 
 | C | Cp (internal) | layers | epochs | MLP | params | sliding BPB |
 |---|---|---|---|---|---|---|
@@ -2326,7 +2326,7 @@ The two release tiers below the scaled-up Large. **As of 2026-06-27 both are MLP
 | tier | C | layers | epochs | MLP | params | BPB (WT-103, sliding) |
 |---|---|---|---|---|---|---|
 | **Small** | 1024 | 10 | 5 | off | **249.59M** | **0.9884** ✅ ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)) |
-| **Medium** | 2048 | 10 | 5 | off | ~850M–1B (est) | *pending — running on a 5090* |
+| **Medium** | 2048 | 10 | 5 | off | **893.44M** | **0.9597** ✅ ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) |
 
 - **Small is done:** C=1024/L=10/no-MLP/5ep = **0.9884 sliding BPB at 249.59M** — sub-1.0, and both leaner than *and* ≥ the old 669M MLP headline (0.9894). The MLP's job (per-token channel mixing) is already covered by the gated SwiGLU mixer.
 - **Medium is cheap now:** dropping the MLP shrinks C=2048/L=10 from ~2.6B to ~850M–1B, so it fits a **5090 (32 GB)** at ~$25–30 / ~1 day instead of a B200. Iso-param, width still beats depth, so it's the strongest pre-Large tier.
