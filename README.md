@@ -672,21 +672,18 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
-- [Dataset Comparisons](#dataset-comparisons)
-- [Model Comparisons](#model-comparisons)
+- [Dataset & Model Comparisons](#dataset--model-comparisons)
 - [Generation Decode Speedup (compile / CUDA graphs)](#generation-decode-speedup-compile--cuda-graphs)
 - [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)
-- [Multi-Transform Parallelization](#multi-transform-parallelization)
 - [Semantic Embedding & Interpretability Work](#semantic-embedding--interpretability-work)
 - [Combined Multi-Transform + Semantic Embedding (Interpretability Compound)](#combined-multi-transform--semantic-embedding-interpretability-compound)
 - [Adaptive Decompose Bypass](#adaptive-decompose-bypass)
 - [Prime-Power Wavelet Filterbank](#prime-power-wavelet-filterbank)
 - [Crawl Dilation Probe: Prime-Power Wavelets, Measured](#crawl-dilation-probe-prime-power-wavelets-measured)
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
-- [Final Regularization Sweep](#final-regularization-sweep)
 - [Headline Models with C=1024 (WaveletLM-Small) and C=2048 (WaveletLM-Medium)](#headline-models-with-c1024-waveletlm-small-and-c2048-waveletlm-medium)
 - [Scaled-Up Model with C=4096 (WaveletLM-Large)](#scaled-up-model-with-c4096-waveletlm-large)
-- [Scaled-Up Model with PTQ and other Infernece Strategies](#scaled-up-model-with-ptq-and-other-infernece-strategies)
+- [Scaled-Up Model with PTQ and other Inference Strategies](#scaled-up-model-with-ptq-and-other-inference-strategies)
 - [Downstream Transfer Fine-Tuning](#downstream-transfer-fine-tuning)
 - [Instruction-Tuning Chat Demo](#instruction-tuning-chat-demo)
 - [Pretraining Data Blend](#pretraining-data-blend)
@@ -1586,7 +1583,7 @@ Tests the contribution of the FWHT slot in the per-scale mixer against alternati
 3. **DHT and DCT land between identity and FWHT, statistically tied with each other** (1.1479 and 1.1478: ~+0.0016 over identity, ~−0.0013 under FWHT), as the basis-indifference picture predicts. Final ranking: butterfly (1.1455) ≤ identity (1.1463) < dct ≈ dht (1.1478/1.1479) < fwht (1.1492). The full spread across all five variants is just **0.0037** — every fixed basis loses to no-basis, the two smooth-frequency bases are interchangeable to 4 decimal places, and the entire transform axis is worth less than a fifth of the crawl effect. **The fixed-basis question is closed**: there is no spectral basis worth hand-picking for the gate at this config.
 4. **Incidental but important: the T4 crawl-off datapoint.** The fwht control is *exactly* T4-with-crawl-off, so this sweep incidentally measured the crawl contribution at T4: **−0.0181** (1.1311 vs 1.1492) — substantially larger than the −0.0075 measured at T2 (lr=0.01). Wavelet crawl matters *more* in the T4 LR regime, not less; it is doing more work than the transform slot is.
 
-Implication for [Multi-Transform Parallelization](#multi-transform-parallelization): the leading indicator is unfavorable — if the gate barely distinguishes bases (and the learnable basis stays at identity), parallel fixed bases are likely redundant perspectives, and the compound would mostly add capacity that MLP width provides more cheaply. dht/dct complete the picture.
+Implication for [the multi-transform design (now the semantic-embedding contingency)](#semantic-embedding--interpretability-work): the leading indicator is unfavorable — if the gate barely distinguishes bases (and the learnable basis stays at identity), parallel fixed bases are likely redundant perspectives, and the compound would mostly add capacity that MLP width provides more cheaply. dht/dct complete the picture.
 
 **Crawl×transform verdict — the FWHT is deleted from the forward path.** crawl+identity reaches **1.1287**, beating T4 (crawl+fwht, 1.1311) by **−0.0024** — removing the transform doesn't merely match, it *improves*, and at lower train VRAM than the butterfly alternative. The result is doubly validated by additivity: the FWHT penalty measured independently in both regimes is consistent (−0.0029 crawl-off, −0.0024 crawl-on), and the crawl benefit measured at both transforms is consistent (−0.0181 at fwht, −0.0176 at identity: 1.1463 → 1.1287). Two effects, four measurements, clean stacking, no interaction term. crawl+butterfly (1.1297) repeats the now-familiar pattern a fourth time — within ~noise of identity (+0.0010), not worth +2,400 MiB train VRAM (though it did post the best val loss of the sweep, 3.5098, the BPB rank metric says identity). **T5 proceeds transform-free**: `mixer_transform: "identity"`, crawl on, K from the [K sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep) below. The new T4-class reference for all subsequent ablations is **crawl+identity at 1.1287**.
 
@@ -2078,7 +2075,9 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 
 | C | Cp (internal) | layers | epochs | MLP | params | sliding BPB |
 |---|---|---|---|---|---|---|
-| **100** | **100 — no padding** | 10 | 5 | off | *pending* | *pending — running* |
+| **100** | **100 — no padding** | 10 | 5 | off | **6.80M** | **1.2781** (PPL 54.2) ([log](logs/wikitext-103_2026-06-29_19-49-04/log.txt)) |
+
+**RESULT (2026-06-29): the unlock works end-to-end.** A non-power-of-two width trains, evaluates, and generates with no padding (`Cp = C = 100`) — 5 epochs on WT-103, best val 4.0100, sliding BPB 1.2781. The BPB is poor *as expected* (6.80M params, ~5M of which is the tied V×100 embedding — the spectral core here is ~1.8M), but poor was never the question: **any `C` is now a valid width.** Ran at MBS=64 / lr=0.3 in a few hours on a 5090.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2093,17 +2092,17 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 **WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
 - [x] **WT-103, E=5** — Small headline is now the **no-MLP 0.9884 BPB** at 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)); ties the 669M MLP version (0.9894) at ⅓ the params — done 2026-06-27
 - [ ] **PG-19, E=1** (run on a separate, cheaper box)
-- [ ] **Expanded-context generations (C=2048 Medium)** — qualitative length-extrapolation on the 0.9597-BPB checkpoint: generate at 512 / 1024 / 2048 windows and log where coherence/factuality degrades vs the 256-trained control (tests whether the tail drift is fixed at ~token 256, set by generated-depth, or pushed out by more context — see [Block-Size Extension](#block-size-extension--length-generalization)). Run after the PG-19 Small run.
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
+- [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share. Also produces the **frozen lifting snapshot** the wavelet optimizer below consumes — run it first.
 - [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM-Small config.
 - [ ] **SFT** (SmolTalk + OASST1)
-- [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share.
 - [ ] **Functional / toy chatbot**
 - [ ] **Interpretability suite — developed & processed fully here** (the deepest interpretability story rides on Small)
 - [ ] *Nice-to-have:* **Semantic embedding** on WT-103 (maybe PG-19) — PPL comparisons + REAP/SOW concept-token ablations + n-gram processing/prediction
 
 **WaveletLM-Medium (C=2048, L=10):**
-- [ ] **WT-103, E=5** — *required*
+- [x] **WT-103, E=5** — **0.9597 sliding BPB / 20.04 sliding PPL** at **893.44M** ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) — done 2026-06-29; slots above S4 (20.9) in the [WT-103 comparison](#wikitext-103-test-set-perplexity-comparison) at a 256-token context
+- [ ] **Expanded-context generations** — qualitative length-extrapolation on the 0.9597-BPB checkpoint: generate at 512 / 1024 / 2048 windows and log where coherence/factuality degrades vs the 256-trained control (tests whether the tail drift is fixed at ~token 256, set by generated-depth, or pushed out by more context — see [Block-Size Extension](#block-size-extension--length-generalization)). Run after the PG-19 Small run.
 - [ ] *Nice-to-have:* **PG-19** (the big blend isn't affordable here yet)
 - [ ] **Interpretability** processed on C=2048 (WT-103-only → necessarily limited)
 
@@ -2119,7 +2118,7 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 **Pipeline (in order):**
 1. **Lock the architecture (→ T6) on WT-103.** Test [cross-layer dense skips](#cross-layer-skip-connections) *in isolation* (ep=1 and ep=5); if they clear the ~0.0010 noise floor they graduate into the **T6 baseline**, else T6 = T5. ([Untied lifting](#untied-lifting-shared-lifting-weights-off) was the other candidate but **NaN'd at the shared LR — deferred to post-release**, so shared lifting stays default and cross-layer skips are the sole release-path cross-layer-flow lever.) WT-103 is the cheap ablation ground — architecture decisions transfer to big-data far better than reg/capacity, but spot-check on the combined set anyway.
 2. **As-is baselines across datasets.** Run the locked T6 recipe *unchanged* (no per-size dropout/MLP tuning) on **WT-103, PG-19, and the combined dataset** × {Small, Medium}, for recipe-transfer baselines. ⚠️ The **combined as-is run is a floor**, not a datapoint — it carries WT-103's too-high dropout, so it *understates* big-data performance; run it on a representative **subset** (its only job is the baseline), and read the as-is→tuned jump as "we stopped over-regularizing."
-3. **Tune for big-data on a subset.** On a representative **10–20% sample** of the combined set, tune **dropout** (expect ↓, possibly toward 0) and **MLP** — the scientifically interesting one: does "[MLP is the worst axis](#less-width)" *reverse* once data can fill it? A finding either way. Per size; **LR** is a light recheck only. Lock the recipe, then spend full-dataset compute only on the headlines. Subset-tuning is the key cost control — full-corpus sweeps are the budget sink.
+3. **Tune for big-data on a subset.** On a representative **10–20% sample** of the combined set, tune **dropout** (expect ↓, possibly toward 0) and **MLP** — the scientifically interesting one: does "[MLP is the worst axis](#less-width)" *reverse* once data can fill it? A finding either way. Per size; **LR** is a light recheck only. Lock the recipe, then spend full-dataset compute only on the headlines. Subset-tuning is the key cost control — full-corpus sweeps are the budget sink. *(This step is also the **final regularization sweep** — the former standalone sweep section folded here 2026-07-02, since its "higher regularization will likely be needed" premise was a WT-103 artifact and points the wrong way in the data-rich regime.)*
 4. **Multi-seed headlines.** Run the tuned config at **3 seeds** on the *full* WT-103, PG-19, and combined sets × {Small, Medium} for the reported figures (mean ± std).
 
 **Cadence.** WT-103 keeps the **dual ep=1 / ep=5** policy (ep=1 is +20% test time over ep=5 alone and transfers to the single-epoch large-dataset runs). The big datasets are **1-epoch-dominant** — PG-19/combined run 1 epoch first, extended only if loss is still descending (5 epochs of multi-B tokens is impractical).
@@ -2154,17 +2153,9 @@ Full plan, caveats (augmentation not intrinsic reach; verbatim vs paraphrased ne
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Dataset Comparisons
+### Dataset & Model Comparisons
 
-The best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, and other datasets to gauge their performance.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Model Comparisons
-
-Side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute and fully optimized.
+Two post-release benchmark tracks. **Datasets:** the best WaveletLM config trained on Pile-ArXiv, BookCorpusOpen, OpenWebText, and other corpora to gauge per-corpus performance. **Models:** side-by-side benchmarks against Hyena, Transformer, Mamba, RWKV, and other modern architectures on WikiText-103 at matched compute, with per-architecture tuning as budget allows (full parity tuning is a paper-scale effort, scoped accordingly).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2192,32 +2183,6 @@ Swapping `QuantizedLinear` / `QuantizedEmbedding` for fused packed-weight kernel
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Multi-Transform Parallelization
-
-> **Status (2026-06-10): on hold pending the semantic-embedding transform test — likely reduces to [multinodal](#multinodal-mode-product-of-experts) otherwise.** The [Mixer Transform Ablation](#done-mixer-transform-ablation) undercut this section's premise *for the learned-embedding configuration*: the gate is near-basis-indifferent (full spread across identity/butterfly/DHT/FWHT just 0.0037, with **identity beating every fixed basis** and the learned butterfly staying at identity). If the bases are redundant perspectives, N parallel transform paths add capacity, not perspectives — which is the multinodal section's territory, done more directly there. The one condition that revives this section: the [semantic embedding](#semantic-embedding--interpretability-work)'s transform-reintroduction hypothesis. With a *frozen* embedding, upstream basis-adaptation is reduced and transforms may become genuinely non-redundant — and the [interpretability compound](#combined-multi-transform--semantic-embedding-interpretability-compound) below pairs multi-transform with exactly that frozen embedding. Decision point: the semantic-embedding ± transform test. If transforms stay irrelevant even there, this section folds into multinodal and the compound proceeds with identity/butterfly only.
-
-A WaveletLM-native architecture worth exploring: the wavelet decomposition and reconstruction stay shared across nodes, but the FWHT slot in each per-scale mixer is replaced by N parallel orthogonal-transform paths (FWHT, DHT, DCT-II/III, learned butterfly orthogonals). Each node decomposes the wavelet coefficients through a different "prism" in terms of its own orthogonal basis, then a per-node mixer learns basis-specific gated interactions. Finally, node-specific inverse transforms bring outputs back to the shared wavelet coefficient space for recombination. The result is multi-spectral mixing that potentially captures structure that no single basis would, with shared scaffolding keeping per-step compute increase modest (~5-15% for N=4 since the mixer slot is small relative to MLP). This is architecturally distinct from the existing `multinodal_enabled` mode (which ensembles full-cell copies at the LM head) — the multi-transform split happens *inside* a single model.
-
-<p align="center">
-  <img src="assets/waveletlm-multi-transform.svg" alt="Multi-transform parallelization architecture" width="85%"/>
-</p>
-
-**Rationale (conjectural):** If multi-transform parallelization improves results, then the most plausible mechanism is that each orthogonal basis represents the channel-axis features in a different coordinate system simultaneously. A Walsh basis groups features by binary-symmetry pattern, a cosine basis groups them by smoothness, and a learned-orthogonal basis groups them by whatever residual structure gradient descent discovers. The same input is losslessly rotated through all bases in parallel, and the combiner weights them per-scale based on which "perspective" matters most for the signal. 
-
-Standard transformer attention has no direct analog because (Q, K, V) projections conflate "the lens you use" with "the weights you compute" into a single learned operation. **With a semantic embedding in particular (using plain-language, human-readable feature dimensions), this may make interpretability more tractable and efficient:** a per-node, per-token-pair similarity score in the rotated basis answers "what does node K think these two tokens have in common?", making it possible to trace why two tokens are close or far depending on the conceptual lens/transform applied. 
-
-The wavelet decomposition continues to handle sequence-axis multi-scale structure, and the multi-basis nodes add feature-axis multi-perspective structure, factorizing the two cleanly. We don't yet know whether this is the actual mechanism if it increases performance, but if it does, testing this hypothesis directly becomes the natural follow-up.
-
-**Normalization note:** the FWHT is an isometry (orthonormal, norm-preserving), so homogeneous multi-FWHT nodes naturally produce comparable output magnitudes and a single `wavelet_recon_norm` after the Combine step is sufficient. For heterogeneous nodes (learned butterfly orthogonals, DCT, etc.), each transform has its own equilibrium magnitude. The diagram therefore includes a **per-node output LayerNorm** (placed at the top of each node, before recombination) to equalize contributions so no single transform basis dominates the Combine step by amplitude alone. This per-node LN is a planned normalization for the heterogeneous case; it is not needed for the current homogeneous-FWHT implementation and will be added when multi-transform is implemented.
-
-**Learning-rate note:** the per-node output LN above equalizes *forward magnitudes*, but not *optimizer dynamics* — each orthogonal basis conditions the loss differently, so the optimal learning rate shifts per transform even at matched scale. Two consequences. (1) **Single-transform ablation** (the §10 prerequisite): re-probe LR per candidate around the FWHT optimum (a cheap 2–3-point sweep, not a full one) rather than forcing every transform to FWHT's tuned LR — otherwise a transform that merely needs a different LR is penalized as if its basis were worse. Orthonormalize the non-FWHT candidates first so the probe starts from a scale-matched baseline; the default FWHT reference is unchanged. (2) **Combined multi-transform model:** mixing bases changes the aggregate loss landscape, so the *whole model* enters a fresh LR regime and must be re-tuned as a unit — not inherited from any single-transform run. If one global LR can't satisfy all nodes simultaneously, per-transform optimizer **param-groups** are the fallback (orthonormalization fixes scale but not conditioning, so some residual per-basis LR sensitivity is expected). The default homogeneous-FWHT path is unaffected in both cases.
-
-See [plans/multi_transform_parallelization.md](plans/multi_transform_parallelization.md) for the full design, the four-node reference lineup, and the prerequisite ablation (per-scale mixer transform ablation in [other_post_release_plans.md §10](plans/other_post_release_plans.md#10-per-scale-mixer-transform-ablation)).
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
 ### Semantic Embedding & Interpretability Work
 
 An optional replacement for the learned token embedding is a **semantic embedding**, where each dimension is a plain-language feature (e.g. "is this token a noun?", "is this token associated with anger?", "corpus frequency in deceptive contexts") and each token or n-gram is a vector of values across those dimensions. 
@@ -2229,6 +2194,8 @@ WaveletLM is structurally well-suited for this: the spectral mixer can operate d
 - *If the learned **lifting nets** are the absorber* (they sit immediately upstream of the mixer slot and mix channels freely per level): the transform stays unnecessary even with a frozen embedding, and the historical semantic gap needs a different explanation.
 
 The discriminating test is cheap and should be part of the semantic-embedding bring-up: semantic embedding ± transform (identity vs fwht vs learned_butterfly) at 1ep. Whichever way it lands, it pins down *where* the architecture's basis-adaptation lives — itself an interpretability result.
+
+**Multi-transform contingency (folded here 2026-07-02).** The former standalone *Multi-Transform Parallelization* section (N parallel orthogonal-basis paths — FWHT / DHT / DCT / learned butterfly — replacing the transform slot in each per-scale mixer) is retired as an independent direction: the [Mixer Transform Ablation](#done-mixer-transform-ablation) showed the gate is near-basis-indifferent with a learned embedding (identity ≥ every fixed basis, full spread 0.0037), and the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured) located the model's appetite on the *time* axis, not the channel-basis axis. The design survives solely as **this section's contingency**: if the frozen semantic embedding revives the transform (the hypothesis above), N-parallel-basis nodes revive with it — the full design, four-node lineup, and normalization/LR notes are preserved in [plans/multi_transform_parallelization.md](plans/multi_transform_parallelization.md). Its *capacity* role passes to [Multinodal / sparse mixer-MoE](#multinodal-mode-product-of-experts).
 
 **Two new candidate designs (2026-06-11; full recipes in the plan doc):**
 - **Relational/positional construction** — embedding coordinates built from *dyadic-offset-bucketed PMI* (co-occurrence statistics at distances 1, 2–3, 4–7, …, mirroring the wavelet's scale structure), factorized V×C. Motivated by the Yoneda view (meaning = the totality of a token's relations) and by WaveletLM being a pure position-mixing machine: these are exactly the statistics the architecture natively consumes, so this construction should pay the smallest quality-for-naming cost. Pure corpus counting — no LLM labeling cost. (A simpler per-block absolute-position variant was considered and rejected: stationarity of language under arbitrary block cuts washes the statistic out, and position is an occurrence-level property that belongs at runtime, not in the type-level table.)
@@ -2242,7 +2209,9 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 
 ### Combined Multi-Transform + Semantic Embedding (Interpretability Compound)
 
-**Standing commitment regardless of intermediate results:** once both multi-transform parallelization and the semantic embedding are independently validated, combine them. The combined configuration is the unique regime in which input dimensions are human-readable, each transform node represents those features in a distinct mathematically-grounded coordinate system (a different orthogonal basis), every transform is invertible, and sequence-axis (wavelet) and feature-axis (multi-transform) structures factorize cleanly. Even if multi-transform is marginally suboptimal vs single-transform variants (mathematically unlikely, since multi-transform strictly contains the single-transform case as N=1, so that the combiner gate would simply prefer the first transform in a multi-transform situation), the combined configuration uniquely enables per-node, per-token-pair similarity scores in named feature coordinates and direct probing of "what does node K think these tokens have in common?" This combined configuration's value is qualitatively different from either component alone, and is not to be deprioritized in favor of incremental BPB wins on simpler variants.
+> **Status (2026-07-02):** multi-transform is retired as a standalone direction and now lives as the [semantic-embedding contingency](#semantic-embedding--interpretability-work), so this compound fires only if that contingency does (a frozen embedding reviving the transform). The commitment below is preserved unchanged for that branch.
+
+**Standing commitment regardless of intermediate results:** once both multi-transform parallelization (via the contingency above) and the semantic embedding are independently validated, combine them. The combined configuration is the unique regime in which input dimensions are human-readable, each transform node represents those features in a distinct mathematically-grounded coordinate system (a different orthogonal basis), every transform is invertible, and sequence-axis (wavelet) and feature-axis (multi-transform) structures factorize cleanly. Even if multi-transform is marginally suboptimal vs single-transform variants (mathematically unlikely, since multi-transform strictly contains the single-transform case as N=1, so that the combiner gate would simply prefer the first transform in a multi-transform situation), the combined configuration uniquely enables per-node, per-token-pair similarity scores in named feature coordinates and direct probing of "what does node K think these tokens have in common?" This combined configuration's value is qualitatively different from either component alone, and is not to be deprioritized in favor of incremental BPB wins on simpler variants.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2311,19 +2280,17 @@ See [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md) for the full 
 
 ### Multinodal Mode (Product-of-Experts)
 
-WaveletLM supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever — a capstone for pure scale-up once the rest of the architectural roadmap settles. Distinct from [Multi-Transform Parallelization](#multi-transform-parallelization) above (which parallelizes inside a single model at the FWHT slot); the PoE mode parallelizes whole models. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+WaveletLM supports a baseline product-of-experts mode where multiple independent full-cell copies process the input in parallel with feature bagging and logit averaging. Enable with `multinodal_enabled: true` in the config. This mode may require stability adjustments such as a lower learning rate with `stable_parametrization` enabled, and acts as an as-yet underexplored capacity/scalability lever — a capstone for pure scale-up once the rest of the architectural roadmap settles. Distinct from the retired multi-transform idea (N fixed orthogonal bases in the mixer slot — now the [semantic-embedding contingency](#semantic-embedding--interpretability-work)); the PoE mode parallelizes whole models. This existing mode and broader multi-expert techniques (sparse MoE, mutual learning, weight averaging, Git Re-Basin, & ensemble distillation) are surveyed in [plans/multinodal_training_techniques.md](plans/multinodal_training_techniques.md).
+
+**Sparse mixer-MoE (2026-07-02 — inherits the retired multi-transform slot).** The measurements that closed multi-transform point the intra-model parallelism at *capacity*, not basis diversity — and `cross_scale_gating`'s S×S routing matrix is already a soft router. The WaveletLM-native sparse-MoE hardening is therefore **top-k routing over E parallel per-scale mixer experts**: shared decompose/reconstruct scaffolding, expert diversity on the capacity axis the transform ablation left standing. Same skeleton as the old multi-transform diagram, with experts in place of bases:
+
+<p align="center">
+  <img src="assets/waveletlm-mixer-moe.svg" alt="Sparse mixer-MoE architecture" width="85%"/>
+</p>
 
 **Heterogeneous p-adic cells (proposed 2026-06-11, gated on the [crawl-K sweep](#in-progress-wavelet-crawl-dilation-window-k-sweep)).** A multinodal variant where cells differ not by seed but by **wavelet dilation lattice**: one dyadic cell (1, 2, 4, …, 64), one triadic (1, 3, 9, 27, 81), optionally 5-adic (1, 5, 25), 7-adic, etc.: prime bases, because their lattices are multiplicatively independent (log p rationally independent ⇒ offsets never collide except at 1), so each cell contributes genuinely complementary timescale coverage. All cells keep the same `block_size` (the à trous lifting has no divisibility requirement; truncating blocks to fit a base's powers was considered and rejected — it *worsens* coarse-level pad-dominance, since the fraction of positions with full history at dilation D is (T−D)/T) with each base capped at dilations ≲ T/4, recombined by the existing PoE machinery on aligned positions. Rationale for why this survives where multi-transform fell: it diversifies the **time axis**, where the architecture demonstrably cares (crawl's −0.0181 is time-axis structure), not the channel axis the transform ablation showed to be gauge. Cost-ascending ladder before committing to full heterogeneous cells: (1) single trunk with a mixed dilation schedule (config-only, param-matched), (2) dual parallel lifting stacks (`multi_basis_lifting` pattern), (3) heterogeneous PoE cells. **Gate:** if the crawl-K sweep shows K=3 remains best (off-dyadic offsets carry no signal), this branch closes cheaply; if wide windows win, rung 1 is one 1ep run. Multiple recombination schemes (logit averaging, cross-cell gating, per-scale fusion) may merit comparison by the time this is reached.
 
 **Update (2026-06-18, from the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured)):** off-dyadic offsets *do* carry signal — the crawl relocates 63–70% of its weight off the dyadic base at K=33 — so the gate's "K=3 stays best → close cheaply" branch does **not** fire. But the relocated weight is coarse-scale *smoothing*, not selection of specific lags, which undercuts the prime-lattice premise (that the model wants *distinct, multiplicatively-independent taps*). If pursued, the live form is **denser/smoother time coverage**, not prime lattices per se.
-
-<p align="center">
-  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
-</p>
-
-### Final Regularization Sweep
-
-Do a final regularization sweep building on the results of the [Dropout](#dropout) and [Weight Decay](#weight-decay) sections above. With the increase in model layers and potentially width, higher regularization will likely be needed. Work in a coordinate descent fashion to discover the optimal hyperparameters here.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2348,16 +2315,15 @@ The two release tiers below the scaled-up Large. **As of 2026-06-27 both are MLP
 
 ### Scaled-Up Model with C=4096 (WaveletLM-Large)
 
-Conditional on the architectural research roadmap above (multi-transform parallelization, dropout sweep, semantic embedding, combined interpretability compound) producing meaningful gains, scale up the validated architecture to B200-class hardware. The scaled-up model settings will be:
+Conditional on the **big-data pilot** ([Release Pipeline](#release-pipeline), "De-risk first") confirming the architecture scales with data, scale the validated **MLP-free** architecture to the Large tier. Settings (updated 2026-07-02 for the no-MLP default):
 
-- `C`: 4096 
-- `layers`: 10
-- `mlp_expansion`: 20 or 50–200 (confirm later)
-- `pkm_num_keys` & `fwpkm_num_keys`: 16384 → 65536 each
+- `C`: 4096, `layers`: 10 (the depth winner), `mlp_expansion`: 0 (PKM/FwPKM stay off)
+- `levels`: 7, per-scale widths `[1×4, 0.5×4]` at block 256 (block-size-bound, not C-bound)
+- `lr` ≈ 0.011 by the ~1/C width ceiling (0.05 @ C=1024, 0.0225 @ C=2048), `min_lr = lr/50`
 - fp16 → FP8 via Blackwell tensor cores (NYI)
-- `epochs`: 5 or 10
+- `epochs`: 5 (WT-103) / 1 (large corpora)
 
-The goal is a 10–15B parameter (or however large it will be) configuration, trained individually on WikiText-103 and PG-19, and also on a multi-dataset mix of WikiText-103, PG-19, Pile-ArXiv, BookCorpusOpen, TinyStories, & OpenWebText. Other possibilities such as LAMBADA will also be considered post-release.
+The no-MLP result resizes this tier: the old MLP-era estimate was ~10–15B params, but MLP-free the non-embedding cost scales ~C² (198M → 790M across C=1024→2048), putting C=4096/L=10 at **~3.2–3.5B params** — a single-big-GPU (RTX 6000 / B200) day-scale run rather than a multi-GPU campaign. Trained individually on WikiText-103 and PG-19, and on the [data blend](#pretraining-data-blend). Other possibilities such as LAMBADA will also be considered post-release.
 
 Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with [uniform 8-bit PTQ](runs.md#ptq-sweep-summary). See [`runs.md`](runs.md#post-release-scaled-up-b200-configuration) for the pending run entry.
 
@@ -2365,7 +2331,7 @@ Inference would fit on a single RTX 4090 at fp16 and roughly half the VRAM with 
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Scaled-Up Model with PTQ and other Infernece Strategies
+### Scaled-Up Model with PTQ and other Inference Strategies
 
 Once trained, test the best model versions with PTQ to ascertain generation speeds and VRAM requirements on a variety of systems.
 
