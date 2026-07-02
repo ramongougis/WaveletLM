@@ -520,3 +520,17 @@ run_ablation "F1_C100_L10_noMLP_freeC_5ep Free-C Test — C=100 (non-pow2) L=10 
 run_ablation "P1_C1024_L10_noMLP_pg19_1ep PG-19 Small — C=1024 L=10 no-MLP (1ep)"     "$BASE_PATCH_1EP"     '{"dataset": "pg19", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "P1_C1024_L10_noMLP_pg19_1ep: PG-19 Small C=1024 L=10 no-MLP 1ep (~250M, 32K SP vocab); first run trains PG-19 SentencePiece + tokenizes; runs after M1 on the 5090; BPB not comparable to WT-103"
 # ==============================================================================
 
+
+# ==============================================================================
+# SKIP-PROJ-OUT ABLATION (C=1024 Small, 5ep WT-103). Queued AFTER P1 on the 5090. Kiruluta's review
+# flagged the MLP + "projection-style components" as the non-spectral parts; the MLP is gone (S2a),
+# and proj_out is the biggest projection left. With mixer_transform=identity, Cp == C, so the existing
+# skip_proj_out flag engages (model.py: skip_proj_out and Cp==C) -> deletes the per-layer Linear(C,C)
+# after reconstruct: -10.50M params across L=10 (249.59M -> ~239.1M), fully spectral block core.
+# CAUTION: proj_out normally carries the near-zero "spectral epsilon" init (the residual-regime trick);
+# skipping it means the spectral branch enters the learned residual at O(1) from step 0 -- recon_norm
+# + scale_weights should absorb it, but if it NaNs in warmup, drop lr 0.05 -> 0.04. All else = S2a.
+# A/B vs the no-MLP Small headline 0.9884.
+run_ablation "SP1_C1024_L10_noMLP_skipproj_5ep Skip proj_out — C=1024 L=10 no-MLP, no proj_out (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "SP1_C1024_L10_noMLP_skipproj_5ep: skip_proj_out=true removes the last per-layer projection (-10.50M, fully spectral core); Cp==C under identity so the flag engages; A/B vs S2a 0.9884; if warmup NaNs, retry lr=0.04"
+# ==============================================================================
+
