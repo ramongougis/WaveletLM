@@ -506,23 +506,34 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # (the V x 100 embedding dominates; mixer/lifting are ~C^2, negligible at C=100)
 # -> a few hours on the 5090 between M1 and PG-19. BPB WILL be poor (100-dim
 # model) -- the POINT is that a non-pow2 C trains at all.
-run_ablation "F1_C100_L10_noMLP_freeC_5ep Free-C Test — C=100 (non-pow2) L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.3, "min_lr": 0.006, "micro_batch_size": 64, "eval_interval": 500, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "F1_C100_L10_noMLP_freeC_5ep: Free-C validation — C=100 (non-pow2; Cp=C=100, identity/FWHT off, no padding) L=10 no-MLP 5ep WT-103; embedding-dominated; proves non-pow2 widths train; BPB expected poor (tiny model)"
+# run_ablation "F1_C100_L10_noMLP_freeC_5ep Free-C Test — C=100 (non-pow2) L=10 no-MLP (5ep, WT-103)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.3, "min_lr": 0.006, "micro_batch_size": 64, "eval_interval": 500, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "F1_C100_L10_noMLP_freeC_5ep: Free-C validation — C=100 (non-pow2; Cp=C=100, identity/FWHT off, no padding) L=10 no-MLP 5ep WT-103; embedding-dominated; proves non-pow2 widths train; BPB expected poor (tiny model)"
+# # ==============================================================================
+
+
+# # ==============================================================================
+# # PG-19 SMALL (C=1024 L=10 no-MLP, 1 epoch). Queued AFTER M1 + F1 -> runs back-to-back on the same 5090.
+# # dataset="pg19" auto-selects PG-19's own 32K SentencePiece tokenizer (model.py:3665); the FIRST run
+# # TRAINS that SP model + tokenizes PG-19 (~a few hours + ~5-10GB .cache, BEFORE the train clock; syncs
+# # to S3, reusable). NOTE: 32K vocab (not GPT-2 50K) -> smaller embedding, AND BPB is on PG-19's OWN
+# # scale -> NOT comparable to the 0.9884 WT-103 number. ~2.5-3B+ tokens, 1ep -> ~2.3-2.7 days on a 5090.
+# # lr=0.05 (C=1024 width ceiling). mlp_expansion=0.
+# run_ablation "P1_C1024_L10_noMLP_pg19_1ep PG-19 Small — C=1024 L=10 no-MLP (1ep)"     "$BASE_PATCH_1EP"     '{"dataset": "pg19", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "P1_C1024_L10_noMLP_pg19_1ep: PG-19 Small C=1024 L=10 no-MLP 1ep (~250M, 32K SP vocab); first run trains PG-19 SentencePiece + tokenizes; runs after M1 on the 5090; BPB not comparable to WT-103"
 # ==============================================================================
 
 
 # ==============================================================================
-# PG-19 SMALL (C=1024 L=10 no-MLP, 1 epoch). Queued AFTER M1 + F1 -> runs back-to-back on the same 5090.
-# dataset="pg19" auto-selects PG-19's own 32K SentencePiece tokenizer (model.py:3665); the FIRST run
-# TRAINS that SP model + tokenizes PG-19 (~a few hours + ~5-10GB .cache, BEFORE the train clock; syncs
-# to S3, reusable). NOTE: 32K vocab (not GPT-2 50K) -> smaller embedding, AND BPB is on PG-19's OWN
-# scale -> NOT comparable to the 0.9884 WT-103 number. ~2.5-3B+ tokens, 1ep -> ~2.3-2.7 days on a 5090.
-# lr=0.05 (C=1024 width ceiling). mlp_expansion=0.
-run_ablation "P1_C1024_L10_noMLP_pg19_1ep PG-19 Small — C=1024 L=10 no-MLP (1ep)"     "$BASE_PATCH_1EP"     '{"dataset": "pg19", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "P1_C1024_L10_noMLP_pg19_1ep: PG-19 Small C=1024 L=10 no-MLP 1ep (~250M, 32K SP vocab); first run trains PG-19 SentencePiece + tokenizes; runs after M1 on the 5090; BPB not comparable to WT-103"
+# SKIP-PROJ-OUT QUICK CHECK (C=100 free-C config, 5ep WT-103). Runs BEFORE SP1 — ~2.3 h on a 5090
+# (F1 measured 8189s at MBS=64), so the projection-ablation result is in hand fast (wanted for the
+# Kiruluta reply). Identical to F1 (logs/wikitext-103_2026-06-29_19-49-04: C=100, levels=6, MBS=64,
+# lr=0.3) plus "skip_proj_out": true — Cp==C=100 under identity, so the flag engages. Removes
+# 10 x (100*100+100) = 0.10M of 6.80M (-1.5%; proj share grows with C -> 4.2% at C=1024). A/B vs
+# F1 sliding BPB 1.2781 / PPL 54.20 / val 4.0100.
+run_ablation "SP0_C100_L10_noMLP_skipproj_freeC_5ep Skip proj_out quick check — C=100 (non-pow2) L=10 no-MLP (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.3, "min_lr": 0.006, "micro_batch_size": 64, "eval_interval": 500, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "SP0_C100_L10_noMLP_skipproj_freeC_5ep: C=100 free-C config + skip_proj_out=true (-0.10M, fully spectral core at C=100); quick ~2.3h A/B vs F1 1.2781 BPB before committing SP1 at C=1024; also demonstrates fine-grained C iteration speed"
 # ==============================================================================
 
 
 # ==============================================================================
-# SKIP-PROJ-OUT ABLATION (C=1024 Small, 5ep WT-103). Queued AFTER P1 on the 5090. Kiruluta's review
+# SKIP-PROJ-OUT ABLATION (C=1024 Small, 5ep WT-103). Queued AFTER SP0 (the C=100 quick check) on the 5090. Kiruluta's review
 # flagged the MLP + "projection-style components" as the non-spectral parts; the MLP is gone (S2a),
 # and proj_out is the biggest projection left. With mixer_transform=identity, Cp == C, so the existing
 # skip_proj_out flag engages (model.py: skip_proj_out and Cp==C) -> deletes the per-layer Linear(C,C)
@@ -532,5 +543,32 @@ run_ablation "P1_C1024_L10_noMLP_pg19_1ep PG-19 Small — C=1024 L=10 no-MLP (1e
 # + scale_weights should absorb it, but if it NaNs in warmup, drop lr 0.05 -> 0.04. All else = S2a.
 # A/B vs the no-MLP Small headline 0.9884.
 run_ablation "SP1_C1024_L10_noMLP_skipproj_5ep Skip proj_out — C=1024 L=10 no-MLP, no proj_out (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.05, "min_lr": 0.001, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 1024}'     "SP1_C1024_L10_noMLP_skipproj_5ep: skip_proj_out=true removes the last per-layer projection (-10.50M, fully spectral core); Cp==C under identity so the flag engages; A/B vs S2a 0.9884; if warmup NaNs, retry lr=0.04"
+# ==============================================================================
+
+
+# ==============================================================================
+# FREE-C SCALING-LAW SWEEP (the C-knee; K0-K5). Queued AFTER SP1. Five 5ep points at C in
+# {200, 300, 400, 512, 768}, EXACT headline protocol (levels=7, widths [1x4,.5x4], MBS=8, GA=1,
+# block 256) so the C=1024 (0.9884) and C=2048 (0.9597) headlines join the curve as free anchors ->
+# a 7-point BPB-vs-C law + WaveletLM's own tokens/param ratio (replaces the borrowed Chinchilla 20:1)
+# + the ultra-light deployment knee. DELIBERATELY NOT MBS=64 (the F1 speedup): mixing batch sizes
+# forks the curve off the anchors. Cost: small-C points are launch-overhead-bound at MBS=8 ->
+# ~10-15h each on a 5090, ~2.5-3 days total. LR rule lr ~= 48/C (measured: 0.05@1024, 0.0225@2048;
+# k in [46, 51]), min_lr = lr/50. C=200 is the largest extrapolation of the rule -> it runs FIRST
+# (fails fast); if any K-run NaNs in warmup, halve its lr and relaunch that point only.
+# Est params (fit: V*C + 198.13M*(C/1024)^2): K1 ~17.6M, K2 ~32.1M, K3 ~50.3M, K4 ~75.3M, K5 ~150.0M.
+#
+# K0 — C=100 MBS-8 RERUN (dual purpose, runs first). NOT sweep protocol: it is the EXACT original F1
+# recipe at the base batch (levels=6, widths x7, lr=0.1 = 0.3/sqrt(8), eval 250) so that K0 vs F1
+# (logs/wikitext-103_2026-06-29_19-49-04: MBS=64, lr=0.3, 1.2781 BPB) cleanly isolates the MBS
+# effect at matched everything-else — "did the 8x batch + sqrt(8) LR shortcut cost quality?".
+# Joins the sweep table only as a FLAGGED point (levels=6, lr below the 48/C rule) — bonus, not fit.
+# ~6-9h at MBS=8 (F1's pre-bump ETA); 6.80M params (same arch as F1).
+run_ablation "K0_C100_L10_noMLP_MBS8_5ep C-knee sweep 0/5 — C=100 MBS=8 rerun (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 6, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.1, "min_lr": 0.002, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 100}'     "K0_C100_L10_noMLP_MBS8_5ep: C=100 at MBS=8/lr=0.1 (exact original F1 recipe pre-MBS-bump); A/B vs F1 MBS=64/lr=0.3 1.2781 isolates the batch-size effect; flagged (levels=6, off-rule lr) bonus point for the C-knee fit"
+run_ablation "K1_C200_L10_noMLP_5ep C-knee sweep 1/5 — C=200 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.24, "min_lr": 0.0048, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 200}'     "K1_C200_L10_noMLP_5ep: C-knee 1/5, C=200 (~17.6M), lr=0.24 (48/C rule, largest extrapolation -> runs first, halve on NaN); headline protocol so anchors join the fit"
+run_ablation "K2_C300_L10_noMLP_5ep C-knee sweep 2/5 — C=300 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.16, "min_lr": 0.0032, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 300}'     "K2_C300_L10_noMLP_5ep: C-knee 2/5, C=300 (~32.1M, the prior for the 5ep knee), lr=0.16"
+run_ablation "K3_C400_L10_noMLP_5ep C-knee sweep 3/5 — C=400 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.12, "min_lr": 0.0024, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 400}'     "K3_C400_L10_noMLP_5ep: C-knee 3/5, C=400 (~50.3M), lr=0.12"
+run_ablation "K4_C512_L10_noMLP_5ep C-knee sweep 4/5 — C=512 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.09, "min_lr": 0.0018, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "K4_C512_L10_noMLP_5ep: C-knee 4/5, C=512 (~75.3M), lr=0.09"
+run_ablation "K5_C768_L10_noMLP_5ep C-knee sweep 5/5 — C=768 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.06, "min_lr": 0.0012, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 768}'     "K5_C768_L10_noMLP_5ep: C-knee 5/5, C=768 (~150.0M), lr=0.06; completes the 7-point law with the C=1024/2048 anchors"
 # ==============================================================================
 
