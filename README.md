@@ -443,21 +443,21 @@ P_k(z) = W^{P,2}_k\,\mathrm{GELU}\big(W^{P,1}_k z\big), \qquad U_k(z) = W^{U,2}_
 
 (hidden width $`=C`$, i.e. `lifting_hidden_mult`$`=1`$; biases and lifting-dropout zero). Haar init sets $`W^{P,1}_k=W^{P,2}_k=I`$ and $`W^{U,1}_k=I,\,W^{U,2}_k=\tfrac12 I`$, so the transform begins as $`P_k=\mathrm{GELU}`$, $`U_k=\tfrac12\,\mathrm{GELU}`$ and learns away from there. Stack the $`S=8`$ bands coarse→fine and apply the per-scale decompose-norm:
 
-```math
+$$
 \mathbf{C} = [\,c_7,\, d_6,\, d_5,\, \dots,\, d_0\,], \qquad \mathbf{C}_s \leftarrow \mathrm{LN}^{(\ell)}_{\mathrm{dec},\,s}(\mathbf{C}_s), \quad s = 0,\dots,7 .
-```
+$$
 
 Decompose-bypass bias: a causal cumulative mean of the block input plus a cross-layer carry, added to every scale through a learned per-scale channel gain $`\eta^{(\ell)}_s \in \mathbb{R}^{C}`$ (`history_gains`); $`\mu^{(0)}`$ is the detached cross-window state:
 
-```math
-\mu^{(\ell)}_t = \frac{1}{t+1}\sum_{\tau \le t} x^{(\ell-1)}_\tau, \qquad g^{(\ell)} = \mu^{(\ell)} + W^{(\ell)}_{\mathrm{x}}\,\mu^{(\ell-1)}, \qquad \mathbf{C}_s \leftarrow \mathbf{C}_s + \eta^{(\ell)}_s \odot g^{(\ell)} .
-```
+$`\displaystyle \mu^{(\ell)}_t = \frac{1}{t+1}\sum_{\tau \le t} x^{(\ell-1)}_\tau, \qquad g^{(\ell)} = \mu^{(\ell)} + W^{(\ell)}_{\mathrm{x}}\,\mu^{(\ell-1)}, \qquad \mathbf{C}_s \leftarrow \mathbf{C}_s + \eta^{(\ell)}_s \odot g^{(\ell)} .`$
 
 Per-scale gated spectral mixer with cross-scale gate routing $`R^{(\ell)}\in\mathbb{R}^{S\times S}`$. For each scale $`s`$ (width $`w_s\in\{C, C/2\}`$; $`\pi^{\mathrm{in}}_s,\pi^{\mathrm{out}}_s`$ are identity for the full-width scales $`s\le 3`$):
 
-```math
-\hat{\mathbf{C}}_s = \sum_{s'=0}^{7} R^{(\ell)}_{s,s'}\,\mathbf{C}_{s'}, \qquad \tilde{x}_s = \pi^{\mathrm{in}}_s \mathbf{C}_s, \qquad Y_s = \pi^{\mathrm{out}}_s\!\Big[\big(M^{(\ell)}_s \tilde{x}_s\big)\odot \mathrm{SiLU}\big(G^{(\ell)}_s\,\pi^{\mathrm{in}}_s \hat{\mathbf{C}}_s\big) \;+\; U^{(\ell)}_s\big(V_s^{(\ell)\top}\tilde{x}_s\big)\Big],
-```
+<div align="center">
+
+$`\displaystyle \hat{\mathbf{C}}_s = \sum_{s'=0}^{7} R^{(\ell)}_{s,s'}\,\mathbf{C}_{s'}, \qquad \tilde{x}_s = \pi^{\mathrm{in}}_s \mathbf{C}_s, \qquad Y_s = \pi^{\mathrm{out}}_s\!\Big[\big(M^{(\ell)}_s \tilde{x}_s\big)\odot \mathrm{SiLU}\big(G^{(\ell)}_s\,\pi^{\mathrm{in}}_s \hat{\mathbf{C}}_s\big) \;+\; U^{(\ell)}_s\big(V_s^{(\ell)\top}\tilde{x}_s\big)\Big],`$
+
+</div>
 
 with mixer weight $`M^{(\ell)}_s`$ (init $`\approx I`$), gate $`G^{(\ell)}_s`$, and rank-4 residual $`U^{(\ell)}_s, V^{(\ell)}_s`$. Per-scale recon-norm, scale weights $`\omega^{(\ell)}_s`$, and dropout:
 
