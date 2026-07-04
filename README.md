@@ -650,8 +650,8 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 | Model | Type | Params | Context | Epochs | PPL |
 |-------|------|--------|---------|--------|-----|
 | Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^10] |
-| **WaveletLM (1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **27.40†** |
-| WaveletLM-Small (no-MLP, 1 epoch) | Wavelet mixer | 231M | 256 | 1 | 27.72†† |
+| **WaveletLM (previous generation; 1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **27.40†** |
+| **WaveletLM Small (no-MLP, 1 epoch)** | **Wavelet mixer** | **231M** | **256** | **1** | **27.72††** |
 | Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^7] |
 | Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^8] |
 | Compressive Transformer | Transformer + compressive memory | 257M | 2,048 effective | ~50 | 33.6[^9] |
@@ -680,8 +680,9 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 | GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 17.5[^5] |
 | Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | 18.3[^4]* |
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 19.3[^5] |
-| **WaveletLM** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **20.0†** |
+| **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **20.0†** |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 1024* | 20.9[^6]* |
+| **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **250M** | **256††** | **21.9††** |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 22.1[^5] |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | 24.0[^4]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 29.4[^5] |
@@ -689,6 +690,8 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
 † C=2048 / L=10 / no-MLP, single seed: **sliding-window PPL 20.04** (non-overlapping 21.54) at a **256-token context** — 4× shorter than the 1024-context baselines — under only 5 epochs with light regularization ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)). Earlier 3-seed L=2 headline: 23.8 (mean 23.82). Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
+
+†† The Small release tier — C=1024 / L=10 / no-MLP, single seed: **sliding-window PPL 21.93** (non-overlapping 23.50) / **0.9884 sliding BPB** at 249.59M and the table's shortest context (256 tokens), 5 epochs ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)). Statistically ties the earlier 669M MLP-equipped version (0.9894 BPB) at ⅓ the parameters.
 
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
@@ -764,8 +767,8 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Crawl Dilation Probe: Prime-Power Wavelets, Measured](#crawl-dilation-probe-prime-power-wavelets-measured)
 - [Multinodal Mode (Product-of-Experts)](#multinodal-mode-product-of-experts)
 - [Domain-Sized Cells (Branch-Train-Merge)](#domain-sized-cells-branch-train-merge)
-- [Headline Models with C=1024 (WaveletLM-Small) and C=2048 (WaveletLM-Medium)](#headline-models-with-c1024-waveletlm-small-and-c2048-waveletlm-medium)
-- [Scaled-Up Model with C=4096 (WaveletLM-Large)](#scaled-up-model-with-c4096-waveletlm-large)
+- [Headline Models with C=1024 (WaveletLM Small) and C=2048 (WaveletLM Medium)](#headline-models-with-c1024-waveletlm-small-and-c2048-waveletlm-medium)
+- [Scaled-Up Model with C=4096 (WaveletLM Large)](#scaled-up-model-with-c4096-waveletlm-large)
 - [Scaled-Up Model with PTQ and other Inference Strategies](#scaled-up-model-with-ptq-and-other-inference-strategies)
 - [Downstream Transfer Fine-Tuning](#downstream-transfer-fine-tuning)
 - [Instruction-Tuning Chat Demo](#instruction-tuning-chat-demo)
@@ -2130,7 +2133,7 @@ With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, dep
 
 ### No MLP with deep C=1024
 
-Kiruluta's **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, is fully spectral and avoids MLPs entirely, carrying the computation through learnable wavelet-coefficient manipulation. WaveletLM, by contrast, currently spends 62.7% of its parameters on a conventional MLP (419.6M of the 669.24M WaveletLM-Small headline). Following the author's review (2026-06-25), this ablation probes that gap head-on: testing whether the model in its current form can, with or without the same number of parameters via increased layers and/or mixer depth, match or surpass the headline's performance without the MLP.
+Kiruluta's **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, is fully spectral and avoids MLPs entirely, carrying the computation through learnable wavelet-coefficient manipulation. WaveletLM, by contrast, currently spends 62.7% of its parameters on a conventional MLP (419.6M of the 669.24M WaveletLM Small headline). Following the author's review (2026-06-25), this ablation probes that gap head-on: testing whether the model in its current form can, with or without the same number of parameters via increased layers and/or mixer depth, match or surpass the headline's performance without the MLP.
 
 `mlp_expansion=0` removes the MLP cleanly. Variants, all A/B'd against the **L=10 + MLP headline (0.9894 BPB)**:
 
@@ -2188,20 +2191,20 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 
 **Release goals — concrete scope (2026-06-23).** What ships in the first release, on the current budget. The pipeline below is the *method*; this is the *deliverable list*. Data recipe for every blend run: [Pretraining Data Blend](#pretraining-data-blend).
 
-**WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
+**WaveletLM Small (C=1024, L=10) — the full end-to-end demo:**
 - [x] **WT-103, E=5** — Small headline is now the **no-MLP 0.9884 BPB** at 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)); ties the 669M MLP version (0.9894) at ⅓ the params — done 2026-06-27
 - [x] **PG-19, E=1** — **27.72 sliding PPL / 1.0892 sliding BPB at 230.89M** ([log](logs/pg19_2026-06-29_22-12-43/log.txt)) — done 2026-07-03; +0.32 PPL vs the old 808M headline at 3.5× fewer params, with *better* best val (3.5023 vs 3.5238); see [PG-19 comparison](#pg-19-test-set-perplexity-comparison)
 - [ ] **`skip_proj_out` ablation — remove the last projection** (queued next on the 5090, after PG-19; the ~2.3 h **C=100 quick check runs first** — see [Free C Test](#free-c-test-c100)): with `Cp = C` under the identity default the existing flag engages, deleting the per-layer `proj_out` (~10.50M across L=10, ~4%) and leaving a **fully spectral block core** (lifting + mixer + norms + learned scalars). A/B vs the 0.9884 Small headline. *C=100 quick check (SP0) done 2026-07-04: +0.0115 BPB — real but modest; whether width absorbs it is this run's question.*
 - [ ] **Free-C scaling-law sweep (C-knee, K0–K5)** — 5ep × C ∈ {200, 300, 400, 512, 768} at the headline protocol (MBS=8, `lr ≈ 48/C`), joining the **0.9884**/C=1024 and **0.9597**/C=2048 headlines as anchors → fit WaveletLM's own BPB-vs-C law + tokens/param ratio (replaces the borrowed Chinchilla 20:1) and pick the ultra-light deployment knee. K0 (C=100 at MBS=8, exact original recipe) additionally isolates the **batch-size effect** vs the MBS=64 run (1.2781). Queued after SP1 (~3 days total on a 5090); see [Free C Test](#free-c-test-c100).
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share. Also produces the **frozen lifting snapshot** the wavelet optimizer below consumes — run it first.
-- [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM-Small config.
+- [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM Small config.
 - [ ] **SFT** (SmolTalk + OASST1)
 - [ ] **Functional / toy chatbot**
 - [ ] **Interpretability suite — developed & processed fully here** (the deepest interpretability story rides on Small)
 - [ ] *Nice-to-have:* **Semantic embedding** on WT-103 (maybe PG-19) — PPL comparisons + REAP/SOW concept-token ablations + n-gram processing/prediction
 
-**WaveletLM-Medium (C=2048, L=10):**
+**WaveletLM Medium (C=2048, L=10):**
 - [x] **WT-103, E=5** — **0.9597 sliding BPB / 20.04 sliding PPL** at **893.44M** ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) — done 2026-06-29; slots above S4 (20.9) in the [WT-103 comparison](#wikitext-103-test-set-perplexity-comparison) at a 256-token context
 - [ ] **Expanded-context generations** — qualitative length-extrapolation on the 0.9597-BPB checkpoint: generate at 512 / 1024 / 2048 windows and log where coherence/factuality degrades vs the 256-trained control (tests whether the tail drift is fixed at ~token 256, set by generated-depth, or pushed out by more context — see [Block-Size Extension](#block-size-extension--length-generalization)). Run after the PG-19 Small run.
 - [ ] *Nice-to-have:* **PG-19** (the big blend isn't affordable here yet)
@@ -2409,7 +2412,7 @@ Why it fits WaveletLM's situation: cells are small and train **sequentially on o
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Headline Models with C=1024 (WaveletLM-Small) and C=2048 (WaveletLM-Medium)
+### Headline Models with C=1024 (WaveletLM Small) and C=2048 (WaveletLM Medium)
 
 The two release tiers below the scaled-up Large. **As of 2026-06-27 both are MLP-free** — the [MLP ablation](#no-mlp-with-deep-c1024) showed the standalone MLP buys essentially nothing (no-MLP Small *ties* the 669M MLP version at ⅓ the params), so the default config is now **L=10 × 5 epochs × `mlp_expansion=0`**.
 
@@ -2426,7 +2429,7 @@ The two release tiers below the scaled-up Large. **As of 2026-06-27 both are MLP
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
-### Scaled-Up Model with C=4096 (WaveletLM-Large)
+### Scaled-Up Model with C=4096 (WaveletLM Large)
 
 Conditional on the **big-data pilot** ([Release Pipeline](#release-pipeline), "De-risk first") confirming the architecture scales with data, scale the validated **MLP-free** architecture to the Large tier. Settings (updated 2026-07-02 for the no-MLP default):
 
