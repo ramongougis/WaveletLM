@@ -427,7 +427,7 @@ $$u = x^{(\ell-1)} + \gamma_e^{(\ell)}\, e, \qquad h = \mathrm{LN}_1^{(\ell)}(u)
 
 Causal lifting decompose (undecimated / à-trous), with $c_0 = h$ and, for each level $k = 0,\dots,6$, a $K{=}33$ "crawl" — a learned softmax mixture over integer look-back lags $o_{k,j}$ centred on the dyadic base $2^k$, where $\mathrm{shift}_{o}(c)_t = c_{t-o}$ (zero-padded, so strictly causal):
 
-$$\\mathrm{odd}_k = \sum_{j=1}^{33}\mathrm{softmax}(\theta_k)_j\,\mathrm{shift}_{o_{k,j}}(c_k), \qquad d_k = \tfrac{1}{\sqrt{2}}\big(\mathrm{odd}_k - P_k(c_k)\big), \qquad c_{k+1} = \tfrac{1}{\sqrt{2}}\big(c_k + U_k(d_k)\big),$$
+$$ \mathrm{odd}_k = \sum_{j=1}^{33}\mathrm{softmax}(\theta_k)_j\,\mathrm{shift}_{o_{k,j}}(c_k), \qquad d_k = \tfrac{1}{\sqrt{2}}\big(\mathrm{odd}_k - P_k(c_k)\big), \qquad c_{k+1} = \tfrac{1}{\sqrt{2}}\big(c_k + U_k(d_k)\big),$$
 
 where $P_k, U_k : \mathbb{R}^{C}\!\to\!\mathbb{R}^{C}$ are the per-level predict/update networks:
 
