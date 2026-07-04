@@ -675,19 +675,26 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 
 ### WikiText-103 Test Set Perplexity Comparison
 
-| Model | Type | Trained on | Params | Context | PPL |
-|-------|------|-----------|--------|---------|-----|
-| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 17.5[^5] |
-| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | 18.3[^4]* |
-| GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 19.3[^5] |
-| **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **20.0†** |
-| S4* | SSM* | WikiText-103 (0.5GB)* | 130M* | 1024* | 20.9[^6]* |
-| **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **250M** | **256††** | **21.9††** |
-| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 22.1[^5] |
-| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | 24.0[^4]* |
-| GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 29.4[^5] |
+| Model | Type | Trained on | Params | Context | Epochs | PPL |
+|-------|------|-----------|--------|---------|--------|-----|
+| GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 0 (zero-shot on larger corpus) | 17.5[^5] |
+| Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | ~1,900 | 18.3[^4]* |
+| GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 0 (zero-shot on larger corpus) | 19.3[^5] |
+| **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **5** | **20.0†** |
+| S4* | SSM* | WikiText-103 (0.5GB)* | 249M* | 1024* | n/s | 20.95[^6]* |
+| **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **250M** | **256††** | **5** | **21.9††** |
+| GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 0 (zero-shot on larger corpus) | 22.1[^5] |
+| Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | ~17 | 24.0[^4]* |
+| GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 0 (zero-shot on larger corpus) | 29.4[^5] |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
+
+Epoch derivations from source papers and released training scripts:
+
+- **GPT-2 family** (Radford et al. 2019): the WikiText-103 PPLs are **zero-shot** — the models never trained on WT-103 at all (WebText only), so WT-103 epochs = 0. Their WebText training budget is not stated in the paper.
+- **Transformer-XL Standard**: the released `run_wt103_base.sh` trains `200K steps × batch 60 × 150-token targets = 1.8B tokens ≈ ~17 epochs` of WT-103's ~103M (word-level) training tokens.
+- **Transformer-XL Large**: the released `wt103_large_tpu.sh` trains `4M steps × global batch 128 × 384-token targets ≈ 197B tokens ≈ ~1,900 epochs` — the SOTA run's TPU-cluster budget, ~380× WaveletLM's data exposure.
+- **S4**: follows the Baevski & Auli Transformer-baseline recipe; an explicit step/epoch count is not stated in the paper (n/s). Note the S4 paper reports **249M params / 20.95 PPL** for this result — a near-exact parameter match to WaveletLM Small's 250M.
 
 † C=2048 / L=10 / no-MLP, single seed: **sliding-window PPL 20.04** (non-overlapping 21.54) at a **256-token context** — 4× shorter than the 1024-context baselines — under only 5 epochs with light regularization ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)). Earlier 3-seed L=2 headline: 23.8 (mean 23.82). Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
 
@@ -2214,6 +2221,7 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 - [ ] **C=2048 on the dataset blend, E=1** (single B200) — 1 epoch of ~25–50B is already ~Chinchilla-optimal for 2.6B (~10–19 tok/param), so the rough <15 PPL target plausibly survives the 5→1 epoch cut (*estimate*)
 - [ ] **Sparse mixture-of-mixers (MoM) first test** — E=4 shared mixer pool, top-2 per-scale routing + load-balancing loss, 1ep C=1024 A/B vs the 1.1113 L=10/1ep baseline; graduate to 5ep only if it clears the ~0.0010 noise floor (see [Multinodal](#multinodal-mode-product-of-experts))
 - [ ] **Domain-sized cells (BTM) first test** — two cells (WT-103 + a PG-19 subset, shared GPT-2 BPE, widths from the C-knee sweep), uniform logit blend, eval per-domain + neutral held-out **vs the matched blend-trained monolith** ([plan](plans/domain_sized_cells_btm.md); see [Domain-Sized Cells](#domain-sized-cells-branch-train-merge)). Like MoM: likely lands during the release write-up window, but not a release gate.
+- [ ] **The Pile — toe-to-toe with modern architectures at the pretraining stage.** Train WaveletLM at **matched token budgets to published Pile points** — the direct target is the Hyena paper's small-scale Pile table (137M / 355M-class models at 5B / 10B / 15B tokens, where Hyena, H3, and Transformer++ all report), with Mamba/RWKV points as the follow-on. Report **Pile test bits-per-byte** — the Pile's canonical, tokenizer-agnostic metric, which conveniently matches our BPB-first ranking convention — plus the standard zero-shot suite (LAMBADA, PIQA, HellaSwag, WinoGrande, ARC) via `lm-eval-harness`. Caveats to design around: the original Pile is no longer distributed (use the uncopyrighted/deduped mirror and label it as such); baselines run 2048-token context vs our 256 (state it, as in the WT-103 table); budget ≈ 5B tokens ≈ ~6 days of 5090 time per point at current throughput, so this slots after the decode/step-time wins or onto a bigger card. This is the move from "winning a deserted track" (trained-on-WT-103, ≥250M) to the contested one. We'll also use an optimal C value based on the Chinchilla-style heuristics discovered in the Release Pipeline, chosen to accommodate the training dataset size here, along with matching/empirically-optimal levels and per-scale mixer width settings for the derived C. 
 
 > PPL targets are guesses on a held-out slice of the *blend* (not WikiText, where it runs lower) — the real "useful yet?" signal is the downstream benchmark suite, not PPL.
 
