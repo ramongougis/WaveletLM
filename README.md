@@ -21,10 +21,9 @@ WaveletLM is a generative, attention-free, long-context language model inspired 
 
 **Structure**
 
-WaveletLM uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, per-scale gated spectral mixer with SwiGLU activation, and wavelet reconstruction. Combined with an **optional** 2-layer width-expanded MLP (now off by default — an MLP-free model matches it at ⅓ the parameters; see [No MLP with deep C=1024](#no-mlp-with-deep-c1024)) and an optional Fast-weight Product Key Memory module for inference-time updates, this yields an architecture with no attention and O(n log n) scaling in sequence length with the potential for limited-capacity continual learning.
+WaveletLM uses a learned embedding and mixes tokens using causal lifting wavelet decomposition, per-scale gated spectral mixer with SwiGLU activation, and wavelet reconstruction. This yields an architecture with no attention and O(n log n) scaling in sequence length.
 
 A planned replacement of the current learned embedding with a fixed, human-readable semantic embedding would more than halve the trainable parameters behind our [benchmark results](#results), while extending the Wavelet Logic Machine's interpretability benefits to the generative setting. For details, see the [Future Plans](#future-plans) section.
-
 
 **Results**
 
@@ -572,6 +571,7 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 |-------|------|--------|---------|--------|-----|
 | Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^10] |
 | **WaveletLM (1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **27.40†** |
+| WaveletLM-Small (no-MLP, 1 epoch) | Wavelet mixer | 231M | 256 | 1 | 27.72†† |
 | Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^7] |
 | Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^8] |
 | Compressive Transformer | Transformer + compressive memory | 257M | 2,048 effective | ~50 | 33.6[^9] |
@@ -586,6 +586,8 @@ Context and epoch derivations from source papers:
 - **Perceiver AR**: `~200k steps per batch × 2048 batches ≈ 420B tokens`; `420B / 2B PG-19 tokens ≈ 210 epochs` at `4,096-token context`.
 
 † 27.40 sliding-window PPL. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Increased regularization and training time are in the [Future Plans](#future-plans) section.
+
+†† The release architecture (C=1024, L=10, no-MLP, tied head): **27.72 sliding PPL / 1.0892 sliding BPB at 230.89M** ([log](logs/pg19_2026-06-29_22-12-43/log.txt)) yields a +0.32 PPL increase over the 808M version at **3.5× fewer params**, same 32K SentencePiece, and a *better* best val loss (3.5023 vs 3.5238; ranking follows the sliding metrics). Training on PG-19 beyond 1 epoch and with more regularization as needed will yield a better version post-release.
 
 ‡ Hyena was trained with `block_size=16384` (64× WaveletLM's) and 8 epochs (8× WaveletLM's). It is also incredibly efficient parameter-wise with 153M vs. WaveletLM's 807M. Increasing both block size and epochs for WaveletLM while decreasing parameters are some of the [Future Plans](#future-plans).
 
@@ -2077,9 +2079,9 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 | C | Cp (internal) | layers | epochs | MLP | params | sliding BPB |
 |---|---|---|---|---|---|---|
 | **100** | **100 — no padding** | 10 | 5 | off | **6.80M** | **1.2781** (PPL 54.2) ([log](logs/wikitext-103_2026-06-29_19-49-04/log.txt)) |
-| 100 + `skip_proj_out` | 100 — no padding | 10 | 5 | off | ~6.70M | *pending — queued (SP0)* |
+| 100 + `skip_proj_out` | 100 — no padding | 10 | 5 | off | **6.70M** | 1.2896 — PPL 56.19 ([log](logs/wikitext-103_2026-07-04_04-13-32/log.txt)) |
 
-**RESULT (2026-06-29): the unlock works end-to-end.** A non-power-of-two width trains, evaluates, and generates with no padding (`Cp = C = 100`) — 5 epochs on WT-103, best val 4.0100, sliding BPB 1.2781. The BPB is poor *as expected* (6.80M params, ~5M of which is the tied V×100 embedding — the spectral core here is ~1.8M), but poor was never the question: **any `C` is now a valid width.** Ran at MBS=64 / lr=0.3 in **~2.3 h** (8,189 s) on a 5090 — cheap enough to make fine-grained C iteration a real workflow. **Next (queued as SP0):** the identical config with `skip_proj_out: true` — the last per-layer projection removed (~0.10M of 6.80M) — as a fast precursor to the C=1024 [projection ablation](#release-pipeline), A/B'd against the 1.2781 row above.
+**RESULT (2026-06-29): the unlock works end-to-end.** A non-power-of-two width trains, evaluates, and generates with no padding (`Cp = C = 100`) — 5 epochs on WT-103, best val 4.0100, sliding BPB 1.2781. The BPB is poor *as expected* (6.80M params, ~5M of which is the tied V×100 embedding — the spectral core here is ~1.8M), but poor was never the question: **any `C` is now a valid width.** Ran at MBS=64 / lr=0.3 in **~2.3 h** (8,189 s) on a 5090 — cheap enough to make fine-grained C iteration a real workflow. **SP0 RESULT (2026-07-04): the projection carries a real, modest contribution at toy scale.** Identical config with `skip_proj_out: true`: **1.2896 vs 1.2781 sliding BPB (+0.0115, ~11× the noise floor; val 4.0449 vs 4.0100)**. The early-training gap collapsed 0.34 → ~0.03 nats (the epsilon-init transient washing out) but then **held flat through the cosine tail** — a genuine capacity contribution, not just init scaffolding. Whether production width absorbs it is SP1's question (the projection is ~5–6% of the compute core at both scales, but the C=1024 mixers have far more capacity to take over the write-alignment role). If the cost persists at C=1024, the honest offering is a **knob**: projection on for quality, `skip_proj_out` for interpretability work (exact per-scale decomposition of every residual-stream write).
 
 **Free-C scaling-law sweep (K1–K5, queued after SP1).** The unlock's real payoff: five 5-epoch points at intermediate widths, run at the **exact headline protocol** (levels=7, MBS=8 — deliberately *not* the MBS=64 speedup, so the C=1024 and C=2048 headlines join the curve as free anchors) with `lr ≈ 48/C` (the measured width rule). The 7-point fit yields **WaveletLM's own BPB-vs-C law and tokens/param ratio** — replacing the borrowed Transformer 20:1 — plus the performance-vs-C knee as the suggested ultra-light deployment size. The C=100 row above is off-protocol (MBS=64, levels=6) and excluded from the fit. Params below are estimates from the measured C² fit (`V·C + 198.13M·(C/1024)²`, validated at C=100/1024/2048).
 
@@ -2108,8 +2110,8 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 
 **WaveletLM-Small (C=1024, L=10) — the full end-to-end demo:**
 - [x] **WT-103, E=5** — Small headline is now the **no-MLP 0.9884 BPB** at 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)); ties the 669M MLP version (0.9894) at ⅓ the params — done 2026-06-27
-- [ ] **PG-19, E=1** (run on a separate, cheaper box)
-- [ ] **`skip_proj_out` ablation — remove the last projection** (queued next on the 5090, after PG-19; the ~2.3 h **C=100 quick check runs first** — see [Free C Test](#free-c-test-c100)): with `Cp = C` under the identity default the existing flag engages, deleting the per-layer `proj_out` (~10.50M across L=10, ~4%) and leaving a **fully spectral block core** (lifting + mixer + norms + learned scalars). A/B vs the 0.9884 Small headline — if it ties like the MLP did, the projection goes too.
+- [x] **PG-19, E=1** — **27.72 sliding PPL / 1.0892 sliding BPB at 230.89M** ([log](logs/pg19_2026-06-29_22-12-43/log.txt)) — done 2026-07-03; +0.32 PPL vs the old 808M headline at 3.5× fewer params, with *better* best val (3.5023 vs 3.5238); see [PG-19 comparison](#pg-19-test-set-perplexity-comparison)
+- [ ] **`skip_proj_out` ablation — remove the last projection** (queued next on the 5090, after PG-19; the ~2.3 h **C=100 quick check runs first** — see [Free C Test](#free-c-test-c100)): with `Cp = C` under the identity default the existing flag engages, deleting the per-layer `proj_out` (~10.50M across L=10, ~4%) and leaving a **fully spectral block core** (lifting + mixer + norms + learned scalars). A/B vs the 0.9884 Small headline. *C=100 quick check (SP0) done 2026-07-04: +0.0115 BPB — real but modest; whether width absorbs it is this run's question.*
 - [ ] **Free-C scaling-law sweep (C-knee, K0–K5)** — 5ep × C ∈ {200, 300, 400, 512, 768} at the headline protocol (MBS=8, `lr ≈ 48/C`), joining the **0.9884**/C=1024 and **0.9597**/C=2048 headlines as anchors → fit WaveletLM's own BPB-vs-C law + tokens/param ratio (replaces the borrowed Chinchilla 20:1) and pick the ultra-light deployment knee. K0 (C=100 at MBS=8, exact original recipe) additionally isolates the **batch-size effect** vs the MBS=64 run (1.2781). Queued after SP1 (~3 days total on a 5090); see [Free C Test](#free-c-test-c100).
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share. Also produces the **frozen lifting snapshot** the wavelet optimizer below consumes — run it first.
@@ -2441,6 +2443,7 @@ For **code**: HumanEval pass@1 (~15–20% = starts being useful). **Lead with an
 
 See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for info on each.
 
+- Re-test alternative wavelet bases and multi-basis lifting initializations on the current architecture (Daubechies, Symlet, biorthogonal; learned and static) — EXARCH-era tests favored Haar init, but they predate the no-MLP / identity-transform recipe (retest promised in the Kiruluta correspondence, 2026-07-04)
 - Further [structure factoring](plans/structure_factoring.md) (see also the [Structure Factoring](#structure-factoring) section of this README)
 - Cross-scale phase gating (coarse-modulates-fine)
 - Stable parametrization: validation and finishing gaps 
