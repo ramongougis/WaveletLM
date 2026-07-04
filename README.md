@@ -406,7 +406,7 @@ The high-level architectural premise, using learnable wavelets in place of self-
 The complete embedding → logits equations for the headline model, exact to the code.
 
 <details>
-<summary><b>The full Forward Pass, step by step</b> (headline config: no MLP, identity transform, tied head)</summary>
+<summary><b>Expand</b></summary>
 
 The equations below describe the headline configuration (C=1024, L=10 layers, `levels`=7 → 8 wavelet scales) with:
 - all ablated features excluded: no MLP, no PKM/FwPKM, the Walsh–Hadamard transform off (`mixer_transform=identity`), and no mixer recurrence or mixer depth
@@ -514,7 +514,7 @@ $`\displaystyle \hat{x} = \mathrm{LN}_f\big(x^{(L)}\big), \qquad z = \mathrm{Dro
 The adjoint of each forward step: the gradients' structure, and where the [wavelet-domain optimizer](plans/wavelet_optimizer.md) would act on them.
 
 <details>
-<summary><b>The full Backward Pass</b> (tied-head gradient split, per-layer gradients, the GWT-compressible surface)</summary>
+<summary><b>Expand</b></summary>
 
 The gradient flow is the adjoint of each step above; it is written out here because the wavelet-domain optimizer ([plans/wavelet_optimizer.md](plans/wavelet_optimizer.md)) acts on these weight gradients, and *which* of them to compress depends on their structure.
 
