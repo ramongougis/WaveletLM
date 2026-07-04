@@ -411,57 +411,79 @@ The complete embedding → logits equations for the headline model, exact to the
 The equations below describe the headline configuration (C=1024, L=10 layers, `levels`=7 → 8 wavelet scales) with:
 - all ablated features excluded: no MLP, no PKM/FwPKM, the Walsh–Hadamard transform off (`mixer_transform=identity`), and no mixer recurrence or mixer depth
 - all always-on pieces included (lifting wavelets, gated mixer, cross-scale gating, decompose-bypass, per-layer embedding, both per-scale LayerNorms, scale weights, wavelet crawl, and learned residual)
-- tensors with shape $(B, T, C)$ unless noted; since $C_p = \mathrm{next\_pow2}(C) = 1024 = C$, the power-of-two padding is a no-op and everything is written in $C$
-- the lifting predict/update networks $P_k, U_k$ ($k=0,\dots,6$) shared across all layers (`shared_lifting_weights`)
-- the mixers, LayerNorms, projection, and scalars are per-layer (superscript $\ell$).
+- tensors with shape $`(B, T, C)`$ unless noted; since $`C_p = \mathrm{next\_pow2}(C) = 1024 = C`$, the power-of-two padding is a no-op and everything is written in $`C`$
+- the lifting predict/update networks $`P_k, U_k`$ ($`k=0,\dots,6`$) shared across all layers (`shared_lifting_weights`)
+- the mixers, LayerNorms, projection, and scalars are per-layer (superscript $`\ell`$).
 
-**Embedding** (tied matrix $W \in \mathbb{R}^{V\times C}$, the same matrix used by the head):
+**Embedding** (tied matrix $`W \in \mathbb{R}^{V\times C}`$, the same matrix used by the head):
 
-$$x^{(0)} = \mathrm{Dropout}(E), \qquad E_{b,t} = W_{\,\mathrm{idx}_{b,t}}, \qquad e := E .$$
+```math
+x^{(0)} = \mathrm{Dropout}(E), \qquad E_{b,t} = W_{\,\mathrm{idx}_{b,t}}, \qquad e := E .
+```
 
-**WaveletLM block**, repeated for $\ell = 1,\dots,L$, mapping $x^{(\ell-1)} \mapsto x^{(\ell)}$ (pre-norm):
+**WaveletLM block**, repeated for $`\ell = 1,\dots,L`$, mapping $`x^{(\ell-1)} \mapsto x^{(\ell)}`$ (pre-norm):
 
 Per-layer embedding injection, then the block LayerNorm:
 
-$$u = x^{(\ell-1)} + \gamma_e^{(\ell)}\, e, \qquad h = \mathrm{LN}_1^{(\ell)}(u).$$
+```math
+u = x^{(\ell-1)} + \gamma_e^{(\ell)}\, e, \qquad h = \mathrm{LN}_1^{(\ell)}(u).
+```
 
-Causal lifting decompose (undecimated / à-trous), with $c_0 = h$ and, for each level $k = 0,\dots,6$, a $K{=}33$ "crawl" — a learned softmax mixture over integer look-back lags $o_{k,j}$ centred on the dyadic base $2^k$, where $\mathrm{shift}_{o}(c)_t = c_{t-o}$ (zero-padded, so strictly causal):
+Causal lifting decompose (undecimated / à-trous), with $`c_0 = h`$ and, for each level $`k = 0,\dots,6`$, a $`K{=}33`$ "crawl" — a learned softmax mixture over integer look-back lags $`o_{k,j}`$ centred on the dyadic base $`2^k`$, where $`\mathrm{shift}_{o}(c)_t = c_{t-o}`$ (zero-padded, so strictly causal):
 
-$$ \mathrm{odd}_k = \sum_{j=1}^{33}\mathrm{softmax}(\theta_k)_j\,\mathrm{shift}_{o_{k,j}}(c_k), \qquad d_k = \tfrac{1}{\sqrt{2}}\big(\mathrm{odd}_k - P_k(c_k)\big), \qquad c_{k+1} = \tfrac{1}{\sqrt{2}}\big(c_k + U_k(d_k)\big),$$
+```math
+\mathrm{odd}_k = \sum_{j=1}^{33}\mathrm{softmax}(\theta_k)_j\,\mathrm{shift}_{o_{k,j}}(c_k), \qquad d_k = \tfrac{1}{\sqrt{2}}\big(\mathrm{odd}_k - P_k(c_k)\big), \qquad c_{k+1} = \tfrac{1}{\sqrt{2}}\big(c_k + U_k(d_k)\big),
+```
 
-where $P_k, U_k : \mathbb{R}^{C}\!\to\!\mathbb{R}^{C}$ are the per-level predict/update networks:
+where $`P_k, U_k : \mathbb{R}^{C}\!\to\!\mathbb{R}^{C}`$ are the per-level predict/update networks:
 
-$$P_k(z) = W^{P,2}_k\,\mathrm{GELU}\big(W^{P,1}_k z\big), \qquad U_k(z) = W^{U,2}_k\,\mathrm{GELU}\big(W^{U,1}_k z\big), \qquad W^{\bullet,1}_k, W^{\bullet,2}_k \in \mathbb{R}^{C\times C}$$
+```math
+P_k(z) = W^{P,2}_k\,\mathrm{GELU}\big(W^{P,1}_k z\big), \qquad U_k(z) = W^{U,2}_k\,\mathrm{GELU}\big(W^{U,1}_k z\big), \qquad W^{\bullet,1}_k, W^{\bullet,2}_k \in \mathbb{R}^{C\times C}
+```
 
-(hidden width $=C$, i.e. `lifting_hidden_mult`$=1$; biases and lifting-dropout zero). Haar init sets $W^{P,1}_k=W^{P,2}_k=I$ and $W^{U,1}_k=I,\,W^{U,2}_k=\tfrac12 I$, so the transform begins as $P_k=\mathrm{GELU}$, $U_k=\tfrac12\,\mathrm{GELU}$ and learns away from there. Stack the $S=8$ bands coarse→fine and apply the per-scale decompose-norm:
+(hidden width $`=C`$, i.e. `lifting_hidden_mult`$`=1`$; biases and lifting-dropout zero). Haar init sets $`W^{P,1}_k=W^{P,2}_k=I`$ and $`W^{U,1}_k=I,\,W^{U,2}_k=\tfrac12 I`$, so the transform begins as $`P_k=\mathrm{GELU}`$, $`U_k=\tfrac12\,\mathrm{GELU}`$ and learns away from there. Stack the $`S=8`$ bands coarse→fine and apply the per-scale decompose-norm:
 
-$$\mathbf{C} = [\,c_7,\, d_6,\, d_5,\, \dots,\, d_0\,], \qquad \mathbf{C}_s \leftarrow \mathrm{LN}^{(\ell)}_{\mathrm{dec},\,s}(\mathbf{C}_s), \quad s = 0,\dots,7 .$$
+```math
+\mathbf{C} = [\,c_7,\, d_6,\, d_5,\, \dots,\, d_0\,], \qquad \mathbf{C}_s \leftarrow \mathrm{LN}^{(\ell)}_{\mathrm{dec},\,s}(\mathbf{C}_s), \quad s = 0,\dots,7 .
+```
 
-Decompose-bypass bias: a causal cumulative mean of the block input plus a cross-layer carry, added to every scale through a learned per-scale channel gain $\eta^{(\ell)}_s \in \mathbb{R}^{C}$ (`history_gains`); $\mu^{(0)}$ is the detached cross-window state:
+Decompose-bypass bias: a causal cumulative mean of the block input plus a cross-layer carry, added to every scale through a learned per-scale channel gain $`\eta^{(\ell)}_s \in \mathbb{R}^{C}`$ (`history_gains`); $`\mu^{(0)}`$ is the detached cross-window state:
 
-$$\mu^{(\ell)}_t = \frac{1}{t+1}\sum_{\tau \le t} x^{(\ell-1)}_\tau, \qquad g^{(\ell)} = \mu^{(\ell)} + W^{(\ell)}_{\mathrm{x}}\,\mu^{(\ell-1)}, \qquad \mathbf{C}_s \leftarrow \mathbf{C}_s + \eta^{(\ell)}_s \odot g^{(\ell)} .$$
+```math
+\mu^{(\ell)}_t = \frac{1}{t+1}\sum_{\tau \le t} x^{(\ell-1)}_\tau, \qquad g^{(\ell)} = \mu^{(\ell)} + W^{(\ell)}_{\mathrm{x}}\,\mu^{(\ell-1)}, \qquad \mathbf{C}_s \leftarrow \mathbf{C}_s + \eta^{(\ell)}_s \odot g^{(\ell)} .
+```
 
-Per-scale gated spectral mixer with cross-scale gate routing $R^{(\ell)}\in\mathbb{R}^{S\times S}$. For each scale $s$ (width $w_s\in\{C, C/2\}$; $\pi^{\mathrm{in}}_s,\pi^{\mathrm{out}}_s$ are identity for the full-width scales $s\le 3$):
+Per-scale gated spectral mixer with cross-scale gate routing $`R^{(\ell)}\in\mathbb{R}^{S\times S}`$. For each scale $`s`$ (width $`w_s\in\{C, C/2\}`$; $`\pi^{\mathrm{in}}_s,\pi^{\mathrm{out}}_s`$ are identity for the full-width scales $`s\le 3`$):
 
-$$\hat{\mathbf{C}}_s = \sum_{s'=0}^{7} R^{(\ell)}_{s,s'}\,\mathbf{C}_{s'}, \qquad \tilde{x}_s = \pi^{\mathrm{in}}_s \mathbf{C}_s, \qquad Y_s = \pi^{\mathrm{out}}_s\!\Big[\big(M^{(\ell)}_s \tilde{x}_s\big)\odot \mathrm{SiLU}\big(G^{(\ell)}_s\,\pi^{\mathrm{in}}_s \hat{\mathbf{C}}_s\big) \;+\; U^{(\ell)}_s\big(V_s^{(\ell)\top}\tilde{x}_s\big)\Big],$$
+```math
+\hat{\mathbf{C}}_s = \sum_{s'=0}^{7} R^{(\ell)}_{s,s'}\,\mathbf{C}_{s'}, \qquad \tilde{x}_s = \pi^{\mathrm{in}}_s \mathbf{C}_s, \qquad Y_s = \pi^{\mathrm{out}}_s\!\Big[\big(M^{(\ell)}_s \tilde{x}_s\big)\odot \mathrm{SiLU}\big(G^{(\ell)}_s\,\pi^{\mathrm{in}}_s \hat{\mathbf{C}}_s\big) \;+\; U^{(\ell)}_s\big(V_s^{(\ell)\top}\tilde{x}_s\big)\Big],
+```
 
-with mixer weight $M^{(\ell)}_s$ (init $\approx I$), gate $G^{(\ell)}_s$, and rank-4 residual $U^{(\ell)}_s, V^{(\ell)}_s$. Per-scale recon-norm, scale weights $\omega^{(\ell)}_s$, and dropout:
+with mixer weight $`M^{(\ell)}_s`$ (init $`\approx I`$), gate $`G^{(\ell)}_s`$, and rank-4 residual $`U^{(\ell)}_s, V^{(\ell)}_s`$. Per-scale recon-norm, scale weights $`\omega^{(\ell)}_s`$, and dropout:
 
-$$\tilde{Y}_s = \omega^{(\ell)}_s\,\mathrm{Dropout}\big(\mathrm{LN}^{(\ell)}_{\mathrm{rec},\,s}(Y_s)\big).$$
+```math
+\tilde{Y}_s = \omega^{(\ell)}_s\,\mathrm{Dropout}\big(\mathrm{LN}^{(\ell)}_{\mathrm{rec},\,s}(Y_s)\big).
+```
 
-Inverse lifting (reconstruct) — reuses the **update** nets only: each $U_k$ is re-applied to the stored detail and subtracted with the $\sqrt{2}$ restored, so inverting the update chain is structural (no inverse network is learned). With $\tilde{Y}$ unstacked back to $(\tilde{a}, \tilde{d}_0,\dots,\tilde{d}_6)$, set $r_7 = \tilde{a}$ and for $k = 6,\dots,0$:
+Inverse lifting (reconstruct) — reuses the **update** nets only: each $`U_k`$ is re-applied to the stored detail and subtracted with the $`\sqrt{2}`$ restored, so inverting the update chain is structural (no inverse network is learned). With $`\tilde{Y}`$ unstacked back to $`(\tilde{a}, \tilde{d}_0,\dots,\tilde{d}_6)`$, set $`r_7 = \tilde{a}`$ and for $`k = 6,\dots,0`$:
 
-$$r_k = \sqrt{2}\,r_{k+1} - U_k(\tilde{d}_k).$$
+```math
+r_k = \sqrt{2}\,r_{k+1} - U_k(\tilde{d}_k).
+```
 
-Projection ($W_o^{(\ell)}\!:\mathbb{R}^{C}\!\to\!\mathbb{R}^{C}$) and the learned spectral residual close the block:
+Projection ($`W_o^{(\ell)}\!:\mathbb{R}^{C}\!\to\!\mathbb{R}^{C}`$) and the learned spectral residual close the block:
 
-$$x^{(\ell)} = \beta^{(\ell)}\Big[\alpha^{(\ell)}_{\mathrm{sp}}\, x^{(\ell-1)} + \mathrm{Dropout}\!\big(W_o^{(\ell)} r_0 + b_o^{(\ell)}\big)\Big].$$
+```math
+x^{(\ell)} = \beta^{(\ell)}\Big[\alpha^{(\ell)}_{\mathrm{sp}}\, x^{(\ell-1)} + \mathrm{Dropout}\!\big(W_o^{(\ell)} r_0 + b_o^{(\ell)}\big)\Big].
+```
 
-$\beta^{(\ell)}$ is the learned scalar left over from the removed memory-module residual: with no MLP/PKM in the block it degenerates from a residual gate into a plain per-block output gain, but it remains live arithmetic and is kept here for fidelity. (Its companion LayerNorm `ln2` computes into nothing with the memory modules off and is omitted — see [No MLP](#no-mlp-with-deep-c1024).) The backward formulas below absorb $\beta^{(\ell)}$ into $\delta^{(\ell)}$ for clarity.
+$`\beta^{(\ell)}`$ is the learned scalar left over from the removed memory-module residual: with no MLP/PKM in the block it degenerates from a residual gate into a plain per-block output gain, but it remains live arithmetic and is kept here for fidelity. (Its companion LayerNorm `ln2` computes into nothing with the memory modules off and is omitted — see [No MLP](#no-mlp-with-deep-c1024).) The backward formulas below absorb $`\beta^{(\ell)}`$ into $`\delta^{(\ell)}`$ for clarity.
 
 **Head and loss** — final LayerNorm, the tied projection, and cross-entropy:
 
-$$\hat{x} = \mathrm{LN}_f\big(x^{(L)}\big), \qquad z = \mathrm{Dropout}(\hat{x})\,W^{\top}, \qquad \mathcal{L} = -\frac{1}{BT}\sum_{b,t}\log\,\mathrm{softmax}(z_{b,t})_{\,\mathrm{tgt}_{b,t}}.$$
+```math
+\hat{x} = \mathrm{LN}_f\big(x^{(L)}\big), \qquad z = \mathrm{Dropout}(\hat{x})\,W^{\top}, \qquad \mathcal{L} = -\frac{1}{BT}\sum_{b,t}\log\,\mathrm{softmax}(z_{b,t})_{\,\mathrm{tgt}_{b,t}}.
+```
 
 </details>
 
@@ -474,21 +496,27 @@ The adjoint of each forward step: the gradients' structure, and where the [wavel
 
 The gradient flow is the adjoint of each step above; it is written out here because the wavelet-domain optimizer ([plans/wavelet_optimizer.md](plans/wavelet_optimizer.md)) acts on these weight gradients, and *which* of them to compress depends on their structure.
 
-Cross-entropy at the head gives the familiar residual, and the **tied matrix $W$ receives two structurally different gradients**:
+Cross-entropy at the head gives the familiar residual, and the **tied matrix $`W`$ receives two structurally different gradients**:
 
-$$\delta^z_{b,t} = \frac{1}{BT}\big(\mathrm{softmax}(z_{b,t}) - \mathbf{1}_{\mathrm{tgt}_{b,t}}\big), \qquad \nabla_{W}\mathcal{L} = \underbrace{\sum_{b,t}\delta^z_{b,t}\,\hat{x}_{b,t}^{\top}}_{\text{output side: dense, all }V\text{ rows}} \;+\; \underbrace{\sum_{b,t}\big(\nabla_{E}\mathcal{L}\big)_{b,t}\ \text{scattered to row } \mathrm{idx}_{b,t}}_{\text{input side: sparse, batch tokens only}}.$$
+```math
+\delta^z_{b,t} = \frac{1}{BT}\big(\mathrm{softmax}(z_{b,t}) - \mathbf{1}_{\mathrm{tgt}_{b,t}}\big), \qquad \nabla_{W}\mathcal{L} = \underbrace{\sum_{b,t}\delta^z_{b,t}\,\hat{x}_{b,t}^{\top}}_{\text{output side: dense, all }V\text{ rows}} \;+\; \underbrace{\sum_{b,t}\big(\nabla_{E}\mathcal{L}\big)_{b,t}\ \text{scattered to row } \mathrm{idx}_{b,t}}_{\text{input side: sparse, batch tokens only}}.
+```
 
-The output term updates **every** row of $W$ each step; the input term, backpropagated all the way down to $x^{(0)}$, touches only the rows of tokens present in the batch. This dense-plus-sparse asymmetry on the largest, earliest-learning parameter is why $W$ is left **full-rank** under GWT.
+The output term updates **every** row of $`W`$ each step; the input term, backpropagated all the way down to $`x^{(0)}`$, touches only the rows of tokens present in the batch. This dense-plus-sparse asymmetry on the largest, earliest-learning parameter is why $`W`$ is left **full-rank** under GWT.
 
 The gradient then enters the stack and, at each block, the spectral residual splits it into a skip term and a sublayer term, from which the per-layer weight gradients fall out:
 
-$$\delta^{\hat{x}} = \delta^z W, \qquad \delta^{(\ell-1)} \mathrel{+}= \alpha^{(\ell)}_{\mathrm{sp}}\,\delta^{(\ell)}, \qquad \nabla_{W_o^{(\ell)}}\mathcal{L} = \sum_{b,t}\delta^{(\ell)}_{b,t}\,r_{0,b,t}^{\top}.$$
+```math
+\delta^{\hat{x}} = \delta^z W, \qquad \delta^{(\ell-1)} \mathrel{+}= \alpha^{(\ell)}_{\mathrm{sp}}\,\delta^{(\ell)}, \qquad \nabla_{W_o^{(\ell)}}\mathcal{L} = \sum_{b,t}\delta^{(\ell)}_{b,t}\,r_{0,b,t}^{\top}.
+```
 
-Continuing through the inverse lifting, recon-norm, and the cross-scale gate into each per-scale mixer yields the **mixer gradients** ($M^{(\ell)}_s, G^{(\ell)}_s, U^{(\ell)}_s, V^{(\ell)}_s$) — the bulk of the trainable surface now that the MLP is gone. The **shared lifting** nets are special: each $P_k, U_k$ accumulates gradient from **all $L$ layers at once**, and the update net $U_k$ appears in both the decompose and reconstruct recursions above, so it collects a contribution from each path:
+Continuing through the inverse lifting, recon-norm, and the cross-scale gate into each per-scale mixer yields the **mixer gradients** ($`M^{(\ell)}_s, G^{(\ell)}_s, U^{(\ell)}_s, V^{(\ell)}_s`$) — the bulk of the trainable surface now that the MLP is gone. The **shared lifting** nets are special: each $`P_k, U_k`$ accumulates gradient from **all $`L`$ layers at once**, and the update net $`U_k`$ appears in both the decompose and reconstruct recursions above, so it collects a contribution from each path:
 
-$$\nabla_{U_k}\mathcal{L} = \sum_{\ell=1}^{L}\Big(\nabla_{U_k}^{\text{decompose}}\mathcal{L}^{(\ell)} + \nabla_{U_k}^{\text{reconstruct}}\mathcal{L}^{(\ell)}\Big).$$
+```math
+\nabla_{U_k}\mathcal{L} = \sum_{\ell=1}^{L}\Big(\nabla_{U_k}^{\text{decompose}}\mathcal{L}^{(\ell)} + \nabla_{U_k}^{\text{reconstruct}}\mathcal{L}^{(\ell)}\Big).
+```
 
-So the **GWT-compressible surface** is $\{\,M_s, G_s, U_s, V_s\ (\text{mixers}),\ W_o\ (\text{projection}),\ P_k, U_k\ (\text{shared lifting})\,\}$ — dense, structured, and either per-layer or summed across layers — while the tied $W$ stays full-rank. This is exactly the placement argued for in the [optimizer plan](plans/wavelet_optimizer.md).
+So the **GWT-compressible surface** is $`\{\,M_s, G_s, U_s, V_s\ (\text{mixers}),\ W_o\ (\text{projection}),\ P_k, U_k\ (\text{shared lifting})\,\}`$ — dense, structured, and either per-layer or summed across layers — while the tied $`W`$ stays full-rank. This is exactly the placement argued for in the [optimizer plan](plans/wavelet_optimizer.md).
 
 </details>
 
@@ -500,7 +528,7 @@ Key components which are ON by default:
 
 - **Per-scale gated spectral mixer (SwiGLU-style)**: mixes each wavelet scale independently via a gated linear layer (in identity space by default; Walsh-Hadamard optional) plus a rank-4 low-rank term. The only cross-scale coupling is a learned S×S routing matrix on the gate (S = levels + 1 = 8), so compute scales linearly in sequence length. No O(N²) token-pair term exists anywhere in the block, versus attention's O(N²). Arbitrarily long inputs decompose into the same small set of scales, allowing very large context at inference time with low degradation and, in some cases, even better performance. See the [length-generalization study](#block-size-extension--length-generalization) below for more info.
 
-- **Decompose bypass**: a causal cumulative mean of the block input, combined with a cross-layer carry and scaled by learned per-scale channel gains (the $\eta_s$ / $g$ terms in [Forward Pass](#forward-pass)), added as bias to the post-decompose coefficients. Its final state also carries across windows with `decompose_bypass_cross_window` and serves as the model's only explicit cross-window memory.
+- **Decompose bypass**: a causal cumulative mean of the block input, combined with a cross-layer carry and scaled by learned per-scale channel gains (the $`\eta_s`$ / $`g`$ terms in [Forward Pass](#forward-pass)), added as bias to the post-decompose coefficients. Its final state also carries across windows with `decompose_bypass_cross_window` and serves as the model's only explicit cross-window memory.
 
 - **Tied embedding / LM head**: a single V×C matrix serves as both input embedding and output head. The largest single parameter source in the MLP-free model (51.5M of 249.6M at C=1024, ~21%) and the only learned map outside the spectral blocks. Tying feeds the embedding the head's direct, loss-adjacent gradient (see [Backward Pass](#backward-pass)).
 
