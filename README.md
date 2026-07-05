@@ -761,6 +761,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Block-Size Extension & Length Generalization](#block-size-extension--length-generalization)
 - [No MLP with deep C=1024](#no-mlp-with-deep-c1024)
 - [Free C Test: C=100](#free-c-test-c100)
+- [Skip Projections (Fully Spectral Core)](#skip-projections-fully-spectral-core)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
@@ -2140,7 +2141,7 @@ With C=1024 validated as a cheap proxy (above) and **inference VRAM ~3 GB**, dep
 
 ### No MLP with deep C=1024
 
-Kiruluta's **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, is fully spectral and avoids MLPs entirely, carrying the computation through learnable wavelet-coefficient manipulation. WaveletLM, by contrast, currently spends 62.7% of its parameters on a conventional MLP (419.6M of the 669.24M WaveletLM Small headline). Following the author's review (2026-06-25), this ablation probes that gap head-on: testing whether the model in its current form can, with or without the same number of parameters via increased layers and/or mixer depth, match or surpass the headline's performance without the MLP.
+This ablation **was suggested by Dr. Andrew Kiruluta** in his review of this repository (2026-06-25) — the first of his architectural suggestions to be adopted here. His **Wavelet Logic Machines**[^1], the paper WaveletLM is inspired by, is fully spectral and avoids MLPs entirely, carrying all computation through learnable wavelet-coefficient manipulation. WaveletLM, by contrast, then spent 62.7% of its parameters on a conventional MLP (419.6M of the 669.24M MLP-era Small headline). This ablation probes that gap head-on: testing whether the model can, with or without the same number of parameters via increased layers and/or mixer depth, match or surpass the headline's performance without the MLP. (His second suggestion, removing the projections, is tested in [Skip Projections](#skip-projections-fully-spectral-core) below; his third, λ/γ/θ coefficient shrinkage, is under screening.)
 
 `mlp_expansion=0` removes the MLP cleanly. Variants, all A/B'd against the **L=10 + MLP headline (0.9894 BPB)**:
 
@@ -2187,6 +2188,29 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 | **2048** (anchor) | **893.44M** | 0.0225 | **0.9597** ✅ ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) |
 
 † K0 is *not* sweep protocol — it is the exact original C=100 recipe (levels=6, lr=0.1) at MBS=8, so **K0 vs the MBS=64 row above (1.2781) cleanly isolates the batch-size effect** ("did the 8× batch + √8 LR shortcut cost quality?"). It joins the fit only as a flagged bonus point.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Skip Projections (Fully Spectral Core)
+
+Like the [MLP removal](#no-mlp-with-deep-c1024) above, this ablation **was also suggested by Dr. Kiruluta** in the same review, which identified WaveletLM's "projection-style components" as the other departure from his fully spectral WLM design (no projection layers between the coefficient domain and the signal path). It is the second of his architectural suggestions to be adopted — and the second to *improve* the model.
+
+**Mechanism.** `skip_proj_out=true` deletes the per-layer `proj_out` (a dense C×C linear that sat between the wavelet reconstruction and the residual stream — a per-layer learned rotation on the write path). With the identity mixer-transform default, `Cp = C` always holds, so the flag engages at any width and the reconstruction **writes to the residual stream directly**. See the updated [Forward Pass](#forward-pass) equations.
+
+**Results — the effect flips sign with width:**
+
+| C | projection **on** | projection **off** | Δ BPB | verdict |
+|---|---|---|---|---|
+| 100 | 1.2781 BPB / 54.20 PPL / val 4.0100 / 6.80M ([log](logs/wikitext-103_2026-06-29_19-49-04/log.txt)) | 1.2896 / 56.19 / val 4.0449 / 6.70M ([log](logs/wikitext-103_2026-07-04_04-13-32/log.txt)) | **+0.0115** | projection **helps** the starved model |
+| **1024** | 0.9884 BPB / 21.93 PPL / val 3.0942 / 249.59M ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)) | **0.9805 / 21.39 / val 3.0749 / 239.09M** ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)) | **−0.0079** | removal **wins** (~8× the noise floor) |
+
+*(All sliding-window, WT-103, 5 epochs, otherwise-identical recipes.)*
+
+**RESULT (2026-07-05): at production width, the projection is not merely removable — it is a liability.** The C=1024 removal improves sliding BPB by −0.0079 (~8× the noise floor) while deleting 10.5M parameters; at C=100 the same removal *costs* +0.0115. The projection is **scaffolding for starved widths and dead weight (or worse) at capable ones** — the training dynamics agree: at C=100 the no-projection run's early deficit collapsed (the ε-init transient) but then plateaued at a real gap through the cosine tail, while at C=1024 the no-projection run led from mid-training onward. `skip_proj_out=true` is therefore the **default**: the block core is now **fully spectral** (lifting + mixer + per-scale norms + learned scalars), completing the convergence toward the WLM design that the MLP removal began. Two bonuses come free: **−4% parameters**, and a cleaner interpretability story — each layer's residual-stream write now decomposes *exactly* into its per-scale wavelet components, with no learned rotation in between.
+
+The remaining projection-era baselines (PG-19 Small, Medium WT-103) are being **redone fully spectral** (P2, M2 — see the [Release Pipeline](#release-pipeline) checklist), and the [C-knee sweep](#free-c-test-c100) runs entirely on the new default. The third of Dr. Kiruluta's suggestions — learnable **λ/γ/θ coefficient shrinkage** — is under screening now (SH1–SH6 in `runs.sh`).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
