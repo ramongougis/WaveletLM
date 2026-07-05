@@ -3891,9 +3891,17 @@ def parameter_breakdown(model, config, logger=None):
                 mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())
                 norm_per = sum(p.numel() for p in block0.mixer_depth_norms.parameters())
                 out(f"    Mixer (depth={block0.mixer_depth}):{mixer_per + norm_per:>{W-2},} ({(mixer_per + norm_per)/1e6:.2f}M)")
+        elif getattr(block0, 'coefficient_shrinkage', 'off') == 'replace':
+            # Shrinkage 'replace': phi (lambda/gamma/theta) IS the coefficient
+            # computation — no scale_mixers allocated.
+            shr_per = sum(p.numel() for p in block0.coeff_shrink.parameters())
+            out(f"    Shrinkage/layer:{shr_per:>{W-1},} ({shr_per/1e6:.2f}M)")
         else:
             mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
             out(f"    Mixer/layer:   {mixer_per:>{W},} ({mixer_per/1e6:.2f}M)")
+            if getattr(block0, 'coefficient_shrinkage', 'off') != 'off':
+                shr_per = sum(p.numel() for p in block0.coeff_shrink.parameters())
+                out(f"    Shrinkage/layer:{shr_per:>{W-1},} ({shr_per/1e6:.2f}M)")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
             out(f"    MLP/layer:     {mlp_per:>{W},} ({mlp_per/1e6:.2f}M)")
