@@ -911,6 +911,38 @@ _MIXER_GATE_ACTIVATIONS = {
     "relu": F.relu,
 }
 
+class CoefficientShrinkage(nn.Module):
+    """Kiruluta's learnable coefficient operation, applied directly to the
+    stacked wavelet coefficients (B, T, S, Cp) with per-scale, per-channel
+    parameters:  phi(z) = gamma * sign(z) * relu(|z| - lambda) * cos(theta).
+
+    - lambda >= 0 via softplus; lam_raw init -10 -> softplus ~= 4.5e-5, an
+      effectively-zero threshold at start.
+    - gamma init 1, theta init 0 -> phi(z) ~= z at init (identity up to the
+      ~1e-5 threshold), so insertion is a safe perturbation that learns away
+      from identity — same philosophy as the mixer / routing identity inits.
+    - On REAL coefficients cos(theta) reduces to a bounded gain redundant with
+      gamma; kept for fidelity to the WLM formulation (true phase belongs to
+      the complex-mixer variant, where this module is not wired).
+    - Soft-thresholding is the proximal operator of an l1 penalty on the
+      coefficients (Donoho-Johnstone wavelet shrinkage), i.e. a learned
+      sparsity prior — the regularization reading of this experiment.
+
+    Modes (config `coefficient_shrinkage`): 'pre' (before the mixer), 'post'
+    (after the mixer), 'replace' (phi IS the coefficient computation; the
+    per-scale mixers and cross-scale routing are not allocated at all).
+    """
+
+    def __init__(self, S: int, Cp: int, device=None, dtype=None):
+        super().__init__()
+        self.lam_raw = nn.Parameter(torch.full((S, Cp), -10.0, device=device, dtype=dtype))
+        self.gamma = nn.Parameter(torch.ones(S, Cp, device=device, dtype=dtype))
+        self.theta = nn.Parameter(torch.zeros(S, Cp, device=device, dtype=dtype))
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        lam = F.softplus(self.lam_raw)
+        return self.gamma * torch.sign(z) * F.relu(z.abs() - lam) * torch.cos(self.theta)
+
 class GatedSpectralMixer(nn.Module):
     def __init__(self, Cp: int, num_blocks: int, rank: int = 4, eps: float = 1e-3,
                  use_mixer_gate: bool = True, mixer_gate_activation: str = "sigmoid",
@@ -1524,6 +1556,7 @@ class WaveletLMBlock(nn.Module):
         fht_thue_morse_signflips: bool = False,
         fht_thue_morse_increment: int = 21,
         mixer_transform: str = "fwht",
+        coefficient_shrinkage: str = "off",
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1882,16 +1915,34 @@ class WaveletLMBlock(nn.Module):
                 list(per_scale_mixer_widths)
             )
 
+        # Kiruluta coefficient shrinkage (lambda/gamma/theta): 'off'|'pre'|'post'|'replace'.
+        # 'pre'/'post' insert phi around the mixer; 'replace' swaps the entire
+        # per-scale mixer stack for phi (mixers + routing not allocated).
+        # Real-path only (complex paths hard-error at model construction).
+        if coefficient_shrinkage not in ("off", "pre", "post", "replace"):
+            raise ValueError(
+                f"coefficient_shrinkage must be one of off|pre|post|replace, got {coefficient_shrinkage!r}")
+        self.coefficient_shrinkage = coefficient_shrinkage
+        if coefficient_shrinkage == "replace":
+            if mixer_depth != 1 or (self.mixer_recurrence_steps * self.mixer_recurrence_distinct_mixer_count) > 1:
+                raise ValueError(
+                    "coefficient_shrinkage='replace' requires mixer_depth=1 and no mixer recurrence.")
+        if coefficient_shrinkage != "off":
+            self.coeff_shrink = CoefficientShrinkage(S, self.Cp, device=device, dtype=dtype)
+
         # Cross-scale gating (routing mode): learned (S, S) routing matrix that
         # mixes scales' inputs before each per-scale gate. Init to identity so
-        # behavior matches today's per-scale gating at start.
-        self.cross_scale_gating = cross_scale_gating
-        if cross_scale_gating:
+        # behavior matches today's per-scale gating at start. (Not allocated
+        # under shrinkage 'replace' — there is no gate to route.)
+        self.cross_scale_gating = cross_scale_gating and coefficient_shrinkage != "replace"
+        if self.cross_scale_gating:
             self.scale_routing = nn.Parameter(
                 torch.eye(S, device=device, dtype=dtype)
             )
 
-        if mixer_depth == 1:
+        if coefficient_shrinkage == "replace":
+            pass  # phi IS the coefficient computation — no mixers allocated
+        elif mixer_depth == 1:
             if per_scale_mixer_widths is not None:
                 if len(per_scale_mixer_widths) != S:
                     raise ValueError(
@@ -2549,10 +2600,19 @@ class WaveletLMBlock(nn.Module):
         stacked_spec = (self.fht(stacked_coeffs) if self.mixer_transform is None
                         else self.mixer_transform.forward(stacked_coeffs))
 
+        # Kiruluta shrinkage 'pre': denoise the coefficients before mixing
+        # (learned soft-threshold/gain — the prox of an l1 coefficient prior).
+        if self.coefficient_shrinkage == "pre":
+            stacked_spec = self.coeff_shrink(stacked_spec)
+
         # Per-scale spectral mixing (with optional depth stacking and optional
         # recurrence — total N*K applications of the mixer between FWHT and
         # iFWHT, see mixer_recurrence_steps / mixer_recurrence_distinct_mixer_count).
-        if self.mixer_depth == 1:
+        if self.coefficient_shrinkage == "replace":
+            # Shrinkage IS the coefficient computation: phi replaces the mixer
+            # stack entirely (the WLM-purist configuration).
+            mixed_spec = self.coeff_shrink(stacked_spec)
+        elif self.mixer_depth == 1:
             current_spec = stacked_spec
             N_trained = self.mixer_recurrence_steps
             K = self.mixer_recurrence_distinct_mixer_count
@@ -2700,6 +2760,11 @@ class WaveletLMBlock(nn.Module):
                 # Feed the cascade output back as input for the next recurrence pass.
                 current_spec = mixed_spec
             mixed_spec = current_spec
+
+        # Kiruluta shrinkage 'post': denoise the mixed coefficients before
+        # reconstruction.
+        if self.coefficient_shrinkage == "post":
+            mixed_spec = self.coeff_shrink(mixed_spec)
 
         # Apply same cap to inverse FWHT input (mixer output) so the inverse
         # FWHT output is bounded the same way the forward FWHT output is.
@@ -2908,6 +2973,18 @@ class WaveletLM(nn.Module):
                 raise ValueError(
                     "mixer_transform != 'fwht' is mutually exclusive with the complex paths "
                     "(wavelet_basis='complex' / complex_mixer), which use the FWHT directly.")
+
+        # Kiruluta coefficient shrinkage: real-path only (the complex forwards
+        # have their own spectral stack and are not wired for it).
+        _cs = config.get("coefficient_shrinkage", "off")
+        if _cs != "off":
+            if _cs not in ("pre", "post", "replace"):
+                raise ValueError(
+                    f"Unknown coefficient_shrinkage {_cs!r}; expected off|pre|post|replace")
+            if config.get("wavelet_basis", "real") == "complex" or config.get("complex_mixer", False):
+                raise ValueError(
+                    "coefficient_shrinkage is mutually exclusive with the complex paths "
+                    "(wavelet_basis='complex' / complex_mixer).")
 
         if config.get("complex_mixer", False):
             if config.get("wavelet_basis", "real") == "complex":
@@ -3201,6 +3278,7 @@ class WaveletLM(nn.Module):
                 fht_thue_morse_signflips=config.get("fht_thue_morse_signflips", False),
                 fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
                 mixer_transform=config.get("mixer_transform", "fwht"),
+                coefficient_shrinkage=config.get("coefficient_shrinkage", "off"),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
