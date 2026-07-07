@@ -762,6 +762,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [No MLP with deep C=1024](#no-mlp-with-deep-c1024)
 - [Free C Test: C=100](#free-c-test-c100)
 - [Skip Projections (Fully Spectral Core)](#skip-projections-fully-spectral-core)
+- [Coefficient Shrinkage](#coefficient-shrinkage)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
@@ -2178,16 +2179,16 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 
 | C | params (est) | lr (≈48/C) | sliding BPB |
 |---|---|---|---|
-| 100 (K0 — MBS-8 rerun)† | 6.80M | 0.10 (off-rule) | *queued (K0)* |
+| 100 (K0 — MBS-8 rerun)† | 6.70M | 0.10 (off-rule) | 1.3042 ([log](logs/wikitext-103_2026-07-06_14-53-15/log.txt)) |
 | 200 | ~17.6M | 0.24 | *queued (K1)* |
 | 300 | ~32.1M | 0.16 | *queued (K2)* |
 | 400 | ~50.3M | 0.12 | *queued (K3)* |
 | 512 | ~75.3M | 0.09 | *queued (K4)* |
 | 768 | ~150.0M | 0.06 | *queued (K5)* |
-| **1024** (anchor) | **249.59M** | 0.05 | **0.9884** ✅ ([log](logs/wikitext-103_2026-06-25_20-35-57/log.txt)) |
-| **2048** (anchor) | **893.44M** | 0.0225 | **0.9597** ✅ ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) |
+| **1024** (SP1 anchor) | **239.09M** | 0.05 | **0.9805** ✅ ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)) |
+| **2048** (interim anchor; M2 redo pending) | **893.44M** | 0.0225 | **0.9597** ✅ ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) |
 
-† K0 is *not* sweep protocol — it is the exact original C=100 recipe (levels=6, lr=0.1) at MBS=8, so **K0 vs the MBS=64 row above (1.2781) cleanly isolates the batch-size effect** ("did the 8× batch + √8 LR shortcut cost quality?"). It joins the fit only as a flagged bonus point.
+† K0 is *not* sweep protocol — it is the fully-spectral C=100 recipe (levels=6) at MBS=8/lr=0.1, isolating the batch-size effect against the no-projection MBS=64 run (SP0, 1.2896). **Result: the larger effective batch was *better* by 0.0146 BPB (1.2896 vs K0's 1.3042), not worse** — though the LRs differ (K0's 0.1 is the √8-descale, not the 48/C value), so it's a batch+LR result, not batch-only. Joins the law only as a flagged bonus point.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2210,7 +2211,39 @@ Like the [MLP removal](#no-mlp-with-deep-c1024) above, this ablation **was also 
 
 **RESULT (2026-07-05): at production width, the projection is not merely removable — it is a liability.** The C=1024 removal improves sliding BPB by −0.0079 (~8× the noise floor) while deleting 10.5M parameters; at C=100 the same removal *costs* +0.0115. The projection is **scaffolding for starved widths and dead weight (or worse) at capable ones** — the training dynamics agree: at C=100 the no-projection run's early deficit collapsed (the ε-init transient) but then plateaued at a real gap through the cosine tail, while at C=1024 the no-projection run led from mid-training onward. `skip_proj_out=true` is therefore the **default**: the block core is now **fully spectral** (lifting + mixer + per-scale norms + learned scalars), completing the convergence toward the WLM design that the MLP removal began. Two bonuses come free: **−4% parameters**, and a cleaner interpretability story — each layer's residual-stream write now decomposes *exactly* into its per-scale wavelet components, with no learned rotation in between.
 
-The remaining projection-era baselines (PG-19 Small, Medium WT-103) are being **redone fully spectral** (P2, M2 — see the [Release Pipeline](#release-pipeline) checklist), and the [C-knee sweep](#free-c-test-c100) runs entirely on the new default. The third of Dr. Kiruluta's suggestions — learnable **λ/γ/θ coefficient shrinkage** — is under screening now (SH1–SH6 in `runs.sh`).
+The remaining projection-era baselines (PG-19 Small, Medium WT-103) are being **redone fully spectral** (P2, M2 — see the [Release Pipeline](#release-pipeline) checklist), and the [C-knee sweep](#free-c-test-c100) runs entirely on the new default. The third of Dr. Kiruluta's suggestions — learnable **λ/γ/θ coefficient shrinkage** — has been screened; see [Coefficient Shrinkage](#coefficient-shrinkage) below.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Coefficient Shrinkage
+
+The **third** of Dr. Kiruluta's suggestions, and the operation at the heart of his Wavelet Logic Machines: a learnable per-scale, per-channel map applied **directly to the wavelet coefficients**,
+
+<div align="center">
+
+$`\displaystyle \varphi(z) = \gamma \cdot \mathrm{sign}(z)\cdot \mathrm{relu}(|z| - \lambda)\cdot \cos(\theta)`$
+
+</div>
+
+— a soft-**threshold** (λ, kills small coefficients), **gain** (γ), and **phase** (θ), identity-initialized (λ≈0, γ=1, θ=0 → φ(z)=z) so insertion is a safe perturbation that learns away from identity. Soft-thresholding is exactly the proximal operator of an ℓ1 penalty on the coefficients (Donoho–Johnstone wavelet shrinkage), i.e. a **learned sparsity regularizer**. Tested (config `coefficient_shrinkage`) in three placements: `pre` (before the mixer), `post` (after), and `replace` (φ *is* the coefficient computation — the WLM-purist configuration, mixers not allocated).
+
+**Screening results (WT-103):**
+
+| run | C | epochs | placement | params | sliding BPB | Δ vs control |
+|---|---|---|---|---|---|---|
+| SP0 | 100 | 5 | control (no φ) | 6.70M | **1.2896** ([log](logs/wikitext-103_2026-07-04_04-13-32/log.txt)) | — |
+| SH1 | 100 | 5 | pre | 6.72M | 1.2970 ([log](logs/wikitext-103_2026-07-05_12-32-12/log.txt)) | +0.0074 |
+| SH2 | 100 | 5 | post | 6.72M | 1.2962 ([log](logs/wikitext-103_2026-07-05_15-25-00/log.txt)) | +0.0066 |
+| SH3 | 100 | 5 | replace | 5.43M | 1.3482 ([log](logs/wikitext-103_2026-07-05_20-35-44/log.txt)) | +0.0586 |
+| SH4 | 1024 | 1 | control (no φ) | 239.09M | **1.1101** ([log](logs/wikitext-103_2026-07-05_23-02-20/log.txt)) | — |
+| SH5 | 1024 | 1 | pre | 239.34M | 1.1120 ([log](logs/wikitext-103_2026-07-06_03-54-06/log.txt)) | +0.0019 |
+| SH6 | 1024 | 1 | post | 239.34M | 1.1134 ([log](logs/wikitext-103_2026-07-06_09-00-18/log.txt)) | +0.0033 |
+
+**Read (2026-07-06): screened, not yet decided — φ-pre survives to a 5-epoch confirm.** Shrinkage is a *regularizer*, so it can only pay once overfit pressure exists, and at 1 epoch WT-103 is still underfit. Both placements cost at C=100/5ep (starved: +0.007) and at C=1024/1ep (still underfit: pre +0.0019, post +0.0033) — but pre's deficit **collapsed 74% with width** (0.0074 → 0.0019), the same favorable trend that preceded the [projection's sign-flip](#skip-projections-fully-spectral-core). So per the screen's decision rule this is **graduate-don't-kill**: φ-`pre` (the better placement) goes to a single C=1024 **5-epoch** confirm (deferred to post-pause) where a sparsity prior can actually earn its keep; if it ties-or-beats the 0.9805 fully-spectral headline, it ships. `replace` (SH3) answers the purist question cheaply — φ *alone* carries a 67-PPL LM on a **0.40M-parameter compute core**, so Kiruluta's operation works standalone and the gated mixer is a +0.059-BPB *upgrade*, not a necessity.
+
+**Interpretability bonus — the λ-map.** Reading the learned thresholds from the SH1 checkpoint, the model spontaneously learned a *"protect the ends, squeeze the middle"* structure: the coarse **approx** scale is nearly passed through (λ≈0.13, γ≈0.88), the **mid-dilation details** are hammered (λ≈0.41, γ≈0.4–0.55), and the **finest** scale is partially spared (λ≈0.33, γ≈0.71). This independently recovers the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured)'s finding — the two ends carry signal (precise short lags + broad context) while the middle scales are the redundant ones — through a completely different mechanism. And **θ stays exactly 0** everywhere: not a choice but a structural fixed point (∂cos(θ)/∂θ = 0 at the θ=0 init), consistent with cos(θ) being a redundant gain on *real* coefficients (true phase would belong to the complex-mixer variant, where shrinkage is not wired).
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
