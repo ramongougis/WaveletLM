@@ -2180,8 +2180,8 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 | C | params (est) | lr (≈48/C) | sliding BPB |
 |---|---|---|---|
 | 100 (K0 — MBS-8 rerun)† | 6.70M | 0.10 (off-rule) | 1.3042 ([log](logs/wikitext-103_2026-07-06_14-53-15/log.txt)) |
-| 200 | ~17.6M | 0.24 | *queued (K1)* |
-| 300 | ~32.1M | 0.16 | *queued (K2)* |
+| 200 | 17.36M | 0.24 | 1.1562 ([log](logs/wikitext-103_2026-07-07_07-55-35/log.txt)) |
+| 300 | 31.39M | 0.16 | 1.1014 ([log](logs/wikitext-103_2026-07-08_11-44-40/log.txt)) |
 | 400 | ~50.3M | 0.12 | *queued (K3)* |
 | 512 | ~75.3M | 0.09 | *queued (K4)* |
 | 768 | ~150.0M | 0.06 | *queued (K5)* |
