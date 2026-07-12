@@ -1,0 +1,259 @@
+[2026-07-12 06:09:39] === BENCHMARK ONLY MODE ===
+[2026-07-12 06:09:39] Run directory: logs/wikitext-103_2026-07-10_15-55-09
+[2026-07-12 06:09:39] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-07-12 06:09:39] Device: cuda, AMP: True (fp16)
+[2026-07-12 06:09:39] 
+[2026-07-12 06:09:39] 	dataset                               : wikitext-103
+[2026-07-12 06:09:39] 	tokenizer                             : auto
+[2026-07-12 06:09:39] 	out_dir                               : logs
+[2026-07-12 06:09:39] 	compile                               : True
+[2026-07-12 06:09:39] 	compile_mode                          : default
+[2026-07-12 06:09:39] 	seed                                  : 1337
+[2026-07-12 06:09:39] 	epochs                                : 5
+[2026-07-12 06:09:39] 	micro_batch_size                      : 8
+[2026-07-12 06:09:39] 	grad_accum                            : 1
+[2026-07-12 06:09:39] 	block_size                            : 256
+[2026-07-12 06:09:39] 	eval_interval                         : 250
+[2026-07-12 06:09:39] 	skip_warmup_saves                     : True
+[2026-07-12 06:09:39] 	C                                     : 512
+[2026-07-12 06:09:39] 	layers                                : 10
+[2026-07-12 06:09:39] 	levels                                : 7
+[2026-07-12 06:09:39] 	low_rank                              : 4
+[2026-07-12 06:09:39] 	mlp_expansion                         : 0
+[2026-07-12 06:09:39] 	mlp_layers                            : 2
+[2026-07-12 06:09:39] 	pkm_enabled                           : False
+[2026-07-12 06:09:39] 	pkm_num_keys                          : 16384
+[2026-07-12 06:09:39] 	pkm_top_k                             : 32
+[2026-07-12 06:09:39] 	pkm_heads                             : 1
+[2026-07-12 06:09:39] 	fwpkm_enabled                         : False
+[2026-07-12 06:09:39] 	fwpkm_num_keys                        : 8281
+[2026-07-12 06:09:39] 	fwpkm_top_k                           : 32
+[2026-07-12 06:09:39] 	fwpkm_heads                           : 1
+[2026-07-12 06:09:39] 	fwpkm_inference_updates               : False
+[2026-07-12 06:09:39] 	fwpkm_update_lr                       : 0.01
+[2026-07-12 06:09:39] 	fwpkm_chunk_size                      : 64
+[2026-07-12 06:09:39] 	wavelet_mode                          : lifting
+[2026-07-12 06:09:39] 	wavelet_basis                         : real
+[2026-07-12 06:09:39] 	complex_construction                  : direct
+[2026-07-12 06:09:39] 	complex_collapse                      : per_level
+[2026-07-12 06:09:39] 	complex_mixer_activation              : split
+[2026-07-12 06:09:39] 	complex_gate_activation               : softplus
+[2026-07-12 06:09:39] 	complex_mixer                         : False
+[2026-07-12 06:09:39] 	shared_lifting_weights                : True
+[2026-07-12 06:09:39] 	untied_reconstruction                 : False
+[2026-07-12 06:09:39] 	multi_basis_lifting                   : False
+[2026-07-12 06:09:39] 	multi_basis_inits                     : ['haar', 'random']
+[2026-07-12 06:09:39] 	cross_scale_gating                    : True
+[2026-07-12 06:09:39] 	cross_layer_dense_skips               : False
+[2026-07-12 06:09:39] 	per_scale_mixer_widths                : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-07-12 06:09:39] 	stable_parametrization                : False
+[2026-07-12 06:09:39] 	stab_spectral_norm                    : False
+[2026-07-12 06:09:39] 	stab_ff_scaling                       : False
+[2026-07-12 06:09:39] 	stab_embed_scaling                    : False
+[2026-07-12 06:09:39] 	stab_proj_out_scaling                 : False
+[2026-07-12 06:09:39] 	stab_mixer_eps_scaling                : False
+[2026-07-12 06:09:39] 	stab_lifting_level_scaling            : False
+[2026-07-12 06:09:39] 	looped_blocks                         : False
+[2026-07-12 06:09:39] 	looped_blocks_count                   : 8
+[2026-07-12 06:09:39] 	wavelet_crawl                         : True
+[2026-07-12 06:09:39] 	wavelet_crawl_k                       : 33
+[2026-07-12 06:09:39] 	lifting_linear_only                   : False
+[2026-07-12 06:09:39] 	lifting_hidden_mult                   : 1
+[2026-07-12 06:09:39] 	lifting_init                          : haar
+[2026-07-12 06:09:39] 	lifting_dropout                       : 0.0
+[2026-07-12 06:09:39] 	lifting_diaglowrank                   : False
+[2026-07-12 06:09:39] 	lifting_level_sharing                 : False
+[2026-07-12 06:09:39] 	lifting_offdiag_structure             : none
+[2026-07-12 06:09:39] 	lifting_block_size                    : 64
+[2026-07-12 06:09:39] 	lifting_band_width                    : 64
+[2026-07-12 06:09:39] 	lifting_monarch_blocks                : 32
+[2026-07-12 06:09:39] 	lifting_offdiag_density               : 0.0
+[2026-07-12 06:09:39] 	lifting_offdiag_mask_seed             : 1337
+[2026-07-12 06:09:39] 	lifting_offdiag_mask_checkpoint       : 
+[2026-07-12 06:09:39] 	mlp_offdiag_structure                 : none
+[2026-07-12 06:09:39] 	mlp_block_size                        : 64
+[2026-07-12 06:09:39] 	mlp_band_width                        : 64
+[2026-07-12 06:09:39] 	mlp_pq_density                        : 0.1
+[2026-07-12 06:09:39] 	mlp_pq_mode                           : structural
+[2026-07-12 06:09:39] 	sparse_pq_embedding_enabled           : False
+[2026-07-12 06:09:39] 	sparse_pq_embedding_density           : 0.1
+[2026-07-12 06:09:39] 	sparse_pq_embedding_mode              : structural
+[2026-07-12 06:09:39] 	sparse_pq_embedding_epsilon           : 1e-06
+[2026-07-12 06:09:39] 	sparse_encoder_decoder_embedding      : False
+[2026-07-12 06:09:39] 	sparse_encoder_decoder_embedding_C    : 512
+[2026-07-12 06:09:39] 	use_mixer_gate                        : True
+[2026-07-12 06:09:39] 	mixer_gate_activation                 : silu
+[2026-07-12 06:09:39] 	mixer_depth                           : 1
+[2026-07-12 06:09:39] 	mixer_depth_stabilizers               : False
+[2026-07-12 06:09:39] 	mixer_depth_residuals                 : False
+[2026-07-12 06:09:39] 	mixer_recurrence_steps                : 1
+[2026-07-12 06:09:39] 	mixer_recurrence_distinct_mixer_count : 1
+[2026-07-12 06:09:39] 	mixer_recurrence_residuals            : True
+[2026-07-12 06:09:39] 	mixer_recurrence_cache_gate           : False
+[2026-07-12 06:09:39] 	mixer_recurrence_dense                : False
+[2026-07-12 06:09:39] 	mixer_recurrence_dense_normalize      : False
+[2026-07-12 06:09:39] 	decompose_bypass                      : True
+[2026-07-12 06:09:39] 	decompose_bypass_cross_window         : True
+[2026-07-12 06:09:39] 	decompose_bypass_ema                  : False
+[2026-07-12 06:09:39] 	decompose_bypass_ssm                  : False
+[2026-07-12 06:09:39] 	decompose_bypass_ssm_poles            : 4
+[2026-07-12 06:09:39] 	decompose_bypass_ssm_cross_window     : False
+[2026-07-12 06:09:39] 	decompose_bypass_bptt                 : False
+[2026-07-12 06:09:39] 	decompose_bypass_bptt_span            : 0
+[2026-07-12 06:09:39] 	learned_residual                      : True
+[2026-07-12 06:09:39] 	skip_proj_out                         : True
+[2026-07-12 06:09:39] 	stochastic_depth_rate                 : 0.0
+[2026-07-12 06:09:39] 	dropout_embedding                     : 0.18
+[2026-07-12 06:09:39] 	dropout_projection                    : 0.09
+[2026-07-12 06:09:39] 	dropout_mixer                         : 0.09
+[2026-07-12 06:09:39] 	dropout_mlp                           : 0.1
+[2026-07-12 06:09:39] 	dropout_lm_head                       : 0.216
+[2026-07-12 06:09:39] 	optimizer                             : Adagrad
+[2026-07-12 06:09:39] 	optimizer_eps                         : 2e-13
+[2026-07-12 06:09:39] 	wavelet_2d_mode                       : off
+[2026-07-12 06:09:39] 	wavelet_2d_b_levels                   : -1
+[2026-07-12 06:09:39] 	wavelet_2d_init_zero                  : True
+[2026-07-12 06:09:39] 	wavelet_2d_state_passing              : False
+[2026-07-12 06:09:39] 	bbce_enabled                          : False
+[2026-07-12 06:09:39] 	block_size_compressed                 : 65536
+[2026-07-12 06:09:39] 	bbce_compressed_grad                  : True
+[2026-07-12 06:09:39] 	lr                                    : 0.09
+[2026-07-12 06:09:39] 	min_lr                                : 0.0018
+[2026-07-12 06:09:39] 	warmup_fraction                       : 0.3
+[2026-07-12 06:09:39] 	grad_clip                             : 1.0
+[2026-07-12 06:09:39] 	tie_embedding_to_lm_head              : True
+[2026-07-12 06:09:39] 	gradient_checkpointing                : False
+[2026-07-12 06:09:39] 	use_amp                               : True
+[2026-07-12 06:09:39] 	amp_dtype                             : fp16
+[2026-07-12 06:09:39] 	allow_tf32                            : True
+[2026-07-12 06:09:39] 	generation_prompt                     : The history of
+[2026-07-12 06:09:39] 	generation_max_context                : 16777216
+[2026-07-12 06:09:39] 	temperature                           : 1.0
+[2026-07-12 06:09:39] 	num_new_tokens                        : 512
+[2026-07-12 06:09:39] 	top_p                                 : 0.95
+[2026-07-12 06:09:39] 	repetition_penalty                    : 1.1
+[2026-07-12 06:09:39] 	benchmark_only                        : True
+[2026-07-12 06:09:39] 	benchmark_run_dir                     : logs/wikitext-103_2026-07-10_15-55-09
+[2026-07-12 06:09:39] 	multinodal_enabled                    : False
+[2026-07-12 06:09:39] 	multinodal_num_cells                  : 2
+[2026-07-12 06:09:39] 	multinodal_cell_dim                   : 512
+[2026-07-12 06:09:39] 	multinodal_seeds                      : [42, 137]
+[2026-07-12 06:09:39] 	multinodal_combination                : average
+[2026-07-12 06:09:39] 	multinodal_cross_cell_gating          : False
+[2026-07-12 06:09:39] 	multinodal_cross_cell_gate_interval   : 1
+[2026-07-12 06:09:39] 	multinodal_features_per_cell          : -1
+[2026-07-12 06:09:39] 	multinodal_bagged_eps                 : 1e-06
+[2026-07-12 06:09:39] 	quantize_enabled                      : False
+[2026-07-12 06:09:39] 	quantize_mixer_coarse_bits            : 8
+[2026-07-12 06:09:39] 	quantize_mixer_mid_bits               : 4
+[2026-07-12 06:09:39] 	quantize_mixer_fine_bits              : 2
+[2026-07-12 06:09:39] 	quantize_mlp_bits                     : 4
+[2026-07-12 06:09:39] 	quantize_lifting_bits                 : 16
+[2026-07-12 06:09:39] 	quantize_embedding_bits               : 8
+[2026-07-12 06:09:39] 	per_layer_embedding                   : True
+[2026-07-12 06:09:39] 	loop_iterations                       : 1
+[2026-07-12 06:09:39] 	weight_decay                          : 2e-06
+[2026-07-12 06:09:39] 	wavelet_decomp_norm                   : True
+[2026-07-12 06:09:39] 	wavelet_recon_norm                    : True
+[2026-07-12 06:09:39] 	mixer_transform                       : identity
+[2026-07-12 06:09:39] 
+[2026-07-12 06:09:39] [GPU] NVIDIA GeForce RTX 5090
+[2026-07-12 06:09:43] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-07-12 06:09:43] [Dataset] Loading wikitext-103 from cache...
+[2026-07-12 06:09:48] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-07-12 06:09:48] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-07-12 06:09:48] [Dataset] Vocab size: 50257
+[2026-07-12 06:09:49] [Run Folder] logs/wikitext-103_2026-07-10_15-55-09
+[2026-07-12 06:09:49] 
+============================================================
+[2026-07-12 06:09:49] PARAMETER BREAKDOWN
+[2026-07-12 06:09:49] ============================================================
+[2026-07-12 06:09:49] Total parameters:              72,885,707 (72.89M)
+[2026-07-12 06:09:49]   Wavelets:                     7,354,599 (7.35M)
+[2026-07-12 06:09:49]   Token embedding:             25,731,584 (25.73M)
+[2026-07-12 06:09:49]   Layers (total):              39,798,500 (39.80M)
+[2026-07-12 06:09:49]     Mixer/layer:                3,694,592 (3.69M)
+[2026-07-12 06:09:49]   LM head (shared):                     0 additional
+[2026-07-12 06:09:49]   Final LayerNorm:                  1,024 (0.00M)
+[2026-07-12 06:09:49] ============================================================
+
+[2026-07-12 06:09:49] [Model] 72.89M parameters (72.89M trainable)
+[2026-07-12 06:09:49] 
+Loading best model for benchmarks...
+[2026-07-12 06:09:51] Best model loaded.
+[2026-07-12 06:09:51] 
+[BENCHMARK] Non-overlapping: 1123 windows of length 256
+[2026-07-12 06:11:18] 
+[BENCHMARK - Non-overlapping]
+[2026-07-12 06:11:18]   Perplexity: 27.1841
+[2026-07-12 06:11:18]   BPT: 4.7647
+[2026-07-12 06:11:18]   BPB: 1.0572
+[2026-07-12 06:11:18]   Avg Loss: 3.3026
+[2026-07-12 06:11:18] 
+[SLIDING WINDOW] block_size=256, stride=128, min_context=128, 2246 windows
+[2026-07-12 06:14:09] 
+[BENCHMARK - Sliding Window]
+[2026-07-12 06:14:09]   Perplexity: 25.4835
+[2026-07-12 06:14:09]   BPT: 4.6715
+[2026-07-12 06:14:09]   BPB: 1.0365
+[2026-07-12 06:14:09]   Avg Loss: 3.2380
+[2026-07-12 06:14:09]   Stride: 128, Min Context: 128
+[2026-07-12 06:14:10] 
+=== GENERATION — Standard ===
+[2026-07-12 06:14:10] Prompt: The history of
+[2026-07-12 06:14:48] Generated:
+The history of Woodward named and maintains the stretch of road that was ( the Oklahoma City Historic District ) between the two communities . North of this , a piece of old road was maintained by the city as a state highway by the early 20th century . The road was originally a state @-@ maintained road was assigned by the time that the 1926 extension of the Byp . US 15 designation ran into modern times on the former north to Berrien – Kingwicker county line . In the 1953 renumbering , US 12 was shifted to its current alignment between Hampshire County and Pleasantville , both in Upper Plank Road where all of the former NY 31A was realigned . 
+
+
+
+
+ = = Major intersections = = 
+
+
+
+
+ The entire route , not that of the original 1919 routing , had an unsigned reference route . 
+
+
+
+
+ = = Notable county routes = = 
+
+
+
+
+
+
+ = = Current routing = = 
+
+
+
+
+ US 23A begins at a junction with US 12 in a commercial area in the village of Windsor 2 mile ( 1 @.@ 8 km ) northwest of ElRoy . It transitions to a freeway around the edge of the community of Abrams before heading west along Telegraph Avenue along the positions of the rail line on the east , and with the US 131 concurrency west of the junction with US 31 ( Discovery Avenue ) following the county line . The highway also passes through the community of Saint Hannah , which is located at the intersection with South Main Street . West of the Falls Road intersection , US 12 crosses in an area designated as District 27 on the opposite side of Lake . From here , US 10 merges onto southbound US 12 ( Marshall Road ) north along Huron Street into Delta County , splitting at an intersection with US 104 ( Welcome Cap Road ) and commercial streets south of Mobile . 
+
+
+ Two eastbound lanes are also available along the former alignment of US 12 ( Grand Avenue and Old Lake Road ) at the South Copper Harbor Circle . The route enters Roadsville on Vistula Drive and continues eastward towards downtown Cincinnati . From there , the highway crosses to the Goddard Panhandle community of Union Station , where it turns north where Milford Avenue turns west . US 10 continues past trades facilities to the west of Phillips International Airport and intersects Lombard Street , which heads east on Market Street . From here , DE 1 parallels I @-@ 75 and the west end of County CR 43 to the west via a corridor that runs parallel to Port Huron and the fringe of downtown Ann Arbor
+
+[2026-07-12 06:14:48] === GENERATION — Strategies ===
+[2026-07-12 06:14:48] Prompt: The history of
+[2026-07-12 06:15:31] Generated:
+The history of the city is a matter of dispute , but it may be related to the political situation in the region . 
+
+
+ The battle was fought at dawn on July 1 , 1775 and lasted for two days before being put back into action with only minor skirmishes . This attack took place near the village of Fort Griswold ( now known as New York City ) , where it was attacked by British forces . On December 16 , 1832 , the town 's garrison surrendered . In its aftermath , the fort became part of a military expedition against the Spanish . By June 1781 , the site had been occupied by local militia under General William Howe ; however , this time it remained in American hands until April 20 , when it was seized by the Royal Navy under the command of Colonel John M. Halsey . After the war , it continued to serve as an administrative headquarters during the colonial era . It has since become one of the largest military structures in the state , having over 500 @,@ 000 residents . 
+
+
+ Following the outbreak of hostilities between France and Britain in August 1778 , the garrison was transferred to Montreal . At that time , the garrison consisted primarily of volunteers from the Massachusetts Bay Colony . A large detachment arrived on September 11 , 1776 and marched northward through Vermont , arriving there in early May . From there they met up with some of their soldiers and saw them fight off French attacks along the way . When news reached Cornwallis , he sent reinforcements to help defend the fort , and soon after the siege began , his men were evacuated to St. George 's Island by the British . The fort itself was then used as a prison , although the settlement was not settled until 1812 when a new battery was built at the base of the peninsula . 
+
+
+
+
+ = = Background = = 
+
+
+
+
+ In the late 1800s , the first colony of settlers moved out of the island to Boston . With no sign of any significant land use , the population declined substantially following the arrival of Europeans and Indian traders who arrived later . Most colonists fled to the east side of the Atlantic coast or from Spain to join other tribes in their colonies . Many of these refugees came across the area as slaves and brought them home , which eventually led to the establishment of the Plymouth Colony . As a result , many Native Americans still lived in the area . They also established settlements throughout eastern North America , including Fort Pitt and Fort Sumter . Their presence in the area was greatly reduced during the War of 1812 – 43 , when troops from
+
+[2026-07-12 06:15:31] Metrics: MeanLogP=-1.3146 | MeanH=3.94 | D1=0.625 | D2=0.928 | D3=0.984 | Rep4=0.033
+[2026-07-12 06:15:31] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
