@@ -2183,14 +2183,14 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 | 200 | 17.36M | 0.24 | 1.1562 ([log](logs/wikitext-103_2026-07-07_07-55-35/log.txt)) |
 | 300 | 31.39M | 0.16 | 1.1014 ([log](logs/wikitext-103_2026-07-08_11-44-40/log.txt)) |
 | 400 | 48.97M | 0.12 | 1.0674 ([log](logs/wikitext-103_2026-07-09_16-17-13/log.txt)) |
-| 512 | 72.89M | 0.09 | *trained (val 3.2447); benchmark pending — GPU died mid-benchmark, rerun via `benchmark_only`* ([log](logs/wikitext-103_2026-07-10_15-55-09/log.txt)) |
+| 512 | 72.89M | 0.09 | 1.0365 ([log](logs/wikitext-103_2026-07-10_15-55-09/log.txt), [benchmark](logs/wikitext-103_2026-07-10_15-55-09/benchmark.txt)) |
 | 768 | ~150.0M | 0.06 | *queued (K5)* |
 | **1024** (SP1 anchor) | **239.09M** | 0.05 | **0.9805** ✅ ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)) |
 | **2048** (interim anchor; M2 redo pending) | **893.44M** | 0.0225 | **0.9597** ✅ ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) |
 
 † K0 is *not* sweep protocol — it is the fully-spectral C=100 recipe (levels=6) at MBS=8/lr=0.1, isolating the batch-size effect against the no-projection MBS=64 run (SP0, 1.2896). **Result: the larger effective batch was *better* by 0.0146 BPB (1.2896 vs K0's 1.3042), not worse** — though the LRs differ (K0's 0.1 is the √8-descale, not the 48/C value), so it's a batch+LR result, not batch-only. Joins the law only as a flagged bonus point.
 
-**Provisional width law (2026-07-12, four points — K1/K2/K3 + the SP1 anchor):**
+**Provisional width law (2026-07-12, five points — K1/K2/K3/K4 + the SP1 anchor):**
 
 <div align="center">
 
@@ -2198,11 +2198,11 @@ $`\displaystyle L(N) \;\approx\; 0.864 \;+\; 0.794\,N_{\mathrm{M}}^{-0.35}`$
 
 </div>
 
-(sliding BPB vs params in millions, at the fixed 5-epoch WT-103 budget of ~655M tokens seen). The fit reproduces **all four measured points to within ±0.0004 BPB** — half the noise floor — and predicted K3's 1.0674 before it landed (1.068). Three readings, all *(provisional until K4's benchmark and K5)*:
+(sliding BPB vs params in millions, at the fixed 5-epoch WT-103 budget of ~655M tokens seen). The first four points landed **within ±0.0004 BPB** of the fit — half the noise floor — and it predicted K3's 1.0674 before K3 arrived. K4 supplied the first real deviation, *on the favorable side*: predicted 1.041, measured **1.0365** (−0.0045, ~4× noise) — C=512 slightly outperforms the curve, nudging the refit toward α ≈ 0.35–0.36 and L∞ ≈ 0.865 ± 0.005. Three readings, all *(provisional until K5)*:
 
 1. **The width exponent ≈ 0.35 is essentially Chinchilla's** (Hoffmann et al. fit α ≈ 0.34 for Transformer params) — combined with the knee sitting at ~13–21 tokens/param, WaveletLM's data appetite appears **Transformer-like**, despite sharing no mechanism with attention.
 2. **L∞ ≈ 0.86 BPB is the width-limit floor at this data budget**: no C, however large, beats ~0.86 on 5-epoch WT-103. Progress past it requires the *data* axis (more epochs, PG-19, the blend) — width alone cannot reach GPT-2-XL territory.
-3. Forward predictions to score: **K4 ≈ 1.041** (its val loss implies ~1.035 — the pending benchmark arbitrates), **K5 (C=768) ≈ 1.003**, **M2 (C=2048 fully spectral) ≈ 0.939** *(estimates)*.
+3. Predictions scored so far: **K4 predicted 1.041, measured 1.0365** (the val-loss back-conversion, ~1.035, was the better forecaster). Remaining forward predictions: **K5 (C=768) ≈ 1.000–1.004**, **M2 (C=2048 fully spectral) ≈ 0.935–0.940** *(estimates)*.
 
 The knee: per-doubling gains fall from ~0.06 BPB (C=200→300) to ~0.014 (C=1024→2048), with **C≈300–400 as the compute-efficient "WaveletLM-Mini" region** (~31–49M params, 28–31 PPL). The missing half of the surface — the *data* exponent — needs the D-axis points (M4, plus a planned fixed-C epoch ladder) to complete a full `L(N, D)` law.
 
@@ -2276,7 +2276,7 @@ $`\displaystyle \varphi(z) = \gamma \cdot \mathrm{sign}(z)\cdot \mathrm{relu}(|z
 - [ ] **PG-19, E=1** — being **redone fully spectral** (P2, queued after the C-knee sweep); SP1's projection win at C=1024 is expected to carry. The superseded projection-equipped result (27.72 sliding PPL / 1.0892 BPB at 230.89M, better best val than the old 808M headline) stands in the [PG-19 comparison](#pg-19-test-set-perplexity-comparison) until P2 lands
 - [x] **`skip_proj_out` ablation — remove the last projection — DONE 2026-07-05, and it's a WIN.** At C=1024, deleting the per-layer `proj_out` gives **0.9805 vs 0.9884 sliding BPB (−0.0079, ~8× the noise floor)** at −10.50M params ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)); at C=100 it *cost* +0.0115 ([SP0](#free-c-test-c100)) — a **sign flip with width**: the projection is scaffolding for starved models and a liability at production width. `skip_proj_out=true` is now the default in every queued recipe; the block core is **fully spectral** (lifting + mixer + norms + learned scalars).
 - [ ] **Free-C scaling-law sweep (C-knee, K0–K5)** — 5ep × C ∈ {200, 300, 400, 512, 768} at the headline protocol (MBS=8, `lr ≈ 48/C`), **all fully spectral** (`skip_proj_out=true`), with **SP1 (0.9805 @ 239.09M) as the C=1024 anchor** and M2 (the fully spectral Medium redo) as the C=2048 anchor when it lands → fit WaveletLM's own BPB-vs-C law + tokens/param ratio (replaces the borrowed Chinchilla 20:1) and pick the ultra-light deployment knee. K0 (C=100 at MBS=8) additionally isolates the **batch-size effect** vs the MBS=64 no-proj run (1.2896). ~3 days total on a 5090; see [Free C Test](#free-c-test-c100).
-- [ ] **D-ladder — the data axis, the missing half of `L(N, D)`** (runs before K5): fixed **C=400** fully spectral at **MBS=64** (the wall-clock discount small widths unlock), epochs **{5, 10, 20, 40}** (D0–D3 in `runs.sh`; D0 doubles as the MBS-64 probe *and* the batch-effect A/B vs K3's MBS-8 1.0674). Measures the data exponent, repeated-token decay, and overfit onset — joining the [provisional width law](#free-c-test-c100) into a full `L(N, D)` for WaveletLM. *Prediction on record:* D2 (20ep) lands ~0.98–1.01 sliding BPB *(estimate)* — if it ties or beats SP1's 0.9805, a 49M model matches the 239M flagship and the deployment story rewrites.
+- [ ] **D-ladder — the data axis, the missing half of `L(N, D)`** (runs before K5): fixed **C=512** fully spectral at **MBS=64** (the wall-clock discount smaller widths unlock; bumped from C=400 since the Chinchilla ratio puts the 10–20ep rungs' optimal N at ~62–200M, and K4's benchmark arrived *better* than the width law predicted), epochs **{5, 10, 20, 40}** (D0–D3 in `runs.sh`; D0 doubles as the MBS-64 VRAM probe *and* the batch-effect A/B vs K4's MBS-8 1.0365). Measures the data exponent, repeated-token decay, and overfit onset — joining the [provisional width law](#free-c-test-c100) into a full `L(N, D)` for WaveletLM. *Prediction on record:* D2 (20ep) lands ~0.97–1.00 sliding BPB *(estimate)* — a genuine coin-flip against SP1's 0.9805; if it ties or beats it, a **73M model matches the 239M flagship** and the deployment story rewrites.
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share. Also produces the **frozen lifting snapshot** the wavelet optimizer below consumes — run it first.
 - [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM Small config.
