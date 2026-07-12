@@ -2182,13 +2182,29 @@ Same recipe as the [Small headline](#no-mlp-with-deep-c1024) with `mlp_expansion
 | 100 (K0 — MBS-8 rerun)† | 6.70M | 0.10 (off-rule) | 1.3042 ([log](logs/wikitext-103_2026-07-06_14-53-15/log.txt)) |
 | 200 | 17.36M | 0.24 | 1.1562 ([log](logs/wikitext-103_2026-07-07_07-55-35/log.txt)) |
 | 300 | 31.39M | 0.16 | 1.1014 ([log](logs/wikitext-103_2026-07-08_11-44-40/log.txt)) |
-| 400 | ~50.3M | 0.12 | *queued (K3)* |
-| 512 | ~75.3M | 0.09 | *queued (K4)* |
+| 400 | 48.97M | 0.12 | 1.0674 ([log](logs/wikitext-103_2026-07-09_16-17-13/log.txt)) |
+| 512 | 72.89M | 0.09 | *trained (val 3.2447); benchmark pending — GPU died mid-benchmark, rerun via `benchmark_only`* ([log](logs/wikitext-103_2026-07-10_15-55-09/log.txt)) |
 | 768 | ~150.0M | 0.06 | *queued (K5)* |
 | **1024** (SP1 anchor) | **239.09M** | 0.05 | **0.9805** ✅ ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)) |
 | **2048** (interim anchor; M2 redo pending) | **893.44M** | 0.0225 | **0.9597** ✅ ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)) |
 
 † K0 is *not* sweep protocol — it is the fully-spectral C=100 recipe (levels=6) at MBS=8/lr=0.1, isolating the batch-size effect against the no-projection MBS=64 run (SP0, 1.2896). **Result: the larger effective batch was *better* by 0.0146 BPB (1.2896 vs K0's 1.3042), not worse** — though the LRs differ (K0's 0.1 is the √8-descale, not the 48/C value), so it's a batch+LR result, not batch-only. Joins the law only as a flagged bonus point.
+
+**Provisional width law (2026-07-12, four points — K1/K2/K3 + the SP1 anchor):**
+
+<div align="center">
+
+$`\displaystyle L(N) \;\approx\; 0.864 \;+\; 0.794\,N_{\mathrm{M}}^{-0.35}`$
+
+</div>
+
+(sliding BPB vs params in millions, at the fixed 5-epoch WT-103 budget of ~655M tokens seen). The fit reproduces **all four measured points to within ±0.0004 BPB** — half the noise floor — and predicted K3's 1.0674 before it landed (1.068). Three readings, all *(provisional until K4's benchmark and K5)*:
+
+1. **The width exponent ≈ 0.35 is essentially Chinchilla's** (Hoffmann et al. fit α ≈ 0.34 for Transformer params) — combined with the knee sitting at ~13–21 tokens/param, WaveletLM's data appetite appears **Transformer-like**, despite sharing no mechanism with attention.
+2. **L∞ ≈ 0.86 BPB is the width-limit floor at this data budget**: no C, however large, beats ~0.86 on 5-epoch WT-103. Progress past it requires the *data* axis (more epochs, PG-19, the blend) — width alone cannot reach GPT-2-XL territory.
+3. Forward predictions to score: **K4 ≈ 1.041** (its val loss implies ~1.035 — the pending benchmark arbitrates), **K5 (C=768) ≈ 1.003**, **M2 (C=2048 fully spectral) ≈ 0.939** *(estimates)*.
+
+The knee: per-doubling gains fall from ~0.06 BPB (C=200→300) to ~0.014 (C=1024→2048), with **C≈300–400 as the compute-efficient "WaveletLM-Mini" region** (~31–49M params, 28–31 PPL). The missing half of the surface — the *data* exponent — needs the D-axis points (M4, plus a planned fixed-C epoch ladder) to complete a full `L(N, D)` law.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
