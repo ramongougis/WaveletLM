@@ -63,8 +63,14 @@ All downstream studies are numpy/sklearn/matplotlib on the shards — the model 
 
 Checkpoints to dump, in priority order:
 1. **Mini** (best D-ladder rung available — D2 if it lands well, else D1) — the workhorse.
-2. **K0 (C=100)** — the starved-width contrast case.
+2. **K0 (C=100)** — the starved-width case, and methodologically the **positive control**: at
+   C=100 superposition pressure is maximal (far fewer channels than plausible features), so if
+   the Study-2/6 instruments can't detect superposition *there*, a clean result at C=512 is
+   evidence of instrument insensitivity, not of a privileged basis. The methods must light up
+   on K0 before a null at Mini counts.
 3. **SP1 Small (C=1024, 239M)** — flagship cross-check (956MB fp32; still CPU-fine, slower).
+   Mini→SP1→K0 also gives the **width trend** of every metric (does monosemanticity grow with
+   channel headroom?), turning each study into three points instead of one.
 
 ## The studies
 
@@ -95,6 +101,9 @@ Zero (or scale) individual coefficients / channels / whole scales → resynthesi
 reconstruction is exact — the differentiator vs. SAE-based causal claims.
 - Scale-level sweep first (S=8 ablations × L=10 layers — tiny), then channel-level on
   Study-2's most/least monosemantic channels.
+- **Metric discipline (per Zhang & Nanda):** report both a probability-space metric (ΔBPB /
+  Δp(correct)) and logit-diff on targeted contexts — the two disagree in known ways and
+  reviewers will ask.
 - **Prediction on record** *(estimate)*: coarsest-scale ablation degrades long-range
   coherence/topic maintenance disproportionately; finest-scale ablation hits local grammar
   and spelling; mid scales are where the interesting semantics live.
@@ -104,6 +113,10 @@ Logistic-regression probes on cached per-scale coefficient streams for cheap lin
 labels (POS, sentence position, quote/list/heading context, topic id). Pure sklearn on
 shards. Deliverable: a **scale × feature heat map** — "which temporal scale encodes what."
 This story has no transformer analogue (they have no scale axis); it is uniquely ours.
+- **Control (mandatory, per Hewitt & Liang):** every probe ships with a control task
+  (shuffled labels / random feature assignment); report **selectivity** (real minus control
+  accuracy), never raw accuracy — otherwise the probe may be learning the task, not reading
+  the model.
 
 ### Study 5 — What did the lifting learn?
 Compare the learned shared lifting against its Haar init: per-level filter taps, frequency
@@ -112,6 +125,9 @@ shrinkage λ-map's "protect-ends / squeeze-middle" finding (README §Coefficient
 This is the study that **meets the Strang & Nguyen reading in the middle** — frequency
 responses of learned filter banks are exactly its material, making the theory pass
 observation-driven rather than prerequisite-driven.
+Also weights-only and free: the learned **(S, S) cross-scale routing matrices** per layer
+(identity-init) — how far each has moved from identity, and which scales read which. A
+scale-interaction graph per layer, straight from the checkpoint, no dump required.
 
 ### Study 6 — The SAE null test *(SAE as ruler, not microscope)*
 Train **small per-scale SAEs** (input dim Cp=512, dictionary 2–8×, on cached shards — pilot
@@ -144,6 +160,14 @@ from them enters the README (house rule).*
 
 - **Order:** Phase 0 → Study 1 → 2 → 3, with 4 and 5 interleaved as energy dictates. Studies
   2 and 3 together are the thesis test; everything else is context for them.
+- **The paper-2 methodological spine** the studies assemble into: *claim (thesis) → causal
+  test (Studies 2–3) → correlational cross-check (Study 4) → adversarial instrument turned on
+  ourselves (Study 6)*. An SAE trying and failing to improve on the native basis is the
+  strongest form of the claim — the transformer world's own microscope finding nothing to fix.
+- **Phase-2 candidate (noted, not scoped):** the decompose-bypass cross-window state — the
+  model's *only* channel across window boundaries, i.e. its entire working memory. Reading
+  what survives the boundary is a uniquely-WaveletLM study; it needs its own instrumentation,
+  so it waits for Phase 2.
 - **Streams discipline:** this plan is the *deep stream*. The run queue (D2/D3 → K5 → M2 → M4)
   stays on rails and is recorded as usual; nothing here blocks or waits on it.
 - **Recording convention:** results accumulate in this file first (tables + shard/notebook
