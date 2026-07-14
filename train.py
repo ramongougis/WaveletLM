@@ -880,6 +880,58 @@ def save_with_retry(state_dict, path, retries=3, tokenizer_name=None):
                 raise
 
 
+def save_resume_checkpoint(path, model, optimizers, scaler, *, epoch, step_in_epoch,
+                           global_step, best_val_loss, best_epoch, epoch_times,
+                           elapsed_seconds, steps_per_epoch, total_steps, retries=3):
+    """Full-state training checkpoint for crash/preemption recovery.
+
+    Written to `last_checkpoint.pt` (overwritten in place) every epoch and,
+    optionally, every `checkpoint_interval_steps` global steps. Contains
+    everything needed for an exact continuation: model weights, optimizer
+    state (Adagrad accumulators!), GradScaler state, step/epoch counters,
+    best-val tracking, wall-clock elapsed, and all RNG streams. Batches come
+    from `torch.randint` on the CPU generator, so restoring RNG state
+    reproduces the remaining data order exactly — a resumed run is
+    step-for-step identical to one that never stopped (modulo GPU op
+    nondeterminism).
+
+    The write is atomic (tmp file + os.replace): a crash mid-write leaves the
+    previous valid checkpoint intact rather than a truncated file.
+    `epoch`/`step_in_epoch` name the NEXT position to run: an epoch-end save
+    stores (epoch+1, 0); a mid-epoch save stores (epoch, step+1).
+    """
+    base = getattr(model, '_orig_mod', model)
+    payload = {
+        'resume_format_version': 1,
+        'model_state': base.state_dict(),
+        'optimizer_states': [opt.state_dict() for opt in optimizers],
+        'scaler_state': scaler.state_dict(),
+        'epoch': epoch,
+        'step_in_epoch': step_in_epoch,
+        'global_step': global_step,
+        'best_val_loss': best_val_loss,
+        'best_epoch': best_epoch,
+        'epoch_times': list(epoch_times),
+        'elapsed_seconds': elapsed_seconds,
+        'steps_per_epoch': steps_per_epoch,
+        'total_steps': total_steps,
+        'rng_torch_cpu': torch.get_rng_state(),
+        'rng_torch_cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        'rng_python': random.getstate(),
+    }
+    tmp_path = path + '.tmp'
+    for attempt in range(retries):
+        try:
+            torch.save(payload, tmp_path)
+            os.replace(tmp_path, path)
+            return
+        except (OSError, RuntimeError):
+            if attempt < retries - 1:
+                time.sleep(1)
+            else:
+                raise
+
+
 # ==============================================================================
 # MAIN TRAINING
 # ==============================================================================
@@ -930,6 +982,13 @@ def train():
     # Benchmark-only mode: skip training, load checkpoint, run benchmarks + generation
     benchmark_only = config.get('benchmark_only', False)
     benchmark_run_dir = config.get('benchmark_run_dir', '')
+    # Resume mode: continue a crashed/preempted run in place from its
+    # last_checkpoint.pt. Same source-of-truth rule as benchmark_only: the
+    # run's saved config.json wholesale-replaces the root config, except the
+    # pointer key itself. Mutually exclusive with benchmark_only.
+    resume_run_dir = config.get('resume_run_dir', '')
+    if benchmark_only and resume_run_dir:
+        raise ValueError("resume_run_dir and benchmark_only are mutually exclusive")
     dataset_name = config.get("dataset", "wikitext-103")
 
     if benchmark_only:
@@ -1042,6 +1101,31 @@ def train():
             logger.log(f"[Override] mixer_recurrence_inference_steps = "
                        f"{config['mixer_recurrence_inference_steps']} "
                        f"(eval-only recurrence-depth truncation)")
+    elif resume_run_dir:
+        # Resume an interrupted run in place. The run's saved config.json is
+        # the source of truth for every key except the pointer (same rule as
+        # benchmark_only) — anything else pulled from root would silently
+        # change the training conditions mid-run. The run dir, config.json,
+        # and source backups are left untouched; the logger appends.
+        resume_ckpt_path = os.path.join(resume_run_dir, "last_checkpoint.pt")
+        if not os.path.exists(resume_ckpt_path):
+            raise FileNotFoundError(
+                f"resume_run_dir set but no last_checkpoint.pt in {resume_run_dir} "
+                f"(the run predates resume support, or never completed an epoch / "
+                f"checkpoint interval)")
+        run_config_path = os.path.join(resume_run_dir, "config.json")
+        if not os.path.exists(run_config_path):
+            raise FileNotFoundError(f"No config.json in {resume_run_dir}")
+        with open(run_config_path, 'r') as f:
+            run_config = json.load(f)
+        config = dict(run_config)
+        config['resume_run_dir'] = resume_run_dir
+
+        log_dir = resume_run_dir
+        logger = Logger(log_dir, append=True)
+        logger.log("")
+        logger.log("=== RESUME MODE ===")
+        logger.log(f"Run directory: {resume_run_dir}")
     else:
         # Create run directory
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -1229,6 +1313,50 @@ def train():
         global_step = 0
         epoch_times = []
         overall_start_time = time.time()
+        checkpoint_interval = int(config.get('checkpoint_interval_steps', 0))
+
+        # Resume: restore the full training state saved by
+        # save_resume_checkpoint. Loaded to CPU first — RNG state tensors must
+        # be CPU ByteTensors, and optimizer/model load_state_dict move their
+        # tensors to the param device themselves.
+        start_epoch = 0
+        start_step_in_epoch = 0
+        if resume_run_dir:
+            rc = torch.load(os.path.join(log_dir, "last_checkpoint.pt"),
+                            map_location='cpu')
+            if rc.get('resume_format_version') != 1:
+                raise ValueError(f"Unknown resume checkpoint format: "
+                                 f"{rc.get('resume_format_version')}")
+            if rc['total_steps'] != total_steps or rc['steps_per_epoch'] != steps_per_epoch:
+                raise ValueError(
+                    f"[Resume] Schedule mismatch: checkpoint has "
+                    f"{rc['steps_per_epoch']} steps/epoch, {rc['total_steps']} total; "
+                    f"recomputed {steps_per_epoch}/{total_steps}. Dataset or batch "
+                    f"config changed — resuming would corrupt the LR schedule.")
+            _base = getattr(model, '_orig_mod', model)
+            _base.load_state_dict(rc['model_state'], strict=True)
+            for opt, opt_state in zip(optimizers, rc['optimizer_states']):
+                opt.load_state_dict(opt_state)
+            scaler.load_state_dict(rc['scaler_state'])
+            best_val_loss = rc['best_val_loss']
+            best_epoch = rc['best_epoch']
+            global_step = rc['global_step']
+            epoch_times = list(rc['epoch_times'])
+            overall_start_time = time.time() - rc['elapsed_seconds']
+            start_epoch = rc['epoch']
+            start_step_in_epoch = rc['step_in_epoch']
+            torch.set_rng_state(rc['rng_torch_cpu'])
+            if rc.get('rng_torch_cuda') is not None and device == 'cuda':
+                torch.cuda.set_rng_state_all(rc['rng_torch_cuda'])
+            random.setstate(rc['rng_python'])
+            if config.get('sequential_blocks', False):
+                logger.log("[Resume] WARNING: sequential_blocks position state is not "
+                           "checkpointed; positions restart from the stride grid.")
+            logger.log(f"[Resume] Restored: epoch {start_epoch + 1}, "
+                       f"step-in-epoch {start_step_in_epoch}, global step {global_step}, "
+                       f"best val {best_val_loss:.4f} (epoch {best_epoch}), "
+                       f"elapsed {rc['elapsed_seconds']/3600:.2f}h. "
+                       f"(A resumed partial epoch logs a shorter epoch time.)")
 
         # Truncated BPTT across windows (decompose-bypass cross-window state).
         # Only meaningful in sequential mode — random batching links unrelated
@@ -1256,11 +1384,13 @@ def train():
         # TRAINING LOOP
         # =====================================================================
 
-        for epoch in range(config['epochs']):
+        for epoch in range(start_epoch, config['epochs']):
             epoch_start = time.time()
             logger.log(f"\n=== EPOCH {epoch+1}/{config['epochs']} ===")
 
-            pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1}")
+            first_step = start_step_in_epoch if epoch == start_epoch else 0
+            pbar = tqdm(range(first_step, steps_per_epoch), desc=f"Epoch {epoch+1}",
+                        initial=first_step, total=steps_per_epoch)
             for step in pbar:
                 lr = get_lr(global_step, config, total_steps, warmup_steps)
                 for opt in optimizers:
@@ -1357,6 +1487,20 @@ def train():
                             save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"),
                                             tokenizer_name=enc.name)
 
+                # Periodic mid-epoch resume checkpoint (opt-in via
+                # checkpoint_interval_steps; essential for runs whose epochs
+                # are hours long — bounds crash loss to the interval).
+                if checkpoint_interval and global_step % checkpoint_interval == 0:
+                    save_resume_checkpoint(
+                        os.path.join(log_dir, "last_checkpoint.pt"),
+                        model, optimizers, scaler,
+                        epoch=epoch, step_in_epoch=step + 1,
+                        global_step=global_step,
+                        best_val_loss=best_val_loss, best_epoch=best_epoch,
+                        epoch_times=epoch_times,
+                        elapsed_seconds=time.time() - overall_start_time,
+                        steps_per_epoch=steps_per_epoch, total_steps=total_steps)
+
             # End of epoch
             epoch_duration = time.time() - epoch_start
             epoch_times.append(epoch_duration)
@@ -1378,6 +1522,19 @@ def train():
                     state_dict = model.state_dict()
                 save_with_retry(state_dict, os.path.join(log_dir, "best_model.pt"),
                                 tokenizer_name=enc.name)
+
+            # Epoch-end resume checkpoint — always written, so every run is
+            # resumable with at most one epoch of loss even when
+            # checkpoint_interval_steps is 0.
+            save_resume_checkpoint(
+                os.path.join(log_dir, "last_checkpoint.pt"),
+                model, optimizers, scaler,
+                epoch=epoch + 1, step_in_epoch=0,
+                global_step=global_step,
+                best_val_loss=best_val_loss, best_epoch=best_epoch,
+                epoch_times=epoch_times,
+                elapsed_seconds=time.time() - overall_start_time,
+                steps_per_epoch=steps_per_epoch, total_steps=total_steps)
 
         # =====================================================================
         # TRAINING COMPLETE
