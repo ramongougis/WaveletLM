@@ -633,18 +633,18 @@ Additional optional features, OFF by default, are also considered relatively min
 
 ## Results
 
-It is important to note that WaveletLM has **not** been fully optimized (status 2026-07-15):
+It is important to note that WaveletLM has **not** yet been fully optimized as of 2026-07-15. Areas pending further improvement include:
 
-- the dropout recipe was tuned once (C=1024, 5 epochs) and reused everywhere unswept — deliberately: per-size regularization sweeps are deferred to the data-rich regime (see the [Release Pipeline](#release-pipeline) guiding principle). It is holding well beyond its design point — at the 20-epoch Mini rung the train/val gap is 0.30 with val still descending ([log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)) — but it is inherited, not optimized;
+- dropout parameters, which were tuned once for C=1024 and 5 epochs, then reused everywhere unswept due to limtied compute. Per-size regularization sweeps are deferred to the data-rich regime per the [Release Pipeline](#release-pipeline). It is holding well beyond its design point: with the 20-epoch WaveletLM Mini (C=512) version, the train/val gap is 0.30 with val still descending ([log](logs/wikitext-103_2026-07-14_09-11-32/log.txt));
 - weight decay has not been swept;
 - every headline result is a **single seed** (see the [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) for the measured spread at a smaller config);
-- all models train and evaluate at a **256-token context** — the shortest in every comparison table below;
-- parameter compression (PTQ) is parked pre-release;
-- the remaining WikiText-103 headroom is bounded and measured: the fitted data law at C=512 (`L(E) ≈ 0.962 + 0.276·E^(−0.76)`, [Release Pipeline](#release-pipeline)) puts the dataset's ceiling near 0.96 BPB — the larger lever from here is fresh data, not more passes or tighter regularization.
+- all models train and evaluate at a **256-token context**, the shortest amongst any competing model in every comparison table below;
+- parameter compression (PTQ) is reserved for post-release;
+- the remaining WikiText-103 headroom is bounded and measured: the fitted data law at C=512 (`L(E) ≈ 0.962 + 0.276·E^(−0.76)`, as derived in the [Release Pipeline](#release-pipeline)) puts the dataset's ceiling near 0.96 BPB. The larger lever from here is fresh data, not more passes or tighter regularization. As such, our next scheduled runs will train on PG-19 and The Pile.
 
-My current run budget is limited. Other researchers are encouraged to train the model with these changes to more accurately gauge its potential performance.
+My current run budget is limited. Other researchers are encouraged to train the model with these and other improvements to more accurately gauge its potential performance.
 
-See [Areas for Improvement](#areas-for-improvement) below for more info on optimization, and [Future Plans](#future-plans) for ways to push WaveletLM further post-release.
+See [Areas for Improvement](#areas-for-improvement) below for more info on optimization, and [Other Post-Release Plans](#other-post-release-plans) for ways to push WaveletLM further post-release.
 
 ### PG-19 Test Set Perplexity Comparison
 
@@ -684,7 +684,7 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 | **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **5** | **20.0†** |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 249M* | 1024* | n/s | 20.95[^6]* |
 | **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **239M** | **256††** | **5** | **21.4††** |
-| WaveletLM Mini | Wavelet mixer | WikiText-103 (0.5GB)††† | 73M | 256††† | 20 | 22.08††† |
+| **WaveletLM Mini** | **Wavelet mixer** | **WikiText-103 (0.5GB)†††** | **73M** | **256†††** | **20** | **22.08†††** |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 0 (zero-shot on larger corpus) | 22.1[^5] |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | ~17 | 24.0[^4]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 0 (zero-shot on larger corpus) | 29.4[^5] |
