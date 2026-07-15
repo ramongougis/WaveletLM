@@ -24,9 +24,13 @@ Crash-proof by design (laptop rule): windows are processed in shard-sized
 batches; a shard whose files all exist is skipped, so any crash resumes
 where it left off. CPU by default; --device cuda fits Mini in ~1.3 GB.
 
-Windows are non-overlapping block_size chunks with NO cross-window bypass
-carry — matching training's random-window statistics. (A sequential-carry
-variant is a Phase-2 instrument.)
+Windows are non-overlapping block_size chunks. The decompose-bypass state
+carries across forward calls exactly as in training's random-window batching
+(each batch sees state produced by the previous, unrelated batch — the
+trained-in condition). That state is batch-shaped, so ALL batches must be
+the same size: the window count is truncated to a multiple of
+--batch_windows (a trailing partial batch crashes at model.py ~2548).
+A sequential-carry variant is a Phase-2 instrument.
 
 Usage (first real dump, from repo root or anywhere):
   python tools/interpretability/coeff_dump.py \
@@ -110,9 +114,21 @@ def main():
         data_cfg["tokenizer"] = "auto"
     _, val_data, test_data, _, _ = load_and_encode_dataset(data_cfg, _PrintLogger())
     tokens = val_data if args.split == "val" else test_data
+    # Cross-window bypass state is batch-shaped and carried across calls:
+    # every batch must be identical in size. Truncate to full batches, and
+    # keep shard boundaries batch-aligned so no shard-edge batch shrinks.
+    if args.windows_per_shard % args.batch_windows != 0:
+        args.windows_per_shard = ((args.windows_per_shard // args.batch_windows) + 1) \
+            * args.batch_windows
+        print(f"[coeff_dump] windows_per_shard rounded up to {args.windows_per_shard} "
+              f"(multiple of batch_windows)")
     n_windows = min(args.tokens // T, len(tokens) // T)
+    n_windows = (n_windows // args.batch_windows) * args.batch_windows
     if n_windows == 0:
-        raise ValueError(f"Not enough tokens for one {T}-token window")
+        raise ValueError(f"Not enough tokens for one full batch of "
+                         f"{args.batch_windows} x {T}-token windows")
+    if hasattr(model, 'reset_semantic_state'):
+        model.reset_semantic_state()  # deterministic zero-state start
     tokens = tokens[: n_windows * T].view(n_windows, T)
     print(f"[coeff_dump] {n_windows} windows x {T} tokens "
           f"({n_windows * T:,} total), layers {layer_ids}, capture {args.capture}")
@@ -152,7 +168,9 @@ def main():
         "shard_windows": args.windows_per_shard,
         "scale_note": "scale 0 = approximation band (shrinkage-probe convention); "
                       "detail ordering confirmed empirically in Study 1",
-        "bypass_note": "no cross-window bypass carry (matches random-window training stats)",
+        "bypass_note": "bypass state carries across batches exactly as in training's "
+                       "random-window batching (batch-shaped state -> constant batch size "
+                       "enforced; zero-state reset at dump start)",
     }
     with open(os.path.join(args.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
