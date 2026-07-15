@@ -3753,6 +3753,7 @@ DATASET_TOKENIZER = {
     "wikitext-103": "gpt2",
     "wikitext-2": "gpt2",
     "pg19": "sentencepiece-pg19-32k",
+    "pile": "gpt2",
 }
 DEFAULT_TOKENIZER = "gpt2"
 SP_PG19_MODEL_PATH = os.path.join(".cache", "pg19_sp32k.model")
@@ -3768,8 +3769,14 @@ class GPT2Tokenizer:
 
     def encode(self, text, allow_special=False):
         if allow_special:
-            return self._enc.encode(text)
-        return self._enc.encode(text, allowed_special=set())
+            # Control path: special-token strings encode to their token ids
+            # (plain encode() would raise — tiktoken disallows specials by default).
+            return self._enc.encode(text, allowed_special="all")
+        # Data path: special-token text occurring IN the data encodes as plain
+        # text instead of raising (e.g. a literal "<|endoftext|>" inside a Pile
+        # code/web document). Identical output to the previous allowed_special=set()
+        # for text containing no special strings — i.e. all existing caches.
+        return self._enc.encode(text, disallowed_special=())
 
     def decode(self, ids):
         return self._enc.decode(ids)

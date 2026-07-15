@@ -633,13 +633,14 @@ Additional optional features, OFF by default, are also considered relatively min
 
 ## Results
 
-It is important to note that WaveletLM has **not** been fully optimized: 
+It is important to note that WaveletLM has **not** been fully optimized (status 2026-07-15):
 
-- it is underregularized with a 0.8 train/val loss gap, 
-- the 5 dropout parameters have not been swept, 
-- weight decay needs further tuning, 
-- longer training time is needed, and 
-- parameter compression has not yet been applied.
+- the dropout recipe was tuned once (C=1024, 5 epochs) and reused everywhere unswept — deliberately: per-size regularization sweeps are deferred to the data-rich regime (see the [Release Pipeline](#release-pipeline) guiding principle). It is holding well beyond its design point — at the 20-epoch Mini rung the train/val gap is 0.30 with val still descending ([log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)) — but it is inherited, not optimized;
+- weight decay has not been swept;
+- every headline result is a **single seed** (see the [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) for the measured spread at a smaller config);
+- all models train and evaluate at a **256-token context** — the shortest in every comparison table below;
+- parameter compression (PTQ) is parked pre-release;
+- the remaining WikiText-103 headroom is bounded and measured: the fitted data law at C=512 (`L(E) ≈ 0.962 + 0.276·E^(−0.76)`, [Release Pipeline](#release-pipeline)) puts the dataset's ceiling near 0.96 BPB — the larger lever from here is fresh data, not more passes or tighter regularization.
 
 My current run budget is limited. Other researchers are encouraged to train the model with these changes to more accurately gauge its potential performance.
 
@@ -683,6 +684,7 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 | **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **5** | **20.0†** |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 249M* | 1024* | n/s | 20.95[^6]* |
 | **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **239M** | **256††** | **5** | **21.4††** |
+| WaveletLM Mini | Wavelet mixer | WikiText-103 (0.5GB)††† | 73M | 256††† | 20 | 22.08††† |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 0 (zero-shot on larger corpus) | 22.1[^5] |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | ~17 | 24.0[^4]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 0 (zero-shot on larger corpus) | 29.4[^5] |
@@ -699,6 +701,8 @@ Epoch derivations from source papers and released training scripts:
 † C=2048 / L=10 / no-MLP, single seed: **sliding-window PPL 20.04** (non-overlapping 21.54) at a **256-token context** — 4× shorter than the 1024-context baselines — under only 5 epochs with light regularization ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)). Earlier 3-seed L=2 headline: 23.8 (mean 23.82). Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
 
 †† The Small release tier — C=1024 / L=10, **fully spectral** (no MLP, no per-layer projections; `skip_proj_out`), single seed: **sliding-window PPL 21.39** (non-overlapping 22.99) / **0.9805 sliding BPB** at **239.09M** and the table's shortest context (256 tokens), 5 epochs ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)). Beats both its projection-equipped predecessor (21.93 / 0.9884 at 249.59M) and the earlier 669M MLP version (0.9894) — the architecture has now improved twice by *removing* components.
+
+††† The Mini deployment tier — C=512 / L=10, fully spectral, single seed, trained scaling-law-guided (the D-ladder's 20-epoch rung, [Release Pipeline](#release-pipeline)): **sliding-window PPL 22.08** (non-overlapping 23.70) / **0.9906 sliding BPB** at **72.89M** in 24.91h on one RTX 5090 ([log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)). Val descended monotonically through all 20 epochs; carries the ~+0.007 BPB MBS-48 batch handicap vs the table's MBS-8 entries. At **1,250 MiB generation VRAM** ([generations](logs/wikitext-103_2026-07-14_09-11-32/generations.txt)) it edges GPT-2 Medium's zero-shot 22.1 at ~5× fewer params, and its 40-epoch sibling (D3) is forecast at ~21.5 PPL *(estimate)* — within a hair of Small at 3.3× fewer params.
 
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
@@ -2279,7 +2283,8 @@ $`\displaystyle \varphi(z) = \gamma \cdot \mathrm{sign}(z)\cdot \mathrm{relu}(|z
 - [ ] **D-ladder — the data axis, the missing half of `L(N, D)`** (runs before K5): fixed **C=512** fully spectral at **MBS=48** (the wall-clock discount smaller widths unlock; bumped from C=400 since the Chinchilla ratio puts the 10–20ep rungs' optimal N at ~62–200M, and K4's benchmark arrived *better* than the width law predicted; MBS=64 was probed and OOM'd at the CE/logits spike — measured, not guessed), epochs **{5, 10, 20, 40}** (D0–D3 in `runs.sh`). Measures the data exponent, repeated-token decay, and overfit onset — joining the [provisional width law](#free-c-test-c100) into a full `L(N, D)` for WaveletLM.
   - [x] **D0 (5ep) done 2026-07-12: 1.0436 sliding BPB / 26.05 sliding PPL** at 72.89M in **6.11h** ([log](logs/wikitext-103_2026-07-12_08-04-38/log.txt)). Doubling as the **batch-effect A/B** vs K4's MBS-8 **1.0365** at identical C/params/epochs, it measures the MBS=48 penalty at **+0.0071 sliding BPB** (~7× the noise floor, real) for a **4.5× wall-clock discount** (6.11h vs 27.19h). The sign is *opposite* to C=100 (where the big batch won by −0.0037) — a **critical-batch-size** flip: the [batch-invariant NaN ceiling](#free-c-test-c100) blocks the LR increase that would feed the 6× batch, so it under-updates at capable width. The iso-data gap *shrank* across epochs (0.039 → 0.010 val, ep3 → ep5), so the ~0.007 handicap is plausibly an **upper bound** at the longer rungs.
   - [x] **D1 (10ep) done 2026-07-13: 1.0103 sliding BPB / 23.48 sliding PPL** at 72.89M in **12.30h** ([log](logs/wikitext-103_2026-07-12_14-20-46/log.txt)). The data axis is steep: 2× the data (5→10ep) bought **−0.0333 sliding BPB** (~33× the noise floor); val descended monotonically all 10 epochs (3.2899 → 3.1871) with **no overfit-driven val rise yet**, though the train/val gap widened 0.156 → 0.216 as repeats accrue. Batch-corrected (−0.007) D1 ≈ **1.003**, which the [5-epoch width law](#free-c-test-c100) only reaches at **~145M params** — so at this scale an **epoch-doubling ≈ a param-doubling** (N↔D trade ~1:1, the **Chinchilla α≈β signature** on the data axis, matching the width α≈0.35).
-  - *Prediction (sharpened by the D0→D1 slope — 2-point extrapolation, fragile, but robust across floor guesses 0.90–0.97):* D2 (20ep) ≈ **0.985–0.99** sliding BPB as-run *(estimate)*, ~0.978–0.983 batch-corrected — so raw D2 likely lands a *hair behind* SP1's 0.9805 but **ties it once the ~0.007 MBS-48 handicap is added back**. The rung most likely to *cross* SP1 outright is now **D3 (40ep)** if the decay holds and overfit stays contained — a **73M model beating the 239M flagship**. The real L(D) exponent fit waits for the third point (D2).
+  - [x] **D2 (20ep) done 2026-07-15: 0.9906 sliding BPB / 22.08 sliding PPL** at 72.89M in **24.91h** ([log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)). *Prediction scored:* the band on record was 0.985–0.99 — measured 0.9906, **0.0006 past the upper edge (inside the 0.0010 noise floor of the boundary)**. Val descended monotonically all 20 epochs (4.1062 → 3.1419, no turn-up); train/val gap 0.156 → 0.216 → **0.304** across the ladder — memorization pressure rising but **no overfit onset**, so per the pre-registered decision rule **D3 runs at unchanged dropout** (protocol-clean ladder). Batch-corrected (~0.9835) D2 matches the 5-epoch width law at ~224M params: **4× epochs ≈ 3.1× params** (vs 2× ≈ 2× at D1) — sublinear, the repeats-decay signature measured on our own architecture.
+  - **Three points now fit the data law** *(3-point fit — provisional, wide error bars)*: `L(E) ≈ 0.962 + 0.276·E^(−0.76)` — doubling gains decayed 0.0333 → 0.0197 (ratio 0.59 → β≈0.76), implying an **epoch-asymptote F ≈ 0.962 at C=512 on WT-103** *(estimate)*: the dataset's ceiling for this width, unreachable by regularization tuning. *Prediction on record:* **D3 (40ep) ≈ 0.979 as-run** *(estimate)* — a photo-finish with SP1's 0.9805 (73M vs 239M); batch-corrected ~0.972 would pass the flagship outright.
 - [ ] **10–15B dataset blend, E=1** — E=5 is a stretch goal (rough target ~15–20 PPL on held-out blend — *estimate*)
 - [ ] **Frozen-wavelet (+ optional frozen-crawl) transfer test** — import a trained shared lifting into a fresh *same-config* model; measure convergence speedup + BPB gap vs from-scratch. If near-lossless, it validates "lifting = transferable router" **and** becomes a cheaper-iteration warm-start tool. Cheap (one C=1024 run); see [No MLP with deep C=1024](#no-mlp-with-deep-c1024) for the lifting's param share. Also produces the **frozen lifting snapshot** the wavelet optimizer below consumes — run it first.
 - [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM Small config.

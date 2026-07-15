@@ -158,6 +158,113 @@ def train_pg19_sentencepiece(cache_dir=".cache", logger=None):
 # DATASET LOADING
 # ==============================================================================
 
+def _load_and_encode_pile_streaming(config, enc, logger, cache_dir, tokenizer_name):
+    """Stream a token-capped Pile-mirror subset and encode to tensors.
+
+    Unlike the other datasets (downloaded in full), the Pile mirror is
+    ~800 GB — this path streams documents over HTTP and stops at the token
+    cap, so disk/RAM cost is set by the cap, not the corpus. The cache is
+    namespaced by the cap (pile-<N>M_<tokenizer>.pt) so a small smoke-test
+    subset can never be mistaken for a full training subset on cache-hit.
+
+    Deterministic split carving from the mirror's train stream: the first
+    `pile_val_docs` non-empty documents -> val, the next `pile_test_docs`
+    -> test, then train accumulates until `dataset_max_tokens`. Same keys
+    -> same subset on any machine (stream order is the mirror's file order).
+    NOTE: val/test are held-out slices of the train stream, NOT the
+    canonical Pile val/test sets — sufficient for the fresh-token-twin
+    experiment (D3 vs 1 epoch of fresh tokens at matched budget); the
+    "toe-to-toe" Pile campaign (README Release Pipeline) must evaluate
+    against the canonical test file when it runs.
+
+    Documents are independent (unlike WikiText's continuous article
+    stream), so they are joined with <|endoftext|>, the GPT-2-family
+    pretraining convention. The EOT token contributes 0 bytes to the test
+    byte count (it has no text representation), slightly deflating
+    bytes/token vs a separator-counting scheme — self-consistent and
+    documented here.
+
+    Memory: chunks are held int32 throughout (a 4.8B-token subset peaks
+    ~2x19 GB at the final cat, ~58 GB with the .long() view at return —
+    pod-sized, not laptop-sized; smoke tests use small caps).
+    """
+    hf_id = config.get("pile_hf_id", "monology/pile-uncopyrighted")
+    max_train_tokens = int(config.get("dataset_max_tokens", 5_000_000_000))
+    n_val_docs = int(config.get("pile_val_docs", 500))
+    n_test_docs = int(config.get("pile_test_docs", 1000))
+
+    cache_path = os.path.join(
+        cache_dir, f"pile-{max_train_tokens}tok_{tokenizer_name}.pt")
+
+    if os.path.exists(cache_path):
+        logger.log(f"[Dataset] Loading pile subset from cache ({cache_path})...")
+        cached = torch.load(cache_path, weights_only=False)
+        train_data = cached['train'].long()
+        val_data = cached['val'].long()
+        test_data = cached['test'].long()
+        test_bytes = cached['test_bytes']
+        bytes_per_token = test_bytes / max(1, len(test_data))
+        logger.log(f"[Dataset] pile: train={len(train_data):,}, "
+                   f"val={len(val_data):,}, test={len(test_data):,} tokens (cached)")
+        logger.log(f"[Dataset] Test: {test_bytes:,} bytes, {bytes_per_token:.4f} bytes/token")
+        logger.log(f"[Dataset] Vocab size: {enc.vocab_size}")
+        return train_data, val_data, test_data, enc, bytes_per_token
+
+    logger.log(f"[Dataset] Streaming {hf_id}: cap={max_train_tokens:,} train tokens, "
+               f"val={n_val_docs} docs, test={n_test_docs} docs (held out from stream head)")
+
+    eot = enc.encode("<|endoftext|>", allow_special=True)
+    if len(eot) != 1:
+        raise ValueError(f"Expected a single EOT token id, got {eot}")
+
+    ds = load_dataset(hf_id, split="train", streaming=True)
+
+    val_chunks, test_chunks, train_chunks = [], [], []
+    test_bytes = 0
+    train_tokens = 0
+    doc_idx = 0
+    next_log = 100_000_000
+
+    for example in ds:
+        text = example.get("text", "")
+        if not text:
+            continue
+        chunk = torch.tensor(enc.encode(text) + eot, dtype=torch.int32)
+        if doc_idx < n_val_docs:
+            val_chunks.append(chunk)
+        elif doc_idx < n_val_docs + n_test_docs:
+            test_chunks.append(chunk)
+            test_bytes += len(text.encode("utf-8"))
+        else:
+            train_chunks.append(chunk)
+            train_tokens += chunk.numel()
+            if train_tokens >= next_log:
+                logger.log(f"[Dataset] ... {train_tokens:,}/{max_train_tokens:,} "
+                           f"train tokens ({doc_idx:,} docs)")
+                next_log += 100_000_000
+            if train_tokens >= max_train_tokens:
+                break
+        doc_idx += 1
+
+    train_data = torch.cat(train_chunks) if train_chunks else torch.empty(0, dtype=torch.int32)
+    val_data = torch.cat(val_chunks) if val_chunks else torch.empty(0, dtype=torch.int32)
+    test_data = torch.cat(test_chunks) if test_chunks else torch.empty(0, dtype=torch.int32)
+    del train_chunks, val_chunks, test_chunks
+    train_data = train_data[:max_train_tokens].clone()  # exact cap: "1 epoch" == the cap
+
+    os.makedirs(cache_dir, exist_ok=True)
+    torch.save({'train': train_data, 'val': val_data, 'test': test_data,
+                'test_bytes': test_bytes}, cache_path)
+    logger.log(f"[Dataset] Cached to {cache_path}")
+
+    bytes_per_token = test_bytes / max(1, len(test_data))
+    logger.log(f"[Dataset] pile: train={len(train_data):,}, "
+               f"val={len(val_data):,}, test={len(test_data):,} tokens")
+    logger.log(f"[Dataset] Test: {test_bytes:,} bytes, {bytes_per_token:.4f} bytes/token")
+    logger.log(f"[Dataset] Vocab size: {enc.vocab_size}")
+    return train_data.long(), val_data.long(), test_data.long(), enc, bytes_per_token
+
+
 def load_and_encode_dataset(config, logger):
     """Load dataset via HuggingFace and encode with the auto-selected tokenizer.
 
@@ -181,6 +288,13 @@ def load_and_encode_dataset(config, logger):
     vocab_size = enc.vocab_size
 
     logger.log(f"[Tokenizer] {enc.display_name()}")
+
+    # The Pile is stream-only (too large to download); it manages its own
+    # cap-namespaced cache inside the helper and returns early.
+    if dataset_name == "pile":
+        return _load_and_encode_pile_streaming(config, enc, logger,
+                                               cache_dir=".cache",
+                                               tokenizer_name=tokenizer_name)
 
     # Check for cached encoded tensors (namespaced by tokenizer)
     cache_dir = ".cache"
