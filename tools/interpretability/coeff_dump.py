@@ -80,6 +80,10 @@ def main():
     p.add_argument("--out", required=True, help="Output shard directory")
     p.add_argument("--dataset", default=None,
                    help="Override dataset for the dump text (default: the run's own)")
+    p.add_argument("--dataset_max_tokens", type=int, default=None,
+                   help="For --dataset pile: the subset cap, which selects the cache "
+                        "(e.g. 300000 hits the smoke cache offline). WITHOUT this, "
+                        "pile defaults to a 5B-token stream — never on a laptop.")
     p.add_argument("--split", default="val", choices=["val", "test"],
                    help="Which split to dump from (default val)")
     p.add_argument("--tokens", type=int, default=50_000)
@@ -112,6 +116,13 @@ def main():
     if args.dataset:
         data_cfg["dataset"] = args.dataset
         data_cfg["tokenizer"] = "auto"
+    if args.dataset_max_tokens is not None:
+        data_cfg["dataset_max_tokens"] = args.dataset_max_tokens
+    if data_cfg.get("dataset") == "pile" and args.dataset_max_tokens is None:
+        raise SystemExit(
+            "[coeff_dump] Refusing: --dataset pile without --dataset_max_tokens would "
+            "stream the loader's 5B-token default. Pass the cap that names an existing "
+            "cache (e.g. --dataset_max_tokens 300000 for .cache/pile-300000tok_gpt2.pt).")
     _, val_data, test_data, _, _ = load_and_encode_dataset(data_cfg, _PrintLogger())
     tokens = val_data if args.split == "val" else test_data
     # Cross-window bypass state is batch-shaped and carried across calls:
