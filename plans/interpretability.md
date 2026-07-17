@@ -179,6 +179,52 @@ from them enters the README (house rule).*
   Study 6 are in scope — they're laptop-scale), cross-model dictionary comparisons, GPU-scale
   probing, SOW/REAP integration — all deferred until the thesis test says they're needed.
 
+## Results log
+
+**2026-07-15 — Phase 0 shipped; first census (Study 1 opens).** `tools/interpretability/
+coeff_dump.py` operational; 49,152 WT-103-val tokens × 10 layers of post-decompose
+coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
+
+- **Finding 1 — the U-shaped per-scale gain profile.** Per-scale mean |post-norm coeff|,
+  layer 0: `s0=0.622, s1=0.346, s2=0.344, s3=0.338, s4=0.275, s5=0.243, s6=0.359, s7=0.512`;
+  layer 9: `s0=0.436, s1=0.205, s2=0.227, s3=0.254, s4=0.232, s5=0.213, s6=0.218, s7=0.284`.
+  Approximation band and finest detail run loud, middle scales quiet — and since these are
+  post-LayerNorm magnitudes (≈0.8 expected under identity affine), the deviations are the
+  **learned per-scale gains**: the model's own volume knobs. **Converges with the shrinkage
+  λ-map's independent "protect-ends / squeeze-middle" finding** (README §Coefficient
+  Shrinkage) — two unrelated instruments, same geometry. Depth trend: layer 9 gains
+  uniformly ~30–40% below layer 0 (the stack quiets with depth).
+- **Finding 2 — census statistics converge absurdly fast.** An 8-window (2K-token) sample
+  reproduces the 192-window census to ±0.005 per scale. Census-class probes are reliable at
+  trivial sample sizes. *(Correction for the record: the apparent "cross-dataset" agreement
+  of the first two censuses was nothing of the kind — wikitext-2 and wikitext-103 share
+  their val/test sets (Merity et al.); it was the same text at two sample sizes.)*
+- **Prediction on record (Pile cross-domain census)** *(estimate)*: post-norm per-scale
+  gains are largely weight-borne (LayerNorm standardizes per position; the affine is fixed),
+  so the Pile census should match WT-103 within ~±0.02 per scale. If confirmed → the gain
+  profile is readable **from the checkpoint alone**, and Study 1 gains a weights-only
+  companion probe (census of `decomp_norms[s]` γ/β directly — no forward passes at all).
+  If it *deviates*, the deviation localizes where input-distribution shape (not scale)
+  differs per channel — itself informative. Command: `--dataset pile
+  --dataset_max_tokens 300000` (offline via the smoke cache).
+- **Prediction scored (same day): CONFIRMED.** Pile census (16,384 tokens via the offline
+  smoke cache) matches WT-103 within ±0.015 on all 16 layer×scale cells, most within ±0.005
+  → the gain profile is **weight-borne**; the zero-inference γ/β companion probe is
+  legitimate. The one systematic deviation concentrates in **s0** (approximation band,
+  −0.015/−0.010 on Pile) → hypothesis for Study 4: *domain identity lives at coarse scales;
+  fine-scale statistics are domain-universal.*
+- **Finding 3 — the depth × scale gain surface is structured, not a fade** (census.py, all
+  10 layers, 25.2M values/cell): the U-shape exists full-strength **only at L00** (entry
+  band-shaping); L01–L04 drop sharply into a flat quiet trunk; then **s0 climbs
+  monotonically L03→L09** (0.330→0.431), s7 ticking up late — the U gently re-forms toward
+  the head. Hypothesis: the network funnels toward coarse/contextual content approaching
+  prediction. *(Scored: the earlier "uniform quieting with depth" read from the 2-layer
+  preview was wrong in shape — full-depth data corrected it.)*
+- Instruments to date: `tools/interpretability/coeff_dump.py` (Phase 0),
+  `tools/interpretability/census.py` (Study 1: absmean/std/kurtosis over shards).
+- Ops note: bypass cross-window state is batch-shaped and carries across forward calls →
+  constant batch size enforced in the tool; zero-state reset at dump start (deterministic).
+
 ## What this unblocks
 
 - **Paper 2's spine**, with its central claim tested before a dollar of GPU is spent on it.
