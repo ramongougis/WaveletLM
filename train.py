@@ -167,15 +167,21 @@ def _load_and_encode_pile_streaming(config, enc, logger, cache_dir, tokenizer_na
     namespaced by the cap (pile-<N>M_<tokenizer>.pt) so a small smoke-test
     subset can never be mistaken for a full training subset on cache-hit.
 
-    Deterministic split carving from the mirror's train stream: the first
-    `pile_val_docs` non-empty documents -> val, the next `pile_test_docs`
-    -> test, then train accumulates until `dataset_max_tokens`. Same keys
-    -> same subset on any machine (stream order is the mirror's file order).
-    NOTE: val/test are held-out slices of the train stream, NOT the
-    canonical Pile val/test sets — sufficient for the fresh-token-twin
-    experiment (D3 vs 1 epoch of fresh tokens at matched budget); the
-    "toe-to-toe" Pile campaign (README Release Pipeline) must evaluate
-    against the canonical test file when it runs.
+    Deterministic INTERLEAVED split carving (i.i.d. across the consumed
+    stream): non-empty document i goes to val if i % pile_holdout_stride == 1
+    (until pile_val_docs), to test if the residue is 2 or 3 (until
+    pile_test_docs), else to train, which accumulates until
+    dataset_max_tokens. With stride 6000 and a ~3M-doc stream, holdouts
+    spread uniformly over the WHOLE consumed corpus. Same keys -> same
+    subset on any machine (stream order is the mirror's file order).
+    History (2026-07-17): the original head-of-stream carving (first N docs
+    -> val) produced a val slice ~1.2 nats easier than the mixture — a
+    non-i.i.d. sample of whatever component leads the first shard. F1 was
+    stopped ~2.5h in and restarted under this scheme.
+    NOTE: even the interleaved holdout is NOT the canonical Pile val/test —
+    sufficient for the fresh-token-twin experiment and self-consistent
+    tracking; the "toe-to-toe" Pile campaign (README Release Pipeline) must
+    evaluate against the canonical test file when it runs.
 
     Documents are independent (unlike WikiText's continuous article
     stream), so they are joined with <|endoftext|>, the GPT-2-family
@@ -192,9 +198,10 @@ def _load_and_encode_pile_streaming(config, enc, logger, cache_dir, tokenizer_na
     max_train_tokens = int(config.get("dataset_max_tokens", 5_000_000_000))
     n_val_docs = int(config.get("pile_val_docs", 500))
     n_test_docs = int(config.get("pile_test_docs", 1000))
+    stride = int(config.get("pile_holdout_stride", 6000))
 
     cache_path = os.path.join(
-        cache_dir, f"pile-{max_train_tokens}tok_{tokenizer_name}.pt")
+        cache_dir, f"pile-{max_train_tokens}tok-s{stride}_{tokenizer_name}.pt")
 
     if os.path.exists(cache_path):
         logger.log(f"[Dataset] Loading pile subset from cache ({cache_path})...")
@@ -211,7 +218,8 @@ def _load_and_encode_pile_streaming(config, enc, logger, cache_dir, tokenizer_na
         return train_data, val_data, test_data, enc, bytes_per_token
 
     logger.log(f"[Dataset] Streaming {hf_id}: cap={max_train_tokens:,} train tokens, "
-               f"val={n_val_docs} docs, test={n_test_docs} docs (held out from stream head)")
+               f"val={n_val_docs} docs, test={n_test_docs} docs "
+               f"(interleaved holdout, stride={stride})")
 
     eot = enc.encode("<|endoftext|>", allow_special=True)
     if len(eot) != 1:
@@ -225,22 +233,26 @@ def _load_and_encode_pile_streaming(config, enc, logger, cache_dir, tokenizer_na
     doc_idx = 0
     next_log = 100_000_000
 
+    n_val = n_test = 0
     for example in ds:
         text = example.get("text", "")
         if not text:
             continue
         chunk = torch.tensor(enc.encode(text) + eot, dtype=torch.int32)
-        if doc_idx < n_val_docs:
+        residue = doc_idx % stride
+        if residue == 1 and n_val < n_val_docs:
             val_chunks.append(chunk)
-        elif doc_idx < n_val_docs + n_test_docs:
+            n_val += 1
+        elif residue in (2, 3) and n_test < n_test_docs:
             test_chunks.append(chunk)
             test_bytes += len(text.encode("utf-8"))
+            n_test += 1
         else:
             train_chunks.append(chunk)
             train_tokens += chunk.numel()
             if train_tokens >= next_log:
                 logger.log(f"[Dataset] ... {train_tokens:,}/{max_train_tokens:,} "
-                           f"train tokens ({doc_idx:,} docs)")
+                           f"train tokens ({doc_idx:,} docs; val {n_val}, test {n_test})")
                 next_log += 100_000_000
             if train_tokens >= max_train_tokens:
                 break
