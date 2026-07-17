@@ -177,8 +177,9 @@ def main():
         "capture": args.capture,
         "dtype": "float16",
         "shard_windows": args.windows_per_shard,
-        "scale_note": "scale 0 = approximation band (shrinkage-probe convention); "
-                      "detail ordering confirmed empirically in Study 1",
+        "scale_note": "s0 = approximation; s1..s7 = detail bands COARSE->FINE "
+                      "(model.py ~2427: [approx] + details[::-1]; "
+                      "s1 ~ 64-128 tokens ... s7 ~ 1-2 tokens at levels=7)",
         "bypass_note": "bypass state carries across batches exactly as in training's "
                        "random-window batching (batch-shaped state -> constant batch size "
                        "enforced; zero-state reset at dump start)",

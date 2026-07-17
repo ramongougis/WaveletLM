@@ -220,8 +220,31 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   the head. Hypothesis: the network funnels toward coarse/contextual content approaching
   prediction. *(Scored: the earlier "uniform quieting with depth" read from the 2-layer
   preview was wrong in shape — full-depth data corrected it.)*
+- **Scale ordering confirmed in code** (model.py ~2427, `[approx] + details[::-1]`):
+  s0 = approximation; s1..s7 = detail bands **coarse → fine** (s1 ≈ 64–128 tokens,
+  s2 ≈ 32–64, … s7 ≈ 1–2 at levels=7). Manifest note updated from "unconfirmed".
+- **Finding 4 — the kurtosis (sparsity) map is structured and depth-decaying.** Excess
+  kurtosis per layer×scale: L00 nearly Gaussian at the band ends (s0=1.1, s7=1.3) with one
+  screaming anomaly at **s2 (32–64-token band): 21.6**; L01–L03 turn heavy-tailed at BOTH
+  ends (s0 up to 17.7, s7 up to 22.6 — rare large events at the most-local and most-global
+  scales); then near-monotone decline everywhere to L09 (2–6) — representations densify
+  toward the head. s1 (coarsest detail) is consistently the lightest-tailed band.
+  *Interpretation caution on record:* pooled kurtosis conflates per-channel selectivity with
+  cross-channel variance heterogeneity; discriminate per cell (see Finding 5's method).
+- **Finding 5 — first candidate monosemantic channel (Study 2 pilot, L00/s2).**
+  `topk_contexts.py`: **ch132 owns 100% of the top-1000 extreme tail** of the L00/s2 band
+  (512 channels available), sign-consistent (all ≈ −9), firing at **completions of long
+  information-dense spans** (sentence-final periods, clause boundaries capping long
+  enumerations) across unrelated topics (weather/demographics/anime/mycology/NASCAR) — a
+  *structural* long-span boundary detector at the entry layer, in exactly the band whose
+  wavelength (32–64 tokens) matches the feature. For this cell the kurtosis WAS selectivity
+  (a variance mixture cannot concentrate a tail into one channel). **Owed before the label
+  hardens:** random-direction control (interpretability illusion) + Study-3 causal ablation.
+  Next probe: tail concentration at late layers (diffuse tails would support the
+  early-selective / late-distributed hypothesis).
 - Instruments to date: `tools/interpretability/coeff_dump.py` (Phase 0),
-  `tools/interpretability/census.py` (Study 1: absmean/std/kurtosis over shards).
+  `tools/interpretability/census.py` (Study 1: absmean/std/kurtosis over shards),
+  `tools/interpretability/topk_contexts.py` (Study 2: top-k contexts + tail concentration).
 - Ops note: bypass cross-window state is batch-shaped and carries across forward calls →
   constant batch size enforced in the tool; zero-state reset at dump start (deterministic).
 
