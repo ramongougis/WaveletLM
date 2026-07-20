@@ -277,6 +277,24 @@ def _load_and_encode_pile_streaming(config, enc, logger, cache_dir, tokenizer_na
     return train_data.long(), val_data.long(), test_data.long(), enc, bytes_per_token
 
 
+# Canonical word-level normalization units for cross-paper PPL comparison.
+# Per-token perplexity depends on the tokenizer and is NOT comparable across
+# vocabularies; the field's canonical WT-103/PG-19 numbers are word-level:
+# PPL_word = exp(total NLL / canonical word count) — tokenizer-invariant
+# (2026-07-20 normalization audit; see the README '‡'/'§' table footnotes).
+# wikitext: canonical count = whitespace tokens + one <eos> per line
+#   (test 245,569 = 241,211 words + 4,358 lines; matches Merity et al. and
+#   the Megatron-LM evaluation convention, arXiv:1909.08053).
+# pg19: Rae et al. (arXiv:1911.05507) Sec. 4.2 defines the metric; test
+#   n_words = 6,966,499.
+# BPB requires no such correction (byte normalization is tokenizer-immune).
+CANONICAL_TEST_WORDS = {
+    "wikitext-103": 245_569,
+    "wikitext-2": 245_569,  # shares the WT-103 validation/test sets
+    "pg19": 6_966_499,
+}
+
+
 def load_and_encode_dataset(config, logger):
     """Load dataset via HuggingFace and encode with the auto-selected tokenizer.
 
@@ -1798,6 +1816,29 @@ def train():
         logger.log(f"  BPB: {bpb_sw:.4f}")
         logger.log(f"  Avg Loss: {results_sw['avg_loss']:.4f}")
         logger.log(f"  Stride: {results_sw['stride']}, Min Context: {results_sw['min_context']}")
+
+    # Word-level (canonical-unit) perplexities, logged per run so every log
+    # carries the cross-paper-comparable numbers alongside the per-token ones.
+    if results_full or results_sw:
+        n_tok = len(test_data)
+        measured_words = len(enc.decode(test_data.tolist()).split())
+        canon = CANONICAL_TEST_WORDS.get(dataset_name)
+        logger.log(f"\n[BENCHMARK - Word-level normalization]")
+        logger.log(f"  Test tokens: {n_tok:,} ({enc.name}); "
+                   f"measured whitespace words: {measured_words:,}")
+        if canon:
+            ratio = n_tok / canon
+            logger.log(f"  Canonical words: {canon:,} -> tokens/word: {ratio:.4f}")
+            if results_full:
+                logger.log(f"  Non-overlapping word-level PPL: "
+                           f"{math.exp(results_full['avg_loss'] * ratio):.2f}")
+            if results_sw:
+                logger.log(f"  Sliding word-level PPL: "
+                           f"{math.exp(results_sw['avg_loss'] * ratio):.2f}")
+        else:
+            logger.log(f"  No canonical word count for {dataset_name!r}; "
+                       f"tokens/measured-word: {n_tok / max(1, measured_words):.4f} "
+                       f"(informational — BPB is the comparable metric here)")
 
     # Log mixer depth stabilizer values if enabled
     if config.get('mixer_depth_stabilizers', False) and config.get('mixer_depth', 1) > 1:

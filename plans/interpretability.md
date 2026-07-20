@@ -168,6 +168,17 @@ from them enters the README (house rule).*
   model's *only* channel across window boundaries, i.e. its entire working memory. Reading
   what survives the boundary is a uniquely-WaveletLM study; it needs its own instrumentation,
   so it waits for Phase 2.
+- **Phase-2 candidates from the embedding↔wavelet co-adaptation thread (2026-07-20; both run
+  on existing dumps):** (a) **token spectral fingerprints** — per token id, mean per-scale
+  coefficient signature over occurrences; correlate fingerprint similarity with embedding
+  cosine; test whether BPE-related pairs cluster (Ramon's routing-similarity claim,
+  quantified); (b) **identity/context variance split** — per scale, decompose coefficient
+  variance into between-token vs within-token components (ANOVA over shards). *Prediction on
+  record (est.): fine bands token-identity-dominated, coarse bands context-dominated.* Note
+  also: the scale-role map is tokenizer-dependent (vocab granularity sets the semantic
+  wavelength of every band), so the planned semantic-embedding variant retunes the whole
+  instrument, and a fixed human-readable embedding would pre-label channels — compounding
+  with the privileged-basis thesis.
 - **Streams discipline:** this plan is the *deep stream*. The run queue (D2/D3 → K5 → M2 → M4)
   stays on rails and is recorded as usual; nothing here blocks or waits on it.
 - **Recording convention:** results accumulate in this file first (tables + shard/notebook

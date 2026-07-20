@@ -31,7 +31,7 @@ os.chdir(_REPO_ROOT)
 
 from model import WaveletLM, get_tokenizer, resolve_tokenizer_name  # noqa: E402
 from train import (load_and_encode_dataset, evaluate_full_validation,  # noqa: E402
-                   evaluate_sliding_window)
+                   evaluate_sliding_window, CANONICAL_TEST_WORDS)
 
 
 class _PrintLogger:
@@ -135,6 +135,16 @@ def main():
         log.log(f"  BPB: {bpb:.4f}")
         log.log(f"  Avg Loss: {res['avg_loss']:.4f}")
     log.log(f"  ({bytes_per_token:.4f} bytes/token on this test split)")
+
+    canon = CANONICAL_TEST_WORDS.get(args.dataset)
+    if canon:
+        ratio = len(test_data) / canon
+        log.log(f"\n[CROSS-EVAL - Word-level normalization] canonical words: "
+                f"{canon:,}, tokens/word: {ratio:.4f}")
+        for name, res in (("Non-overlapping", res_full), ("Sliding", res_slide)):
+            if res:
+                log.log(f"  {name} word-level PPL: "
+                        f"{math.exp(res['avg_loss'] * ratio):.2f}")
 
 
 if __name__ == "__main__":

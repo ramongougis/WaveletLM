@@ -650,17 +650,17 @@ See [Areas for Improvement](#areas-for-improvement) below for more info on optim
 
 ### PG-19 Test Set Perplexity Comparison
 
-| Model | Type | Params | Context | Epochs | PPL |
+| Model | Type | Params | Context | Epochs | PPL (word-level) |
 |-------|------|--------|---------|--------|-----|
-| Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | 14.6[^10] |
-| **WaveletLM (previous generation; 1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **27.40†** |
-| **WaveletLM Small (no-MLP, 1 epoch)** | **Wavelet mixer** | **231M** | **256** | **1** | **27.72††** |
-| Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^7] |
-| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^8] |
+| Perceiver AR | Cross-attn + latents | 974M | 4,096 | ~210 | 28.9[^7]§ |
+| Block-Recurrent Transformer | Transformer + recurrence | ~200M | 4,096 + recurrent | — | 29.0[^8]§ |
 | Compressive Transformer | Transformer + compressive memory | 257M | 2,048 effective | ~50 | 33.6[^9] |
+| Hyena ‡ | Long convolution and recurrence | 153M | 16,384 | 8 | ≈34§ *(est.; reported 14.6 per-BPE-token[^10])* |
 | Transformer-XL | Transformer + recurrence | 257M | 1,024 effective | ~50 | 36.3[^9] |
+| **WaveletLM (previous generation; 1 epoch)** | **Wavelet mixer** | **808M** | **256** | **1** | **79.1†§** |
+| **WaveletLM Small (no-MLP, 1 epoch)** | **Wavelet mixer** | **231M** | **256** | **1** | **80.3††§** |
 
-All models in this table were trained and evaluated on PG-19. Most use SentencePiece tokenization; Hyena uses GPT-2 BPE. WaveletLM was trained for one epoch only at the smallest context length of any entry.
+All models in this table were trained and evaluated on PG-19, under the dataset's canonical metric — **word-level perplexity** (Rae et al.: total cross-entropy under any tokenization, normalized by the subset's word count) — which is tokenizer-independent by design. WaveletLM was trained for one epoch only at the smallest context length of any entry.
 
 Context and epoch derivations from source papers:
 
@@ -668,9 +668,11 @@ Context and epoch derivations from source papers:
 - **Block-Recurrent Transformer**: Context: `4,096-token segments + 512-vector recurrent state`, trained for 500k steps. Epoch count cannot be derived because the batch size was not reported.
 - **Perceiver AR**: `~200k steps per batch × 2048 batches ≈ 420B tokens`; `420B / 2B PG-19 tokens ≈ 210 epochs` at `4,096-token context`.
 
-† 27.40 sliding-window PPL. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Increased regularization and training time are in the [Future Plans](#future-plans) section.
+§ **Word-level normalization (2026-07-20; calculation ours where marked, method per the dataset's definition).** Rae et al. define PG-19's metric verbatim: *"one calculates the total cross-entropy loss … using a chosen tokenization scheme, and then one normalizes this value by the number of words"* — test n_words = **6,966,499** ([paper](https://arxiv.org/abs/1911.05507), §4.2). Our benchmarks compute loss per 32K-SentencePiece token (test = **9,197,032** SP tokens, [log](logs/pg19_2026-06-29_22-12-43/log.txt)), so the comparable figure is `PPL_word = exp(avg NLL per SP token × 9,197,032/6,966,499)` (ratio 1.3202). Earlier revisions listed our per-SP-token perplexities (27.40, 27.72) against word-level rows — flattering our placement; corrected here. **All BPB values are unaffected.** Unit status of other rows: CT/TXL are word-level by the source definition; Perceiver AR and Block-Recurrent report against Rae's baselines and are presumed word-level *(verification pending)*; **Hyena's unit is not stated retrievably in the source** — its 14.6 is on GPT-2 BPE tokens, and *if* per-token, converts to ≈34 word-level (shown as the table estimate; if the source's number is already word-level, its row would rank first at 14.6).
 
-†† The pre-projection-removal release architecture (C=1024, L=10, no-MLP, tied head): **27.72 sliding PPL / 1.0892 sliding BPB at 230.89M** ([log](logs/pg19_2026-06-29_22-12-43/log.txt)) yields a +0.32 PPL increase over the 808M version at **3.5× fewer params**, same 32K SentencePiece, and a *better* best val loss (3.5023 vs 3.5238; ranking follows the sliding metrics). A **fully spectral redo (P2, ~220M)** is queued — the projection removal that improved WT-103 by −0.0079 BPB is expected to carry — and more epochs/regularization remain as post-release headroom.
+† Per-SP-token sliding PPL 27.40 → **79.1 word-level-equivalent§**. See the [PG-19 pre-release run](runs.md#pg-19-pre-release-benchmark-best-seed-1-epoch) for full details and the [run log](logs/pg19_2026-04-25_13-34-46/log.txt). Increased regularization and training time are in the [Future Plans](#future-plans) section.
+
+†† The pre-projection-removal release architecture (C=1024, L=10, no-MLP, tied head): **per-SP-token sliding PPL 27.72 → 80.3 word-level-equivalent§ / 1.0892 sliding BPB at 230.89M** ([log](logs/pg19_2026-06-29_22-12-43/log.txt)) yields a +0.32 per-SP-token PPL increase over the 808M version at **3.5× fewer params**, same 32K SentencePiece, and a *better* best val loss (3.5023 vs 3.5238; ranking follows the sliding metrics). A **fully spectral redo (P2, ~220M)** is queued — the projection removal that improved WT-103 by −0.0079 BPB is expected to carry — and more epochs/regularization remain as post-release headroom.
 
 ‡ Hyena was trained with `block_size=16384` (64× WaveletLM's) and 8 epochs (8× WaveletLM's). It is also incredibly efficient parameter-wise with 153M vs. WaveletLM's 807M. Increasing both block size and epochs for WaveletLM while decreasing parameters are some of the [Future Plans](#future-plans).
 
@@ -678,18 +680,18 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 
 ### WikiText-103 Test Set Perplexity Comparison
 
-| Model | Type | Trained on | Params | Context | Epochs | PPL |
+| Model | Type | Trained on | Params | Context | Epochs | PPL (word-level) |
 |-------|------|-----------|--------|---------|--------|-----|
 | GPT-2 XL | Transformer | WebText (40GB) | 1.5B | 1024 | 0 (zero-shot on larger corpus) | 17.5[^5] |
 | Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | ~1,900 | 18.3[^4]* |
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 0 (zero-shot on larger corpus) | 19.3[^5] |
-| **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **5** | **20.0†** |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 249M* | 1024* | n/s | 20.95[^6]* |
-| **WaveletLM Mini** | **Wavelet mixer** | **WikiText-103 (0.5GB)†††** | **73M** | **256†††** | **40** | **21.34†††** |
-| **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **239M** | **256††** | **5** | **21.4††** |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 0 (zero-shot on larger corpus) | 22.1[^5] |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | ~17 | 24.0[^4]* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 0 (zero-shot on larger corpus) | 29.4[^5] |
+| **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **5** | **33.5†‡** |
+| **WaveletLM Mini** | **Wavelet mixer** | **WikiText-103 (0.5GB)†††** | **73M** | **256†††** | **40** | **36.1†††‡** |
+| **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **239M** | **256††** | **5** | **36.2††‡** |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
 
@@ -700,11 +702,13 @@ Epoch derivations from source papers and released training scripts:
 - **Transformer-XL Large**: the released `wt103_large_tpu.sh` trains `4M steps × global batch 128 × 384-token targets ≈ 197B tokens ≈ ~1,900 epochs` — the SOTA run's TPU-cluster budget, ~380× WaveletLM's data exposure.
 - **S4**: follows the Baevski & Auli Transformer-baseline recipe; an explicit step/epoch count is not stated in the paper (n/s). Note the S4 paper reports **249M params / 20.95 PPL** for this result — within ~4% of WaveletLM Small's 239M, the closest parameter pairing in the table.
 
-† C=2048 / L=10 / no-MLP, single seed: **sliding-window PPL 20.04** (non-overlapping 21.54) at a **256-token context** — 4× shorter than the 1024-context baselines — under only 5 epochs with light regularization ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)). Earlier 3-seed L=2 headline: 23.8 (mean 23.82). Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
+‡ **Word-level normalization (2026-07-20; calculation ours, method per the field standard).** The word-level rows (Transformer-XL, S4) report perplexity per canonical WikiText-103 token (test = 245,569 tokens incl. one `<eos>` per line — [Merity et al. counts](https://arxiv.org/abs/1809.10853)), and GPT-2's zero-shot numbers follow the same convention via invertible de-tokenizers; the practice of renormalizing BPE-model perplexity by the *original* token count is documented explicitly in the Megatron-LM lineage ([paper](https://arxiv.org/abs/1909.08053), [fairseq formula](https://github.com/facebookresearch/fairseq/blob/main/examples/megatron_11b/README.md)). WaveletLM's benchmarks compute loss per GPT-2-BPE token (287,644 on this test set, measured from our cache), so the comparable figure is `PPL_word = exp(avg NLL per BPE token × 287,644/245,569)`. Earlier revisions of this table listed our per-BPE-token perplexities (Medium 20.04, Mini 21.34, Small 21.39) alongside word-level rows — flattering our placement; this revision corrects it. **BPB values everywhere are unaffected** (byte normalization is tokenizer-immune — why it is this repo's primary metric). Residual asymmetry, noted both ways: word-level baselines predict `<unk>` for out-of-vocabulary words (a concession), while our byte-exact BPE must spell rare words in full; and the word-level task's fixed 267K-vocab softmax differs structurally from BPE modeling.
 
-†† The Small release tier — C=1024 / L=10, **fully spectral** (no MLP, no per-layer projections; `skip_proj_out`), single seed: **sliding-window PPL 21.39** (non-overlapping 22.99) / **0.9805 sliding BPB** at **239.09M** and the table's shortest context (256 tokens), 5 epochs ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)). Beats both its projection-equipped predecessor (21.93 / 0.9884 at 249.59M) and the earlier 669M MLP version (0.9894) — the architecture has now improved twice by *removing* components.
+† C=2048 / L=10 / no-MLP, single seed: **sliding-window per-BPE-token PPL 20.04 → 33.5 word-level-equivalent‡** (non-overlapping 21.54) at a **256-token context** — 4× shorter than the 1024-context baselines — under only 5 epochs with light regularization ([log](logs/wikitext-103_2026-06-27_19-28-04/log.txt)). Earlier 3-seed L=2 headline: 23.8 (mean 23.82). Significant parameter reduction is planned post-release in the [Future Plans](#future-plans) section.
 
-††† The Mini deployment tier — C=512 / L=10, fully spectral, single seed, trained scaling-law-guided (the D-ladder's 40-epoch rung, [Release Pipeline](#release-pipeline)): **sliding-window PPL 21.34** (non-overlapping 22.97) / **0.9797 sliding BPB** at **72.89M** in ~54h on one RTX 5090 ([log](logs/wikitext-103_2026-07-15_10-53-46/log.txt)). The as-run margin over Small (0.9797 vs 0.9805) is **below the ~0.0010 noise floor — honestly a statistical tie at 3.3× fewer params** — achieved *while carrying* the measured ~+0.007 BPB MBS-48 batch handicap vs the table's MBS-8 entries; handicap-corrected ≈ 0.973 / ~20.9 PPL *(estimate)*. Val never rose across 40 epochs (flatlined over the last ~4); the D-ladder's fitted data law predicted this result to Δ0.0007. Supersedes the 20-epoch rung (22.08 / 0.9906, [log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)). Generation VRAM **1,252 MiB** ([generations](logs/wikitext-103_2026-07-15_10-53-46/generations.txt)).
+†† The Small release tier — C=1024 / L=10, **fully spectral** (no MLP, no per-layer projections; `skip_proj_out`), single seed: **sliding-window per-BPE-token PPL 21.39 → 36.2 word-level-equivalent‡** (non-overlapping 22.99) / **0.9805 sliding BPB** at **239.09M** and the table's shortest context (256 tokens), 5 epochs ([log](logs/wikitext-103_2026-07-04_07-03-39/log.txt)). Beats both its projection-equipped predecessor (21.93 / 0.9884 at 249.59M) and the earlier 669M MLP version (0.9894) — the architecture has now improved twice by *removing* components.
+
+††† The Mini deployment tier — C=512 / L=10, fully spectral, single seed, trained scaling-law-guided (the D-ladder's 40-epoch rung, [Release Pipeline](#release-pipeline)): **sliding-window per-BPE-token PPL 21.34 → 36.1 word-level-equivalent‡** (non-overlapping 22.97) / **0.9797 sliding BPB** at **72.89M** in ~54h on one RTX 5090 ([log](logs/wikitext-103_2026-07-15_10-53-46/log.txt)). The as-run margin over Small (0.9797 vs 0.9805) is **below the ~0.0010 noise floor — honestly a statistical tie at 3.3× fewer params** — achieved *while carrying* the measured ~+0.007 BPB MBS-48 batch handicap vs the table's MBS-8 entries; handicap-corrected ≈ 0.973 / ~20.9 PPL *(estimate)*. Val never rose across 40 epochs (flatlined over the last ~4); the D-ladder's fitted data law predicted this result to Δ0.0007. Supersedes the 20-epoch rung (22.08 / 0.9906, [log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)). Generation VRAM **1,252 MiB** ([generations](logs/wikitext-103_2026-07-15_10-53-46/generations.txt)).
 
 - [3-seed variance study](runs.md#3-seed-variance-study-l2-c2048-20x-dropout-5-epochs) 
 - [Best run's training log](logs/wikitext-103_2026-04-22_01-36-47/log.txt)
