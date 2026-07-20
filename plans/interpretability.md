@@ -242,9 +242,43 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   hardens:** random-direction control (interpretability illusion) + Study-3 causal ablation.
   Next probe: tail concentration at late layers (diffuse tails would support the
   early-selective / late-distributed hypothesis).
+- **Finding 6 — the wavelet autopsy (Study 5 opens): what the lifting learned**
+  (`wavelet_autopsy.py`, impulse-response probing, Mini/D2 vs seed-matched Haar-init;
+  per-channel taps saved `.interp/autopsy_.../taps.npz`):
+  1. **The lifting absorbed the removed projections' job.** Cross-channel response energy:
+     ~0.00 at init → **0.26 / 0.60 / 0.74–0.80** (levels 0→6) trained. In the fully spectral
+     architecture (no proj_out, no MLP), the P/U MLPs became the network's channel-mixers —
+     channel rotation relocated *into* the wavelet, multi-scale and PR-constrained, rather
+     than disappearing. (Explains how skip_proj_out could be a win: the mixing moved, it
+     didn't die.)
+  2. **One shared mother kernel on the diagonal** (top-1 SVD participation 0.96–1.00 at every
+     level): channel-wise, the model learned essentially a single new wavelet shape, not a
+     bank of 512.
+  3. **The shape: Haar-pair → "leaky causal differencer."** Mid-level taps became a single
+     negative present-tap against a smooth broad positive causal-average ramp (e.g. L2:
+     −0.098 at n=0, then +0.05→+0.015 decaying over n=2–9) — present-minus-local-average,
+     the structure of biorthogonal spline / average-interpolating wavelets (causal variant),
+     NOT Daubechies-like. Level 0 nearly halved its subtractive tap (−0.36 → −0.16 vs
+     +0.63 pass-through of the previous token): the finest "detail" is closer to a delayed
+     copy than a difference — consistent with s7's loud gain in the census.
+  4. **The crawl left the dyadic ladder**: L0 sharpened onto d1 (0.89); L1–L3 flattened into
+     broad 1–8-token windows (L2 near-uniform over d1–d8); **L4 reaches for d1–d3 despite
+     base dilation 16** (fine reach at a coarse level); L5–L6 diffuse around base.
+  5. **Moderate nonlinearity (~9–15% at operating amplitude) — and training made the fine
+     levels MORE linear than their init** (L0: 0.35 → 0.15).
+  6. **Instrument caveat on record:** small-ε probing sits in GELU's 0.5-slope regime, so
+     absolute m0/vanishing-moment values are biased (init "Haar" itself shows m0≈0.33 at ε);
+     init-vs-trained *differences* are valid; a v2 pass extracting taps at operating
+     amplitude (eps_big) is the cheap fix before any moment claims harden.
+  *Family verdict: not Daubechies; rhymes with causal average-interpolating/spline
+  biorthogonal in shape — but the whole object (vector-valued, mildly nonlinear, learned
+  non-dyadic reach, PR guaranteed by lifting) has no classical name. It is a new,
+  characterizable wavelet system.*
 - Instruments to date: `tools/interpretability/coeff_dump.py` (Phase 0),
   `tools/interpretability/census.py` (Study 1: absmean/std/kurtosis over shards),
-  `tools/interpretability/topk_contexts.py` (Study 2: top-k contexts + tail concentration).
+  `tools/interpretability/topk_contexts.py` (Study 2: top-k contexts + tail concentration),
+  `tools/interpretability/wavelet_autopsy.py` (Study 5: effective filters, invariants,
+  crawl distributions, trained-vs-init).
 - Ops note: bypass cross-window state is batch-shaped and carries across forward calls →
   constant batch size enforced in the tool; zero-state reset at dump start (deterministic).
 

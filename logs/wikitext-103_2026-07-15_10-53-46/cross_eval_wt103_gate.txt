@@ -1,0 +1,19 @@
+Validation gate for tools/cross_eval.py: the D3 checkpoint re-evaluated on its own
+wikitext-103 test split must reproduce the pod benchmark
+(logs/wikitext-103_2026-07-15_10-53-46/log.txt: sliding 0.9797 BPB / 21.3395 PPL,
+non-overlapping 1.0032 / 22.9653; RTX 5090, fp16).
+Result below: RTX 2060, fp16 autocast, 2026-07-20 — sliding matches to four decimals;
+non-overlapping PPL differs by 0.0003 (hardware fp16 noise). GATE PASSED.
+
+[CROSS-EVAL - Non-overlapping] wikitext-103_2026-07-15_10-53-46 on wikitext-103
+  Perplexity: 22.9656
+  BPT: 4.5214
+  BPB: 1.0032
+  Avg Loss: 3.1340
+
+[CROSS-EVAL - Sliding Window] wikitext-103_2026-07-15_10-53-46 on wikitext-103
+  Perplexity: 21.3397
+  BPT: 4.4155
+  BPB: 0.9797
+  Avg Loss: 3.0606
+  (4.5069 bytes/token on this test split)

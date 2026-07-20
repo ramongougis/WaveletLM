@@ -1,0 +1,21 @@
+Cross-evaluation: F1 checkpoint (trained 1 epoch x 4,788,859,560 fresh Pile tokens,
+interleaved holdout) evaluated on the wikitext-103 TEST split.
+Tool: tools/cross_eval.py (imports train.py's evaluate_full_validation /
+evaluate_sliding_window directly — identical semantics to all README benchmarks).
+Validation gate: the same tool reproduces D3's recorded WT-103 benchmark to four
+decimals (sliding 0.9797 BPB / 21.3397 PPL; see
+logs/wikitext-103_2026-07-15_10-53-46/cross_eval_wt103_gate.txt).
+Device: RTX 2060, fp16 autocast (matching pod benchmark conditions). 2026-07-20.
+
+[CROSS-EVAL - Non-overlapping] pile_2026-07-17_20-02-08 on wikitext-103
+  Perplexity: 119.5686
+  BPT: 6.9017
+  BPB: 1.5314
+  Avg Loss: 4.7839
+
+[CROSS-EVAL - Sliding Window] pile_2026-07-17_20-02-08 on wikitext-103
+  Perplexity: 104.6594
+  BPT: 6.7096
+  BPB: 1.4887
+  Avg Loss: 4.6507
+  (4.5069 bytes/token on this test split)
