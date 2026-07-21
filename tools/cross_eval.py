@@ -21,9 +21,57 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 
 import torch
+
+
+def wikitext_detokenizer(string):
+    """Invertible WikiText detokenizer, per the Megatron-LM / GPT-2-family
+    zero-shot evaluation pipeline (tasks/zeroshot_gpt/detokenizer.py).
+
+    WikiText ships tokenizer artifacts (" @-@ ", spaced punctuation, spaced
+    heading markers). Word-level models score these as ordinary vocabulary
+    items; GPT-2-family subword evaluations undo them first, so their BPE
+    token count (and hence their per-token loss denominator) is lower. Running
+    this makes our evaluation protocol match theirs.
+
+    Transformation list verified against the Megatron source; exact regex
+    forms reconstructed. VALIDATION GATE: applying this to the WT-103 test
+    split should yield ~270,847 GPT-2 BPE tokens (Megatron's published count)
+    versus 287,644 raw — if it doesn't, the implementation is wrong.
+    """
+    # contractions
+    string = string.replace("s '", "s'")
+    string = re.sub(r"/' [0-9]/", r"/'[0-9]/", string)
+    # number separators
+    string = string.replace(" @-@ ", "-")
+    string = string.replace(" @,@ ", ",")
+    string = string.replace(" @.@ ", ".")
+    # punctuation
+    string = string.replace(" : ", ": ")
+    string = string.replace(" ; ", "; ")
+    string = string.replace(" . ", ". ")
+    string = string.replace(" ! ", "! ")
+    string = string.replace(" ? ", "? ")
+    string = string.replace(" , ", ", ")
+    # bracketed / quoted spans
+    string = re.sub(r"\(\s*([^\)]*?)\s*\)", r"(\1)", string)
+    string = re.sub(r"\[\s*([^\]]*?)\s*\]", r"[\1]", string)
+    string = re.sub(r"{\s*([^}]*?)\s*}", r"{\1}", string)
+    string = re.sub(r"\"\s*([^\"]*?)\s*\"", r'"\1"', string)
+    string = re.sub(r"'\s*([^']*?)\s*'", r"'\1'", string)
+    # miscellaneous
+    string = string.replace("= = = =", "====")
+    string = string.replace("= = =", "===")
+    string = string.replace("= =", "==")
+    string = string.replace(" " + chr(176) + " ", chr(176))
+    string = string.replace(" \n", "\n")
+    string = string.replace("\n ", "\n")
+    string = string.replace(" N ", " 1 ")
+    string = string.replace(" 's", "'s")
+    return string
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _REPO_ROOT)
@@ -52,6 +100,12 @@ def main():
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--no_amp", action="store_true",
                    help="Disable fp16 autocast on CUDA (pod benchmarks used fp16)")
+    p.add_argument("--detokenize", action="store_true",
+                   help="Apply the WikiText detokenizer before re-tokenizing the "
+                        "test split, matching the GPT-2/Megatron zero-shot protocol. "
+                        "Word-level PPL stays normalized by the canonical word count, "
+                        "so it remains comparable; raw per-token PPL and BPB do NOT "
+                        "(different token and byte streams).")
     args = p.parse_args()
 
     log = _PrintLogger()
@@ -112,6 +166,19 @@ def main():
         del cached
     else:
         _, _, test_data, _, bytes_per_token = load_and_encode_dataset(eval_cfg, log)
+
+    if args.detokenize:
+        raw_n = len(test_data)
+        text = enc.decode(test_data.tolist())
+        detok = wikitext_detokenizer(text)
+        test_data = torch.tensor(enc.encode(detok), dtype=torch.long)
+        new_bytes = len(detok.encode("utf-8"))
+        bytes_per_token = new_bytes / max(1, len(test_data))
+        log.log(f"[cross_eval] DETOKENIZED (GPT-2/Megatron protocol): "
+                f"{raw_n:,} -> {len(test_data):,} tokens "
+                f"({new_bytes:,} bytes, {bytes_per_token:.4f} b/tok). "
+                f"Megatron's published WT-103 count is 270,847 — a close match "
+                f"validates this detokenizer implementation.")
 
     use_amp = (device == "cuda") and not args.no_amp
     amp_dtype = torch.float16

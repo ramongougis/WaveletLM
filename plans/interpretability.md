@@ -285,11 +285,53 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   biorthogonal in shape — but the whole object (vector-valued, mildly nonlinear, learned
   non-dyadic reach, PR guaranteed by lifting) has no classical name. It is a new,
   characterizable wavelet system.*
+- **Finding 7 — no in-context copying (associative recall / induction): the capability gap**
+  (`induction_probe.py`, 2026-07-21). *Why it matters:* associative recall — having seen
+  "KEY VALUE", predict VALUE when KEY reappears — is the capability that gates attention-free
+  architectures as modern-LLM components. It is why the field converged on hybrids
+  (Jamba 1 attention : 7 Mamba; Nemotron-H ~8% attention layers; IBM Granite 4.0 at 9:1), and
+  the [Mamba paper](https://arxiv.org/pdf/2312.00752) reports that linear time-invariant SSMs
+  *"cannot [solve selective copying] even when combined with more powerful architectures."*
+  WaveletLM's mixing is structurally LTI-like: fixed dilation ladder, position-uniform
+  predict/update nets, content-dependence entering only via cross-scale gating and the bypass.
+  *Protocol:* `[filler] KEY VALUE [filler] KEY -> ?` vs a token-identical control in which the
+  demonstrated pair is replaced; the difference in log P(VALUE) at the final position isolates
+  the in-context copy. Filler is real WT-103 text, shared across all models; KEY/VALUE are
+  random mid-vocabulary ids; 256 trials each.
+
+  | model | params | induction lift | median rank of VALUE | argmax | top-10 |
+  |---|---|---|---|---|---|
+  | **GPT-2 small (control)** | 124M | **+10.414 nats** | **5** | **40.2%** | **55.5%** |
+  | Mini D3 (WT-103, 40ep) | 73M | +0.145 | 25,222 | 0.0% | 0.0% |
+  | Mini D1 (WT-103, 10ep) | 73M | +0.114 | 22,675 | 0.0% | 0.0% |
+  | Mini D3, gap=8 | 73M | +0.512 | 21,842 | 0.0% | 0.4% |
+  | F1 (Pile, 1ep) | 73M | +0.494 | 19,220 | 0.0% | 0.0% |
+  | **SP1 Small (WT-103, 5ep)** | **239M** | **+0.134** | **22,752** | **0.0%** | **0.0%** |
+
+  **Width does not rescue it.** SP1 at 239M — 3.3× Mini and *nearly 2× the control's 124M* —
+  is indistinguishable from the 73M models. Scaling C from 512 to 1024 moved the induction
+  lift by −0.011 nats. (M1 at 893M was started and stopped: 3.57 GB of weights on a 6 GB card
+  ran at 96% VRAM and 86 °C with the answer already settled; re-run pod-side if ever wanted,
+  though the 73M→239M flatline makes a qualitative change at 893M implausible.)
+
+  **The GPT-2 control validates the instrument** (~70× the lift, rank 5 vs rank ~25,000, on a
+  model of comparable size sharing our exact tokenizer) — so the null is a property of the
+  models, not the probe. Two directional whispers, both tiny: Pile-trained > WikiText-trained
+  (diverse data nudges toward copying) and short gap > long gap (mild locality).
+  *Honest scope:* this shows WT-103/Pile pretraining did **not** produce induction; it does not
+  prove the architecture **cannot** learn it — that requires the synthetic-task training arm
+  (MQAR / selective copying, ~$6 at Mini scale), now the highest-value experiment on the
+  modern-LLM axis. *Strategic consequence:* if it holds at larger widths (SP1 239M / M1 893M
+  pending), the wavelet+attention hybrid (separate repo, house rule 9) stops being a hedge and
+  becomes the evidenced path — with a clear division of labour: legible wavelet layers for
+  mixing, a thin attention component for recall.
 - Instruments to date: `tools/interpretability/coeff_dump.py` (Phase 0),
   `tools/interpretability/census.py` (Study 1: absmean/std/kurtosis over shards),
   `tools/interpretability/topk_contexts.py` (Study 2: top-k contexts + tail concentration),
   `tools/interpretability/wavelet_autopsy.py` (Study 5: effective filters, invariants,
-  crawl distributions, trained-vs-init).
+  crawl distributions, trained-vs-init),
+  `tools/interpretability/induction_probe.py` (Finding 7: in-context copying, with
+  `--hf_model` for transformer positive controls).
 - Ops note: bypass cross-window state is batch-shaped and carries across forward calls →
   constant batch size enforced in the tool; zero-state reset at dump start (deterministic).
 
