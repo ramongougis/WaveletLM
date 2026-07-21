@@ -686,14 +686,18 @@ Comparison numbers for both datasets are sourced from their respective papers. S
 | Transformer-XL Large* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 257M* | 1024 effective* | ~1,900 | 18.3[^4]* |
 | GPT-2 Large | Transformer | WebText (40GB) | 774M | 1024 | 0 (zero-shot on larger corpus) | 19.3[^5] |
 | S4* | SSM* | WikiText-103 (0.5GB)* | 249M* | 1024* | n/s | 20.95[^6]* |
+| *WaveletLM Large (derived)◊* | *Wavelet mixer* | *WikiText-103 (0.5GB)* | *3.2B* | *256* | *200* | *21.5 (est.)◊* |
 | GPT-2 Medium | Transformer | WebText (40GB) | 355M | 1024 | 0 (zero-shot on larger corpus) | 22.1[^5] |
 | Transformer-XL Standard* | Transformer + recurrence* | WikiText-103 (0.5GB)* | 151M* | 1024 effective* | ~17 | 24.0[^4]* |
+| *WaveletLM Medium @ 100 ep (derived)◊* | *Wavelet mixer* | *WikiText-103 (0.5GB)* | *853M* | *256* | *100* | *24.0 (est.)◊* |
 | GPT-2 | Transformer | WebText (40GB) | 124M | 1024 | 0 (zero-shot on larger corpus) | 29.4[^5] |
 | **WaveletLM Medium** | **Wavelet mixer** | **WikiText-103 (0.5GB)†** | **893M** | **256†** | **5** | **33.5†‡** |
 | **WaveletLM Mini** | **Wavelet mixer** | **WikiText-103 (0.5GB)†††** | **73M** | **256†††** | **40** | **36.1†††‡** |
 | **WaveletLM Small** | **Wavelet mixer** | **WikiText-103 (0.5GB)††** | **239M** | **256††** | **5** | **36.2††‡** |
 
 \* Both trained and evaluated on WikiText-103 only (direct comparison to WaveletLM). GPT-2 BPE was used by WaveletLM for tokenization.
+
+◊ *Derived rows — no such model has been trained.* Italicized entries are anticipated results at the stated budgets per the fitted scaling laws (see [Scaling-Law Projections at Institutional Budgets](#scaling-law-projections-at-institutional-budgets)), inheriting that section's full caveat stack: separability assumed, single-seed laws, 256-token context, width and epochs extrapolated well beyond measured ranges. Names follow the established width-tier ladder (Medium = C=2,048; Large = C=4,096).
 
 Epoch derivations from source papers and released training scripts:
 
@@ -2500,6 +2504,8 @@ Replacing the parameter-free cumulative running mean with a data-dependent EMA (
 ### Prime-Power Wavelet Filterbank
 
 > **Status (2026-06-18): largely resolved by measurement — see [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured) below.** Reading the learned crawl weights showed the model wants precise *small* lags (incl. the odd lag 3, already crawl-covered) plus coarse *smoothing*, not dedicated prime subbands. The proposal is retained below as the design reference; the empirical writeup that closed it is the next section. **NOTE**: Since the FWHT is the only architectural component which requires C be a power of 2, and pads otherwise, this section's power-of-2 restrictions/recommendations should be edited.
+>
+> **Closure replicated (2026-07-20):** the wavelet-autopsy instrument (plans/interpretability.md, Finding 6) independently re-measured the learned crawl posture on a different regime — Mini (C=512) at 20 epochs vs this probe's C=2048 at 1 epoch — and found the same two regimes: level 0 sharpened onto lag 1 (0.89), fine-mid levels spread over small lags, coarse levels diffuse. New wrinkle: **level 4 concentrates on lags 1–3 despite its base dilation of 16** — a coarse level trying to become fine. The successor experiment this points to is scale-budget reallocation, not prime subbands — see the addendum at the end of the [Crawl Dilation Probe](#crawl-dilation-probe-prime-power-wavelets-measured) section.
 
 The decomposition currently uses dyadic (radix-2) dilations only — 1, 2, 4, 8, …. The motivating concern is **skip-bigrams** `a … b` (b = current token, `…` = a gap ≥ 1) whose gap distance is not a power of 2 (e.g. a dependency at gap 3, 5, or 6), and whether such a dependency is captured by any dyadic scale. The proposal builds parallel **undecimated à-trous filterbanks at prime-power radices** (2, 3, 5, 7, and if lightweight 11, 13) and feeds them into the per-scale mixer in a weighted-sum fashion alongside the dyadic scales. Because the decomposition is undecimated (every scale stays at full length `T`), the prime-radix banks are just dilation-`m` filtered copies that concatenate on the scale axis with no resampling.
 
@@ -2543,6 +2549,16 @@ See [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md) for the full 
 4. **Two leads surfaced instead:**
    - *Coarse levels look redundant.* Four of seven levels reduce to broad averages — likely duplicating `decompose_bypass`'s global mean. Scale-budget question: do the coarse dyadic levels reduce to the bypass plus a few fine scales, or to single SSM poles (`decompose_bypass_ssm`)?
    - *The temporal basis is shared across depth.* `shared_lifting_weights` defaults **True** ([model.py:2877](model.py#L2877)), so all layers reference one lifting module — the L=5 probe's five identical blocks are the *same* parameter, and per-layer lag specialisation is architecturally foreclosed. The follow-up — the **[untie test](#untied-lifting-shared-lifting-weights-off)** (`shared_lifting_weights=false`) — was run and **NaN'd at the shared LR (deferred to post-release)**; whether per-layer temporal bases help, and whether layers then specialise to different lags, awaits a lower-LR re-run. Shared lifting remains the default.
+
+**Addendum (2026-07-20): the successor experiment — scale-budget reallocation on WaveletLM Mini.** With the prime question closed twice (this probe + the wavelet autopsy's independent replication at C=512/20ep, which additionally caught **level 4 concentrating on lags 1–3 against its base dilation of 16**), the evidence points at a different structural lever: the dyadic ladder *mis-allocates levels* — coarse levels flatten into averagers that plausibly duplicate the decompose-bypass, while the model fights for extra fine-range precision. Proposed screen, using Mini (C=512, 5ep, MBS=48; ~6h ≈ $6/arm; measured baseline D0 = 1.0436 sliding BPB) as the iteration machine:
+
+- **Arm A — coarse-prune:** levels {1,2,4,8,16} (S=6, drop the two coarsest details), global smoothing left to the bypass. Tests the coarse-redundancy lead directly; report both raw and iso-param (width-bumped) variants.
+- **Arm B — fine-densify at matched S:** replace the two coarsest levels with additional fine-mid levels (bases {1,2,3,4,8,16,32} — lag 3 promoted from crawl-covered to a dedicated level with its own P/U nets and mixer). Iso-param by construction.
+- **Arm C — coarse→SSM swap:** levels {1,2,4,8} + `decompose_bypass_ssm` (multi-pole) replacing the coarse details — the probe's own "do coarse levels reduce to SSM poles?" question, run literally.
+- **Arm D — untie-lifting re-run at a safe LR** (the NaN'd follow-up; the LR ceiling rules measured since — width-bound ≈48/C, batch-invariant — make the retry cheap and informed).
+- **Evaluation beyond BPB:** the crawl posture itself is the ladder-quality metric — *a well-chosen ladder should leave the learned dilation weights peaked at their bases; residual drift (like L4's) measures remaining mis-allocation.* The autopsy + census instruments read this for free per arm.
+
+Prior tuning transfers: LR is width-bound (unchanged at C=512), dropout re-checks are $6 each, and the K=33 crawl windows already cover all fine-mid lags — which is exactly why *base jiggling* is a no-op and *level existence/allocation* is the real variable. Screen ≈ $30; winner graduates to a 20-epoch confirm (~$25) against D2's 0.9906.
 
 **Interpretability payoff.** For the cost of one probe we obtained a replicated mechanistic description of how WaveletLM's token-mixer uses relative position — fine scales = precise short-range detectors (incl. the odd lag 3), coarse scales = smoothed context — and caught that the temporal basis is globally shared across depth. Exactly the kind of readable account the wide-single-layer direction is meant to yield. The full (now-shelved) prime-power design is preserved in [plans/prime_power_wavelets.md](plans/prime_power_wavelets.md).
 

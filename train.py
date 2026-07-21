@@ -1365,6 +1365,39 @@ def train():
     train_peak_mem = None
 
     if not benchmark_only:
+        # Frozen-wavelet transfer (Release Pipeline item): import a trained
+        # shared lifting (incl. crawl dilation logits — they live in the same
+        # module) from a donor checkpoint, optionally freezing it. Donor must
+        # share the lifting geometry (C, levels/schedule, K, hidden_mult);
+        # strict load enforces this. Key matching is done by suffix against
+        # the live module's own state_dict so it is robust to whether the
+        # donor registered the module as shared_lifting or layers.N.lifting_wavelet.
+        lifting_src = config.get('lifting_import_checkpoint', '')
+        if lifting_src:
+            donor = torch.load(lifting_src, map_location=device)
+            if isinstance(donor, dict) and 'model_state' in donor:
+                donor = donor['model_state']
+            donor = {(k[10:] if k.startswith('_orig_mod.') else k): v
+                     for k, v in donor.items()}
+            lw = model.layers[0].lifting_wavelet
+            picked = {}
+            for kk in lw.state_dict():
+                cands = [v for k, v in donor.items()
+                         if k.endswith('lifting_wavelet.' + kk)
+                         or k.endswith('shared_lifting.' + kk)]
+                if not cands:
+                    raise KeyError(f"[Lifting import] donor lacks lifting key: {kk}")
+                picked[kk] = cands[0]
+            lw.load_state_dict(picked, strict=True)
+            n_imp = sum(v.numel() for v in picked.values())
+            logger.log(f"[Lifting] Imported {n_imp/1e6:.2f}M lifting params "
+                       f"from {lifting_src}")
+            if config.get('lifting_freeze', False):
+                for p in lw.parameters():
+                    p.requires_grad = False
+                logger.log("[Lifting] FROZEN (requires_grad=False; optimizer "
+                           "skips grad-less params)")
+
         # Compile
         if config.get('compile', True) and device == 'cuda':
             compile_mode = config.get('compile_mode', 'default')

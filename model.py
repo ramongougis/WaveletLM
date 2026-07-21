@@ -471,9 +471,24 @@ class LiftingWaveletDecompose(nn.Module):
         lifting_offdiag_density: float = 0.0,
         lifting_offdiag_mask_seed: int = 1337,
         lifting_reference_weights: Optional[Dict[Tuple[int, str, int], torch.Tensor]] = None,
+        dilation_schedule: Optional[List[int]] = None,
     ):
         super().__init__()
         self.levels = levels
+        # Dilation ladder: dyadic 2^l by default; an explicit schedule (sorted
+        # positive ints, len == levels) generalizes it — prime-power bases,
+        # fine-densified or pruned ladders. Lifting invertibility is
+        # dilation-agnostic (the update step inverts exactly per level).
+        if dilation_schedule is not None:
+            if len(dilation_schedule) != levels:
+                raise ValueError(
+                    f"dilation_schedule length {len(dilation_schedule)} != levels {levels}")
+            if any(int(d) < 1 for d in dilation_schedule):
+                raise ValueError(
+                    f"dilation_schedule must be positive ints: {dilation_schedule}")
+            self.dilations = [int(d) for d in dilation_schedule]
+        else:
+            self.dilations = [1 << l for l in range(levels)]
         self.C = C
         self.hidden_mult = hidden_mult
         self.init_wavelet = init_wavelet
@@ -533,7 +548,7 @@ class LiftingWaveletDecompose(nn.Module):
             self._crawl_offsets = []
             base_idx_per_level = []
             for level in range(levels):
-                base = 1 << level
+                base = self.dilations[level]
                 min_off = max(1, base - half)
                 offsets = list(range(min_off, min_off + wavelet_crawl_k))
                 self._crawl_offsets.append(offsets)
@@ -790,7 +805,7 @@ class LiftingWaveletDecompose(nn.Module):
         cur = x
 
         for level in range(self.levels):
-            base_dilation = 1 << level
+            base_dilation = self.dilations[level]
             T = cur.shape[1]
 
             if self.wavelet_crawl:
@@ -3050,12 +3065,45 @@ class WaveletLM(nn.Module):
                 f"mixer_activation={config.get('complex_mixer_activation', 'split')!r}, "
                 f"shared across all layers: {n_params/1e6:.2f}M params")
 
+        # Dilation-schedule generalization (2026-07-20): the level ladder may be
+        # an arbitrary sorted list instead of dyadic 2^l. Two config routes:
+        # `wavelet_dilation_schedule` (explicit list) or
+        # `prime_power_wavelet_basis_max` = P (union the dyadic ladder with all
+        # prime powers p^k for odd primes p <= P, capped at
+        # `prime_power_dilation_cap`, default 128). Either implies
+        # levels = len(schedule); per_scale_mixer_widths must be sized to
+        # len(schedule)+1. Requires the shared-lifting default (real basis,
+        # single-basis lifting) so exactly one module carries the ladder.
+        _schedule = config.get("wavelet_dilation_schedule", None)
+        _pp_max = int(config.get("prime_power_wavelet_basis_max", 0) or 0)
+        if _pp_max and not _schedule:
+            _cap = int(config.get("prime_power_dilation_cap", 128))
+            _pp = []
+            for _p in range(3, _pp_max + 1):
+                if _p > 1 and all(_p % _d for _d in range(2, int(_p ** 0.5) + 1)):
+                    _q = _p
+                    while _q <= _cap:
+                        _pp.append(_q)
+                        _q *= _p
+            _schedule = sorted(set([1 << _l for _l in range(config['levels'])] + _pp))
+        if _schedule:
+            _schedule = sorted(set(int(_d) for _d in _schedule))
+            if (not self.shared_lifting_weights or wavelet_basis == "complex"
+                    or config.get("multi_basis_lifting", False)):
+                raise ValueError(
+                    "wavelet_dilation_schedule / prime_power_wavelet_basis_max require "
+                    "shared_lifting_weights=true, real basis, single-basis lifting")
+            config['levels'] = len(_schedule)
+            print(f"[Lifting] Dilation schedule ({len(_schedule)} levels): {_schedule}")
+        self._dilation_schedule = _schedule
+
         if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
             # Must match the block's self.Cp (this module is passed into every
             # block): pad to pow2 only when a 2^n-axis transform is in use.
             Cp = next_pow2(C) if _mt in ("fwht", "learned_butterfly") else C
             shared_lifting = LiftingWaveletDecompose(
                 levels=config['levels'],
+                dilation_schedule=self._dilation_schedule,
                 C=Cp,
                 hidden_mult=lifting_hidden_mult,
                 init_wavelet=lifting_init,
