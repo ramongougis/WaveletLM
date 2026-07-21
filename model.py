@@ -1572,6 +1572,9 @@ class WaveletLMBlock(nn.Module):
         fht_thue_morse_increment: int = 21,
         mixer_transform: str = "fwht",
         coefficient_shrinkage: str = "off",
+        mixer_mom_enabled: bool = False,
+        mixer_mom_experts: int = 4,
+        mixer_mom_topk: int = 2,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1955,8 +1958,41 @@ class WaveletLMBlock(nn.Module):
                 torch.eye(S, device=device, dtype=dtype)
             )
 
+        # Mixture-of-Mixers (MoM): a shared per-layer pool of E full-width
+        # experts with a learned STATIC per-scale top-k router — capacity
+        # sharing across scales instead of dedicated per-scale mixers
+        # (plans/mixture_of_mixers.md). Router is a parameter, not
+        # data-dependent: routing is per-scale, constant within a step.
+        self.mixer_mom_enabled = mixer_mom_enabled
+        self.mixer_mom_topk = mixer_mom_topk
+        self._mom_aux = None
+        if mixer_mom_enabled and coefficient_shrinkage == "replace":
+            raise ValueError("mixer_mom is incompatible with coefficient_shrinkage='replace'")
+        if mixer_mom_enabled and mixer_depth != 1:
+            raise ValueError("mixer_mom requires mixer_depth=1")
+        if mixer_mom_enabled and mixer_mom_topk > mixer_mom_experts:
+            raise ValueError("mixer_mom_topk cannot exceed mixer_mom_experts")
+
         if coefficient_shrinkage == "replace":
             pass  # phi IS the coefficient computation — no mixers allocated
+        elif mixer_mom_enabled:
+            self.mom_experts = nn.ModuleList([
+                GatedSpectralMixer(
+                    Cp=self.Cp, num_blocks=1, rank=low_rank,
+                    use_mixer_gate=use_mixer_gate,
+                    mixer_gate_activation=mixer_gate_activation,
+                    add_bias=False,
+                    device=device, dtype=dtype,
+                    stab_spectral_norm=stab_spectral_norm,
+                    stab_mixer_eps_scaling=stab_mixer_eps_scaling,
+                )
+                for _ in range(mixer_mom_experts)
+            ])
+            # Zero-init: uniform gates at step 0; top-k tie-break is stable
+            # (torch.topk is deterministic), so early routing is arbitrary but
+            # fixed until the router learns preferences.
+            self.mom_router = nn.Parameter(
+                torch.zeros(S, mixer_mom_experts, device=device, dtype=dtype))
         elif mixer_depth == 1:
             if per_scale_mixer_widths is not None:
                 if len(per_scale_mixer_widths) != S:
@@ -2684,7 +2720,9 @@ class WaveletLMBlock(nn.Module):
             for n_idx in range(N):
                 for bank_idx in range(K):
                     if bank_idx == 0:
-                        step_mixers = self.scale_mixers
+                        # Under MoM there is no per-scale bank; the pool is
+                        # routed inside the scale loop.
+                        step_mixers = None if self.mixer_mom_enabled else self.scale_mixers
                     else:
                         step_mixers = self.scale_mixers_recurrent_extra[bank_idx - 1]
                     # Inject the initial spectrum X0 into this step's input —
@@ -2719,6 +2757,18 @@ class WaveletLMBlock(nn.Module):
                             'rs,btsd->btrd', self.scale_routing, step_spec)
                     else:
                         routed_gate_input = None
+                    # MoM routing: static, parameter-only — computed once per
+                    # application. topw is differentiable (renormalized top-k
+                    # softmax slice); aux = expert-usage entropy penalty
+                    # (minimized -> uniform usage; guards router collapse).
+                    mom_w = mom_i = None
+                    if self.mixer_mom_enabled:
+                        _g = torch.softmax(self.mom_router.float(), dim=-1)
+                        _tv, _ti = torch.topk(_g, self.mixer_mom_topk, dim=-1)
+                        mom_w = (_tv / _tv.sum(dim=-1, keepdim=True)).to(step_spec.dtype)
+                        mom_i = _ti.tolist()
+                        _u = _g.mean(dim=0)
+                        self._mom_aux = (_u * (_u + 1e-9).log()).sum()
                     mixed_by_scale = []
                     for s in range(S):
                         Xs = step_spec[:, :, s, :]
@@ -2730,7 +2780,12 @@ class WaveletLMBlock(nn.Module):
                             gate_cache[bank_idx][s] = g
                         else:
                             Gs = routed_gate_input[:, :, s, :] if routed_gate_input is not None else None
-                            Ys = step_mixers[s](Xs, gate_input=Gs)
+                            if self.mixer_mom_enabled:
+                                Ys = mom_w[s, 0] * self.mom_experts[mom_i[s][0]](Xs, gate_input=Gs)
+                                for _j in range(1, self.mixer_mom_topk):
+                                    Ys = Ys + mom_w[s, _j] * self.mom_experts[mom_i[s][_j]](Xs, gate_input=Gs)
+                            else:
+                                Ys = step_mixers[s](Xs, gate_input=Gs)
                         mixed_by_scale.append(Xs + Ys if apply_residual else Ys)
                     current_spec = torch.stack(mixed_by_scale, dim=2)
                     # Per-step LayerNorm — K > 1 only, applied *between*
@@ -3096,6 +3151,8 @@ class WaveletLM(nn.Module):
             config['levels'] = len(_schedule)
             print(f"[Lifting] Dilation schedule ({len(_schedule)} levels): {_schedule}")
         self._dilation_schedule = _schedule
+        self.mixer_mom_aux_weight = float(config.get("mixer_mom_aux_weight", 0.01)) \
+            if config.get("mixer_mom_enabled", False) else 0.0
 
         if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
             # Must match the block's self.Cp (this module is passed into every
@@ -3327,6 +3384,9 @@ class WaveletLM(nn.Module):
                 fht_thue_morse_increment=config.get("fht_thue_morse_increment", 21),
                 mixer_transform=config.get("mixer_transform", "fwht"),
                 coefficient_shrinkage=config.get("coefficient_shrinkage", "off"),
+                mixer_mom_enabled=config.get("mixer_mom_enabled", False),
+                mixer_mom_experts=config.get("mixer_mom_experts", 4),
+                mixer_mom_topk=config.get("mixer_mom_topk", 2),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
@@ -3602,6 +3662,14 @@ class WaveletLM(nn.Module):
                     for lg in all_logits_for_loss
                 )
                 loss = total_loss / self.loop_iterations
+
+            # MoM auxiliary loss: expert-usage entropy penalty summed over
+            # layers (0 when MoM disabled — _mom_aux stays None).
+            if getattr(self, 'mixer_mom_aux_weight', 0):
+                _aux = [l._mom_aux for l in self.layers
+                        if getattr(l, '_mom_aux', None) is not None]
+                if _aux:
+                    loss = loss + self.mixer_mom_aux_weight * sum(_aux)
 
         return logits, loss
 
@@ -3951,6 +4019,11 @@ def parameter_breakdown(model, config, logger=None):
             # computation — no scale_mixers allocated.
             shr_per = sum(p.numel() for p in block0.coeff_shrink.parameters())
             out(f"    Shrinkage/layer:{shr_per:>{W-1},} ({shr_per/1e6:.2f}M)")
+        elif getattr(block0, 'mixer_mom_enabled', False):
+            # MoM: shared expert pool + static router instead of per-scale mixers.
+            mom_per = (sum(p.numel() for p in block0.mom_experts.parameters())
+                       + block0.mom_router.numel())
+            out(f"    MoM pool/layer:{mom_per:>{W-1},} ({mom_per/1e6:.2f}M)")
         else:
             mixer_per = sum(p.numel() for p in block0.scale_mixers.parameters())
             out(f"    Mixer/layer:   {mixer_per:>{W},} ({mixer_per/1e6:.2f}M)")

@@ -1,10 +1,14 @@
 # Mixture-of-Mixers (MoM) — v1 Design
 
-> **Status (2026-07-20): spec'd, promoted from post-release to the active deep stream at
-> Ramon's call; implementation is the next model.py build slot (after the scale-budget /
-> prime-power / frozen-transfer screen is running — one feature lands at a time).**
-> Supersedes the one-line "Sparse mixture-of-mixers first test" bullet in the README
-> Release Pipeline.
+> **Status (2026-07-21): IMPLEMENTED and smoke-tested** (forward/backward finite, router
+> gradient flowing, zero-init aux = ln(1/4) exactly, parameter_breakdown handled, guards
+> for depth>1 / shrinkage-replace / topk>E all fire, default path regression-checked).
+> Arms MOMA/MOMB queued in runs.sh after PP2, before K5. Supersedes the one-line "Sparse
+> mixture-of-mixers first test" bullet in the README Release Pipeline.
+> **Design amendment vs the original spec:** the router is *static per-scale* (a
+> parameter, not data-dependent), so Switch-style dispatch-fraction load balancing does
+> not apply; implemented instead as an **expert-usage entropy penalty** (usage = mean
+> over scales of the softmax router; aux = Σ u·log u, minimized → uniform usage).
 
 ## Motivation
 
