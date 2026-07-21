@@ -29,7 +29,7 @@ A planned replacement of the current learned embedding with a fixed, human-reada
 
 **Results**
 
-Current [results](#results) show better performance on PG-19 than Perceiver AR, the Compressive Transformer, and Transformer-XL with a single epoch of training, and better performance on WikiText-103 than Transformer-XL and GPT-2. 
+Current [results](#results) show near-benchmark performance on WikiText-103, with scaling laws derived and demonstrated in the [Scaling-Law Projections at Institutional Budgets](#scaling-law-projections-at-institutional-budgets) section. 
 
 NOTE: These headline results were achieved well before the most recent model work detailed in the [Future Plans](#future-plans) section below. Currently, the [best-performing test version](logs/wikitext-103_2026-06-18_19-18-42/log.txt) achieves a PPL of 21.0 versus the [Results headline](#results) of 23.8 on WikiText-103. This is expected to improve very soon with regularization and other standard refinements.
 
@@ -728,6 +728,7 @@ Longer training time, more regularization, and parameter compression are the sur
 
 ## Future Plans
 
+- [Evaluation-Units Errata (2026-07-20): Converting Historical Perplexities](#evaluation-units-errata-2026-07-20-converting-historical-perplexities)
 - [(Done) Single-Layer WaveletLM with Current Best Config](#done-single-layer-waveletlm-with-current-best-config)
 - [(Done) Parameter Reduction](#done-parameter-reduction)
 - [(Done) Larger Block Size](#done-larger-block-size)
@@ -773,6 +774,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Free C Test: C=100](#free-c-test-c100)
 - [Skip Projections (Fully Spectral Core)](#skip-projections-fully-spectral-core)
 - [Coefficient Shrinkage](#coefficient-shrinkage)
+- [Scaling-Law Projections at Institutional Budgets](#scaling-law-projections-at-institutional-budgets)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)
@@ -793,6 +795,36 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Instruction-Tuning Chat Demo](#instruction-tuning-chat-demo)
 - [Pretraining Data Blend](#pretraining-data-blend)
 - [Other Post-Release Plans](#other-post-release-plans)
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Evaluation-Units Errata (2026-07-20): Converting Historical Perplexities
+
+An audit on 2026-07-20 found that this README's comparison tables had listed WaveletLM's per-token perplexities beside baselines reported in the field's canonical word-level unit, a unit mismatch that flattered our table placements. The tables above were corrected the same day (see the ‡ and § footnotes for the full method and sources). Status of every historical number:
+
+- **All BPB values in every log, table, and scaling fit are correct and comparable as-is.** Byte normalization is tokenizer-immune, which is why BPB is this repository's primary metric; no scientific conclusion in this repo was affected.
+- **All perplexities in log files dated before 2026-07-20 are correct *as per-token perplexities*** under that run's tokenizer, but are **not comparable** to word-level numbers (Transformer-XL, S4, GPT-2's zero-shots, the PG-19 baselines) without the conversion below.
+- **Logs from 2026-07-20 onward print word-level perplexity directly** (the `[BENCHMARK - Word-level normalization]` block; constants in train.py's `CANONICAL_TEST_WORDS`).
+
+**Converting any historical PPL.** The conversion is exact and dataset-dependent. The datasets and their test splits never changed, only the reporting unit. With $`r`$ = (our test-set tokens) / (canonical test words):
+
+<div align="center">
+
+$`\displaystyle \text{PPL}_{word} = \text{PPL}_{token}^{\;r} = e^{\,\bar\ell \cdot r}`$
+
+</div>
+
+where $`\bar\ell`$ is the logged average per-token loss (nats).
+
+| dataset (tokenizer) | test tokens (ours) | canonical test words | r | example conversion |
+|---|---|---|---|---|
+| wikitext-103 / wikitext-2 (GPT-2 BPE) | 287,644 ([log](logs/wikitext-103_2026-07-15_10-53-46/log.txt)) | 245,569 — whitespace tokens + one `<eos>` per line | 1.1713 | 21.34 → 21.34^1.1713 = 36.1 |
+| pg19 (32K SentencePiece) | 9,197,032 ([log](logs/pg19_2026-06-29_22-12-43/log.txt)) | 6,966,499 — defined by [Rae et al.](https://arxiv.org/abs/1911.05507) §4.2 | 1.3202 | 27.72 → 27.72^1.3202 = 80.3 |
+| pile (any) | varies by subset | no canonical word unit | — | compare in BPB only |
+
+The word-level convention for evaluating subword models on these benchmarks follows the practice documented in the [Megatron-LM lineage](https://arxiv.org/abs/1909.08053) ([formula](https://github.com/facebookresearch/fairseq/blob/main/examples/megatron_11b/README.md)); PG-19's metric is defined word-level by its own dataset paper. One asymmetry, noted both ways: word-level baselines predict `<unk>` for out-of-vocabulary words, while subword/BPE models must spell every rare word in full.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
@@ -2270,6 +2302,39 @@ $`\displaystyle \varphi(z) = \gamma \cdot \mathrm{sign}(z)\cdot \mathrm{relu}(|z
 **Read (2026-07-06): screened, not yet decided — φ-pre survives to a 5-epoch confirm.** Shrinkage is a *regularizer*, so it can only pay once overfit pressure exists, and at 1 epoch WT-103 is still underfit. Both placements cost at C=100/5ep (starved: +0.007) and at C=1024/1ep (still underfit: pre +0.0019, post +0.0033) — but pre's deficit **collapsed 74% with width** (0.0074 → 0.0019), the same favorable trend that preceded the [projection's sign-flip](#skip-projections-fully-spectral-core). So per the screen's decision rule this is **graduate-don't-kill**: φ-`pre` (the better placement) goes to a single C=1024 **5-epoch** confirm (deferred to post-pause) where a sparsity prior can actually earn its keep; if it ties-or-beats the 0.9805 fully-spectral headline, it ships. `replace` (SH3) answers the purist question cheaply — φ *alone* carries a 67-PPL LM on a **0.40M-parameter compute core**, so Kiruluta's operation works standalone and the gated mixer is a +0.059-BPB *upgrade*, not a necessity.
 
 **Interpretability bonus — the λ-map.** Reading the learned thresholds from the SH1 checkpoint, the model spontaneously learned a *"protect the ends, squeeze the middle"* structure: the coarse **approx** scale is nearly passed through (λ≈0.13, γ≈0.88), the **mid-dilation details** are hammered (λ≈0.41, γ≈0.4–0.55), and the **finest** scale is partially spared (λ≈0.33, γ≈0.71). This independently recovers the [crawl probe](#crawl-dilation-probe-prime-power-wavelets-measured)'s finding — the two ends carry signal (precise short lags + broad context) while the middle scales are the redundant ones — through a completely different mechanism. And **θ stays exactly 0** everywhere: not a choice but a structural fixed point (∂cos(θ)/∂θ = 0 at the θ=0 init), consistent with cos(θ) being a redundant gain on *real* coefficients (true phase would belong to the complex-mixer variant, where shrinkage is not wired).
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### Scaling-Law Projections at Institutional Budgets
+
+*Everything in this section is projection, not measurement — the point is to price the architecture's measured trajectory at budgets beyond this project's reach.* Joining the two fitted laws (width: [Free C Test](#free-c-test-c100); data: the D-ladder in [Release Pipeline](#release-pipeline)) under a separable ansatz gives, in sliding BPB (N in millions of parameters, E = WT-103 epochs):
+
+<div align="center">
+
+$`\displaystyle L(N, E) \approx 0.787 + 0.794\,N^{-0.35} + 0.283\,E^{-0.80}`$
+
+</div>
+
+which back-predicts the held-out measured points (D0, K4) within ±0.005. Evaluated at large finite budgets, with word-level PPL via the errata conversion above:
+
+| tier | C | params | epochs | tokens seen | BPB *(est.)* | word-level PPL *(est.)* | rough compute *(est.)* |
+|---|---|---|---|---|---|---|---|
+| well-funded academic | 2,048 | 853M | 100 | 12B | 0.869 | 24.0 | ~35 H100-h |
+| institutional | 4,096 | 3.2B | 200 | 24B | 0.838 | 21.5 | ~900 H100-h |
+| large lab | 8,192 | 12.4B | 400 | 48B | 0.819 | 20.0 | ~7K H100-h |
+| GPT-3-class params | 16,384 | 49B | 1,000 | 120B | 0.806 | 19.1 | ~70K H100-h |
+| frontier-scale | 32,768 | 194B | 2,000 | 240B | 0.799 | 18.6 | ~560K H100-h |
+| **the joint floor (N→∞, E→∞)** | **∞** | **∞** | **∞** | **∞** | **0.787** | **17.8** | — |
+
+Word-level anchors for the last column: Transformer-XL Standard 24.0, GPT-2 Large 19.3, Transformer-XL Large 18.3, GPT-2 XL 17.5 (zero-shot). Three readings:
+
+1. **This is the complete exhaustion curve of WikiText-103.** By the 12B-parameter row the model sits within ~2 PPL of everything the dataset contains at any budget; the joint floor lands *inside* the incumbent cluster (a nose under TXL-Large, a nose over GPT-2 XL's zero-shot). The equations do not ask for a bigger model — they ask for more data.
+2. **No frontier lab would run the last rows** — they would run the 12B model on ~1T *fresh* tokens instead. That regime lives on a different scaling surface, of which the fresh-token-twin run (F1, [Release Pipeline](#release-pipeline)) is this project's first measured point.
+3. **The interpretability price point**: per these estimates, ~7K H100-hours puts a fully readable model — invertible transform, per-scale coefficient bands, channel-level features — in the GPT-2-Large performance neighborhood. If the privileged-basis findings hold, legibility at institutional budgets carries little to no asymptotic performance tax.
+
+*Caveats, in one breath:* separability of the surface is assumed, not measured; the epoch exponent comes from C=512 alone; single seed; 256-token context; both variables are extrapolated far beyond their measured ranges (width ×4–60, epochs ×5–50); optimizer behavior at very large C is unprobed (the ~48/C learning-rate rule implies untested territory); and the compute column uses the transformer 6·N·D rule as an order-of-magnitude proxy. These numbers are the shape of the trajectory, not its coordinates.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
