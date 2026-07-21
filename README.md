@@ -29,7 +29,7 @@ A planned replacement of the current learned embedding with a fixed, human-reada
 
 **Results**
 
-Current [results](#results) show near-benchmark performance on WikiText-103, with scaling laws derived and demonstrated in the [Scaling-Law Projections at Institutional Budgets](#scaling-law-projections-at-institutional-budgets) section. 
+Current [results](#results) show near-benchmark performance on WikiText-103, with scaling laws derived and demonstrated in the [Scaling-Law Projections at Institutional Budgets](#scaling-law-projections-at-institutional-budgets) section. Such scaling laws show expected performance to increase past most benchmarks with either greater C or more training time, both requiring compute budgets outside of the presently allowable range.
 
 NOTE: These headline results were achieved well before the most recent model work detailed in the [Future Plans](#future-plans) section below. Currently, the [best-performing test version](logs/wikitext-103_2026-06-18_19-18-42/log.txt) achieves a PPL of 21.0 versus the [Results headline](#results) of 23.8 on WikiText-103. This is expected to improve very soon with regularization and other standard refinements.
 
