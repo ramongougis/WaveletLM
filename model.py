@@ -2917,6 +2917,84 @@ class WaveletLMBlock(nn.Module):
         return x, current_running_mean
 
 
+class WaveletLMBlockMoE(nn.Module):
+    """Block-level Mixture of Experts: a per-layer pool of E INDEPENDENT
+    WaveletLMBlocks — each with its own lifting wavelets, mixers, bypass, and
+    reconstruction ("own wavelets and everything in between") — with a learned
+    per-token router selecting the top-k experts.
+
+    Distinct from Mixture-of-Mixers (`mixer_mom_*`): MoM shares only the mixers
+    behind one decomposition via a STATIC per-scale router; here the router is
+    DATA-DEPENDENT (a Linear on the token state), so Switch-style load-balance
+    aux is the correct regularizer (and is meaningful, unlike for MoM).
+
+    Compute is DENSE: routing individual tokens through a sequence transform
+    can't be sparsified without breaking the transform, so every expert runs on
+    the full sequence and outputs are blended per token. Cost is ~E x a single
+    block — capacity, not efficiency. top_k only controls how many experts'
+    outputs blend per token, not FLOPs (all experts run in training so the aux
+    gradient and graph stay well-defined; inference skips experts no token
+    selects). Presents the standard layer interface (x, prev_state,
+    token_embeddings) -> (out, state) and exposes `_moe_aux` for the top-level
+    loss to collect, matching the MoM plumbing.
+    """
+
+    def __init__(self, C, block_factory, num_experts=4, top_k=2, device=None,
+                 gradient_checkpointing=False):
+        super().__init__()
+        if top_k > num_experts:
+            raise ValueError("block_moe_topk cannot exceed block_moe_experts")
+        self.C = C
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.experts = nn.ModuleList([block_factory() for _ in range(num_experts)])
+        self.router = nn.Linear(C, num_experts, bias=False, device=device)
+        nn.init.normal_(self.router.weight, std=0.02)
+        self._moe_aux = None
+        # Checkpoint the EXPERTS (the memory-heavy part), never the router/aux —
+        # a side-effect aux set inside an outer checkpoint is silently detached
+        # (no-grad forward), leaving load-balancing inert. So the MoE self-
+        # checkpoints its experts and the top-level loop skips it (see forward).
+        self.gradient_checkpointing = gradient_checkpointing
+
+    def forward(self, x, prev_state=None, token_embeddings=None):
+        probs = F.softmax(self.router(x.float()), dim=-1)          # (B,T,E)
+        topw, topi = torch.topk(probs, self.top_k, dim=-1)         # (B,T,k)
+        topw = (topw / topw.sum(dim=-1, keepdim=True)).to(x.dtype)
+
+        # Switch-style load-balance aux: f_e = fraction of routing slots given
+        # to expert e; P_e = mean router probability to e; aux = E * <f, P>.
+        # Minimized when usage is uniform — guards router collapse. Valid here
+        # because routing is genuinely data-dependent (unlike MoM's static router).
+        onehot = F.one_hot(topi, self.num_experts).sum(dim=2).float()  # (B,T,E)
+        f_e = onehot.reshape(-1, self.num_experts).mean(0)
+        P_e = probs.reshape(-1, self.num_experts).mean(0)
+        self._moe_aux = self.num_experts * (f_e * P_e).sum()
+
+        # Dense evaluation, blended per token. The running-mean bypass state is
+        # (B,T,C) and linearly combinable, so the forwarded state is the same
+        # router-weighted blend as the output.
+        out = torch.zeros_like(x)
+        state_acc = None
+        skip_unused = not self.training
+        ckpt = self.gradient_checkpointing and self.training
+        for e in range(self.num_experts):
+            sel = (topi == e)                                   # (B,T,k) bool
+            w_e = (topw * sel).sum(dim=-1, keepdim=True)        # (B,T,1)
+            if skip_unused and not bool(sel.any()):
+                continue
+            if ckpt:
+                ye, se = checkpoint(self.experts[e], x, prev_state,
+                                    token_embeddings, use_reentrant=False)
+            else:
+                ye, se = self.experts[e](x, prev_state=prev_state,
+                                         token_embeddings=token_embeddings)
+            out = out + w_e * ye
+            if se is not None:
+                state_acc = se * w_e if state_acc is None else state_acc + se * w_e
+        return out, state_acc
+
+
 # ==============================================================================
 # 8. WaveletLM LANGUAGE MODEL
 # ==============================================================================
@@ -3303,9 +3381,7 @@ class WaveletLM(nn.Module):
         if self.looped_blocks:
             print(f"[Looped] Single shared WaveletLMBlock applied {effective_layer_count} times")
         layer_build_count = 1 if self.looped_blocks else L
-        self.layers = nn.ModuleList([
-            WaveletLMBlock(
-                C,
+        _block_kwargs = dict(
                 levels=config['levels'],
                 low_rank=config.get('low_rank', 0),
                 mlp_expansion=config.get('mlp_expansion', 10),
@@ -3403,9 +3479,41 @@ class WaveletLM(nn.Module):
                 lifting_reference_weights=lifting_reference_weights,
                 wavelet_decomp_norm=config.get("wavelet_decomp_norm", False),
                 wavelet_recon_norm=config.get("wavelet_recon_norm", False),
-            )
-            for _ in range(layer_build_count)
-        ])
+        )
+
+        def _make_block():
+            return WaveletLMBlock(C, **_block_kwargs)
+
+        # Block-level Mixture of Experts (plans/mixture_of_mixers.md, block-MoE
+        # section). Each expert is a full independent WaveletLMBlock, so experts
+        # need their OWN wavelets -> shared_lifting_weights must be off.
+        self.block_moe_enabled = config.get("block_moe_enabled", False)
+        self.block_moe_aux_weight = (
+            float(config.get("block_moe_aux_weight", 0.01))
+            if self.block_moe_enabled else 0.0)
+        if self.block_moe_enabled:
+            if self.shared_lifting_weights:
+                raise ValueError(
+                    "block_moe requires shared_lifting_weights=false "
+                    "(each expert owns its wavelets)")
+            if self.looped_blocks:
+                raise ValueError("block_moe is incompatible with looped_blocks")
+            if config.get("mixer_mom_enabled", False):
+                raise ValueError("block_moe and mixer_mom are mutually exclusive")
+            self.layers = nn.ModuleList([
+                WaveletLMBlockMoE(
+                    C, _make_block,
+                    num_experts=config.get("block_moe_experts", 4),
+                    top_k=config.get("block_moe_topk", 2),
+                    device=device,
+                    gradient_checkpointing=config.get("gradient_checkpointing", False),
+                )
+                for _ in range(layer_build_count)
+            ])
+        else:
+            self.layers = nn.ModuleList([
+                _make_block() for _ in range(layer_build_count)
+            ])
 
         # Cross-layer dense skips (design #1): each layer reads a learned
         # lower-triangular combination of all prior layer outputs (plus the input
@@ -3600,7 +3708,11 @@ class WaveletLM(nn.Module):
                 else:
                     layer_in = x
 
-                if self.gradient_checkpointing and self.training:
+                # Block-MoE layers self-checkpoint their experts (so the router
+                # and its load-balance aux stay grad-connected); the outer
+                # checkpoint here would detach that aux, so skip it for them.
+                is_moe_layer = isinstance(layer, WaveletLMBlockMoE)
+                if self.gradient_checkpointing and self.training and not is_moe_layer:
                     def layer_wrapper(lx, _layer=layer, _state=current_state, _ple=ple):
                         return _layer(lx, _state, token_embeddings=_ple)
                     x, current_state = checkpoint(layer_wrapper, layer_in, use_reentrant=False)
@@ -3670,6 +3782,14 @@ class WaveletLM(nn.Module):
                         if getattr(l, '_mom_aux', None) is not None]
                 if _aux:
                     loss = loss + self.mixer_mom_aux_weight * sum(_aux)
+
+            # Block-MoE auxiliary loss: Switch-style load-balance penalty summed
+            # over layers (0 when block-MoE disabled — _moe_aux stays None).
+            if getattr(self, 'block_moe_aux_weight', 0):
+                _aux = [l._moe_aux for l in self.layers
+                        if getattr(l, '_moe_aux', None) is not None]
+                if _aux:
+                    loss = loss + self.block_moe_aux_weight * sum(_aux)
 
         return logits, loss
 
@@ -4009,6 +4129,16 @@ def parameter_breakdown(model, config, logger=None):
 
         # Per-layer component breakdown
         block0 = model.layers[0]
+        # Block-MoE: layers[0] is a WaveletLMBlockMoE wrapper, not a plain
+        # block. Report the pool/router, then breakdown a representative expert
+        # (so the component lines below don't crash on the missing attributes).
+        if getattr(block0, 'num_experts', None) and hasattr(block0, 'experts'):
+            moe_per = sum(p.numel() for p in block0.parameters())
+            router_per = block0.router.weight.numel()
+            out(f"  Block-MoE\layer:{moe_per:>{W-1},} ({moe_per/1e6:.2f}M) "
+                f"= {block0.num_experts} experts (top-{block0.top_k}) + router {router_per:,}")
+            block0 = block0.experts[0]
+            out(f"  Per-expert breakdown:")
         if block0.mixer_depth > 1:
             if hasattr(block0, 'scale_mixers_by_depth'):
                 mixer_per = sum(p.numel() for p in block0.scale_mixers_by_depth.parameters())

@@ -68,3 +68,39 @@ steps 2K/4K/8K, not just final BPB.
 Router collapse (mitigated by aux loss + logging), init sensitivity at the house LR, and
 torch.compile graph churn from top-k dispatch (fallback: gather-based dense dispatch of
 2 experts — compute both, weight, no dynamic control flow).
+
+---
+
+## Block-level MoE (the sibling design) — IMPLEMENTED 2026-07-22
+
+Where MoM shares only the **mixers** behind one decomposition via a *static per-scale*
+router, block-MoE routes to **E independent full WaveletLMBlocks per layer** — each with its
+own lifting wavelets, mixers, bypass, and reconstruction ("own wavelets and everything in
+between") — via a **per-token, data-dependent** router (`nn.Linear(C, E)` on the token
+state). Class `WaveletLMBlockMoE` (model.py); config keys `block_moe_enabled`,
+`block_moe_experts`, `block_moe_topk`, `block_moe_aux_weight`.
+
+Key design points (and how they differ from MoM):
+- **Switch-style load-balance aux is correct here** (`E·⟨f_e, P_e⟩`, balanced value = 2.0 at
+  E=4/top-2, verified) *because* the router is genuinely data-dependent — the exact opposite
+  of MoM, where a static router made Switch balancing meaningless and we used usage-entropy.
+- **Dense compute, ~E× a single block.** Routing individual tokens through a *sequence*
+  transform can't be sparsified without breaking the transform, so every expert runs on the
+  full sequence and outputs (and the linearly-combinable running-mean bypass state) are
+  blended per token by the renormalized top-k weight. top-k controls blending, not FLOPs.
+  All experts run in training (stable aux gradient + graph); inference skips unselected ones.
+- **Experts must own their wavelets** ⇒ requires `shared_lifting_weights=false` (guarded).
+  This is SB4's untied-lifting regime, so it inherits the LR halving (0.0375, not 0.075).
+- **Not iso-param** (measured at Mini): D0 shared-on 72.89M; 1-expert shared-off 139.08M;
+  E=4 479.13M. So the honest baseline is the **1-expert shared-off control (MOE0)**, which
+  isolates routing from the +66M that turning off lifting-sharing alone costs — *not* D0.
+
+Guards: incompatible with `looped_blocks`, `mixer_mom_enabled`, and (via shared-lifting)
+the dilation-schedule / prime-power / complex-basis features. parameter_breakdown detects
+the wrapper and reports the pool + a representative expert (avoids the SH3-class crash).
+
+Smoke-tested (CPU): forward/backward finite, aux finite = 2.0 at balanced init, router +
+**all** experts receive gradient, router routes (distinct per-token top-k), breakdown runs,
+guards fire, default path unaffected. Arms MOE0/MOEA in runs.sh. Strategic note: its
+content-dependent routing is WaveletLM's first move toward the input-conditioned mixing that
+the induction probe (plans/interpretability.md, Finding 7) showed the LTI-like core lacks.
