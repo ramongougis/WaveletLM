@@ -318,8 +318,21 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   model of comparable size sharing our exact tokenizer) — so the null is a property of the
   models, not the probe. Two directional whispers, both tiny: Pile-trained > WikiText-trained
   (diverse data nudges toward copying) and short gap > long gap (mild locality).
-  *Honest scope:* this shows WT-103/Pile pretraining did **not** produce induction; it does not
-  prove the architecture **cannot** learn it — that requires the synthetic-task training arm
+  **Finding 7b — the scope of 7, measured (`context_usage.py`): this is a DISSOCIATION, not an
+  absence of in-context memory.** Position-wise loss on natural text (128 sequences × 256
+  tokens, no synthetic insertions): D3 improves from **5.188 nats at the contextless first
+  token to 3.079 at the last** — a **2.11-nat gain from context**, and *better than GPT-2's
+  3.390 at full context* (D3 is in-domain; GPT-2 is zero-shot). GPT-2's gain is larger
+  (−3.94 nats; ICL score 1.917 vs D3's 0.544), so it extracts ~3.5× more *marginal* value per
+  unit of added context. Conclusion: WaveletLM has strong **contextual/statistical** memory
+  (history sharpens the distribution — what multi-scale mixing does well, and what BPB
+  measures) and lacks **retrieval** memory (exact lookup/copy of an arbitrary bound symbol).
+  Degree vs kind: the ICL gap is a difference of degree; the induction result is a difference
+  of kind. *(Recorded because an earlier phrasing of Finding 7 — "at zero regardless of width"
+  — was scoped to induction but read as a claim about context use generally, which the data
+  above refutes.)*
+  *Honest scope:* Finding 7 shows WT-103/Pile pretraining did **not** produce induction; it does
+  not prove the architecture **cannot** learn it — that requires the synthetic-task training arm
   (MQAR / selective copying, ~$6 at Mini scale), now the highest-value experiment on the
   modern-LLM axis. *Strategic consequence:* if it holds at larger widths (SP1 239M / M1 893M
   pending), the wavelet+attention hybrid (separate repo, house rule 9) stops being a hedge and
