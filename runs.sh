@@ -711,7 +711,33 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # gradient_checkpointing:true keeps MBS=12 (clean A/B) while fitting the +2 scales/levels in VRAM
 # (7-level peaked at 28.7GB; result-neutral for non-MoE blocks). lr held at 0.03 (width+block bound,
 # both unchanged). Est ~$12-15/arm (checkpointing adds ~30% compute).
-run_ablation "CTX1024_L9_C512_5ep Context-1024 Mini, 9 levels — receptive field matched to context"     "$BASE_PATCH_5EP"     '{"block_size": 1024, "levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 12, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "CTX1024_L9: 9 levels (coarsest dilation 256 = 25% of window) vs 7-level CTX1024 1.0654 — tests whether matching receptive field to context recovers the loss; A/B is vs 1.0654, not D0"
+# run_ablation "CTX1024_L9_C512_5ep Context-1024 Mini, 9 levels — receptive field matched to context"     "$BASE_PATCH_5EP"     '{"block_size": 1024, "levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 12, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "CTX1024_L9: 9 levels (coarsest dilation 256 = 25% of window) vs 7-level CTX1024 1.0654 — tests whether matching receptive field to context recovers the loss; A/B is vs 1.0654, not D0"
+# ==============================================================================
+#
+# ASSOCIATIVE-MEMORY BYPASS ADAPTER (plans/associative_memory_bypass.md; model.py + train.py,
+# 2026-07-23). MQAR VALIDATED the mechanism: additive AMB solves synthetic recall at D=8 (91%)
+# AND D=16 (93%) where vanilla plateaus (56% / 40%) — additive is sufficient, delta not needed
+# at this scale. This installs it into the frozen D3 Mini: only the +1.311M AMB params train
+# (freeze_core), core stays at D3's converged 0.9797 weights, AMB starts at exact identity.
+# CONSERVATIVE test (frozen core can't reorganize to make room -> a LOWER bound on AMB's benefit).
+# HONEST EXPECTATION: WT-103 is recall-LIGHT (Finding 7 — the model does fine on it without
+# recall), so BPB may be modest/flat even though the mechanism works; a drop below 0.9797 means
+# WT-103 rewards recall, flat means AMB's value is on recall-heavy tasks (long-context/retrieval).
+# EVAL AFTER: recall_diagnostics.py + induction_probe.py on the checkpoint (does QRY-delta rise /
+# induction lift leave 0?) AND the sliding BPB vs D3 0.9797. lr=0.03 (only the fresh AMB trains,
+# core frozen -> safe). If frozen-adapter is flat, the FULL fine-tune (freeze_core:false) and the
+# NATIVE from-scratch AMB Mini are the follow-ups. ~2h/1ep on a 5090.
+run_ablation "AMBA_adapter_D3_frozen_1ep AMB adapter on D3 — install recall, frozen core, train only AMB"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_adapter_checkpoint": "logs/wikitext-103_2026-07-15_10-53-46/best_model.pt", "associative_bypass_adapter_freeze_core": true, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBA: install recall into frozen D3 via the +1.31M AMB adapter; eval induction lift + sliding BPB vs D3 0.9797 (recall-light WT-103 caveat applies)"
+# ==============================================================================
+#
+# CTX1024_L9 RESUME (postponed 2026-07-23 for AMBA — the MQAR validation made the
+# associative-memory bypass the immediate priority). The fresh L9 arm above already
+# trained ~3 epochs into run dir logs/wikitext-103_2026-07-23_06-49-44 before being
+# stopped; resume_run continues it EXACTLY (model + Adagrad accumulators + scaler +
+# RNG streams) from its last_checkpoint.pt (written every 2000 steps + at epoch end),
+# so the finished A/B vs the 7-level CTX1024 1.0654 is step-for-step the run that never
+# paused. Runs immediately after AMBA, before the scale-budget screen.
+resume_run "logs/wikitext-103_2026-07-23_06-49-44" "CTX1024_L9 resume (postponed for AMBA)"
 # ==============================================================================
 
 # ==============================================================================

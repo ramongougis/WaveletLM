@@ -1398,6 +1398,46 @@ def train():
                 logger.log("[Lifting] FROZEN (requires_grad=False; optimizer "
                            "skips grad-less params)")
 
+        # Associative-memory-bypass ADAPTER (plans/associative_memory_bypass.md):
+        # load a pretrained checkpoint that has NO assoc_* params into this
+        # bypass-equipped model. The AMB modules keep their fresh identity-init
+        # (zero-init out_proj -> the model starts EXACTLY as the donor), then the
+        # whole model (or just the AMB, if freeze_core) fine-tunes to install
+        # in-context retrieval. The native path is simply training from scratch
+        # with associative_bypass_enabled=true; this is the cheaper "install into
+        # an existing checkpoint" path.
+        amb_src = config.get('associative_bypass_adapter_checkpoint', '')
+        if amb_src:
+            if not config.get('associative_bypass_enabled', False):
+                raise ValueError("associative_bypass_adapter_checkpoint requires "
+                                 "associative_bypass_enabled=true")
+            donor = torch.load(amb_src, map_location=device)
+            if isinstance(donor, dict) and 'model_state' in donor:
+                donor = donor['model_state']
+            donor = {(k[10:] if k.startswith('_orig_mod.') else k): v
+                     for k, v in donor.items()}
+            _base = getattr(model, '_orig_mod', model)
+            missing, unexpected = _base.load_state_dict(donor, strict=False)
+            # The donor may ONLY lack the fresh AMB tensors; anything else missing,
+            # or any unexpected key, means a config/architecture mismatch -> fail loud.
+            bad_missing = [k for k in missing if '.assoc_' not in k]
+            if bad_missing or unexpected:
+                raise KeyError(
+                    f"[AMB adapter] checkpoint mismatch beyond the AMB modules: "
+                    f"unexpected={list(unexpected)[:6]}; non-AMB missing={bad_missing[:6]}")
+            logger.log(f"[AMB adapter] loaded donor {amb_src}; {len(missing)} fresh "
+                       f"AMB tensors kept at identity-init (model starts == donor).")
+            if config.get('associative_bypass_adapter_freeze_core', False):
+                n_train = n_frozen = 0
+                for name, p in _base.named_parameters():
+                    if '.assoc_' in name:
+                        n_train += p.numel()
+                    else:
+                        p.requires_grad = False
+                        n_frozen += p.numel()
+                logger.log(f"[AMB adapter] CORE FROZEN: training only "
+                           f"{n_train/1e6:.3f}M AMB params ({n_frozen/1e6:.2f}M frozen).")
+
         # Compile
         if config.get('compile', True) and device == 'cuda':
             compile_mode = config.get('compile_mode', 'default')
