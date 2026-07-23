@@ -2346,6 +2346,22 @@ Word-level anchors for the last column: Transformer-XL Standard 24.0, GPT-2 Larg
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### In-Context Recall: the Honest Gap and an Attention-Free Program
+
+A limitation we measured and record plainly: **WaveletLM performs no in-context *retrieval*.** On a controlled induction probe — copy a bound KEY→VALUE pair from context — the trained model leaves VALUE at rank ~25,000 of 50,257 (induction lift ~0 nats), where a same-tokenizer GPT-2-small scores rank 5 / +10.4 nats ([plans/interpretability.md](plans/interpretability.md), Finding 7). It is not a training artifact: it held across width (73M→239M), epochs, and data diversity — the structural signature of the linear-time-invariant mixing class (the wall S4 hit, and why the field converged on attention hybrids at 7:1–9:1 in Jamba/Nemotron-H/Granite). And it is specifically a *retrieval* gap, not a *contextual* one: the same model's loss still drops 2.11 nats as context accumulates (Finding 7b) — it uses history well; it simply cannot look up an arbitrary bound symbol.
+
+Rather than reach for attention, three complementary **attention-free, MLP-free** tracks pursue it ([plans/associative_memory_bypass.md](plans/associative_memory_bypass.md)):
+
+- **Diagnostics — is the capability latent?** Activation-patching read/write probes + generalizing-direction search (the representation-engineering lineage), on existing checkpoints with no training: they locate whether the bottleneck is the *write* or the *read*, and whether a recall direction exists that generalizes.
+- **Minimal weight/activation editing.** The model-editing lineage (ROME / MEMIT / task arithmetic) adapted to a *non-transformer, MLP-free* core (cf. ROME-on-Mamba): find the smallest, most localized edit that induces recall and test whether it generalizes — reported as edit rank/norm + held-out generalization, with BPB as a specificity guardrail (not the objective). Doubles as an alignment-relevant activation-engineering instrument.
+- **Associative-memory bypass.** Upgrade the decompose-bypass from a vector running-mean to a matrix key–value state (outer-product / delta-rule — the linear-attention family): O(T), attention-free, MLP-free, and the mechanism the field found gives subquadratic recall.
+
+*Status: exploratory, tracked deliberately.* Recall is state-bounded by construction, so this will **not** match attention's unbounded KV cache — the honest target is moving the induction lift from ~0 to *real*, scored on the induction probe and [Zoology's MQAR](https://github.com/HazyResearch/zoology). It is recorded here because, if it bears fruit, it is a headline result worth the paper and the release note: **legible, attention-free in-context recall.**
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Release Pipeline
 
 > **Status (2026-06-18): plan of record for the first release.** Sequences architecture-lock → cross-dataset baselines → big-data tuning → multi-seed headlines. Supersedes the per-size MLP/LR/Dropout sweep grid on WT-103 (deferred to the big-data regime, below).
