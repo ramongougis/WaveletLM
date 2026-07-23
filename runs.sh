@@ -696,7 +696,22 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # an LR cut (NaN ceiling is batch-invariant per the sqrt-batch-fails finding); the cut is
 # for the block increase. warmup_fraction=0.3 auto-computes from the new step count.
 # Est ~$10-12/arm (similar token throughput, 4x longer sequences at 1/4 the batch).
-run_ablation "CTX1024_C512_L10_5ep Context-1024 Mini — 4x context, block 256->1024"     "$BASE_PATCH_5EP"     '{"block_size": 1024, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 12, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "CTX1024: block 1024 vs D3 block 256 (0.9797) — larger context + comparison-table context match; lr=0.03 conservative (block-1024 NaN ceiling untested)"
+# run_ablation "CTX1024_C512_L10_5ep Context-1024 Mini — 4x context, block 256->1024"     "$BASE_PATCH_5EP"     '{"block_size": 1024, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 12, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "CTX1024: block 1024 vs D3 block 256 (0.9797) — larger context + comparison-table context match; lr=0.03 conservative (block-1024 NaN ceiling untested)"
+#
+# CTX1024_L9 — RESULT of CTX1024 (7-level): 1.0654 sliding BPB, +0.0218 WORSE than D0 (1.0436).
+# Diagnosis: at levels=7 the coarsest dyadic scale is dilation 64 = only 6% of the 1024 window
+# (vs 64/256 = 25% at block 256), so the wavelet receptive field never spanned the context.
+# FIX: levels=9 (dilations 1..256) restores coarsest/context = 256/1024 = 25%, matching D0's ratio.
+# Widths follow the config's own "coarsest HALF of scales get full width" rule (7-level was 4/8 =
+# 50/50); faithful scale-up to 10 scales = coarsest 5 full -> [1,1,1,1,1,0.5,0.5,0.5,0.5,0.5]
+# (dilation-16 shifts full->half as the 50/50 boundary moves). 84.28M (+11.4M vs CTX1024).
+# A/B TARGET: compare to the 7-level CTX1024 (1.0654), NOT D0 — held at identical lr/MBS/block,
+# the only change is levels+widths, so it isolates the receptive-field hypothesis. If it beats
+# 1.0654, reach was the bottleneck. (Both still carry the lr=0.03 confound vs D0 — separate probe.)
+# gradient_checkpointing:true keeps MBS=12 (clean A/B) while fitting the +2 scales/levels in VRAM
+# (7-level peaked at 28.7GB; result-neutral for non-MoE blocks). lr held at 0.03 (width+block bound,
+# both unchanged). Est ~$12-15/arm (checkpointing adds ~30% compute).
+run_ablation "CTX1024_L9_C512_5ep Context-1024 Mini, 9 levels — receptive field matched to context"     "$BASE_PATCH_5EP"     '{"block_size": 1024, "levels": 9, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 12, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "CTX1024_L9: 9 levels (coarsest dilation 256 = 25% of window) vs 7-level CTX1024 1.0654 — tests whether matching receptive field to context recovers the loss; A/B is vs 1.0654, not D0"
 # ==============================================================================
 
 # ==============================================================================
