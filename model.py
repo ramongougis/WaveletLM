@@ -1577,7 +1577,6 @@ class WaveletLMBlock(nn.Module):
         mixer_mom_topk: int = 2,
         associative_bypass_enabled: bool = False,
         associative_bypass_dim: int = 64,
-        associative_bypass_eps: float = 1e-4,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1981,7 +1980,7 @@ class WaveletLMBlock(nn.Module):
         # state supplies the content-addressable RETRIEVAL the recall diagnostic
         # showed is missing (KEY->VALUE binds at the source but never routes to
         # the query). d x d state (d = associative_bypass_dim), NOT C x C: project
-        # x -> q,k,v in R^d, accumulate S = sum k(x)v, retrieve y = q.S/(q.sum k),
+        # x -> q,k,v in R^d, accumulate S = sum k(x)v, retrieve y = q.S (unnormalized),
         # up-project y -> C. No softmax, no O(T^2), no KV cache (the sense in which
         # SSMs are "attention-free"). Identity-at-init (zero-init up-projection +
         # beta gain), so it is a clean ablation AND a bolt-on adapter. Off by default.
@@ -1992,7 +1991,6 @@ class WaveletLMBlock(nn.Module):
                     "associative_bypass requires the real forward path (complex_mixer off)")
             d = int(associative_bypass_dim)
             self.assoc_dim = d
-            self.assoc_eps = float(associative_bypass_eps)
             self.assoc_q = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
             self.assoc_k = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
             self.assoc_v = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
@@ -2577,22 +2575,23 @@ class WaveletLMBlock(nn.Module):
         return x, None
 
     def _assoc_retrieve(self, x0):
-        """Causal linear-attention associative memory (v1: additive + normalizer).
+        """Causal linear-attention associative memory (v1: additive, UNNORMALIZED read).
 
-        S_t = sum_{i<=t} k_i (x) v_i ;  y_t = q_t·S_t / (q_t·sum_{i<=t} k_i + eps).
-        L2-normalized k,q bound the outer-product state (guards against explosion
-        over long context). NOTE: naive O(T·d^2) materialized cumsum — fine for the
-        T<=1024 regime; a chunked scan is the long-context optimization.
+        S_t = sum_{i<=t} k_i (x) v_i ;  y_t = q_t · S_t = sum_{i<=t} (q_t·k_i) v_i.
+        NO denominator: with L2-normalized (hence SIGNED) q,k the normalizer
+        sum_i (q·k_i) is negative ~50% of the time and near-zero ~12%, which made
+        y_t explode (measured absmax ~779 vs ~3 unnormalized) and corrupted the base
+        model — the MQAR failure (2026-07-23). The unnormalized read relies on keys
+        staying roughly orthonormal (the task encourages it); the delta rule (v2) is
+        the principled upgrade for interference + large-T scale. NOTE: naive O(T·d^2)
+        materialized cumsum — fine for T<=1024; a chunked scan is the long-context opt.
         """
         q = F.normalize(self.assoc_q(x0).float(), dim=-1)          # (B,T,d)
         k = F.normalize(self.assoc_k(x0).float(), dim=-1)          # (B,T,d)
         v = self.assoc_v(x0).float()                               # (B,T,d)
         kv = k.unsqueeze(-1) * v.unsqueeze(-2)                     # (B,T,d,d)
         S = kv.cumsum(dim=1)                                       # (B,T,d,d)
-        z = k.cumsum(dim=1)                                        # (B,T,d)
-        num = torch.einsum('btd,btde->bte', q, S)                 # (B,T,d)
-        den = (q * z).sum(-1, keepdim=True)                       # (B,T,1)
-        y = num / (den + self.assoc_eps)                          # (B,T,d)
+        y = torch.einsum('btd,btde->bte', q, S)                   # (B,T,d) unnormalized read
         return self.assoc_out(y.to(self.assoc_out.weight.dtype))  # (B,T,C)
 
     def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None):
@@ -3517,7 +3516,6 @@ class WaveletLM(nn.Module):
                 mixer_mom_topk=config.get("mixer_mom_topk", 2),
                 associative_bypass_enabled=config.get("associative_bypass_enabled", False),
                 associative_bypass_dim=config.get("associative_bypass_dim", 64),
-                associative_bypass_eps=config.get("associative_bypass_eps", 1e-4),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
