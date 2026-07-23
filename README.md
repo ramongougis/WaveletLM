@@ -39,6 +39,9 @@ WaveletLM is also capable of robust linear context length scaling with minimal p
 
 So far, a prompt length of 65536 tokens, limited here only by personally-available memory budget, was achieved on the 256-token block size-trained model with a BPB of 0.9931 versus a baseline of 0.9748. This equates to a mere 1.9% BPB increase for a 25,500% increase in context. BPB gain additionally diminishes per doubling of context length: a context of 32768 achieves 0.9909 BPB, a 0.2215% increase for double the context at the high end, demonstrating continued effectiveness at increasingly longer contexts.
 
+**Optional Associative Memory Bypass (Linear Attention)**
+WaveletLM is attention-free and MLP-free by default. An optional linear attention addition is included with the associative-memory bypass (`associative_bypass_enabled:true` in the config): a low-rank (d≈64 test pending) state added as a parallel branch to each block, which supplies the content-addressable, in-context key-value retrieval the recall diagnostic (linked here later) showed is otherwise missing.
+
 **Future Plans**
 
 Several improvements have been made since the headline model in the [Results](#results) section was trained, and are awaiting completion before the release of an updated version. One such improvement is the context length scaling mentioned above. For more information, see the [Future Plans](#future-plans) section, which tracks all work currently completed, in progress, and planned.
@@ -781,6 +784,8 @@ Longer training time, more regularization, and parameter compression are the sur
 - [Skip Projections (Fully Spectral Core)](#skip-projections-fully-spectral-core)
 - [Coefficient Shrinkage](#coefficient-shrinkage)
 - [Scaling-Law Projections at Institutional Budgets](#scaling-law-projections-at-institutional-budgets)
+- [Localizing the Recall Break: the Write Exists, the Read Is Missing](#localizing-the-recall-break-the-write-exists-the-read-is-missing)
+- [In-Context Recall: the Honest Gap and an Attention-Free Program](#in-context-recall-the-honest-gap-and-an-attention-free-program)
 - [Release Pipeline](#release-pipeline)
 - [Longer PG-19 Training](#longer-pg-19-training)
 - [Long-Context Retrieval (wavelet-keyed kNN-LM)](#long-context-retrieval-wavelet-keyed-knn-lm)

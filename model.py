@@ -1575,6 +1575,9 @@ class WaveletLMBlock(nn.Module):
         mixer_mom_enabled: bool = False,
         mixer_mom_experts: int = 4,
         mixer_mom_topk: int = 2,
+        associative_bypass_enabled: bool = False,
+        associative_bypass_dim: int = 64,
+        associative_bypass_eps: float = 1e-4,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1972,6 +1975,30 @@ class WaveletLMBlock(nn.Module):
             raise ValueError("mixer_mom requires mixer_depth=1")
         if mixer_mom_enabled and mixer_mom_topk > mixer_mom_experts:
             raise ValueError("mixer_mom_topk cannot exceed mixer_mom_experts")
+
+        # Associative-memory bypass (plans/associative_memory_bypass.md): the ONE
+        # optional linear-attention addition. A low-rank causal linear-attention
+        # state supplies the content-addressable RETRIEVAL the recall diagnostic
+        # showed is missing (KEY->VALUE binds at the source but never routes to
+        # the query). d x d state (d = associative_bypass_dim), NOT C x C: project
+        # x -> q,k,v in R^d, accumulate S = sum k(x)v, retrieve y = q.S/(q.sum k),
+        # up-project y -> C. No softmax, no O(T^2), no KV cache (the sense in which
+        # SSMs are "attention-free"). Identity-at-init (zero-init up-projection +
+        # beta gain), so it is a clean ablation AND a bolt-on adapter. Off by default.
+        self.associative_bypass_enabled = associative_bypass_enabled
+        if associative_bypass_enabled:
+            if complex_mixer:
+                raise ValueError(
+                    "associative_bypass requires the real forward path (complex_mixer off)")
+            d = int(associative_bypass_dim)
+            self.assoc_dim = d
+            self.assoc_eps = float(associative_bypass_eps)
+            self.assoc_q = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
+            self.assoc_k = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
+            self.assoc_v = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
+            self.assoc_out = nn.Linear(d, C, bias=False, device=device, dtype=dtype)
+            nn.init.zeros_(self.assoc_out.weight)   # identity at init; learns first
+            self.assoc_beta = nn.Parameter(torch.ones(1, device=device, dtype=dtype))
 
         if coefficient_shrinkage == "replace":
             pass  # phi IS the coefficient computation — no mixers allocated
@@ -2549,6 +2576,25 @@ class WaveletLMBlock(nn.Module):
             x = x + mem_out
         return x, None
 
+    def _assoc_retrieve(self, x0):
+        """Causal linear-attention associative memory (v1: additive + normalizer).
+
+        S_t = sum_{i<=t} k_i (x) v_i ;  y_t = q_t·S_t / (q_t·sum_{i<=t} k_i + eps).
+        L2-normalized k,q bound the outer-product state (guards against explosion
+        over long context). NOTE: naive O(T·d^2) materialized cumsum — fine for the
+        T<=1024 regime; a chunked scan is the long-context optimization.
+        """
+        q = F.normalize(self.assoc_q(x0).float(), dim=-1)          # (B,T,d)
+        k = F.normalize(self.assoc_k(x0).float(), dim=-1)          # (B,T,d)
+        v = self.assoc_v(x0).float()                               # (B,T,d)
+        kv = k.unsqueeze(-1) * v.unsqueeze(-2)                     # (B,T,d,d)
+        S = kv.cumsum(dim=1)                                       # (B,T,d,d)
+        z = k.cumsum(dim=1)                                        # (B,T,d)
+        num = torch.einsum('btd,btde->bte', q, S)                 # (B,T,d)
+        den = (q * z).sum(-1, keepdim=True)                       # (B,T,1)
+        y = num / (den + self.assoc_eps)                          # (B,T,d)
+        return self.assoc_out(y.to(self.assoc_out.weight.dtype))  # (B,T,C)
+
     def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None):
         # Invertible complex wavelet uses a dedicated forward (full complex
         # coefficients carried through the spectral stack, tied reconstruct).
@@ -2564,6 +2610,7 @@ class WaveletLMBlock(nn.Module):
             return self._forward_complex_mixer(x, prev_state, token_embeddings)
 
         _, _, C = x.shape
+        assoc_x0 = x if self.associative_bypass_enabled else None
         current_running_mean = None
         gate_bias_scales = None
 
@@ -2913,6 +2960,11 @@ class WaveletLMBlock(nn.Module):
             x = self.residual_alpha_mlp * x + mem_out
         else:
             x = x + mem_out
+
+        # Associative-memory bypass: content-addressable retrieval as a parallel
+        # residual branch (beta·zero-init-out -> exact identity at init).
+        if self.associative_bypass_enabled:
+            x = x + self.assoc_beta * self._assoc_retrieve(assoc_x0)
 
         return x, current_running_mean
 
@@ -3463,6 +3515,9 @@ class WaveletLM(nn.Module):
                 mixer_mom_enabled=config.get("mixer_mom_enabled", False),
                 mixer_mom_experts=config.get("mixer_mom_experts", 4),
                 mixer_mom_topk=config.get("mixer_mom_topk", 2),
+                associative_bypass_enabled=config.get("associative_bypass_enabled", False),
+                associative_bypass_dim=config.get("associative_bypass_dim", 64),
+                associative_bypass_eps=config.get("associative_bypass_eps", 1e-4),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
@@ -4160,6 +4215,11 @@ def parameter_breakdown(model, config, logger=None):
             if getattr(block0, 'coefficient_shrinkage', 'off') != 'off':
                 shr_per = sum(p.numel() for p in block0.coeff_shrink.parameters())
                 out(f"    Shrinkage/layer:{shr_per:>{W-1},} ({shr_per/1e6:.2f}M)")
+        if getattr(block0, 'associative_bypass_enabled', False):
+            assoc_per = sum(p.numel() for p in [
+                block0.assoc_q.weight, block0.assoc_k.weight, block0.assoc_v.weight,
+                block0.assoc_out.weight, block0.assoc_beta])
+            out(f"    Assoc-bypass/l:{assoc_per:>{W-1},} ({assoc_per/1e6:.2f}M, d={block0.assoc_dim})")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
             out(f"    MLP/layer:     {mlp_per:>{W},} ({mlp_per/1e6:.2f}M)")
