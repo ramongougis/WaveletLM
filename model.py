@@ -1991,6 +1991,11 @@ class WaveletLMBlock(nn.Module):
                     "associative_bypass requires the real forward path (complex_mixer off)")
             d = int(associative_bypass_dim)
             self.assoc_dim = d
+            # Pre-norm on the AMB's input: read the residual's DIRECTION, not its
+            # (deep-stack-growing) magnitude. Without it, the AMB reads a growing
+            # residual and writes back into it -> read->residual->read feedback that
+            # ran away in fp16 (native run NaN'd ~step 500 even with the bounded read).
+            self.assoc_ln = nn.LayerNorm(C, device=device, dtype=dtype)
             self.assoc_q = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
             self.assoc_k = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
             self.assoc_v = nn.Linear(C, d, bias=False, device=device, dtype=dtype)
@@ -2589,6 +2594,7 @@ class WaveletLMBlock(nn.Module):
         readout (matched keys dominate the weighted mean). The delta rule (v2) remains the
         upgrade for interference/capacity. NOTE: naive O(T·d^2) cumsum; chunked scan later.
         """
+        x0 = self.assoc_ln(x0)                                    # pre-norm: bounds |v|, breaks the feedback blowup
         q = F.elu(self.assoc_q(x0).float()) + 1.0                 # (B,T,d) nonneg
         k = F.elu(self.assoc_k(x0).float()) + 1.0                 # (B,T,d) nonneg
         v = self.assoc_v(x0).float()                              # (B,T,d)
@@ -4222,7 +4228,8 @@ def parameter_breakdown(model, config, logger=None):
         if getattr(block0, 'associative_bypass_enabled', False):
             assoc_per = sum(p.numel() for p in [
                 block0.assoc_q.weight, block0.assoc_k.weight, block0.assoc_v.weight,
-                block0.assoc_out.weight, block0.assoc_beta])
+                block0.assoc_out.weight, block0.assoc_beta,
+                block0.assoc_ln.weight, block0.assoc_ln.bias])
             out(f"    Assoc-bypass/l:{assoc_per:>{W-1},} ({assoc_per/1e6:.2f}M, d={block0.assoc_dim})")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
