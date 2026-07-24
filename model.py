@@ -2628,8 +2628,29 @@ class WaveletLMBlock(nn.Module):
                 x0 = x0 + self.assoc_gamma * assoc_prev.float()  # depth-wise recall highway (inside pre-norm)
             x0 = self.assoc_ln(x0)                               # pre-norm: read direction, bounds |v|
             if self.assoc_feature_map == "relu2":
-                q = F.relu(self.assoc_q(x0)).square()            # (B,T,d) nonneg, NO DC floor -> selective
-                k = F.relu(self.assoc_k(x0)).square()            # (B,T,d) nonneg, NO DC floor -> selective
+                # nonneg, NO DC floor -> selective; but UNBOUNDED (squared) -> spiky
+                # features that are intrinsically NaN-prone under Adagrad+fp16 (pod
+                # NaN'd at lr=3.25e-3, tiny). Kept for ablation; prefer relu_l2.
+                q = F.relu(self.assoc_q(x0)).square()
+                k = F.relu(self.assoc_k(x0)).square()
+            elif self.assoc_feature_map == "relu_l2":
+                # selective (relu -> no DC floor) AND bounded (unit L2 -> <q,k> in
+                # [0,1]) -> fixes the elu1 stall without the relu2 blowup. eps guards
+                # the all-negative (zero) case: normalize(0)=0 -> den clamp -> y=0.
+                q = F.normalize(F.relu(self.assoc_q(x0)), dim=-1, eps=1e-6)
+                k = F.normalize(F.relu(self.assoc_k(x0)), dim=-1, eps=1e-6)
+            elif self.assoc_feature_map == "softplus_l2":
+                q = F.normalize(F.softplus(self.assoc_q(x0)), dim=-1, eps=1e-6)
+                k = F.normalize(F.softplus(self.assoc_k(x0)), dim=-1, eps=1e-6)
+            elif self.assoc_feature_map == "relu2_l2":
+                # SQUARE then L2-normalize: keeps relu2's built-in sharpening (squaring
+                # emphasizes large components BEFORE the ratio is taken -- unlike a
+                # uniform scalar temperature, this does NOT cancel in y=num/den) while
+                # restoring relu_l2's structural boundedness (score in [0,1] regardless
+                # of input scale). Candidate for narrowing relu_l2's MQAR ceiling gap
+                # (93%->80%, measured 2026-07-24) without relu2's NaN risk.
+                q = F.normalize(F.relu(self.assoc_q(x0)).square(), dim=-1, eps=1e-6)
+                k = F.normalize(F.relu(self.assoc_k(x0)).square(), dim=-1, eps=1e-6)
             else:                                                # "elu1" (original)
                 q = F.elu(self.assoc_q(x0)) + 1.0                # (B,T,d) nonneg (DC floor ~1.0/dim)
                 k = F.elu(self.assoc_k(x0)) + 1.0                # (B,T,d) nonneg (DC floor ~1.0/dim)

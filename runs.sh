@@ -738,6 +738,39 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # run_ablation "AMBA_v2_D3_frozen_3ep_lr01 AMB adapter on D3 — STRONG: lr=0.1, 3ep, 3% warmup"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_adapter_checkpoint": "logs/wikitext-103_2026-07-15_10-53-46/best_model.pt", "associative_bypass_adapter_freeze_core": true, "epochs": 3, "warmup_fraction": 0.03, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.1, "min_lr": 0.002, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBA_v2 (cancelled): strong frozen-adapter — redundant given v1 + recall_diagnostics"
 # ==============================================================================
 #
+# AMB FEATURE-MAP SCREEN (2026-07-24). Native AMB stalled at epoch 2 with elu1 (DC-offset ->
+# unselective running mean, +0.17 val vs D0 and widening) and NaN'd on the POD with relu2 (step
+# 635, lr=3.25e-3 -- TINY, so unbounded squared features, not LR, caused it; relu2 then stayed
+# FINITE in a local repro at C=512 but batch=4 vs the pod's 48 under-samples the extreme-
+# activation batches that trigger it -- "finite locally" != "safe on the pod", hence this screen
+# runs for real on the pod instead of trusting a batch-mismatched local test further). Three
+# L2-normalized (structurally BOUNDED: <q,k> in [0,1] regardless of input scale/batch/depth)
+# candidates, each CPU-smoked (compile clean, identity-at-init exact-0, finite fwd/bwd) and MQAR-
+# sanity-checked locally (all finite, no NaN in short runs):
+#   relu_l2     = normalize(relu(x))       -- MQAR 77%@500, ceiling ~80% (elu1/relu2 reach ~93%)
+#   softplus_l2 = normalize(softplus(x))   -- MQAR 34%@500 (slow start), ~80%@1000
+#   relu2_l2    = normalize(relu(x)^2)     -- MQAR 80%@500, ~81%@1000 (squaring-before-normalize
+#                                              only partially recovers sharpness -- the L2-norm
+#                                              itself, not the pre-nonlinearity, likely dominates
+#                                              the ceiling loss: T-1 mismatches' background dot-
+#                                              product mass rivals one bounded [0,1] true match)
+# NOTE: a uniform scalar "temperature" on q or k was considered and REJECTED -- this read is a
+# ratio y=(sum score*v)/(sum score), so any uniform positive rescale of every score cancels
+# exactly; it cannot sharpen anything here (would need a per-score nonlinearity, which is what
+# relu2_l2's squaring actually does, unlike a temperature).
+# 1-EPOCH each via BASE_PATCH_1EP (auto-recomputed warmup ~2923 steps of ~9742 total -> reaches
+# peak lr FASTER than the 5-epoch schedule and holds it ~6800 steps -> MORE exposure to the
+# failure regime than epochs 1-2 of the full run gave, for ~1/5 the cost). ~2.7h/~$2.7 each
+# (~$8 total) on the 5090. Watch for early NaN or a stall vs D0's epoch-1 val trajectory
+# (~3.83-3.66 across steps 15000-18000 scaled to 1-epoch's faster warmup) -- abort on sight,
+# no need to let a doomed arm finish. WINNER's feature_map promotes to AMBN_native_C512_5ep and
+# AMBN_xlayer_C512_5ep below (currently placeholder relu_l2, the safest of the three -- UPDATE to
+# the screen's actual winner before running either 5-epoch arm).
+run_ablation "AMBN_fmap_relu_l2_1ep AMB feature-map screen 1/3 — relu_l2 (bounded, ~80% MQAR ceiling)"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_feature_map": "relu_l2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN_fmap screen 1/3: relu_l2 — bounded+selective, MQAR ceiling ~80%; safest local evidence so far"
+run_ablation "AMBN_fmap_softplus_l2_1ep AMB feature-map screen 2/3 — softplus_l2"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_feature_map": "softplus_l2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN_fmap screen 2/3: softplus_l2 — bounded, smoother than relu; slower MQAR start (34%@500), similar ~80% ceiling"
+run_ablation "AMBN_fmap_relu2_l2_1ep AMB feature-map screen 3/3 — relu2_l2 (squared-then-normalized)"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_feature_map": "relu2_l2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN_fmap screen 3/3: relu2_l2 — bounded + squaring-based sharpening, best local MQAR (80%@500, 81%@1000) of the three bounded options"
+# ==============================================================================
+#
 # NATIVE AMB MINI (2026-07-24). The CLEAN architecture test: a fresh Mini trained WITH the AMB
 # from step 0 — no frozen core, no over-converged donor, no adapter LR tension (base + AMB both
 # fresh -> single lr=0.075, D0's recipe). ISO-everything vs D0 (1.0436, crawl-ON 5ep) except the
@@ -746,15 +779,17 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # memory then damped it) -> WT-103 looks recall-light, so native likely lands ~flat on D0 too. But
 # this is the confound-free confirmation the paper needs. If it DOES beat D0 (>0.001), recall helps
 # the from-scratch architecture after all. EVAL: sliding BPB vs D0 1.0436 + recall_diagnostics QRY-delta.
-# STALL FIX (2026-07-24): the FIRST native run (elu1 read, logs/wikitext-103_2026-07-24_09-43-03)
-# trained clean in epoch 1 then STALLED at val~3.83 through epoch 2 while D0 descended to 3.66 (+0.17
-# and widening) — the elu(x)+1 feature map carries a ~1.0 DC floor per dim, so q·k is dominated by a
-# ~d=64 constant offset and the read collapses to an UNSELECTIVE running mean of values (redundant
-# with decompose_bypass), whose growing gain fights the spectral stack as LR climbs to peak. Fix:
-# associative_bypass_feature_map=relu2 (relu(x)^2, no DC floor -> selective content-addressed read;
-# MQAR-validated, converges FASTER than elu1: 78% vs 30% @ step 500, same ceiling). lr stays 0.075
-# (iso vs D0); relu2 targets the root, so no LR cut unless a re-run still stalls (then fall back 0.05).
-run_ablation "AMBN_native_C512_5ep Native AMB Mini — fresh base + AMB from step 0, iso vs D0"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_feature_map": "relu2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN: native AMB Mini (relu2 read, fresh base+AMB, iso vs D0 1.0436) — clean does-AMB-help test; first run (elu1) STALLED in epoch 2 (DC-offset running mean); relu2 = selective read"
+# STALL + NaN HISTORY (2026-07-24): run 1 (elu1 read, logs/wikitext-103_2026-07-24_09-43-03)
+# trained clean in epoch 1 then STALLED at val~3.83 through epoch 2 while D0 descended to 3.66
+# (+0.17 and widening) — elu(x)+1 carries a ~1.0 DC floor/dim -> q·k dominated by a ~d=64 constant
+# offset -> the read collapses to an UNSELECTIVE running mean (redundant with decompose_bypass),
+# fighting the spectral stack as its gain grows with LR. Tried relu2 (relu(x)^2, no DC floor) next
+# — MQAR-faster than elu1 (78% vs 30%@500) but UNBOUNDED -> NaN'd on the pod at step 635, lr=3.25e-3
+# (tiny -> not an LR problem, a magnitude problem). feature_map is now a 3-way screen (relu_l2 /
+# softplus_l2 / relu2_l2, all L2-bounded) above this block — PLACEHOLDER below is relu_l2 (the
+# safest of the three); UPDATE to the screen's actual winner before running this 5-epoch arm.
+# lr stays 0.075 (iso vs D0) regardless of winner — the fix targets read magnitude, not LR.
+run_ablation "AMBN_native_C512_5ep Native AMB Mini — fresh base + AMB from step 0, iso vs D0"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_feature_map": "relu_l2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN: native AMB Mini (PLACEHOLDER relu_l2 read pending feature-map screen, fresh base+AMB, iso vs D0 1.0436) — elu1 STALLED epoch 2, relu2 NaN'd on pod step 635; update feature_map to screen winner first"
 # ==============================================================================
 #
 # NATIVE AMB + CROSS-LAYER MEMORY (2026-07-24; idea: Ramon). Queued immediately after AMBN.
@@ -771,7 +806,7 @@ run_ablation "AMBN_native_C512_5ep Native AMB Mini — fresh base + AMB from ste
 # COST ~6.1h (~$6). FALLBACK: if inductor ever chokes on the varying-arity AMB return, set
 # compile:false (explicit-return threading is eager-safe). Requires the fp32 retrieval-scan fix
 # (2026-07-24) that both AMBN and this inherit — without it the native AMB NaN's ~step 79-500.
-run_ablation "AMBN_xlayer_C512_5ep Native AMB + cross-layer memory — iso vs AMBN"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_cross_layer": true, "associative_bypass_feature_map": "relu2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN_xlayer: native AMB + cross-layer memory (assoc_ln(x+gamma*prev_AMB_out)); iso vs AMBN, isolates depth-wise recall compounding; +5.1K params only"
+run_ablation "AMBN_xlayer_C512_5ep Native AMB + cross-layer memory — iso vs AMBN"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_cross_layer": true, "associative_bypass_feature_map": "relu_l2", "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN_xlayer: native AMB + cross-layer memory (assoc_ln(x+gamma*prev_AMB_out)); iso vs AMBN, isolates depth-wise recall compounding; +5.1K params only"
 # ==============================================================================
 #
 # CTX1024_L9 RESUME (postponed AGAIN 2026-07-24 for the native AMB run; first postponed
