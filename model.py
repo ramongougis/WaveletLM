@@ -2575,24 +2575,30 @@ class WaveletLMBlock(nn.Module):
         return x, None
 
     def _assoc_retrieve(self, x0):
-        """Causal linear-attention associative memory (v1: additive, UNNORMALIZED read).
+        """Causal linear-attention associative memory (Katharopoulos linear-transformer read).
 
-        S_t = sum_{i<=t} k_i (x) v_i ;  y_t = q_t · S_t = sum_{i<=t} (q_t·k_i) v_i.
-        NO denominator: with L2-normalized (hence SIGNED) q,k the normalizer
-        sum_i (q·k_i) is negative ~50% of the time and near-zero ~12%, which made
-        y_t explode (measured absmax ~779 vs ~3 unnormalized) and corrupted the base
-        model — the MQAR failure (2026-07-23). The unnormalized read relies on keys
-        staying roughly orthonormal (the task encourages it); the delta rule (v2) is
-        the principled upgrade for interference + large-T scale. NOTE: naive O(T·d^2)
-        materialized cumsum — fine for T<=1024; a chunked scan is the long-context opt.
+        phi(x)=elu(x)+1 (NONNEGATIVE feature map) on q,k, then:
+          S_t = sum_{i<=t} phi(k_i) (x) v_i ;  z_t = sum_{i<=t} phi(k_i)
+          y_t = phi(q_t)·S_t / (phi(q_t)·z_t + eps)   [a match-weighted mean of values]
+        History (2026-07-23/24): the ORIGINAL normalized read used L2-normalized
+        (SIGNED) q,k -> denominator negative ~50% of the time -> y exploded (absmax
+        ~779). Dropping the denominator (unnormalized read) fixed that AND solved MQAR
+        (T=64) but the unnormalized sum GROWS with sequence length -> exploded again at
+        T=256 (WT-103, mqar_mixed.py). Nonneg features make the denominator POSITIVE and
+        BOUNDED at all T -> stable everywhere, and it's still a genuine content-addressed
+        readout (matched keys dominate the weighted mean). The delta rule (v2) remains the
+        upgrade for interference/capacity. NOTE: naive O(T·d^2) cumsum; chunked scan later.
         """
-        q = F.normalize(self.assoc_q(x0).float(), dim=-1)          # (B,T,d)
-        k = F.normalize(self.assoc_k(x0).float(), dim=-1)          # (B,T,d)
-        v = self.assoc_v(x0).float()                               # (B,T,d)
-        kv = k.unsqueeze(-1) * v.unsqueeze(-2)                     # (B,T,d,d)
-        S = kv.cumsum(dim=1)                                       # (B,T,d,d)
-        y = torch.einsum('btd,btde->bte', q, S)                   # (B,T,d) unnormalized read
-        return self.assoc_out(y.to(self.assoc_out.weight.dtype))  # (B,T,C)
+        q = F.elu(self.assoc_q(x0).float()) + 1.0                 # (B,T,d) nonneg
+        k = F.elu(self.assoc_k(x0).float()) + 1.0                 # (B,T,d) nonneg
+        v = self.assoc_v(x0).float()                              # (B,T,d)
+        kv = k.unsqueeze(-1) * v.unsqueeze(-2)                    # (B,T,d,d)
+        S = kv.cumsum(dim=1)                                      # (B,T,d,d)
+        z = k.cumsum(dim=1)                                       # (B,T,d)
+        num = torch.einsum('btd,btde->bte', q, S)                # (B,T,d)
+        den = (q * z).sum(-1, keepdim=True).clamp_min(1e-6)      # (B,T,1) nonneg, bounded
+        y = num / den                                            # (B,T,d) match-weighted mean
+        return self.assoc_out(y.to(self.assoc_out.weight.dtype)) # (B,T,C)
 
     def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None):
         # Invertible complex wavelet uses a dedicated forward (full complex
@@ -4188,7 +4194,7 @@ def parameter_breakdown(model, config, logger=None):
         if getattr(block0, 'num_experts', None) and hasattr(block0, 'experts'):
             moe_per = sum(p.numel() for p in block0.parameters())
             router_per = block0.router.weight.numel()
-            out(f"  Block-MoE\layer:{moe_per:>{W-1},} ({moe_per/1e6:.2f}M) "
+            out(f"  Block-MoE/layer:{moe_per:>{W-1},} ({moe_per/1e6:.2f}M) "
                 f"= {block0.num_experts} experts (top-{block0.top_k}) + router {router_per:,}")
             block0 = block0.experts[0]
             out(f"  Per-expert breakdown:")

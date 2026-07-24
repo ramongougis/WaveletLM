@@ -189,3 +189,44 @@ Detail and literature in the earlier discussion; summary:
   [Based 2402.18668](https://arxiv.org/abs/2402.18668) ·
   [DeltaNet 2406.06484](https://arxiv.org/abs/2406.06484) ·
   [Gated DeltaNet 2412.06464](https://arxiv.org/abs/2412.06464)
+
+---
+
+## Results & findings (2026-07-23 → 24)
+
+**Additive AMB (unnormalized read) — MECHANISM VALIDATED on MQAR.** `tools/interpretability/mqar.py`:
+vanilla WaveletLM plateaus (D=8 **56%**, D=16 **40%**); +AMB solves it (D=8 **91%**, D=16 **96%**,
+still climbing), chance 1.6%. The bypass supplies the content-addressable retrieval vanilla can only
+heuristically approximate. Near-ceiling oscillation (~96–98%) is a fixed-LR + per-batch-eval
+artifact; the ceiling (<100%) is additive interference (crosstalk) — the delta rule's target.
+
+**Denominator bug found + fixed.** First read was normalized (`y = Σ(q·k)v / Σ(q·k)`). With
+L2-normalized (SIGNED) q,k the denominator is negative ~51% / near-zero ~12% of the time → `y`
+exploded (absmax ~779 vs ~3) and corrupted the base — the initial MQAR failure. **Fix B:** drop the
+denominator entirely, unnormalized read `y = q·S`. `eps` removed (dead).
+
+**WT-103 is RECALL-LIGHT — the AMB installs nothing there.** Frozen-core adapter on D3 (AMBA v1,
+`logs/wikitext-103_2026-07-23_19-03-41`): sliding BPB **0.9798 vs D3's 0.9797** — flat, inside the
+0.0010 noise floor. The AMB *learned* (`|out_proj|`~1.1) but the model *damped it* (β 1.0→~0.10), and
+`recall_diagnostics` on it is **identical to plain D3** (QRY-Δ +0.0036 absent, induction lift +0.142)
+— **no recall installed.** Interpretation: **AMB recall is task-driven.** MQAR's loss rewards recall
+→ it learns; WT-103's loss doesn't (Finding 7) → it never learns, even with the mechanism present and
+the substrate (SRC-Δ +0.05) available. Not a wiring failure — an *objective* mismatch. v2 (stronger
+frozen adapter) CANCELLED as redundant.
+
+**Native (AMBN) prediction:** removes the frozen-core confound but NOT the objective one → expected
+~flat + no-recall; the confound-free confirmation that WT-103 doesn't teach recall even to a
+co-adapting model.
+
+**The real test — a recall-DEMANDING objective.** Mixed WT-103 + generated-MQAR training
+(`tools/interpretability/mqar_mixed.py`): the language half keeps it an LM, the MQAR half *rewards*
+recall so the AMB gets a gradient to install it. Success = MQAR acc rises AND WT-103 stays healthy AND
+`recall_diagnostics` QRY-Δ finally rises on the checkpoint. This is the "does AMB earn its place in a
+language model" demonstration; natural recall-heavy data (long-context / code / Pile long deps) is the
+scaled version.
+
+**DeltaNet (v2) — for capacity, on recall-heavy data ONLY.** Read unchanged (`y = q·S`); write becomes
+error-correcting `S_t = S_{t-1} + (v_t − S_{t-1}k_t)⊗k_t` (overwrites stale bindings → less
+interference). Carries forward: unnormalized read, L2-normed keys, identity-at-init, ablatable. Needs
+a chunkwise-parallel scan (the delta term is a recurrence, not a cumsum). **Does NOT fix the objective**
+— flat on plain WT-103 for the same reason; test only on the mixed / recall-heavy objective.
