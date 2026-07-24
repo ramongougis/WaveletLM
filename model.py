@@ -2015,6 +2015,17 @@ class WaveletLMBlock(nn.Module):
             self.assoc_out = nn.Linear(d, C, bias=False, device=device, dtype=dtype)
             nn.init.zeros_(self.assoc_out.weight)   # identity at init; learns first
             self.assoc_beta = nn.Parameter(torch.ones(1, device=device, dtype=dtype))
+            if self.assoc_feature_map == "softplus_s":
+                # Learnable sharpness INSIDE softplus: normalize(softplus(s*Wx)). Because
+                # softplus is non-homogeneous, s does NOT cancel under L2-norm (an OUTER
+                # scalar temperature would). softplus(s*z)/s -> relu(z) as s->inf, so s
+                # interpolates uniform(~running mean, softplus_l2's failure) -> selective
+                # (~relu_l2) while staying STRICTLY POSITIVE (never exact-zero -> no
+                # normalize-gradient blowup that crashed relu_l2/relu2_l2). exp() keeps
+                # s>0; init s=4 (sim: unrelated cos 0.86->0.46). s=exp(log_s) per layer
+                # is a directly readable "how content-addressed is this layer" statistic.
+                self.assoc_log_s = nn.Parameter(
+                    torch.full((1,), math.log(4.0), device=device, dtype=dtype))
             if self.associative_bypass_cross_layer:
                 # Depth-wise recall highway: each block's AMB reads
                 #   assoc_ln(x + gamma * previous_block_AMB_output)
@@ -2642,6 +2653,10 @@ class WaveletLMBlock(nn.Module):
             elif self.assoc_feature_map == "softplus_l2":
                 q = F.normalize(F.softplus(self.assoc_q(x0)), dim=-1, eps=1e-6)
                 k = F.normalize(F.softplus(self.assoc_k(x0)), dim=-1, eps=1e-6)
+            elif self.assoc_feature_map == "softplus_s":
+                s = self.assoc_log_s.exp()                       # learnable sharpness (per layer), >0
+                q = F.normalize(F.softplus(s * self.assoc_q(x0)), dim=-1, eps=1e-6)  # selective + strictly positive
+                k = F.normalize(F.softplus(s * self.assoc_k(x0)), dim=-1, eps=1e-6)
             elif self.assoc_feature_map == "relu2_l2":
                 # SQUARE then L2-normalize: keeps relu2's built-in sharpening (squaring
                 # emphasizes large components BEFORE the ratio is taken -- unlike a
@@ -4311,6 +4326,8 @@ def parameter_breakdown(model, config, logger=None):
                 block0.assoc_ln.weight, block0.assoc_ln.bias]
             if getattr(block0, 'associative_bypass_cross_layer', False):
                 assoc_tensors.append(block0.assoc_gamma)   # cross-layer per-channel gain
+            if getattr(block0, 'assoc_feature_map', '') == 'softplus_s':
+                assoc_tensors.append(block0.assoc_log_s)   # learnable sharpness scalar
             assoc_per = sum(p.numel() for p in assoc_tensors)
             out(f"    Assoc-bypass/l:{assoc_per:>{W-1},} ({assoc_per/1e6:.2f}M, d={block0.assoc_dim})")
         if block0.use_mlp:

@@ -112,7 +112,7 @@ def main():
     p.add_argument("--levels", type=int, default=4)
     p.add_argument("--crawl_k", type=int, default=5)
     p.add_argument("--assoc_dim", type=int, default=64)
-    p.add_argument("--feature_map", choices=["elu1", "relu2", "relu_l2", "softplus_l2", "relu2_l2"], default="elu1")
+    p.add_argument("--feature_map", choices=["elu1", "relu2", "relu_l2", "softplus_l2", "relu2_l2", "softplus_s"], default="elu1")
     p.add_argument("--steps", type=int, default=1500)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-3)
