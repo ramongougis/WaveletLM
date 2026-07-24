@@ -728,11 +728,35 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # core frozen -> safe). If frozen-adapter is flat, the FULL fine-tune (freeze_core:false) and the
 # NATIVE from-scratch AMB Mini are the follow-ups. ~2h/1ep on a 5090.
 run_ablation "AMBA_adapter_D3_frozen_1ep AMB adapter on D3 — install recall, frozen core, train only AMB"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_adapter_checkpoint": "logs/wikitext-103_2026-07-15_10-53-46/best_model.pt", "associative_bypass_adapter_freeze_core": true, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.03, "min_lr": 0.0006, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBA: install recall into frozen D3 via the +1.31M AMB adapter; eval induction lift + sliding BPB vs D3 0.9797 (recall-light WT-103 caveat applies)"
+#
+# AMBA_v2 (2026-07-24): v1's 30% warmup + lr=0.03 under-served the fresh AMB (val flat at
+# D3's ~3.10). This is the STRONG adapter test — give the +1.31M AMB its full shot to learn:
+# lr=0.1 (right at the q/k/v fan-in-512 width-rule edge ~0.094; out fan-in-64 could take more;
+# frozen core removes the deep-stack NaN ceiling, so 0.1 should be stable), 3 epochs, warmup
+# 3% (~870 steps — short, but NOT zero: random-init q/k/v make the retrieval noisiest at t=0).
+# STABILITY WATCH: first ~500 steps for NaN (grad_clip=1.0 helps); if it blows, halve lr to
+# 0.05 or lengthen warmup. Still freeze_core (isolates the AMB's contribution). Reads the same
+# as v1: recall_diagnostics QRY-delta (did it install?) + sliding BPB vs 0.9797. If v2 still
+# flat -> recall-light WT-103 confirmed strongly, and the value is on recall-heavy tasks / the
+# full fine-tune + native runs. ~6h/3ep.
+run_ablation "AMBA_v2_D3_frozen_3ep_lr01 AMB adapter on D3 — STRONG: lr=0.1, 3ep, 3% warmup"     "$BASE_PATCH_1EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_adapter_checkpoint": "logs/wikitext-103_2026-07-15_10-53-46/best_model.pt", "associative_bypass_adapter_freeze_core": true, "epochs": 3, "warmup_fraction": 0.03, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.1, "min_lr": 0.002, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBA_v2: strong frozen-adapter (lr=0.1, 3ep, warmup 3%) — did v1 just under-train the AMB, or is WT-103 recall-light? QRY-delta + BPB vs 0.9797 decide"
 # ==============================================================================
 #
-# CTX1024_L9 RESUME (postponed 2026-07-23 for AMBA — the MQAR validation made the
-# associative-memory bypass the immediate priority). The fresh L9 arm above already
-# trained ~3 epochs into run dir logs/wikitext-103_2026-07-23_06-49-44 before being
+# NATIVE AMB MINI (2026-07-24). The CLEAN architecture test: a fresh Mini trained WITH the AMB
+# from step 0 — no frozen core, no over-converged donor, no adapter LR tension (base + AMB both
+# fresh -> single lr=0.075, D0's recipe). ISO-everything vs D0 (1.0436, crawl-ON 5ep) except the
+# +1.31M AMB: does integrating recall from the start help WaveletLM's WT-103 BPB? HONEST PRIOR:
+# AMBA v1 came in FLAT (0.9798 vs D3 0.9797) with beta collapsing 1.0->0.17 (the model trained the
+# memory then damped it) -> WT-103 looks recall-light, so native likely lands ~flat on D0 too. But
+# this is the confound-free confirmation the paper needs. If it DOES beat D0 (>0.001), recall helps
+# the from-scratch architecture after all. EVAL: sliding BPB vs D0 1.0436 + recall_diagnostics QRY-delta.
+run_ablation "AMBN_native_C512_5ep Native AMB Mini — fresh base + AMB from step 0, iso vs D0"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN: native AMB Mini (fresh base+AMB, iso vs D0 1.0436) — the clean does-AMB-help-the-architecture test; v1 flat + beta-collapse predicts ~flat, but this is confound-free"
+# ==============================================================================
+#
+# CTX1024_L9 RESUME (postponed AGAIN 2026-07-24 for the native AMB run; first postponed
+# 2026-07-23 for AMBA — the MQAR validation made the associative-memory bypass the immediate
+# priority). The fresh L9 arm above already trained into epoch 4 of run dir
+# logs/wikitext-103_2026-07-23_06-49-44 before being
 # stopped; resume_run continues it EXACTLY (model + Adagrad accumulators + scaler +
 # RNG streams) from its last_checkpoint.pt (written every 2000 steps + at epoch end),
 # so the finished A/B vs the 7-level CTX1024 1.0654 is step-for-step the run that never
