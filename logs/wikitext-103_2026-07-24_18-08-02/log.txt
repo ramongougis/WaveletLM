@@ -1,0 +1,320 @@
+[2026-07-24 18:08:02] Starting WaveletLM Training on WIKITEXT-103
+[2026-07-24 18:08:02] Device: cuda, AMP: True (fp16)
+[2026-07-24 18:08:02] 
+[2026-07-24 18:08:02] 	dataset                               : wikitext-103
+[2026-07-24 18:08:02] 	tokenizer                             : auto
+[2026-07-24 18:08:02] 	out_dir                               : logs
+[2026-07-24 18:08:02] 	compile                               : True
+[2026-07-24 18:08:02] 	compile_mode                          : default
+[2026-07-24 18:08:02] 	seed                                  : 1337
+[2026-07-24 18:08:02] 	epochs                                : 1
+[2026-07-24 18:08:02] 	micro_batch_size                      : 48
+[2026-07-24 18:08:02] 	grad_accum                            : 1
+[2026-07-24 18:08:02] 	block_size                            : 256
+[2026-07-24 18:08:02] 	eval_interval                         : 500
+[2026-07-24 18:08:02] 	skip_warmup_saves                     : True
+[2026-07-24 18:08:02] 	C                                     : 512
+[2026-07-24 18:08:02] 	layers                                : 10
+[2026-07-24 18:08:02] 	levels                                : 7
+[2026-07-24 18:08:02] 	low_rank                              : 4
+[2026-07-24 18:08:02] 	mlp_expansion                         : 0
+[2026-07-24 18:08:02] 	mlp_layers                            : 2
+[2026-07-24 18:08:02] 	pkm_enabled                           : False
+[2026-07-24 18:08:02] 	pkm_num_keys                          : 16384
+[2026-07-24 18:08:02] 	pkm_top_k                             : 32
+[2026-07-24 18:08:02] 	pkm_heads                             : 1
+[2026-07-24 18:08:02] 	fwpkm_enabled                         : False
+[2026-07-24 18:08:02] 	fwpkm_num_keys                        : 8281
+[2026-07-24 18:08:02] 	fwpkm_top_k                           : 32
+[2026-07-24 18:08:02] 	fwpkm_heads                           : 1
+[2026-07-24 18:08:02] 	fwpkm_inference_updates               : False
+[2026-07-24 18:08:02] 	fwpkm_update_lr                       : 0.01
+[2026-07-24 18:08:02] 	fwpkm_chunk_size                      : 64
+[2026-07-24 18:08:02] 	wavelet_mode                          : lifting
+[2026-07-24 18:08:02] 	wavelet_basis                         : real
+[2026-07-24 18:08:02] 	complex_construction                  : direct
+[2026-07-24 18:08:02] 	complex_collapse                      : per_level
+[2026-07-24 18:08:02] 	complex_mixer_activation              : split
+[2026-07-24 18:08:02] 	complex_gate_activation               : softplus
+[2026-07-24 18:08:02] 	complex_mixer                         : False
+[2026-07-24 18:08:02] 	shared_lifting_weights                : True
+[2026-07-24 18:08:02] 	untied_reconstruction                 : False
+[2026-07-24 18:08:02] 	multi_basis_lifting                   : False
+[2026-07-24 18:08:02] 	multi_basis_inits                     : ['haar', 'random']
+[2026-07-24 18:08:02] 	cross_scale_gating                    : True
+[2026-07-24 18:08:02] 	cross_layer_dense_skips               : False
+[2026-07-24 18:08:02] 	per_scale_mixer_widths                : [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+[2026-07-24 18:08:02] 	stable_parametrization                : False
+[2026-07-24 18:08:02] 	stab_spectral_norm                    : False
+[2026-07-24 18:08:02] 	stab_ff_scaling                       : False
+[2026-07-24 18:08:02] 	stab_embed_scaling                    : False
+[2026-07-24 18:08:02] 	stab_proj_out_scaling                 : False
+[2026-07-24 18:08:02] 	stab_mixer_eps_scaling                : False
+[2026-07-24 18:08:02] 	stab_lifting_level_scaling            : False
+[2026-07-24 18:08:02] 	looped_blocks                         : False
+[2026-07-24 18:08:02] 	looped_blocks_count                   : 8
+[2026-07-24 18:08:02] 	wavelet_crawl                         : True
+[2026-07-24 18:08:02] 	wavelet_crawl_k                       : 33
+[2026-07-24 18:08:02] 	lifting_linear_only                   : False
+[2026-07-24 18:08:02] 	lifting_hidden_mult                   : 1
+[2026-07-24 18:08:02] 	lifting_init                          : haar
+[2026-07-24 18:08:02] 	lifting_dropout                       : 0.0
+[2026-07-24 18:08:02] 	lifting_diaglowrank                   : False
+[2026-07-24 18:08:02] 	lifting_level_sharing                 : False
+[2026-07-24 18:08:02] 	lifting_offdiag_structure             : none
+[2026-07-24 18:08:02] 	lifting_block_size                    : 64
+[2026-07-24 18:08:02] 	lifting_band_width                    : 64
+[2026-07-24 18:08:02] 	lifting_monarch_blocks                : 32
+[2026-07-24 18:08:02] 	lifting_offdiag_density               : 0.0
+[2026-07-24 18:08:02] 	lifting_offdiag_mask_seed             : 1337
+[2026-07-24 18:08:02] 	lifting_offdiag_mask_checkpoint       : 
+[2026-07-24 18:08:02] 	mlp_offdiag_structure                 : none
+[2026-07-24 18:08:02] 	mlp_block_size                        : 64
+[2026-07-24 18:08:02] 	mlp_band_width                        : 64
+[2026-07-24 18:08:02] 	mlp_pq_density                        : 0.1
+[2026-07-24 18:08:02] 	mlp_pq_mode                           : structural
+[2026-07-24 18:08:02] 	sparse_pq_embedding_enabled           : False
+[2026-07-24 18:08:02] 	sparse_pq_embedding_density           : 0.1
+[2026-07-24 18:08:02] 	sparse_pq_embedding_mode              : structural
+[2026-07-24 18:08:02] 	sparse_pq_embedding_epsilon           : 1e-06
+[2026-07-24 18:08:02] 	sparse_encoder_decoder_embedding      : False
+[2026-07-24 18:08:02] 	sparse_encoder_decoder_embedding_C    : 512
+[2026-07-24 18:08:02] 	use_mixer_gate                        : True
+[2026-07-24 18:08:02] 	mixer_gate_activation                 : silu
+[2026-07-24 18:08:02] 	mixer_depth                           : 1
+[2026-07-24 18:08:02] 	mixer_depth_stabilizers               : False
+[2026-07-24 18:08:02] 	mixer_depth_residuals                 : False
+[2026-07-24 18:08:02] 	mixer_recurrence_steps                : 1
+[2026-07-24 18:08:02] 	mixer_recurrence_distinct_mixer_count : 1
+[2026-07-24 18:08:02] 	mixer_recurrence_residuals            : True
+[2026-07-24 18:08:02] 	mixer_recurrence_cache_gate           : False
+[2026-07-24 18:08:02] 	mixer_recurrence_dense                : False
+[2026-07-24 18:08:02] 	mixer_recurrence_dense_normalize      : False
+[2026-07-24 18:08:02] 	decompose_bypass                      : True
+[2026-07-24 18:08:02] 	decompose_bypass_cross_window         : True
+[2026-07-24 18:08:02] 	decompose_bypass_ema                  : False
+[2026-07-24 18:08:02] 	decompose_bypass_ssm                  : False
+[2026-07-24 18:08:02] 	decompose_bypass_ssm_poles            : 4
+[2026-07-24 18:08:02] 	decompose_bypass_ssm_cross_window     : False
+[2026-07-24 18:08:02] 	decompose_bypass_bptt                 : False
+[2026-07-24 18:08:02] 	decompose_bypass_bptt_span            : 0
+[2026-07-24 18:08:02] 	learned_residual                      : True
+[2026-07-24 18:08:02] 	skip_proj_out                         : True
+[2026-07-24 18:08:02] 	stochastic_depth_rate                 : 0.0
+[2026-07-24 18:08:02] 	dropout_embedding                     : 0.18
+[2026-07-24 18:08:02] 	dropout_projection                    : 0.09
+[2026-07-24 18:08:02] 	dropout_mixer                         : 0.09
+[2026-07-24 18:08:02] 	dropout_mlp                           : 0.1
+[2026-07-24 18:08:02] 	dropout_lm_head                       : 0.216
+[2026-07-24 18:08:02] 	optimizer                             : Adagrad
+[2026-07-24 18:08:02] 	optimizer_eps                         : 2e-13
+[2026-07-24 18:08:02] 	wavelet_2d_mode                       : off
+[2026-07-24 18:08:02] 	wavelet_2d_b_levels                   : -1
+[2026-07-24 18:08:02] 	wavelet_2d_init_zero                  : True
+[2026-07-24 18:08:02] 	wavelet_2d_state_passing              : False
+[2026-07-24 18:08:02] 	bbce_enabled                          : False
+[2026-07-24 18:08:02] 	block_size_compressed                 : 65536
+[2026-07-24 18:08:02] 	bbce_compressed_grad                  : True
+[2026-07-24 18:08:02] 	lr                                    : 0.075
+[2026-07-24 18:08:02] 	min_lr                                : 0.0015
+[2026-07-24 18:08:02] 	warmup_fraction                       : 0.3
+[2026-07-24 18:08:02] 	grad_clip                             : 1.0
+[2026-07-24 18:08:02] 	tie_embedding_to_lm_head              : True
+[2026-07-24 18:08:02] 	gradient_checkpointing                : False
+[2026-07-24 18:08:02] 	use_amp                               : True
+[2026-07-24 18:08:02] 	amp_dtype                             : fp16
+[2026-07-24 18:08:02] 	allow_tf32                            : True
+[2026-07-24 18:08:02] 	generation_prompt                     : The history of
+[2026-07-24 18:08:02] 	generation_max_context                : 16777216
+[2026-07-24 18:08:02] 	temperature                           : 1.0
+[2026-07-24 18:08:02] 	num_new_tokens                        : 512
+[2026-07-24 18:08:02] 	top_p                                 : 0.95
+[2026-07-24 18:08:02] 	repetition_penalty                    : 1.1
+[2026-07-24 18:08:02] 	benchmark_only                        : False
+[2026-07-24 18:08:02] 	benchmark_run_dir                     : 
+[2026-07-24 18:08:02] 	multinodal_enabled                    : False
+[2026-07-24 18:08:02] 	multinodal_num_cells                  : 2
+[2026-07-24 18:08:02] 	multinodal_cell_dim                   : 512
+[2026-07-24 18:08:02] 	multinodal_seeds                      : [42, 137]
+[2026-07-24 18:08:02] 	multinodal_combination                : average
+[2026-07-24 18:08:02] 	multinodal_cross_cell_gating          : False
+[2026-07-24 18:08:02] 	multinodal_cross_cell_gate_interval   : 1
+[2026-07-24 18:08:02] 	multinodal_features_per_cell          : -1
+[2026-07-24 18:08:02] 	multinodal_bagged_eps                 : 1e-06
+[2026-07-24 18:08:02] 	quantize_enabled                      : False
+[2026-07-24 18:08:02] 	quantize_mixer_coarse_bits            : 8
+[2026-07-24 18:08:02] 	quantize_mixer_mid_bits               : 4
+[2026-07-24 18:08:02] 	quantize_mixer_fine_bits              : 2
+[2026-07-24 18:08:02] 	quantize_mlp_bits                     : 4
+[2026-07-24 18:08:02] 	quantize_lifting_bits                 : 16
+[2026-07-24 18:08:02] 	quantize_embedding_bits               : 8
+[2026-07-24 18:08:02] 	per_layer_embedding                   : True
+[2026-07-24 18:08:02] 	loop_iterations                       : 1
+[2026-07-24 18:08:02] 	weight_decay                          : 2e-06
+[2026-07-24 18:08:02] 	wavelet_decomp_norm                   : True
+[2026-07-24 18:08:02] 	wavelet_recon_norm                    : True
+[2026-07-24 18:08:02] 	associative_bypass_enabled            : True
+[2026-07-24 18:08:02] 	associative_bypass_dim                : 64
+[2026-07-24 18:08:02] 	associative_bypass_feature_map        : softplus_l2
+[2026-07-24 18:08:02] 	checkpoint_interval_steps             : 2000
+[2026-07-24 18:08:02] 	mixer_transform                       : identity
+[2026-07-24 18:08:02] 
+[2026-07-24 18:08:02] [GPU] NVIDIA GeForce RTX 5090
+[2026-07-24 18:08:02] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-07-24 18:08:02] [Dataset] Loading wikitext-103 from cache...
+[2026-07-24 18:08:03] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-07-24 18:08:03] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-07-24 18:08:03] [Dataset] Vocab size: 50257
+[2026-07-24 18:08:03] [Schedule] 9742 steps/epoch, 9742 total steps
+[2026-07-24 18:08:03] [Schedule] Warmup: 2922 steps (30%)
+[2026-07-24 18:08:10] [Run Folder] logs/wikitext-103_2026-07-24_18-08-02
+[2026-07-24 18:08:10] 
+============================================================
+[2026-07-24 18:08:10] PARAMETER BREAKDOWN
+[2026-07-24 18:08:10] ============================================================
+[2026-07-24 18:08:10] Total parameters:              74,206,677 (74.21M)
+[2026-07-24 18:08:10]   Wavelets:                     7,354,599 (7.35M)
+[2026-07-24 18:08:10]   Token embedding:             25,731,584 (25.73M)
+[2026-07-24 18:08:10]   Layers (total):              41,119,470 (41.12M)
+[2026-07-24 18:08:10]     Mixer/layer:                3,694,592 (3.69M)
+[2026-07-24 18:08:10]     Assoc-bypass/l:              132,097 (0.13M, d=64)
+[2026-07-24 18:08:10]   LM head (shared):                     0 additional
+[2026-07-24 18:08:10]   Final LayerNorm:                  1,024 (0.00M)
+[2026-07-24 18:08:10] ============================================================
+
+[2026-07-24 18:08:10] [Model] 74.21M parameters (74.21M trainable)
+[2026-07-24 18:08:10] [Compile] torch.compile enabled (mode=default)
+[2026-07-24 18:08:11] [Optimizer] Adagrad, lr=0.075, eps=2e-13, initial_accumulator_value=0, lr_decay=0, weight_decay=2e-06
+[2026-07-24 18:08:11] 
+=== EPOCH 1/1 ===
+[2026-07-24 18:19:49] Step 500: train loss 5.4787, val loss 5.4345		lr=1.28e-02
+[2026-07-24 18:19:49] New Best Val: 5.4345 (skipping save during warmup)
+[2026-07-24 18:27:08] Step 1000: train loss 4.9052, val loss 4.8617		lr=2.56e-02
+[2026-07-24 18:27:08] New Best Val: 4.8617 (skipping save during warmup)
+[2026-07-24 18:34:55] Step 1500: train loss 4.6107, val loss 4.5813		lr=3.85e-02
+[2026-07-24 18:34:55] New Best Val: 4.5813 (skipping save during warmup)
+[2026-07-24 18:42:34] Step 2000: train loss 4.4632, val loss 4.4452		lr=5.13e-02
+[2026-07-24 18:42:34] New Best Val: 4.4452 (skipping save during warmup)
+[2026-07-24 18:49:52] Step 2500: train loss 4.3506, val loss 4.3256		lr=6.41e-02
+[2026-07-24 18:49:52] New Best Val: 4.3256 (skipping save during warmup)
+[2026-07-24 18:57:28] Step 3000: train loss 4.2669, val loss 4.2451		lr=7.50e-02
+[2026-07-24 18:57:28] New Best Val: 4.2451. Saving...
+[2026-07-24 19:04:58] Step 3500: train loss 4.1552, val loss 4.1444		lr=7.37e-02
+[2026-07-24 19:04:58] New Best Val: 4.1444. Saving...
+[2026-07-24 19:11:35] Step 4000: train loss 4.0791, val loss 4.0755		lr=7.06e-02
+[2026-07-24 19:11:35] New Best Val: 4.0755. Saving...
+[2026-07-24 19:19:00] Step 4500: train loss 4.0109, val loss 4.0091		lr=6.57e-02
+[2026-07-24 19:19:00] New Best Val: 4.0091. Saving...
+[2026-07-24 19:26:57] Step 5000: train loss 3.9470, val loss 3.9526		lr=5.94e-02
+[2026-07-24 19:26:57] New Best Val: 3.9526. Saving...
+[2026-07-24 19:34:32] Step 5500: train loss 3.8784, val loss 3.8995		lr=5.20e-02
+[2026-07-24 19:34:32] New Best Val: 3.8995. Saving...
+[2026-07-24 19:42:15] Step 6000: train loss 3.8258, val loss 3.8490		lr=4.39e-02
+[2026-07-24 19:42:15] New Best Val: 3.8490. Saving...
+[2026-07-24 19:50:06] Step 6500: train loss 3.7666, val loss 3.7955		lr=3.54e-02
+[2026-07-24 19:50:06] New Best Val: 3.7955. Saving...
+[2026-07-24 19:57:48] Step 7000: train loss 3.7269, val loss 3.7580		lr=2.71e-02
+[2026-07-24 19:57:48] New Best Val: 3.7580. Saving...
+[2026-07-24 20:05:35] Step 7500: train loss 3.6925, val loss 3.7230		lr=1.94e-02
+[2026-07-24 20:05:35] New Best Val: 3.7230. Saving...
+[2026-07-24 20:13:12] Step 8000: train loss 3.6608, val loss 3.6966		lr=1.27e-02
+[2026-07-24 20:13:12] New Best Val: 3.6966. Saving...
+[2026-07-24 20:20:49] Step 8500: train loss 3.6303, val loss 3.6745		lr=7.36e-03
+[2026-07-24 20:20:49] New Best Val: 3.6745. Saving...
+[2026-07-24 20:28:36] Step 9000: train loss 3.6196, val loss 3.6630		lr=3.63e-03
+[2026-07-24 20:28:36] New Best Val: 3.6630. Saving...
+[2026-07-24 20:36:21] Step 9500: train loss 3.6153, val loss 3.6514		lr=1.73e-03
+[2026-07-24 20:36:21] New Best Val: 3.6514. Saving...
+[2026-07-24 20:41:41] Epoch 1 done. Time: 9018.9s (2.51h)
+[2026-07-24 20:41:41]   Train loss: 3.6107, Val loss: 3.6459
+[2026-07-24 20:41:41]   Cumulative time: 2.56h
+[2026-07-24 20:41:41]   New Best Val Loss! Saving model...
+[2026-07-24 20:41:44] 
+=== TRAINING COMPLETE ===
+[2026-07-24 20:41:44] Best Val Loss: 3.6459 (epoch 1)
+[2026-07-24 20:41:44] Avg Epoch Time: 9018.9s
+[2026-07-24 20:41:44] Total Time: 9213.1s
+[2026-07-24 20:41:44] 
+Training Peak VRAM: 30123 MiB
+[2026-07-24 20:41:45] 
+Loading best model for benchmarks...
+[2026-07-24 20:41:51] Best model loaded.
+[2026-07-24 20:41:52] 
+[BENCHMARK] Non-overlapping: 1123 windows of length 256
+[2026-07-24 20:44:26] 
+[BENCHMARK - Non-overlapping]
+[2026-07-24 20:44:26]   Perplexity: 39.1750
+[2026-07-24 20:44:26]   BPT: 5.2919
+[2026-07-24 20:44:26]   BPB: 1.1742
+[2026-07-24 20:44:26]   Avg Loss: 3.6680
+[2026-07-24 20:44:26] 
+[SLIDING WINDOW] block_size=256, stride=128, min_context=128, 2246 windows
+[2026-07-24 20:49:38] 
+[BENCHMARK - Sliding Window]
+[2026-07-24 20:49:38]   Perplexity: 37.0511
+[2026-07-24 20:49:38]   BPT: 5.2114
+[2026-07-24 20:49:38]   BPB: 1.1563
+[2026-07-24 20:49:38]   Avg Loss: 3.6123
+[2026-07-24 20:49:38]   Stride: 128, Min Context: 128
+[2026-07-24 20:49:38] 
+[BENCHMARK - Word-level normalization]
+[2026-07-24 20:49:38]   Test tokens: 287,644 (gpt2); measured whitespace words: 241,211
+[2026-07-24 20:49:38]   Canonical words: 245,569 -> tokens/word: 1.1713
+[2026-07-24 20:49:38]   Non-overlapping word-level PPL: 73.44
+[2026-07-24 20:49:38]   Sliding word-level PPL: 68.80
+[2026-07-24 20:49:38] 
+=== GENERATION — Standard ===
+[2026-07-24 20:49:38] Prompt: The history of
+[2026-07-24 20:50:49] Generated:
+The history of Holland which is recorded , , based on the remark by J.W. Lethbridge , does not mention the implication ; Davies wrote : " the bird of farmland led them to the colossal landscapes of the valleys on the other regional banks where these outlines of distance of glacial drift are almost completely reached at 318 ° . 
+
+
+ Cecil Davies ( 1445 – 1667 ) , who complained that the land detour ceded land to the Insult garden , or by Georgia 's past , was it being the town . unmivened by the bands , including his Lloyd George , Native people chestnut , surrounded by small fragments , elegant pondering and woodings sheltered by molecular raids . Among the many signs he casually used was the laminadoor 's root , which influence the trees as well as water and " being the oncoming . " For groups ,tainers or barrows in the lowlands , initially the rock adorned with a thick sweep made out via aicial to concrete , which varied across their range with villages with ripeness going across the hard pressed woods . Paddington ended the river . 
+
+
+
+
+ = = Concepción = = 
+
+
+
+
+ The location in which the Nevilles was listed is called the Kilowment ; although the most natural sites are in the same form as the Murray River valley , it has both Roman gas stations and other visitors . The National Trust of Sport for the District of Columbia created a wide variety of birds , including the oak and its cliffs , in a variety of tropical fields . A typical pattern of religious stone formed in this area — on a number of farms — descended from the north of the river . The relationships between worldwide sexes were developed by Gerkeley Cheldensham in 1985 . The marshes of the Great Saltdale Mountains , followed by Namur , were later used as examples for Ancient Egypt . By the mid Atlantic , settlers had later contributed to them did not spread whatever it has to distinguish . 
+
+
+ Several desert societies such as France , Europe , Saudi Arabia and the 38 islands entered the war . Using a united fur trade to warn the first settlers about the extent of squarecase , Mount Cayley see the hot summer chestnut in the valley , and finds extensive evidence and efforts to excavate sandstone cementing the nearby Celeste Axe . Highway 16 is also located in the names of Taconic bricks , but these have also been present . 
+
+
+
+
+ = = Conservation = = 
+
+
+
+
+ Tempe National Park is the home of
+
+[2026-07-24 20:50:49] === GENERATION — Strategies ===
+[2026-07-24 20:50:49] Prompt: The history of
+[2026-07-24 20:52:06] Generated:
+The history of the British Empire was a major factor in the development and expansion of American shipping . The British had been involved with the war effort for several years , including the Battle of St. Vincent , which included two battleships of the I Scouting Group , one in June 1918 and the other at Portsmouth . 
+
+
+ In 1920 , during the Second World War , Admiral Robert C. Walker joined the First Fleet as commander of the Mediterranean Fleet and was assigned to Vice Admiral Sir John Lippett 's fleet that would be active in the Pacific Ocean . The following year he was promoted to captain by Captain William R. Wicca . He served on this command list until September 1919 when it became part of the Australian Imperial Force ( AIF ) . 
+
+
+ On 17 October 1922 , George Washington took over command of HMS Eagle from the New Guinea campaign against the Allied invasion of Sicily . As an officer , he commanded the 2nd Light Horse Brigade and was appointed Commander @-@ in @-@ Chief of the Royal Navy . This led to the establishment of No. 1 Squadron , which was based at Darwin . After returning to England , the ship was transferred back to Britain in January 1921 ; she then escorted convoys and landings to the Caribbean . She was stricken in 1917 – 18 , after which time she was broken up for scrap . 
+
+
+
+
+ = = Description = = 
+
+
+
+
+ The ships were laid down in 1912 under the terms of the Treaty of Versailles . They were designed to carry a pair of five @-@ centimeter ( 3 @.@ 0 in ) guns in single mounts . These gun turrets were mounted amidships and were equipped with eight 45 cm ( 12 in ) torpedo tubes . Their secondary armament consisted of twelve 15 cm ( 5 @.@ 7 in ) SK L / 45 guns in four twin gun turrets , three fore and aft respectively . The first was carried out on 19 April 1914 , but only six were completed before they could operate . Her crew numbered 30 officers and 14 enlisted men . The ship also participated in the annual naval maneuvers in May 1916 . The ship spent most of her career aboard the U.S. Naval Reserve , where she supported the German occupation forces during the Spanish Civil War . Following these duties , she served in both fleets throughout the West Indies , though not all of them were scrapped due to the fact that she did not have any significant equipment , so the ship remained afloat until early 1915 when she returned to Germany . At the outbreak of World War II , she was
+
+[2026-07-24 20:52:06] Metrics: MeanLogP=-1.1619 | MeanH=3.45 | D1=0.613 | D2=0.920 | D3=0.980 | Rep4=0.033
+[2026-07-24 20:52:06] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
+[2026-07-24 20:52:06] Training Peak VRAM: 30123 MiB
