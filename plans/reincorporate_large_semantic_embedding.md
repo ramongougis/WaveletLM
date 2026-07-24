@@ -238,3 +238,63 @@ This intervention loop — name → ablate/amplify → measure causal effect on 
 - Are n-gram features redundant with what the wavelet decomposition already captures?
 - What's the optimal prescribed/learned ratio in hybrid mode?
 - Can structural features transfer across datasets better than learned embeddings?
+
+---
+
+# NOTE: Claude Opus 5's Feedback (7/25/2026; doc created on 6/19/2026)
+
+See below for feedback from Opus 5 on the preceding document.
+
+-
+
+Read it. There's a lot of good thinking in here, and one section I'd cut outright. Taking the substitution question first, then the AMB one, since the answer to the second depends on which construction you pick.
+
+## The motivating comparison doesn't support the plan yet
+
+Line 9 vs. line 10: EXARCH 1.0112 at C=512 with 256 concepts, learned 1.1431 at C=2048/1ep. Those differ on benchmark version (you flag this), C, and training budget simultaneously. You can't read "prescribed beats learned" off them — you can't even read the sign. Before building a 2048-dim feature pipeline, the cheap thing is to re-run the EXARCH 256-concept embedding under the v2 benchmark at matched C and matched budget. If the gap inverts, the plan's premise changes and you've spent a day instead of a month.
+
+## The scalability claim is data-bound, not feature-bound
+
+Line 12 says structural features "can scale indefinitely: there are far more n-gram patterns... than single-word human concepts." That's dimension-counting, not information-counting. At WT-103 (~100M tokens, 50k vocab) the V×V co-occurrence matrix has ~2.5e9 cells against 1e8 observations — most cells are zero or singleton, and PMI on a count of 1 is noise. The usable *rank* of the relational structure is bounded by the corpus, not by how many features you can enumerate.
+
+Which means the 512 ceiling you attribute to "human concepts run out" may not be about human concepts at all. It may be the corpus's relational rank at this scale. And you already have one independent measurement pointing the same way: the SVD showing the POS mixers using ~38% of their dimensional capacity.
+
+**This makes line 162 the most valuable line in the document.** Build the dyadic-bucket PMI tensor, factorize, and plot variance-explained vs. C *before training anything*. It costs a day of counting, it requires no LLM labeling, and it tells you whether C=2048 is reachable or whether the structure is exhausted at 400. If that curve dies where the mixer SVD died, you have two independent measurements of the same ceiling and the whole "scale to 2048" framing needs rewriting. I'd run this before anything else in the plan.
+
+## Cut the n-gram identity features
+
+They're 1000 of your 2048 dims (49%) and I think the category is malformed. The embedding is a V×C table — a *type-level* lookup. "This token participates in a specific 3-gram" is an *occurrence-level* property that depends on context the table cannot see. Your own rejection note at line 166 makes exactly this argument against absolute-position statistics ("position is a property of an occurrence, not of a type") — n-gram participation falls under the identical objection and slipped past it.
+
+You can only put it in a frozen table by reducing it to "token v appears in 3-gram g with probability p", which is a unary marginal — i.e. it collapses into category 3, co-occurrence, and isn't a distinct feature family. Make it a runtime channel instead and you break the frozen-tied head (line 175), since the head would then have to predict n-gram membership; and forward-looking 3-grams leak the next token.
+
+Two more strikes: backward-looking 3-grams are close to what scale-1 Haar coefficients already compute densely (your open question 2 — I think the answer is yes), and the top-1000 3-grams in WT-103 are almost entirely function-word sequences, which is a familiar failure surface for you given the RARE-category misclassification from EXARCH. Reallocate those 1000 dims to the PMI factorization, which produces them from the same corpus statistics with a principled ordering.
+
+## The frozen-tied head is the real risk
+
+Whitening handles the Zipf/norm problem you identify. It doesn't handle the harder one: with logits = h·Eᵀ and E frozen, two tokens whose feature rows are near-collinear become permanently inseparable in the output, no matter what the trunk learns. Prescribed embeddings produce near-duplicate rows constantly in the rare-token tail. Your per-vocab scalar gain fixes *norm* but not *direction*, so it can't pull collinear rows apart — that's a hard BPB floor, and it's the mechanism I'd bet on if the frozen-head arm underperforms.
+
+Cheapest escape that preserves the interpretability artifact: a learned low-rank residual on the head, logits = h·(E + UVᵀ)ᵀ at rank 32–64. The named-frame attribution `h_i·E[v]_i` survives, r=0 is a clean ablation, and ‖UVᵀ‖ becomes a reported number — literally "how much the prescribed frame had to be rotated to work."
+
+Also, run **frozen-E-no-PE first**, not second. Your EXARCH result that positional encoding provided no benefit (Haar handles it) is a strong prior that the PE channel is redundant, and the no-PE arm is the simpler architecture.
+
+## On the hybrid ratio
+
+The doc proposes one 80/20 point. The informative object is the *curve* — marginal BPB cost per prescribed dimension — because it separates the cheap prescriptions (structural, frequency, positional: things the model would learn anyway) from the expensive ones (the abstract semantic end).
+
+And rather than partitioning dims into prescribed vs. learned blocks, consider the cheapest hybrid that keeps names intact: **frozen E with one learned scalar gain per dimension**. Dimension identity is preserved exactly, it's 2048 parameters, and the learned gains are a direct readout of which prescribed features the model actually wants. That's a free feature-importance artifact and a much better use of a first run than picking a ratio blind.
+
+## The AMB question: no to random, and the subset isn't the right axis
+
+CEv2 was never the point — the properties were. The AMB wants keys that are **sparse, near-orthogonal, and named**, because that's what simultaneously reduces interference (capacity) and makes S a legible binding matrix (interpretability). Any embedding with those properties qualifies.
+
+A random subset fails on the first two, and specifically fails in the way we just diagnosed. Under your budget table, a random 64 of 2048 draws ~49% n-gram indicator dims — near-constant zero across the vocab — plus a few Zipf-dominated frequency bands. Near-constant key coordinates are exactly the DC floor that made `softplus_l2` unselective. You'd be reintroducing the same pathology through the input side after fixing it in the feature map.
+
+Better, in rough order of how much I'd trust them:
+
+1. **Split the roles.** Take **q and k from the frozen embedding** (type-level, so matching is on token identity — which is what MQAR-style recall actually needs) and keep **v from the contextual residual** (or you can only ever retrieve a neighbor's embedding, never the bound value). This is a classic content-addressable memory keyed by identity, and it should beat the all-contextual version on recall probes while making every write attributable to a named token.
+2. **Select dims by pivoted QR, not randomly.** Column-pivoted QR on Eᵀ gives you d near-orthogonal, high-variance, *still-named* columns for free. That's the selection rule that actually buys what random sampling was hoping to approximate.
+3. **If you adopt the dyadic-bucket construction, select from the long-offset buckets** (64–127, 128–255). The AMB exists to supply the long-range content-addressed retrieval the local wavelet scales miss, so key it on the coordinates that encode long-range relational structure. This is the most architecturally motivated rule available and it only exists if you go the PMI route.
+
+Keep frozen-vs-learned keys as an ablation arm rather than an assumption, though — frozen keys mean the AMB can't learn *what* to match on, which is a real capability cost. The middle option (learned W applied to the frozen named frame) probably wins: you retain partial attribution through W's row structure without giving up adaptivity.
+
+On the repo: worth knowing that I won't be picking this thread up on my own initiative — when the extension access lands I'll be reading things fresh, so pointing me at the relevant plan files and the current config at the start of that session will save you a round trip.
