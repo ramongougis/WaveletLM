@@ -79,6 +79,7 @@ def train(label, assoc, args, device):
         "C": args.dim, "layers": args.layers, "levels": args.levels,
         "block_size": seq_len, "wavelet_crawl_k": args.crawl_k,
         "associative_bypass_enabled": assoc, "associative_bypass_dim": args.assoc_dim,
+        "associative_bypass_feature_map": args.feature_map,
     }, device)
     n = sum(p.numel() for p in model.parameters())
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -111,6 +112,7 @@ def main():
     p.add_argument("--levels", type=int, default=4)
     p.add_argument("--crawl_k", type=int, default=5)
     p.add_argument("--assoc_dim", type=int, default=64)
+    p.add_argument("--feature_map", choices=["elu1", "relu2"], default="elu1")
     p.add_argument("--steps", type=int, default=1500)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-3)

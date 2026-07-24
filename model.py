@@ -1578,6 +1578,7 @@ class WaveletLMBlock(nn.Module):
         associative_bypass_enabled: bool = False,
         associative_bypass_dim: int = 64,
         associative_bypass_cross_layer: bool = False,
+        associative_bypass_feature_map: str = "elu1",
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1995,6 +1996,14 @@ class WaveletLMBlock(nn.Module):
                     "associative_bypass requires the real forward path (complex_mixer off)")
             d = int(associative_bypass_dim)
             self.assoc_dim = d
+            # Nonneg feature map phi for q,k. "elu1" = elu(x)+1 (ORIGINAL): strictly
+            # positive but carries a ~1.0 DC floor per dim -> q·k has a large (d≈64)
+            # constant offset -> the read collapses toward an UNSELECTIVE running mean
+            # of values (redundant with decompose_bypass; fights the spectral stack as
+            # its gain grows -> the epoch-2 loss stall). "relu2" = relu(x)^2 (Based /
+            # Zoology): nonneg with NO constant floor -> unmatched keys -> ~0 -> genuine
+            # content-addressed retrieval. Denominator still clamp_min-guarded.
+            self.assoc_feature_map = str(associative_bypass_feature_map)
             # Pre-norm on the AMB's input: read the residual's DIRECTION, not its
             # (deep-stack-growing) magnitude. Without it, the AMB reads a growing
             # residual and writes back into it -> read->residual->read feedback that
@@ -2618,8 +2627,12 @@ class WaveletLMBlock(nn.Module):
             if self.associative_bypass_cross_layer and assoc_prev is not None:
                 x0 = x0 + self.assoc_gamma * assoc_prev.float()  # depth-wise recall highway (inside pre-norm)
             x0 = self.assoc_ln(x0)                               # pre-norm: read direction, bounds |v|
-            q = F.elu(self.assoc_q(x0)) + 1.0                    # (B,T,d) nonneg
-            k = F.elu(self.assoc_k(x0)) + 1.0                    # (B,T,d) nonneg
+            if self.assoc_feature_map == "relu2":
+                q = F.relu(self.assoc_q(x0)).square()            # (B,T,d) nonneg, NO DC floor -> selective
+                k = F.relu(self.assoc_k(x0)).square()            # (B,T,d) nonneg, NO DC floor -> selective
+            else:                                                # "elu1" (original)
+                q = F.elu(self.assoc_q(x0)) + 1.0                # (B,T,d) nonneg (DC floor ~1.0/dim)
+                k = F.elu(self.assoc_k(x0)) + 1.0                # (B,T,d) nonneg (DC floor ~1.0/dim)
             v = self.assoc_v(x0)                                 # (B,T,d)
             kv = k.unsqueeze(-1) * v.unsqueeze(-2)               # (B,T,d,d)
             S = kv.cumsum(dim=1)                                 # (B,T,d,d)
@@ -3568,6 +3581,7 @@ class WaveletLM(nn.Module):
                 associative_bypass_enabled=config.get("associative_bypass_enabled", False),
                 associative_bypass_dim=config.get("associative_bypass_dim", 64),
                 associative_bypass_cross_layer=config.get("associative_bypass_cross_layer", False),
+                associative_bypass_feature_map=config.get("associative_bypass_feature_map", "elu1"),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
