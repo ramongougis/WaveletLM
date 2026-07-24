@@ -749,6 +749,23 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 run_ablation "AMBN_native_C512_5ep Native AMB Mini — fresh base + AMB from step 0, iso vs D0"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN: native AMB Mini (fresh base+AMB, iso vs D0 1.0436) — the clean does-AMB-help-the-architecture test; v1 flat + beta-collapse predicts ~flat, but this is confound-free"
 # ==============================================================================
 #
+# NATIVE AMB + CROSS-LAYER MEMORY (2026-07-24; idea: Ramon). Queued immediately after AMBN.
+# Same fresh Mini + AMB from step 0, ISO to AMBN in every way EXCEPT
+# associative_bypass_cross_layer=true: each block's AMB now reads
+#   assoc_ln(x + gamma * previous_block_AMB_output)   (per-channel learned gamma)
+# so the associative read COMPOUNDS across depth (a recall highway) instead of only seeing
+# the prior read after the residual has diluted it. Adds only ~5.1K params total (C=512 gamma
+# x 10 layers) -> the A/B is the MECHANISM, not capacity. Identity-at-init preserved (prev AMB
+# output = 0 at init via zero-init out_proj; CPU-smoked 2026-07-24: identity exact-0, gamma
+# grad live in layers 1+, guard fires vs checkpointing/multinodal, Dynamo trace clean).
+# A/B: vs AMBN (isolates the cross-layer term) AND vs D0 1.0436. >0.001 over AMBN => depth-wise
+# recall compounding helps; flat => WT-103 still just doesn't reward recall (same read as AMBN).
+# COST ~6.1h (~$6). FALLBACK: if inductor ever chokes on the varying-arity AMB return, set
+# compile:false (explicit-return threading is eager-safe). Requires the fp32 retrieval-scan fix
+# (2026-07-24) that both AMBN and this inherit — without it the native AMB NaN's ~step 79-500.
+run_ablation "AMBN_xlayer_C512_5ep Native AMB + cross-layer memory — iso vs AMBN"     "$BASE_PATCH_5EP"     '{"associative_bypass_enabled": true, "associative_bypass_dim": 64, "associative_bypass_cross_layer": true, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "AMBN_xlayer: native AMB + cross-layer memory (assoc_ln(x+gamma*prev_AMB_out)); iso vs AMBN, isolates depth-wise recall compounding; +5.1K params only"
+# ==============================================================================
+#
 # CTX1024_L9 RESUME (postponed AGAIN 2026-07-24 for the native AMB run; first postponed
 # 2026-07-23 for AMBA — the MQAR validation made the associative-memory bypass the immediate
 # priority). The fresh L9 arm above already trained into epoch 4 of run dir

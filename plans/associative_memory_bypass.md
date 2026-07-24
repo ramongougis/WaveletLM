@@ -230,3 +230,34 @@ error-correcting `S_t = S_{t-1} + (v_t − S_{t-1}k_t)⊗k_t` (overwrites stale 
 interference). Carries forward: unnormalized read, L2-normed keys, identity-at-init, ablatable. Needs
 a chunkwise-parallel scan (the delta term is a recurrence, not a cumsum). **Does NOT fix the objective**
 — flat on plain WT-103 for the same reason; test only on the mixed / recall-heavy objective.
+
+## Native-run NaN: ROOT CAUSE + fix (2026-07-24, CONFIRMED by reproduction)
+
+The native AMB (`associative_bypass_enabled` from step 0, fp16 AMP, C=512/L=10) NaN'd repeatedly
+(~step 79–500). **Root cause is NOT residual feedback and NOT the injection magnitude** (both earlier
+hypotheses were wrong). It is a **sporadic fp16 OVERFLOW inside the retrieval einsum** `num = q·S`:
+`S = cumsum(k⊗v)` over T, so the sum-over-d reaches ~1e5 on an occasional batch — past the fp16 max
+(65504) → `inf` → `y=inf` → NaN. Reproduced faithfully (fp16 + Adagrad + GradScaler + clip) at
+C=256/L=6: NaN at the **deepest layer**, step 93, with residual healthy (~400, = AMB-off control),
+`out_proj`=0.478, `beta`=1.008, injection=0.5 — i.e. **all weights tiny, purely fp16 range**, not a
+growth/feedback blowup. An AMB-off control at the same scale was finite through 120.
+
+**Fix:** run the whole scan in **true fp32** — wrap it in `torch.autocast(device_type=…, enabled=False)`.
+`.float()` alone is insufficient (autocast re-casts einsum/matmul operands back to fp16). Confirmed:
+finite through 400 steps where it was NaN@93. The pre-norm `assoc_ln` is kept (bounds `|v|`, reads
+direction) but was never the fix — it slowed MQAR (84%@500 → 93%@1500, ceiling intact) and did not
+stop the overflow. MQAR harness runs fp32 so the fix is a no-op there. Both AMBN and AMBN_xlayer
+inherit this fix.
+
+## Cross-layer AMB memory (2026-07-24, idea: Ramon) — queued as AMBN_xlayer
+
+Depth-wise recall highway: each block's AMB reads `assoc_ln(x + γ · previous_block_AMB_output)`
+(per-channel learned `γ`, init 0.1), so the associative read **compounds across depth** instead of
+only seeing the prior read after the residual dilutes it. Config: `associative_bypass_cross_layer`
+(default off). Threaded via explicit block return (`amb_out` as a 3rd value; robust `len(_ret)>2`
+unpack) — compile-safe (Dynamo trace clean), **guarded off** with gradient_checkpointing (closure
+recompute would drop the cross-layer gradient) and multinodal. Identity-at-init preserved (prev output
+= 0 via zero-init out_proj → exact-0 for any γ; CPU-smoked). Adds ~5.1K params (10·C). A/B iso vs AMBN
+isolates the cross-layer term; >0.001 over AMBN ⇒ compounding helps, flat ⇒ WT-103 still doesn't reward
+recall (same read as AMBN). A capacity axis distinct from DeltaNet (which compounds *within* a
+sequence); both are post-stability ablations.

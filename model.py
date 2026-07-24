@@ -1577,6 +1577,7 @@ class WaveletLMBlock(nn.Module):
         mixer_mom_topk: int = 2,
         associative_bypass_enabled: bool = False,
         associative_bypass_dim: int = 64,
+        associative_bypass_cross_layer: bool = False,
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
         mlp_offdiag_structure: str = "none",
@@ -1985,6 +1986,9 @@ class WaveletLMBlock(nn.Module):
         # SSMs are "attention-free"). Identity-at-init (zero-init up-projection +
         # beta gain), so it is a clean ablation AND a bolt-on adapter. Off by default.
         self.associative_bypass_enabled = associative_bypass_enabled
+        # Cross-layer AMB memory (depth-wise recall highway); requires the AMB itself.
+        self.associative_bypass_cross_layer = (
+            bool(associative_bypass_cross_layer) and bool(associative_bypass_enabled))
         if associative_bypass_enabled:
             if complex_mixer:
                 raise ValueError(
@@ -2002,6 +2006,14 @@ class WaveletLMBlock(nn.Module):
             self.assoc_out = nn.Linear(d, C, bias=False, device=device, dtype=dtype)
             nn.init.zeros_(self.assoc_out.weight)   # identity at init; learns first
             self.assoc_beta = nn.Parameter(torch.ones(1, device=device, dtype=dtype))
+            if self.associative_bypass_cross_layer:
+                # Depth-wise recall highway: each block's AMB reads
+                #   assoc_ln(x + gamma * previous_block_AMB_output)
+                # so the associative read compounds across depth instead of only
+                # seeing the previous read after the residual has diluted it. The
+                # previous output is 0 at init (zero-init out_proj), so this is exact
+                # identity-at-init for any gamma; small init lets it ramp in.
+                self.assoc_gamma = nn.Parameter(torch.full((C,), 0.1, device=device, dtype=dtype))
 
         if coefficient_shrinkage == "replace":
             pass  # phi IS the coefficient computation — no mixers allocated
@@ -2579,7 +2591,7 @@ class WaveletLMBlock(nn.Module):
             x = x + mem_out
         return x, None
 
-    def _assoc_retrieve(self, x0):
+    def _assoc_retrieve(self, x0, assoc_prev=None):
         """Causal linear-attention associative memory (Katharopoulos linear-transformer read).
 
         phi(x)=elu(x)+1 (NONNEGATIVE feature map) on q,k, then:
@@ -2594,19 +2606,31 @@ class WaveletLMBlock(nn.Module):
         readout (matched keys dominate the weighted mean). The delta rule (v2) remains the
         upgrade for interference/capacity. NOTE: naive O(T·d^2) cumsum; chunked scan later.
         """
-        x0 = self.assoc_ln(x0)                                    # pre-norm: bounds |v|, breaks the feedback blowup
-        q = F.elu(self.assoc_q(x0).float()) + 1.0                 # (B,T,d) nonneg
-        k = F.elu(self.assoc_k(x0).float()) + 1.0                 # (B,T,d) nonneg
-        v = self.assoc_v(x0).float()                              # (B,T,d)
-        kv = k.unsqueeze(-1) * v.unsqueeze(-2)                    # (B,T,d,d)
-        S = kv.cumsum(dim=1)                                      # (B,T,d,d)
-        z = k.cumsum(dim=1)                                       # (B,T,d)
-        num = torch.einsum('btd,btde->bte', q, S)                # (B,T,d)
-        den = (q * z).sum(-1, keepdim=True).clamp_min(1e-6)      # (B,T,1) nonneg, bounded
-        y = num / den                                            # (B,T,d) match-weighted mean
+        # The whole scan runs in TRUE fp32. num = q·S sums a length-T cumsum over d,
+        # so on occasional batches it reaches ~1e5 — past the fp16 max (65504) -> inf
+        # -> y=inf -> NaN. Casting operands with .float() is NOT enough: autocast
+        # re-casts einsum/matmul inputs back to fp16. Disabling autocast forces fp32
+        # accumulation. (Confirmed 2026-07-24: repro NaN'd at the deepest layer via a
+        # sporadic num overflow while residual, out_proj, and beta were all still tiny
+        # -> not a residual/injection blowup, purely fp16 range in the retrieval.)
+        with torch.autocast(device_type=x0.device.type, enabled=False):
+            x0 = x0.float()
+            if self.associative_bypass_cross_layer and assoc_prev is not None:
+                x0 = x0 + self.assoc_gamma * assoc_prev.float()  # depth-wise recall highway (inside pre-norm)
+            x0 = self.assoc_ln(x0)                               # pre-norm: read direction, bounds |v|
+            q = F.elu(self.assoc_q(x0)) + 1.0                    # (B,T,d) nonneg
+            k = F.elu(self.assoc_k(x0)) + 1.0                    # (B,T,d) nonneg
+            v = self.assoc_v(x0)                                 # (B,T,d)
+            kv = k.unsqueeze(-1) * v.unsqueeze(-2)               # (B,T,d,d)
+            S = kv.cumsum(dim=1)                                 # (B,T,d,d)
+            z = k.cumsum(dim=1)                                  # (B,T,d)
+            num = torch.einsum('btd,btde->bte', q, S)           # (B,T,d) fp32 — no overflow
+            den = (q * z).sum(-1, keepdim=True).clamp_min(1e-6) # (B,T,1) nonneg, bounded
+            y = num / den                                       # (B,T,d) match-weighted mean
         return self.assoc_out(y.to(self.assoc_out.weight.dtype)) # (B,T,C)
 
-    def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None,
+                assoc_prev: torch.Tensor = None):
         # Invertible complex wavelet uses a dedicated forward (full complex
         # coefficients carried through the spectral stack, tied reconstruct).
         # Mutually exclusive with recurrence/dense/subband/decompose-bypass-SSM
@@ -2974,9 +2998,14 @@ class WaveletLMBlock(nn.Module):
 
         # Associative-memory bypass: content-addressable retrieval as a parallel
         # residual branch (beta·zero-init-out -> exact identity at init).
+        amb_out = None
         if self.associative_bypass_enabled:
-            x = x + self.assoc_beta * self._assoc_retrieve(assoc_x0)
+            amb_out = self._assoc_retrieve(assoc_x0, assoc_prev)
+            x = x + self.assoc_beta * amb_out
 
+        # Cross-layer memory returns the raw AMB output so the next block can read it.
+        if self.associative_bypass_cross_layer:
+            return x, current_running_mean, amb_out
         return x, current_running_mean
 
 
@@ -3111,6 +3140,16 @@ class WaveletLM(nn.Module):
 
         # Gradient checkpointing
         self.gradient_checkpointing = config.get('gradient_checkpointing', False)
+        if config.get("associative_bypass_cross_layer", False):
+            if self.gradient_checkpointing:
+                raise ValueError(
+                    "associative_bypass_cross_layer is incompatible with gradient_checkpointing: "
+                    "the cross-layer AMB read is threaded outside the checkpointed region, so its "
+                    "gradient to the previous block would be dropped on recompute.")
+            if config.get("multinodal_enabled", False):
+                raise ValueError(
+                    "associative_bypass_cross_layer is not supported with multinodal "
+                    "(the per-cell forward does not thread the AMB memory).")
 
         # Wavelet config
         wavelet_mode = config.get("wavelet_mode", "lifting")
@@ -3528,6 +3567,7 @@ class WaveletLM(nn.Module):
                 mixer_mom_topk=config.get("mixer_mom_topk", 2),
                 associative_bypass_enabled=config.get("associative_bypass_enabled", False),
                 associative_bypass_dim=config.get("associative_bypass_dim", 64),
+                associative_bypass_cross_layer=config.get("associative_bypass_cross_layer", False),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
                 mlp_offdiag_structure=config.get("mlp_offdiag_structure", "none"),
@@ -3750,6 +3790,7 @@ class WaveletLM(nn.Module):
             # Running list of prior layer outputs for cross-layer dense skips:
             # skip_states[0] = x0 (embedding), then each layer's output appended.
             skip_states = [x] if use_dense_skips else None
+            assoc_prev = None   # cross-layer AMB memory: previous block's raw AMB output
             for layer_idx in range(eff_count):
                 layer = get_layer(layer_idx)
 
@@ -3782,7 +3823,10 @@ class WaveletLM(nn.Module):
                         return _layer(lx, _state, token_embeddings=_ple)
                     x, current_state = checkpoint(layer_wrapper, layer_in, use_reentrant=False)
                 else:
-                    x, current_state = layer(layer_in, current_state, token_embeddings=ple)
+                    _ret = layer(layer_in, current_state, token_embeddings=ple, assoc_prev=assoc_prev)
+                    x, current_state = _ret[0], _ret[1]
+                    if len(_ret) > 2:          # block emitted its AMB output for the next layer
+                        assoc_prev = _ret[2]
 
                 if use_dense_skips:
                     skip_states.append(x)
@@ -4226,10 +4270,13 @@ def parameter_breakdown(model, config, logger=None):
                 shr_per = sum(p.numel() for p in block0.coeff_shrink.parameters())
                 out(f"    Shrinkage/layer:{shr_per:>{W-1},} ({shr_per/1e6:.2f}M)")
         if getattr(block0, 'associative_bypass_enabled', False):
-            assoc_per = sum(p.numel() for p in [
+            assoc_tensors = [
                 block0.assoc_q.weight, block0.assoc_k.weight, block0.assoc_v.weight,
                 block0.assoc_out.weight, block0.assoc_beta,
-                block0.assoc_ln.weight, block0.assoc_ln.bias])
+                block0.assoc_ln.weight, block0.assoc_ln.bias]
+            if getattr(block0, 'associative_bypass_cross_layer', False):
+                assoc_tensors.append(block0.assoc_gamma)   # cross-layer per-channel gain
+            assoc_per = sum(p.numel() for p in assoc_tensors)
             out(f"    Assoc-bypass/l:{assoc_per:>{W-1},} ({assoc_per/1e6:.2f}M, d={block0.assoc_dim})")
         if block0.use_mlp:
             mlp_per = sum(p.numel() for p in block0.ffwd.parameters())
