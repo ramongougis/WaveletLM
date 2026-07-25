@@ -16,6 +16,7 @@
 # train.py
 
 import os
+import sys
 import math
 import json
 import time
@@ -1688,6 +1689,24 @@ def train():
                         f"lr={lr:.2e}"
                     )
 
+                    # NaN guard. A diverged run is unrecoverable: every later step
+                    # spreads the NaN, and the periodic resume-checkpoint OVERWRITES
+                    # last_checkpoint.pt with all-NaN weights — destroying the last
+                    # good snapshot, which is exactly the artifact needed to diagnose
+                    # the blowup. (Measured 2026-07-25: the softplus_s AMB run NaN'd
+                    # at ~step 10.1K and kept training to 20K, leaving 2034/2054
+                    # tensors non-finite incl. token_embedding — no evidence left, and
+                    # ~2.5h of pod time spent producing it.) Abort instead: the last
+                    # checkpoint stays pre-NaN, and run_ablation continues the queue.
+                    if not (math.isfinite(losses['train']) and math.isfinite(losses['val'])):
+                        logger.log(
+                            f"[NaN GUARD] Non-finite loss at step {global_step} "
+                            f"(train={losses['train']}, val={losses['val']}, lr={lr:.2e}). "
+                            f"Aborting; last_checkpoint.pt preserved pre-NaN for diagnosis."
+                        )
+                        if config.get('abort_on_nan', True):
+                            sys.exit(2)
+
                     if losses['val'] < best_val_loss:
                         best_val_loss = losses['val']
                         best_epoch = epoch + 1
@@ -1707,7 +1726,11 @@ def train():
                 # Periodic mid-epoch resume checkpoint (opt-in via
                 # checkpoint_interval_steps; essential for runs whose epochs
                 # are hours long — bounds crash loss to the interval).
-                if checkpoint_interval and global_step % checkpoint_interval == 0:
+                # ...but never overwrite a good checkpoint with diverged weights, in
+                # case the NaN lands between evals (checkpoint_interval need not be a
+                # multiple of eval_interval).
+                if (checkpoint_interval and global_step % checkpoint_interval == 0
+                        and math.isfinite(loss_accum)):
                     save_resume_checkpoint(
                         os.path.join(log_dir, "last_checkpoint.pt"),
                         model, optimizers, scaler,
