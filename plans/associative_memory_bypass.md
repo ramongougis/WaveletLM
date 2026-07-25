@@ -261,3 +261,57 @@ recompute would drop the cross-layer gradient) and multinodal. Identity-at-init 
 isolates the cross-layer term; >0.001 over AMBN ⇒ compounding helps, flat ⇒ WT-103 still doesn't reward
 recall (same read as AMBN). A capacity axis distinct from DeltaNet (which compounds *within* a
 sequence); both are post-stability ablations.
+
+## PARKED 2026-07-25 — close-out record
+
+**Verdict: the mechanism works; WT-103 cannot score it.** Parked after five WT-103 attempts,
+resumes post-release on recall-demanding data (README "Immediate post-release").
+
+**What the instrument showed** (`tools/interpretability/amb_selectivity.py` on the softplus_l2
+1-epoch checkpoint `logs/wikitext-103_2026-07-24_18-08-02`, all 10 layers):
+
+| metric | measured | meaning |
+|---|---|---|
+| unrelated `⟨q,k⟩` | 0.863–0.866 | **identical to its init value** — the read never sharpened |
+| read-weight entropy / log(t) | 1.000 | perfectly uniform ⇒ a running mean, not a content-addressed read |
+| ‖β·amb‖/‖x‖ | 0.0000 | the model switched the module off |
+| effrank(S) of d=64 | 3.5–8.5 | state heavily superposed |
+
+So the flat BPB was never a tuning failure — the AMB contributed *exactly nothing*, which is the
+predicted consequence of Finding 7 (WT-103 is recall-light). **A BPB A/B on WT-103 can only show
+"does it harm" (it doesn't), never "does it work."**
+
+**Feature-map screen (all five, for the record).** The DC floor and numerical stability turned out
+to be coupled: elu1's ~1.0/dim floor makes `q·k` ≈ d-dominated → unselective → stalls epoch 2
+(+0.17 val vs D0 and widening); removing the floor buys selectivity but every unbounded or
+normalize-based variant diverged under Adagrad(acc=0)+fp16 — relu2 NaN'd pod step 635 at lr=3.25e-3
+(*tiny* — a magnitude problem, not an LR one), relu_l2 died step 500, relu2_l2 ramped 5.6→14.6→104.7
+→NaN by step 2000, softplus_s ran one clean epoch then NaN'd ~step 10.1K. softplus_l2 is the only
+stable one and is stable *because* it is inert. A denominator-collapse hypothesis was tested and
+**refuted** (at init `min den` ≥ 0.08 and `|y|` ≤ max|v| for every map incl. softplus_s at s=100),
+so the divergence lives in trained-weight drift, not a static property. Not further diagnosed: the
+one checkpoint that could have shown it was overwritten by 10K post-NaN steps (see below).
+
+**Infrastructure fix that came out of this (`train.py`).** A diverged run previously trained on for
+hours and *overwrote* `last_checkpoint.pt` with all-NaN weights — the softplus_s run reached
+global_step 20000 with 2034/2054 tensors non-finite incl. `token_embedding`, destroying the
+step-10000 snapshot taken right before the blowup. `train.py` now aborts on non-finite eval loss
+(`abort_on_nan`, default true) and never checkpoints non-finite weights, so the last good snapshot
+survives and `run_ablation` continues the queue. Applies to every future run, not just AMB.
+
+**Built and validated, waiting for a venue:**
+- `associative_bypass_per_scale` — injects the read in **coefficient space, one learned gain per
+  scale** (after `scale_weights`, so `beta_s` is a clean per-scale write statistic) instead of the
+  full-width post-reconstruction write, which is the one block component with no scale index.
+  CPU-smoked: identity-at-init exact-0, all S gains receive independent gradients, output verified
+  ≠ full-width write. Attribution caveat: the *injection* is exactly per-scale, but lifting
+  reconstruct is non-linear, so "AMB share of the output at scale s" is not exactly decomposable.
+- `mqar_mixed.py --feature_map/--per_scale` — the mixed WT-103+MQAR objective, the one venue where
+  the read is exercised. Queued after the CTX1024_L9 resume.
+- **Delta rule (v2)** — still the indicated capacity/interference upgrade; needs a chunkwise-
+  parallel scan (the delta term is a recurrence, not a cumsum) and recall-heavy eval.
+
+**Rejected on inspection (recorded so it isn't re-proposed):** a uniform scalar "temperature" on
+q or k cannot sharpen this read — it is a *ratio* `y = Σw·v / Σw`, so any uniform positive rescale
+of every score cancels exactly. Sharpening requires a per-score nonlinearity (what `relu2_l2`'s
+squaring does), not a temperature.

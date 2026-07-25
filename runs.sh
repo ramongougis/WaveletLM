@@ -862,6 +862,37 @@ resume_run "logs/wikitext-103_2026-07-23_06-49-44" "CTX1024_L9 resume (postponed
 # ==============================================================================
 
 # ==============================================================================
+# AMB CLOSE-OUT (2026-07-25). The AMB thread is PARKED after five WT-103 attempts
+# (elu1 stalled epoch 2; relu2 NaN'd pod step 635; relu_l2 crashed step 500; relu2_l2
+# diverged to NaN by step 2000; softplus_s NaN'd step ~10.1K after one clean epoch).
+# Root cause of the *scientific* dead end is NOT numerical: WT-103 does not reward
+# recall, so the AMB installs none. Measured on the softplus_l2 checkpoint with
+# tools/interpretability/amb_selectivity.py: unrelated <q,k> 0.863-0.866 across all
+# 10 layers (= its value at INIT -> never sharpened), read-weight entropy 1.000
+# (perfectly uniform = a running mean), and ||beta*amb||/||x|| = 0.0000 (the model
+# turned the module off). A BPB A/B on WT-103 therefore cannot answer "does AMB work",
+# only "does it harm" — which it doesn't. These two runs close the thread on the ONE
+# venue where the read is actually exercised, then AMB rests until post-release.
+# Both are the small mixed-objective harness (WT-103 LM batches interleaved with
+# generated MQAR recall batches, shared GPT-2 vocab), NOT train.py ablations — ~7M
+# params, minutes not hours, ~$1 total for the pair.
+#   1) Does the AMB install recall when the objective REWARDS it? (vanilla vs +AMB)
+#   2) WHICH SCALES does that recall write into? (per-scale coefficient-space write,
+#      one learned gain per scale — the attribution the full-width residual write
+#      cannot give. CPU-smoked 2026-07-25: identity-at-init exact-0, all S gains
+#      receive independent gradients, output verified != full-width write.)
+# Read (1) as: MQAR acc rises AND WT-103 val stays ~vanilla => AMB earns its place.
+# Read (2) as: the beta_s profile — coarse-heavy would mean recall is a long-span
+# phenomenon; fine-heavy would mean it rides local detail. Either is a real result.
+# mkdir -p logs
+python tools/interpretability/mqar_mixed.py --steps 3000 --feature_map softplus_l2 \
+    2>&1 | tee "logs/amb_mixed_$(date +%Y-%m-%d_%H-%M-%S).txt"
+python tools/interpretability/mqar_mixed.py --steps 3000 --feature_map softplus_l2 --per_scale --only assoc \
+    2>&1 | tee "logs/amb_mixed_perscale_$(date +%Y-%m-%d_%H-%M-%S).txt"
+git_commit_push "AMB close-out: mixed-objective recall test + per-scale write attribution"
+# ==============================================================================
+
+# ==============================================================================
 # SCALE-BUDGET REALLOCATION + FROZEN-WAVELET TRANSFER + PRIME-POWER SCREEN
 # (2026-07-20; runs BEFORE the remaining queue by request). Mini = the iteration
 # machine: C=512/L=10 fully spectral, 5ep, MBS=48, lr=0.075 — every arm ~6.1h

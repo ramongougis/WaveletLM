@@ -1578,6 +1578,7 @@ class WaveletLMBlock(nn.Module):
         associative_bypass_enabled: bool = False,
         associative_bypass_dim: int = 64,
         associative_bypass_cross_layer: bool = False,
+        associative_bypass_per_scale: bool = False,
         associative_bypass_feature_map: str = "elu1",
         lifting_diaglowrank: bool = False,
         lifting_level_sharing: bool = False,
@@ -1990,6 +1991,10 @@ class WaveletLMBlock(nn.Module):
         # Cross-layer AMB memory (depth-wise recall highway); requires the AMB itself.
         self.associative_bypass_cross_layer = (
             bool(associative_bypass_cross_layer) and bool(associative_bypass_enabled))
+        # Per-scale write: inject the associative read into COEFFICIENT space (one
+        # learned gain per scale) instead of the reconstructed residual.
+        self.associative_bypass_per_scale = (
+            bool(associative_bypass_per_scale) and bool(associative_bypass_enabled))
         if associative_bypass_enabled:
             if complex_mixer:
                 raise ValueError(
@@ -2015,6 +2020,17 @@ class WaveletLMBlock(nn.Module):
             self.assoc_out = nn.Linear(d, C, bias=False, device=device, dtype=dtype)
             nn.init.zeros_(self.assoc_out.weight)   # identity at init; learns first
             self.assoc_beta = nn.Parameter(torch.ones(1, device=device, dtype=dtype))
+            if self.associative_bypass_per_scale:
+                # One gain per scale, applied AFTER scale_weights so beta_s is a clean,
+                # directly-readable "how much did the AMB write into scale s" statistic
+                # (uncontaminated by the scale weight). Replaces the single full-width
+                # post-reconstruction write, which smears the AMB across all scales at
+                # once and is the one part of the block with no scale index — the gap
+                # in WaveletLM's per-scale attribution story when the AMB is on.
+                # Identity-at-init still exact: assoc_out is zero-init, so every scale
+                # receives exactly 0 regardless of beta_s. S scalars/layer (~80 total).
+                self.assoc_beta_scale = nn.Parameter(
+                    torch.ones(S, device=device, dtype=dtype))
             if self.assoc_feature_map == "softplus_s":
                 # Learnable sharpness INSIDE softplus: normalize(softplus(s*Wx)). Because
                 # softplus is non-homogeneous, s does NOT cancel under L2-norm (an OUTER
@@ -2991,10 +3007,21 @@ class WaveletLMBlock(nn.Module):
 
         # Unstack and apply scale weights
         mixed_list = list(mixed_all.unbind(dim=2))
+        # Per-scale AMB write (alternative to the post-reconstruction residual write):
+        # the associative read enters in coefficient space with its own gain per scale,
+        # so its contribution carries a scale index like every other block component.
+        # NOTE for attribution: the injection is exactly per-scale, but the lifting
+        # reconstruct has learned predict/update nets (not linear), so "AMB share of the
+        # OUTPUT at scale s" is not exactly decomposable — beta_s is the write gain.
+        amb_out = None
+        if self.associative_bypass_per_scale:
+            amb_out = self._assoc_retrieve(assoc_x0, assoc_prev)
         processed_top_down = []
         for idx, mixed in enumerate(mixed_list):
             mixed = self.dropout_mix(mixed)
             scaled = mixed * self.scale_weights[idx]
+            if amb_out is not None:
+                scaled = scaled + self.assoc_beta_scale[idx] * amb_out
             processed_top_down.append(scaled)
 
         # Wavelet reconstruct
@@ -3047,8 +3074,9 @@ class WaveletLMBlock(nn.Module):
 
         # Associative-memory bypass: content-addressable retrieval as a parallel
         # residual branch (beta·zero-init-out -> exact identity at init).
-        amb_out = None
-        if self.associative_bypass_enabled:
+        # Full-width residual write — skipped when the per-scale coefficient-space
+        # write already injected the read above (they are alternatives, not additive).
+        if self.associative_bypass_enabled and not self.associative_bypass_per_scale:
             amb_out = self._assoc_retrieve(assoc_x0, assoc_prev)
             x = x + self.assoc_beta * amb_out
 
@@ -3617,6 +3645,7 @@ class WaveletLM(nn.Module):
                 associative_bypass_enabled=config.get("associative_bypass_enabled", False),
                 associative_bypass_dim=config.get("associative_bypass_dim", 64),
                 associative_bypass_cross_layer=config.get("associative_bypass_cross_layer", False),
+                associative_bypass_per_scale=config.get("associative_bypass_per_scale", False),
                 associative_bypass_feature_map=config.get("associative_bypass_feature_map", "elu1"),
                 lifting_diaglowrank=config.get("lifting_diaglowrank", False),
                 lifting_level_sharing=config.get("lifting_level_sharing", False),
@@ -4326,6 +4355,8 @@ def parameter_breakdown(model, config, logger=None):
                 block0.assoc_ln.weight, block0.assoc_ln.bias]
             if getattr(block0, 'associative_bypass_cross_layer', False):
                 assoc_tensors.append(block0.assoc_gamma)   # cross-layer per-channel gain
+            if getattr(block0, 'associative_bypass_per_scale', False):
+                assoc_tensors.append(block0.assoc_beta_scale)  # per-scale write gains
             if getattr(block0, 'assoc_feature_map', '') == 'softplus_s':
                 assoc_tensors.append(block0.assoc_log_s)   # learnable sharpness scalar
             assoc_per = sum(p.numel() for p in assoc_tensors)

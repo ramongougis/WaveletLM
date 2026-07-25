@@ -94,7 +94,9 @@ def run(label, assoc, args, wt_train, wt_val, device):
     model = build_model(V, {"C": args.dim, "layers": args.layers, "levels": args.levels,
                             "block_size": args.block, "wavelet_crawl_k": args.crawl_k,
                             "associative_bypass_enabled": assoc,
-                            "associative_bypass_dim": args.assoc_dim}, device)
+                            "associative_bypass_dim": args.assoc_dim,
+                            "associative_bypass_feature_map": args.feature_map,
+                            "associative_bypass_per_scale": args.per_scale}, device)
     n = sum(p.numel() for p in model.parameters())
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     print(f"\n--- {label} (assoc={assoc}, {n/1e6:.1f}M params) ---")
@@ -137,6 +139,10 @@ def main():
     p.add_argument("--block", type=int, default=256)
     p.add_argument("--crawl_k", type=int, default=33)
     p.add_argument("--assoc_dim", type=int, default=64)
+    p.add_argument("--feature_map", default="softplus_l2",
+                   choices=["elu1","relu2","relu_l2","softplus_l2","relu2_l2","softplus_s"])
+    p.add_argument("--per_scale", action="store_true",
+                   help="inject the AMB read in coefficient space, one gain per scale")
     p.add_argument("--pairs", type=int, default=32)     # D  (2(D+Q)<=block)
     p.add_argument("--queries", type=int, default=32)   # Q
     p.add_argument("--mqar_prob", type=float, default=0.5)
