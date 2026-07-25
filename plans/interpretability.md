@@ -439,6 +439,153 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   *Also note:* gamma is **gauge-degenerate with the downstream mixer weights** (the mixer can
   rescale freely), so gamma's absolute magnitude is not independently interpretable — only
   lambda, which acts on |z| before that scaling, carries threshold meaning.
+- **Finding 13 — Study 3 (exact scale ablation): LAYER 0 CARRIES THE BAND STRUCTURE; the rest of
+  the stack is highly redundant.** `scale_ablation.py` on Mini/D3, all 80 (layer x scale) cells.
+  The ablation is exact and hook-free: `scaled = mixed * scale_weights[idx]`, so zeroing
+  `scale_weights[s]` removes scale s's whole contribution, and reconstruction is exact. Eval set
+  is FIXED across ablations, so differences are deterministic (the uncertainty is sampling, not
+  measurement). Base loss 3.1641 nats on 8,192 val tokens.
+  **The top SIX most damaging ablations are all in layer 0**, led by **L00/s0 +0.0182 dBPB** and
+  **L00/s7 +0.0172** — 4-9x anything at depth. Every other (layer, scale) costs ~0.0004-0.0042
+  dBPB; the median cell is ~0.002. **Removing an entire frequency band from any single layer
+  1-9 is nearly free**, which is a strong statement about depth redundancy.
+  *Convergence:* this independently reproduces **Finding 3** ("the U-shape exists full-strength
+  only at L00 — entry band-shaping"), now with causal rather than descriptive evidence. Two
+  unrelated instruments, same conclusion.
+  *Damage is NOT just the scale weight:* L00/s0 has the SMALLEST weight in its layer (w=+0.457)
+  and the LARGEST damage, while L00/s6 has w=+1.860 and 3x less damage — so this measures
+  function, not magnitude.
+  *Prediction partially scored:* "coarsest-scale ablation degrades most" CONFIRMED (s0 leads,
+  summed +0.0460); "finest hits local grammar" consistent (s7 second at L00); but **"mid scales
+  are where the interesting semantics live" is NOT supported** — s4/s5/s6 are the LEAST damaging
+  bands (+0.0185/+0.0203/+0.0176 summed). Caveat: dBPB measures aggregate prediction damage, so
+  a redundantly-encoded semantic scale could still read as cheap to ablate.
+- **Finding 14 — the zero-inference gain probe is VALIDATED (r = 0.997), and buys the trends
+  free.** `gain_probe.py` predicts per-scale mean|coeff| from `decomp_norms[s].weight` alone via
+  `0.7979 * mean|gamma|` (E|z| for standardized Gaussian z). Against the measured D2 layer-0
+  census: **mean |err| 0.0165, max 0.0359, shape correlation r = 0.997.** The census is
+  therefore readable **from any checkpoint in seconds, with no forward passes, no dataset, and
+  no dump** — including checkpoints never dumped. *Systematic bias, explained:* predictions run
+  high in 8/8 cells because 0.7979 assumes Gaussianity while Finding 4 measured heavy tails
+  (heavy tails lower E|z|/sigma); a calibrated constant ~0.77 gives near-exact agreement.
+  **Trends obtained for free:**
+  (a) *Training duration* (D2 20ep -> D3 40ep, same width): gains fall ~8% **uniformly**, shape
+  fully preserved — the stack quiets with training without re-allocating across scales.
+  (b) *Width* (D3 C=512 -> SP1 C=1024): the wider model specializes far **harder at depth** —
+  at L09 the s0:s1 contrast is **3.5x in SP1 (0.445 vs 0.128) versus 2.1x in D3 (0.434 vs
+  0.205)**, with mid-scales s4/s5 collapsing to ~0.12 in SP1 against ~0.21-0.24 in D3. More
+  channel headroom is spent sharpening the band structure, not spreading it.
+- **Finding 15 — Study 3b: depth is REDUNDANT BUT NECESSARY (8.3x super-additive); layer 0 is
+  load-bearing.** `group_ablation.py` on Mini/D3, 8,192 val tokens, base 3.1641 nats. Prompted by
+  a sharp question from Ramon: if single-band ablations are ~free outside layer 0 (Finding 13),
+  would one wide layer do? **No — and the group test says so decisively.**
+
+  | ablation | dBPB |
+  |---|---|
+  | layer 0 spectral path OFF (alone) | **+1.4289** |
+  | each of layers 1-9 OFF (alone) | +0.0176 to +0.0251 |
+  | **SUM of layers 1-9 individually** | **+0.1824** |
+  | **WHOLE of layers 1-9 together** | **+1.5063** |
+  | **super-additivity ratio** | **8.3x** |
+
+  Cheap to perturb, catastrophic to delete — the textbook signature of **distributed, redundant
+  computation that is collectively essential**. Single-point ablation cannot distinguish
+  "redundant" from "idle"; group ablation can, and it lands firmly on redundant.
+  *Marginal cost RISES with each layer removed* (deltas 0.064, 0.110, 0.134, 0.166, 0.165, 0.168,
+  0.247, 0.427 dBPB) — each layer refines on top of the last rather than duplicating it.
+  *Layer 0 is separately critical*: killing its spectral path alone costs +1.4289 dBPB, ~57x any
+  single deep layer, confirming Findings 3 and 13's "entry band-shaping" reading causally.
+  **Architecture consequence:** this evidence does NOT support trading depth for width. It also
+  aligns with the existing depth sweep (depth pays through ~L=10, 30L worse than 20L at C=512).
+  *Cross-layer scale ablation (same run):* killing a whole band everywhere costs s0 +0.1045,
+  s3 +0.0711, s7 +0.0644, s1 +0.0565, s2 +0.0473, s5 +0.0338, s6 +0.0329, s4 +0.0302 — the same
+  ordering as Finding 13's per-layer sums (convergent), and notably **the model is far more
+  robust to losing an entire frequency band (0.03-0.10) than to losing depth (1.51)**. s0 is
+  super-additive at only 2.3x (0.0460 summed -> 0.1045 whole), versus depth's 8.3x.
+  *Instrument bug caught and fixed:* the script's first auto-verdict printed "near-additive"
+  because it compared the group against the worst SINGLE ablation — which was layer 0, not a
+  member of the group. Corrected to sum-of-parts vs whole. Recorded because the wrong verdict
+  was the exact opposite of the truth.
+- **Finding 16 — the decomposition IS shift-equivariant; the position-artifact worry is
+  RULED OUT (and the test doubles as a receptive-field probe).** `shift_equivariance.py` on
+  Mini/D3. Classical dyadic wavelets are shift-VARIANT, which would have meant coefficients are
+  partly an artifact of grid alignment — a caveat on the census, on Study 2's channel statistics,
+  and specifically on "ch132 fires at clause boundaries" (boundaries correlate with position,
+  position correlates with alignment). Discriminator: alignment sensitivity is parity-dependent
+  (odd shifts break dyadic alignment, powers of two preserve it), while context loss is
+  magnitude-dependent. **Measured: odd/pow2 contrast = 0.87x (i.e. ~1.0, no parity effect).**
+  Deltas instead grow monotonically with shift SIZE (1 -> 16) and with DEPTH (L0 ~0.001,
+  L4 ~0.015, L9 ~0.028) — exactly the context-loss signature. **Coefficients are a stable,
+  position-independent code; every position-correlated finding to date survives.**
+  *Bonus — per-scale effective receptive field, free:* at layer 0, scales **s2-s7 are EXACTLY
+  0.000** under every shift tested (strictly local, no left-context dependence beyond the
+  margin), while s0/s1 move (0.001-0.026) — the coarse bands integrate context, the fine bands
+  do not. This is a direct measurement of receptive field per scale, and it independently
+  supports the scale-semantics reading that Study 4 is designed to test.
+  *Control applied:* `decompose_bypass_cross_window` forced off and persistent state cleared, so
+  no state leaks between the reference and shifted runs.
+- **Finding 17 — the surprise spectrum: prediction error is carried at COARSE-TO-MID scales,
+  and the finest band carries none of it.** `surprise_spectrum.py` on Mini/D3 layer 0, 2,048
+  positions. Motivated by Ramon's flow conjecture: lifting is literally predict-then-update, so
+  detail coefficients ARE prediction errors per timescale, and their movement along the time axis
+  should trace where the model is being corrected. Well-posed only because of Finding 16
+  (shift-equivariance).
+  **(a) Falsifiable check, PASSED for most bands.** Correlation between per-scale coefficient
+  flow |Δ| and the model's own next-token NLL: **s2 +0.389, s1 +0.387, s0 +0.363, s4 +0.348,
+  s3 +0.276, s5 +0.260, s6 +0.139, and s7 −0.022** (total +0.339). So "surprise" is an earned
+  name for coarse-to-mid bands — but **the finest band is uncorrelated with predictive
+  difficulty**, i.e. s7 tracks something else entirely (local orthography / sub-word identity),
+  which moves whether or not the model is struggling.
+  **(b) Per-band timescale, measured.** flow/surprise ratios: s1 1.089 (lowest) ... s7 1.364
+  (highest). Under a Gaussian assumption the ratio is √(2(1−ρ)) for lag-1 autocorrelation ρ, so
+  **ρ ≈ 0.41 for s1 (coarsest detail, persistent) down to ρ ≈ 0.07 for s7 (finest, essentially
+  memoryless)** — a direct quantitative confirmation of multi-resolution semantics: coarse bands
+  integrate across tokens, fine bands do not. Independent of, and consistent with, Finding 16's
+  receptive-field reading (L0 s2–s7 exactly shift-insensitive).
+  **(c) Where the code moves most: BOUNDARIES.** All 12 peak-flow positions peak in **s0
+  (approximation)**, and the contexts are overwhelmingly paragraph/section breaks and
+  sentence-final punctuation — `'
+
+ Meridian' -> ' was'`, `' unrestored . 
+
+
+ Temple'`,
+  `' existence " . 
+
+
+ Churchill'`. Topic/section transitions move the coarse topical code
+  hardest. **This corroborates the structural half of the withdrawn Finding 5** (ch132 fired at
+  sentence-final periods and clause boundaries) from a completely independent instrument:
+  boundaries really are salient in the coarse bands, even though tail-ownership was the wrong
+  evidence for it.
+  **(d) Flow is NOT the same as NLL.** Several peak-flow positions have near-zero NLL (e.g.
+  `' father , Yax Nuun Ay' -> 'i'`, nll 0.00) — sub-word continuations where the code moves a
+  lot but the prediction is trivial. So flow measures representational change, and correlates
+  with surprise without being identical to it.
+- **Finding 18 — Study 4 v1 is SATURATED and its labels were the wrong ones (my design error);
+  but the depth x scale GRADIENT inside it is real and informative.** `scale_probes.py` on
+  Mini/D3, labels {heading, boundary, numeric, capitalized, subword}, layers {0,4,9}, with the
+  mandatory shuffled-label selectivity control (Hewitt & Liang).
+  **The error:** every label chosen is a *deterministic function of the current token*
+  ("is this token capitalized/numeric/punctuation"). Any representation that encodes token
+  identity — which all of them must — decodes such labels trivially. Result: **accuracy is
+  0.996-1.000 in EVERY (layer, scale) cell**, controls sit at the majority-class rate, and
+  "selectivity" merely reproduces the class balance (heading 1.37% positive -> selectivity 0.016;
+  capitalized 15.67% -> 0.154). Cross-label comparison is therefore meaningless, and the absolute
+  numbers say nothing about scale specialization. *The control did its job: saturation is exactly
+  what it is designed to expose.*
+  **The fix for v2:** labels must require CONTEXT, not just the current token — e.g. POS of a
+  syntactically ambiguous word, "inside a quotation/heading SPAN" (not the marker token itself),
+  distance since the last sentence boundary, article/topic identity, or NEXT-token properties.
+  Also switch the metric to balanced accuracy or AUC, which is invariant to class imbalance.
+  **What IS informative — the within-label depth x scale gradient.** At layer 0 all scales
+  decode token identity about equally, but by layer 9 it has concentrated in the FINEST band:
+  capitalized **s7 0.136 vs s1 0.078 (1.7x)**, subword **s7 0.095 vs s1 0.046 (2.1x)**. So the
+  coarse bands progressively DISCARD current-token identity with depth while the fine bands
+  retain it. This converges with Finding 17 (s7 uncorrelated with predictive difficulty, lag-1
+  autocorrelation ~0.07 = memoryless/local) and Finding 16 (L0 s2-s7 exactly shift-insensitive =
+  strictly local). Three instruments, one consistent picture: **fine bands carry local token
+  identity, coarse bands carry integrated context.**
 - **Finding 6 — the wavelet autopsy (Study 5 opens): what the lifting learned**
   (`wavelet_autopsy.py`, impulse-response probing, Mini/D2 vs seed-matched Haar-init;
   per-channel taps saved `.interp/autopsy_.../taps.npz`):
