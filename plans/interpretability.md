@@ -142,6 +142,95 @@ per scale × layer.
 - **Prediction on record** *(estimate)*: moderate-to-high alignment overall, higher at coarse
   scales than fine, consistent with Study 2's prediction.
 
+### Study 7 — Concept control: REAP + SOW *(the control half of the program)*
+
+Studies 1–6 ask *what can we read*. This one asks *what can we change* — and it is the half with
+the most direct alignment relevance. Both methods were built and measured in the research fork
+(`EXARCH-research/interpretability/{reap,sow}.py`); this study ports them and runs the
+demonstration WaveletLM's invertibility makes uniquely clean.
+
+**The two methods** (both act on the *training data*, not the trained weights — so what the model
+never sees, it never learns; no post-hoc suppression to be jailbroken around):
+- **REAP — REplacing Ablated Passages.** Merges FDA-labelled concept spans into passages, sends
+  each to an LLM for rewriting that removes the concept while preserving factual content, names,
+  dates, and approximate length; the replacement JSON is loaded at training time.
+- **SOW — Substitution Of Words.** Token-level. For each token carrying the target concept, finds
+  the k nearest neighbours in binary conceptual-embedding space *with the concept dimensions
+  masked out*, so the replacement is maximally similar on everything except the concept.
+  **Invariant tiers** constrain replacements to share grammatical/ontological properties (POS,
+  entity type), which is what keeps the substitution from wrecking syntax.
+- **Layerable:** SOW is near-zero-cost insurance over a REAP'd corpus, catching concept tokens
+  that survive a passage rewrite.
+
+**Prerequisites differ, and that sets the order.** REAP needs only FDA labels (~$200–250/concept
+of LLM labelling) → demonstrable now. SOW's neighbour search and invariant tiers are defined on
+the native 256-dim BCE features → **gated on reintroducing the semantic embedding**. Run REAP
+first; SOW follows the embedding's return, or via a concept-list variant that drops the
+embedding dependency (Ramon's generalization: replace words failing *any* stated constraint,
+not only BCE-dimension constraints — untested, and the invariant tiers would need a
+non-BCE source).
+
+**The question worth publishing is the cost, not the removal.** That a concept disappears from
+generation is the easy half and is already observed. The under-reported half — and the one
+reviewers will actually press on — is **what else broke**: a measured *capability-cost curve* of
+concept removal (ΔBPB, and targeted evals on neighbouring-but-innocent concepts, vs. removal
+strength / concept breadth). WaveletLM is an unusually honest place to measure it, because
+per-scale ablation is exact: the same invertibility that powers Study 3 lets us ask *which
+scales* lose information when a concept is stripped from the data.
+
+**Open risk, stated plainly:** concept removal may damage information integrity in ways
+proportional to how load-bearing the concept is (removing "violence" from a corpus also removes
+history, medicine, and law). That is an empirical question, not a reason to avoid the method —
+but the result must be reported whichever way it lands, including if the cost is prohibitive.
+
+**Method-simplicity note:** both methods are conceptually simple, which is a deployment advantage
+rather than a weakness — the activation-steering literature is likewise simple in concept and
+consequential in practice. The contribution here is the *measurement*, not the mechanism.
+
+### Study 8 — Concept directions via per-scale FDA *(activation-space control)*
+
+Where Study 7 edits the *data*, this edits the *representation* — and unlike SOW it is **not gated
+on the semantic embedding**: Fisher Discriminant Analysis needs activations plus labels, nothing
+else. Same prerequisite as REAP (the FDA labelling pipeline, ~$200–250/concept), so it is
+unblocked today.
+
+**Why revisit it — the old result was mediocre for a diagnosable reason.** In the previous
+architecture, FDA input-only violence suppression measured **zero BPB cost but weak suppression**;
+the FDA-*output* variant (Jacobian trace) cost ~2.3× step time for no quality gain and was
+shelved. "Zero cost + weak effect" is the signature of a direction that wasn't carrying much of
+the concept — one Fisher direction searched in the *whole residual stream* gets diluted across
+everything else living there.
+
+**What the fully-spectral architecture changes.** Coefficients are factorized as scale × channel
+× position, so FDA can be fit **per scale band** (and per layer) instead of once on the whole
+stream:
+- **Separability map** — Fisher ratio per (layer × scale) for a labelled concept. Asks a question
+  the old architecture could not pose: *at which scales is this concept linearly separable?*
+  Coarse-only separability ⇒ the concept is discourse-level; fine-only ⇒ lexical/orthographic.
+  This is a finding about the concept's structure, independent of whether we then suppress it.
+- **Exact ablation** — project the direction out in coefficient space, resynthesize *exactly*,
+  measure ΔBPB and targeted-eval damage. The invertibility advantage of Study 3, applied to a
+  concept direction; no reconstruction-error caveat, which is the standing weakness of
+  SAE-based concept-removal claims.
+- **Minimal-removal anchor** — a Fisher direction is the least-damaging *linear* removal, so it
+  anchors the cheap end of Study 7's capability-cost curve, with REAP/SOW (data-side, blunter but
+  more thorough) at the other end. Same curve, two mechanisms, directly comparable because the
+  cost metric is identical.
+- **Cross-check against Study 2** — does the concept direction align with any channel already
+  flagged monosemantic? Alignment is convergent validation from two independent instruments;
+  non-alignment says concepts live in channel *mixtures* even in a privileged basis, which is a
+  sharper (and more publishable) statement about where superposition survives.
+
+**Predictions on record** *(estimates)*: (a) per-scale Fisher ratios will exceed the
+whole-stream ratio for at least some bands — that is the whole bet, and if it fails, FDA is
+genuinely a weak tool here and should be dropped rather than tuned; (b) mid-to-coarse scales
+carry more concept separability than the finest bands.
+
+**With vs. without the CE/SE.** Without: everything above works — directions are discovered,
+unnamed. With: the discovered direction can be compared against *named* BCE dimensions, turning
+"a direction that separates violence" into "a direction that aligns with `is_weapon` +
+`relates_to_war`" — interpretive value, not a prerequisite.
+
 ## Reading map (one instrument at a time, consumed as its study begins)
 
 | paper | for | takeaway needed |

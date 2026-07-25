@@ -2396,6 +2396,34 @@ Rather than reach for attention, three complementary **attention-free, MLP-free*
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
 </p>
 
+### Interpretability: the Privileged-Basis Program
+
+> **Status (2026-07-25): Phase 1 in progress** — instruments built, the coefficient census is complete, and the first candidate monosemantic channel is found and awaiting its controls. Full thesis, study ladder, and running results log: [plans/interpretability.md](plans/interpretability.md).
+
+**The thesis.** Sparse autoencoders exist because a transformer's residual stream is an *unprivileged, superposed* basis: features sit in arbitrary rotated directions and must be un-mixed with a learned dictionary that always carries reconstruction error. WaveletLM's activations instead arrive **pre-factorized** as scale × channel × position, with per-scale LayerNorms and channel-wise gates supplying basis-alignment pressure — and, the part no dictionary method can match, **perfect reconstruction**: the coefficients are a complete, invertible description of the layer's computation, so a coefficient can be ablated and the layer resynthesized *exactly*. Causal attribution with no reconstruction-error caveat.
+
+The honest form of the claim: the *scale* axis is **privileged by construction** (the decomposition is hard-wired), while the *channel* axis is only **privileged-ish** — the gates and per-scale norms create the same basis-alignment pressure that makes transformer MLP neurons more legible than residual-stream directions, but nothing forbids $`C_p`$ channels from superposing more than $`C_p`$ features. Study 6 (the SAE null test) exists to measure that residual doubt rather than assume it away.
+
+**Findings so far** — all on Mini/D2 (72.89M, [log](logs/wikitext-103_2026-07-14_09-11-32/log.txt)), 49,152 WT-103-val tokens × 10 layers dumped by `coeff_dump.py`:
+
+| # | finding |
+|---|---|
+| 1 | U-shaped per-scale gain profile — approximation band and finest detail run loud, middle scales quiet. Independently reproduces the shrinkage λ-map's "protect-ends / squeeze-middle" geometry from an unrelated instrument |
+| 2 | Census statistics converge at trivial sample size — 2K tokens reproduce a 192-window census to ±0.005 per scale |
+| 3 | The depth × scale gain surface is *structured, not a fade*: the U exists full-strength only at L00, flattens through L01–L04, then s0 climbs monotonically L03→L09 (0.330→0.431) |
+| 4 | The kurtosis (sparsity) map is structured and depth-decaying — heavy tails at both band ends in early layers, densifying toward the head |
+| 5 | **First candidate monosemantic channel**: ch132 owns **100% of the top-1000 extreme tail** of the L00/s2 band (of 512 channels), sign-consistent, firing at completions of long information-dense spans across unrelated topics — a structural long-span boundary detector in exactly the band whose 32–64-token wavelength matches the feature |
+
+**The gain profile is weight-borne** — a prediction registered and scored the same day: a Pile census matches WT-103 within ±0.015 on all 16 layer×scale cells, so the profile is readable from the checkpoint alone, with no forward passes at all. The one systematic deviation sits in s0, the approximation band, suggesting domain identity lives at coarse scales while fine-scale statistics are domain-universal — now a live hypothesis for Study 4.
+
+**What Finding 5 still owes before its label hardens**, stated up front because top-activating examples read as coherent even for random directions: a random-direction control through the identical top-k pipeline, plus a Study-3 causal ablation. One channel is a pilot, not the thesis.
+
+**Decision rule, pre-registered.** A substantial interpretable fraction against the random-direction control → the privileged-basis thesis holds, SAEs are deprioritized, and this becomes the second paper's headline. Mostly polysemantic → SAEs are needed, and the second-GPU budget gets sized by evidence instead of assumption. Either outcome sets the program's direction cheaply.
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
 ### Release Pipeline
 
 > **Status (2026-06-18): plan of record for the first release.** Sequences architecture-lock → cross-dataset baselines → big-data tuning → multi-seed headlines. Supersedes the per-size MLP/LR/Dropout sweep grid on WT-103 (deferred to the big-data regime, below).
@@ -2419,7 +2447,14 @@ Rather than reach for attention, three complementary **attention-free, MLP-free*
 - [ ] [Wavelet optimizer](plans\wavelet_optimizer.md) with the learned lifting wavelet as the basis/gradient compressor, run on the WaveletLM Small config.
 - [ ] **SFT** (SmolTalk + OASST1)
 - [ ] **Functional / toy chatbot**
-- [ ] **Interpretability suite — developed & processed fully here** (the deepest interpretability story rides on Small)
+- [ ] **Interpretability suite — developed & processed fully here** (the deepest interpretability story rides on Small). Thesis, instruments, and results: [the Privileged-Basis Program](#interpretability-the-privileged-basis-program) ([plan](plans/interpretability.md)). Ships whatever is publishable at release time; the rest carries into paper 2.
+  - [x] **Phase 0 instruments + coefficient census (Studies 1 & 5 open)** — `coeff_dump.py`, `census.py`, `topk_contexts.py`, `wavelet_autopsy.py`; Findings 1–6 recorded, incl. the scored weights-borne-gains prediction
+  - [ ] **Study 2 — monosemanticity of per-scale channels** *(the headline question)*: scale the ch132 pilot to a population of channels scored against random-direction controls, per the pre-registered decision rule
+  - [ ] **Study 3 — exact causal ablation** — ablate a coefficient, resynthesize *exactly*, attribute; the invertibility advantage over SAE-based causal claims. Scale-level sweep first, then Study-2's most/least monosemantic channels
+  - [ ] **Study 4 — scale-role dissection via linear probes** (opening hypothesis on record: domain identity lives at coarse scales, fine-scale statistics are domain-universal)
+  - [ ] **Study 6 — the SAE null test** — SAE as *ruler, not microscope*: quantifies the residual channel-superposition doubt the thesis cannot assume away
+  - [ ] **Study 8 — concept directions via per-scale FDA** — Fisher Discriminant Analysis fit *within each scale band* rather than once on the whole stream. In the previous architecture whole-stream FDA measured zero BPB cost but **weak suppression** — the signature of a diluted direction; the factorized basis lets us ask instead *at which scales is a concept linearly separable*, then project the direction out in coefficient space and resynthesize **exactly**. Needs labels, **not** the semantic embedding, so it is unblocked on the same footing as REAP
+- [ ] **Concept control — REAP + SOW** (built and measured in the research fork; needs porting + a clean WT-103 demonstration). Two layerable alignment methods, both operating on the *training data* rather than the trained weights: **REAP** (REplacing Ablated Passages) rewrites concept-bearing passages via an LLM while preserving factual content, names, dates, and approximate length; **SOW** (Substitution Of Words) swaps individual tokens for nearest neighbours in conceptual-embedding space that lack the target concept dimensions, with invariant tiers forcing the replacement to share POS/entity type. Layerable — SOW is zero-cost insurance catching concept tokens that survive a REAP rewrite. **Different prerequisites, and this decides the order:** REAP needs only FDA labels (~$200–250/concept of LLM labelling) and is demonstrable *today*; SOW's nearest-neighbour search is defined on the native 256-dim binary conceptual embedding, so it is **gated on reintroducing the semantic embedding**. The honest open question is the one worth publishing: **what does concept removal cost everything else?** — a measured capability-cost curve, on a model where ablation is exact because reconstruction is invertible. Source: `EXARCH-research/interpretability/{reap,sow}.py`; port code only — the FDA label sets and replacement caches stay out of git.
 - [ ] *Nice-to-have:* **Semantic embedding** on WT-103 (maybe PG-19) — PPL comparisons + REAP/SOW concept-token ablations + n-gram processing/prediction
 
 **WaveletLM Medium (C=2048, L=10):**
