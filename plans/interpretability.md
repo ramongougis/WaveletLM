@@ -94,6 +94,7 @@ consistency. Compare qualitatively against the literature's transformer-neuron b
 - **Prediction on record** *(estimate)*: partial monosemanticity, with **coarser scales more
   interpretable than finer ones** (coarse coefficients aggregate longer spans → more
   concept-like; finest scales → local orthography/syntax, likely cleaner but lower-level).
+- **Study 2b — coaxing the basis** *(the promoted follow-up)*: add an explicit **L1 penalty on coefficients** (L1 in a fixed basis is the axis-alignment pressure ICA says is missing) and sweep its weight; hypothesis on record — the ICA/native ratio falls monotonically while BPB rises, giving a **monosemanticity-vs-capability frontier**. A basis induced on demand at a known price beats one merely hoped for
 
 ### Study 3 — Exact causal ablation *(the invertibility advantage)*
 Zero (or scale) individual coefficients / channels / whole scales → resynthesize → measure
@@ -342,6 +343,102 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   hardens:** random-direction control (interpretability illusion) + Study-3 causal ablation.
   Next probe: tail concentration at late layers (diffuse tails would support the
   early-selective / late-distributed hypothesis).
+- **Finding 8 — Finding 5's control FAILED: ch132 is the LOUDEST channel, not a selective one**
+  (`channel_privilege.py` on Mini/D3 `.interp/mini_d3`, 2026-07-25). ch132's dominance of the
+  L00/s2 top-1000 tail (99.8% here, 100% on D2) is a **variance artifact**: its std is **1.716 vs
+  a 0.367 cell median — 4.7x, and rank 0/512 (the single loudest channel)** — while its **excess
+  kurtosis is -0.65, rank 511/512** (platykurtic, i.e. *less* heavy-tailed than a Gaussian). A
+  channel 4.7x louder than its neighbours dominates any global |value| ranking whether or not it
+  is selective, so Finding 5's stated defence — *"a variance mixture cannot concentrate a tail
+  into one channel"* — **is incorrect**; a single dominant-variance channel does exactly that.
+  This is the caution Finding 4 already recorded, now measured. **Finding 5's "first candidate
+  monosemantic channel" label does not survive its control and is withdrawn**; the coherent
+  top-contexts observation stands as an observation, but tail-ownership is not evidence for it.
+  *Persistence (Study 2 pilot, D2 -> D3, 20ep -> 40ep):* the phenomenon is perfectly stable —
+  ownership 1.000 -> 0.998, sign consistent, kurtosis rank 511/512 in both — i.e. a **stable
+  loud channel**, not a feature that sharpened with training.
+- **Finding 9 — the naive random-direction control is CONFOUNDED by mixing depth (CLT); the
+  privileged-basis question remains OPEN.** A first pass scored native channels against 512
+  dense random unit directions and found 93.5% of native channels above the null's 95th
+  percentile (chance 5%) across all 80 layer x scale cells — apparently overwhelming support for
+  the thesis. **It is not.** A dense random direction averages 512 channels, and averaging drives
+  kurtosis toward 0 by the central limit theorem *regardless of any privileged structure*.
+  Measured decay on L00/s2 (median excess kurtosis by mixing depth): **1 channel 0.772 -> 2:
+  0.476 -> 4: 0.372 -> 8: 0.229 -> 64: 0.017 -> 512: -0.053.** The null sits at the far end of
+  that curve, so "coordinate beats 512-way mixture" is largely a statement about mixing depth,
+  not basis alignment. **Do not cite the 0.935 figure as evidence for the thesis.**
+  *What a valid test looks like:* search for the rotation that MAXIMISES kurtosis (ICA / FastICA,
+  or a direct max-kurtosis direction search) and compare it against the best native channel at
+  equal mixing depth. If no rotation beats the native axes materially, the basis is privileged;
+  if ICA finds far more kurtotic directions, features are rotated and SAEs are indicated. That
+  is the decisive Study 2 experiment and it is now the next one to run.
+  *Side observation worth keeping:* native per-channel excess kurtosis runs only **~0.2-1.8**
+  across cells. A crisply sparse monosemantic feature would sit in the tens. On this metric the
+  channels do not look strongly sparse — a caution for the thesis, independent of the control.
+- **Finding 10 — THE CHANNEL BASIS IS NOT PRIVILEGED (Study 2 answered).** `ica_test.py` on
+  Mini/D3, 5 cells, two search budgets. FastICA searches rotations for maximum non-Gaussianity;
+  both it and a native channel are 1-D projections of the same data and excess kurtosis is
+  scale-invariant, so the comparison is direct. **ICA finds far more non-Gaussian directions than
+  any native channel, in every cell**, and the advantage GROWS with search budget — the signature
+  of features living in rotated directions:
+
+  | cell | native p95 | ICA p95 (256) | ratio @64 | ratio @256 |
+  |---|---|---|---|---|
+  | L00/s0 | 1.06 | 78.31 | 11.46 | **17.34** |
+  | L00/s2 | 2.95 | 50.16 | 2.37 | **4.04** |
+  | L01/s7 | 23.96 | 82.52 | 1.02 | **2.57** |
+  | L09/s0 | 8.54 | 57.94 | 1.04 | **2.26** |
+  | L03/s3 | 16.36 | 37.60 | 0.52 | **1.57** |
+
+  *Prediction scored:* the @64 run produced three "privileged-ish" verdicts including an
+  impossible ratio of 0.52 (ICA cannot do worse than the native axes, which are themselves
+  candidate directions). That was diagnosed on the spot as **under-search** at 64 components of
+  512 dims; raising to 256 flipped **all three**, 0.52 -> 1.57 included. Mean ratio 3.28 -> 5.56.
+  **Read ratios <=1 as instrument under-search, never as native superiority.**
+- **Consequences (the decision rule fires).** (a) **SAEs return to the critical path** for the
+  channel axis; Study 6 stops being a formality and becomes the second-GPU sizing exercise, now
+  evidence-backed. (b) **The SCALE axis is untouched** — it is privileged *by construction*
+  (hard-wired decomposition, not learned), so per-scale attribution, exact ablation and Studies
+  3/4/8 are unaffected; only the stronger channel-level claim falls. (c) The thesis statement in
+  this document must be **rewritten from "channels are privileged-ish" to "channels are NOT
+  privileged; the scale factorization is"** before any of it reaches the README.
+- **Finding 11 — the coaxing hypothesis (next experiment).** `CoefficientShrinkage` PERMITS
+  sparsity but does not INCENTIVISE it: `lam_raw` inits at -10 (softplus ~ 4.5e-5, an
+  effectively-zero threshold) and is trained only against BPB, so the model raises lambda only
+  where thresholding aids prediction. The six 2026-07 shrinkage runs are therefore *not* tests of
+  coaxed monosemanticity (and carry no checkpoints, and use C=100/C=1024 rather than the C=512
+  interp baseline — three reasons they cannot answer this). **The mechanism that would coax it is
+  an explicit L1 penalty on the coefficients (weight beta): L1 in a FIXED basis is exactly the
+  pressure that produces axis-aligned sparsity — the property ICA says is absent.**
+  *Hypothesis on record:* the ICA/native ratio falls monotonically in beta while BPB rises,
+  yielding a **monosemanticity-vs-capability frontier**. `ica_test.py` is the gauge. A coaxed
+  privileged basis would be a stronger result than a found one.
+- **Finding 12 — the shrinkage lambda moved, but almost certainly NOT by learning (prediction
+  MISSED, and the miss is informative).** Read from the C=1024/1ep `shrinkage=pre` checkpoint
+  (`logs/wikitext-103_2026-07-06_03-54-06`, 81,920 lambda cells over 10 layers). **Prediction on
+  record was "lambda stays near its 4.54e-5 init". It did not: lambda -> ~6.83e-2, a ~1,500x
+  increase, in 100.00% of cells.** So the mechanism is not inert in the trivial sense.
+  **But the distribution is the tell:** median 6.816e-2 to 6.842e-2 across every layer, max
+  7.009e-2 model-wide — a **~0.4% spread across 81,920 independently-parameterized values**.
+  Learned per-(scale,channel) sparsity would be *heterogeneous* (different channels need
+  different thresholds); a single near-constant value is what a **uniform force** produces.
+  *Hypothesis (strong, not yet proven): this is weight-decay drift, not learning.* `lam_raw`
+  inits at **-10**, far from zero, and carries `weight_decay=2e-6`; decay pulls it toward 0,
+  which RAISES softplus(lam_raw). The companion parameters move exactly as that predicts:
+  **gamma 1.0 -> 0.2733 median (toward 0), monotonically with depth (L0 0.559 -> L9 0.022)**.
+  (`theta` stayed at exactly 0.0000/sd 0.0000, but that is *not* independent evidence — 0 is a
+  stationary point of cos, so its gradient vanishes there by construction.)
+  **Decisive test (cheap):** re-run one shrinkage arm with **weight decay excluded from the
+  shrinkage parameters**. If lambda stays near init, the entire 2026-07 shrinkage screen was
+  measuring optimizer drift rather than a learned sparsity prior — which would also explain why
+  it cost BPB (+0.0019 pre / +0.0033 post vs the matched control 1.1101) instead of helping.
+  **Design lesson for Study 2b (the L1-penalty sweep):** (a) put **no weight decay** on any
+  sparsity parameter, (b) do **not** initialize it far from zero, and (c) make the sparsity
+  pressure an **explicit loss term** whose weight we set, so the dial is ours rather than an
+  emergent tug-of-war with the optimizer. The gauge stays `ica_test.py`'s ICA/native ratio.
+  *Also note:* gamma is **gauge-degenerate with the downstream mixer weights** (the mixer can
+  rescale freely), so gamma's absolute magnitude is not independently interpretable — only
+  lambda, which acts on |z| before that scaling, carries threshold meaning.
 - **Finding 6 — the wavelet autopsy (Study 5 opens): what the lifting learned**
   (`wavelet_autopsy.py`, impulse-response probing, Mini/D2 vs seed-matched Haar-init;
   per-channel taps saved `.interp/autopsy_.../taps.npz`):

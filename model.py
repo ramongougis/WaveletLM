@@ -1971,6 +1971,12 @@ class WaveletLMBlock(nn.Module):
         self.mixer_mom_enabled = mixer_mom_enabled
         self.mixer_mom_topk = mixer_mom_topk
         self._mom_aux = None
+        # Study 2b: L1 sparsity penalty on the post-decomp-norm coefficients — the
+        # EXACT tensor coeff_dump.py captures and ica_test.py measures. L1 in a FIXED
+        # basis is the axis-alignment pressure Finding 10 showed is absent. Gated so
+        # runs that don't use it pay nothing.
+        self._l1_aux = None
+        self.coefficient_l1_enabled = False
         if mixer_mom_enabled and coefficient_shrinkage == "replace":
             raise ValueError("mixer_mom is incompatible with coefficient_shrinkage='replace'")
         if mixer_mom_enabled and mixer_depth != 1:
@@ -2775,6 +2781,10 @@ class WaveletLMBlock(nn.Module):
             stacked_coeffs = torch.stack(
                 [self.decomp_norms[s](stacked_coeffs[:, :, s, :]) for s in range(S)], dim=2
             )
+
+        # Study 2b: L1 sparsity term on exactly the measured representation. Mean (not
+        # sum) so the weight is invariant to B/T/S/Cp and transfers across configs.
+        self._l1_aux = stacked_coeffs.abs().mean() if self.coefficient_l1_enabled else None
 
         # Add decompose bypass bias
         if self.decompose_bypass and gate_bias_scales is not None:
@@ -3699,6 +3709,14 @@ class WaveletLM(nn.Module):
                 _make_block() for _ in range(layer_build_count)
             ])
 
+        # Study 2b: coefficient L1 sparsity weight (0 = off). The dial is OURS — an
+        # explicit loss term, not an emergent tug-of-war with weight decay (Finding 12:
+        # lam_raw drifted uniformly under wd, measuring optimizer drift, not learning).
+        self.coefficient_l1_weight = float(config.get("coefficient_l1_weight", 0.0))
+        if self.coefficient_l1_weight > 0:
+            for _blk in self.layers:
+                _blk.coefficient_l1_enabled = True
+
         # Cross-layer dense skips (design #1): each layer reads a learned
         # lower-triangular combination of all prior layer outputs (plus the input
         # embedding x0), init-to-identity so it reproduces the plain
@@ -3970,6 +3988,14 @@ class WaveletLM(nn.Module):
                         if getattr(l, '_mom_aux', None) is not None]
                 if _aux:
                     loss = loss + self.mixer_mom_aux_weight * sum(_aux)
+
+            # Study 2b: coefficient L1 sparsity penalty (0 when disabled). Mean over
+            # layers so the weight means the same thing at any depth.
+            if getattr(self, 'coefficient_l1_weight', 0):
+                _l1 = [l._l1_aux for l in self.layers
+                       if getattr(l, '_l1_aux', None) is not None]
+                if _l1:
+                    loss = loss + self.coefficient_l1_weight * (sum(_l1) / len(_l1))
 
             # Block-MoE auxiliary loss: Switch-style load-balance penalty summed
             # over layers (0 when block-MoE disabled — _moe_aux stays None).

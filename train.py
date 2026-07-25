@@ -1449,10 +1449,32 @@ def train():
         optimizer_name = config.get('optimizer', 'Adagrad')
         weight_decay = config.get('weight_decay', 0.0)
         if optimizer_name == 'Adagrad':
+            # Surgical weight-decay exclusion for SPARSITY/SHRINKAGE parameters
+            # (Finding 12, 2026-07-25). `lam_raw` inits at -10 — far from zero — so
+            # weight decay drags it toward 0, which RAISES softplus(lam_raw). Measured:
+            # lambda moved ~1,500x from init with a ~0.4% spread across all 81,920 cells
+            # — the uniformity of an optimizer force, not of learned per-channel
+            # sparsity, and it cost BPB. Any parameter whose job is to express sparsity
+            # must therefore be decay-free, or the optimizer sets the dial instead of us.
+            _nodecay_pat = ('coeff_shrink.lam_raw', 'coeff_shrink.gamma',
+                            'coeff_shrink.theta')
+            _decay_p, _nodecay_p = [], []
+            for _n, _p in model.named_parameters():
+                if not _p.requires_grad:
+                    continue
+                (_nodecay_p if any(_k in _n for _k in _nodecay_pat) else _decay_p).append(_p)
+            if _nodecay_p and weight_decay > 0:
+                param_groups = [{'params': _decay_p, 'weight_decay': weight_decay},
+                                {'params': _nodecay_p, 'weight_decay': 0.0}]
+                logger.log(f"[Optimizer] weight decay EXCLUDED from {len(_nodecay_p)} "
+                           f"shrinkage/sparsity tensors (Finding 12)")
+            else:
+                param_groups = model.parameters()
+
             adagrad_initial_accum = config.get('optimizer_initial_accumulator_value', 0)
             adagrad_lr_decay = config.get('optimizer_lr_decay', 0)
             optimizers = [torch.optim.Adagrad(
-                model.parameters(), lr=config['lr'],
+                param_groups, lr=config['lr'],
                 eps=config.get('optimizer_eps', 2e-13),
                 weight_decay=weight_decay,
                 initial_accumulator_value=adagrad_initial_accum,
@@ -1464,7 +1486,7 @@ def train():
             adamw_betas = tuple(config.get('optimizer_betas', [0.9, 0.999]))
             adamw_amsgrad = config.get('optimizer_amsgrad', False)
             optimizers = [torch.optim.AdamW(
-                model.parameters(), lr=config['lr'],
+                param_groups, lr=config['lr'],
                 betas=adamw_betas,
                 eps=config.get('optimizer_eps', 1e-8),
                 weight_decay=weight_decay,
