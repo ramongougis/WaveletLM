@@ -89,6 +89,8 @@ def main():
                    help="%% highest-loss kept; 100 = store everything (recommended)")
     p.add_argument("--topk", type=int, nargs="+", default=[1, 5, 20, 100])
     p.add_argument("--no_partition", action="store_true")
+    p.add_argument("--max_cand", type=int, default=50000,
+                   help="cap candidates scored per query (random subsample above this)")
     p.add_argument("--min_freq", type=int, default=0,
                    help="drop entries whose target token is rarer than this (anti-hapax)")
     p.add_argument("--threads", type=int, default=6)
@@ -143,27 +145,49 @@ def main():
         print(f"[eval] anti-hapax filter (min_freq={args.min_freq}): "
               f"{keep.sum():,} rows kept ({100*keep.mean():.1f}%)")
 
-    part = {}
-    for i, t in enumerate(Ls):
-        part.setdefault(int(t), []).append(i)
-    part = {k: np.array(v) for k, v in part.items()}
-    sz = np.array([len(v) for v in part.values()])
-    print(f"[eval] partitions: {len(part):,} | median {np.median(sz):.0f} "
+    # SORT the store by last-token so each partition is a CONTIGUOUS SLICE.
+    # Critical: fancy indexing (Ks[cand]) COPIES — with store-everything a common
+    # token's partition can be ~500K rows x 1024 dims = ~2GB copied PER QUERY.
+    # Sorting turns partition access into a view, which costs nothing.
+    ordr = np.argsort(Ls, kind="stable")
+    Ks, Ns, Ls = Ks[ordr], Ns[ordr], Ls[ordr]
+    uniq, starts = np.unique(Ls, return_index=True)
+    ends = np.append(starts[1:], len(Ls))
+    span = {int(t): (int(a), int(b)) for t, a, b in zip(uniq, starts, ends)}
+    sz = ends - starts
+    print(f"[eval] partitions: {len(span):,} | median {np.median(sz):.0f} "
           f"p90 {np.percentile(sz,90):.0f} max {sz.max():,}")
 
     Ke, Ne, Le, _ = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
                           args.scales, dev, "eval")
-    Ksf = Ks.astype(np.float32)
+    Ksf = np.ascontiguousarray(Ks.astype(np.float32))
+    Kef = Ke.astype(np.float32)
     maxk = max(args.topk)
-    hits = {k: 0 for k in args.topk}; top1 = 0; covered = 0
+    rng = np.random.default_rng(0)
+    hits = {k: 0 for k in args.topk}; top1 = 0; covered = 0; capped = 0
     for i in range(len(Ke)):
-        cand = np.arange(len(Ns)) if args.no_partition else part.get(int(Le[i]))
-        if cand is None or len(cand) == 0:
+        if args.no_partition:
+            lo, hi = 0, len(Ns)
+        else:
+            sp = span.get(int(Le[i]))
+            if sp is None:
+                continue
+            lo, hi = sp
+        n = hi - lo
+        if n == 0:
             continue
         covered += 1
-        sims = Ksf[cand] @ Ke[i].astype(np.float32)
-        order = cand[np.argsort(-sims)[:maxk]]
-        cont = Ns[order]
+        if n > args.max_cand:                 # bound per-query work
+            idx = lo + rng.choice(n, args.max_cand, replace=False)
+            sims = Ksf[idx] @ Kef[i]
+            capped += 1
+        else:
+            sims = Ksf[lo:hi] @ Kef[i]        # VIEW, no copy
+            idx = np.arange(lo, hi)
+        kk = min(maxk, len(sims))
+        take = np.argpartition(-sims, kk - 1)[:kk] if kk < len(sims) else np.arange(len(sims))
+        take = take[np.argsort(-sims[take])]
+        cont = Ns[idx[take]]
         if cont[0] == Ne[i]: top1 += 1
         for k in args.topk:
             if Ne[i] in cont[:k]: hits[k] += 1
@@ -176,6 +200,8 @@ def main():
         print(f"  top1  | covered             : {top1/covered:7.2%}")
         for k in args.topk:
             print(f"  oracle@{k:<4}| covered         : {hits[k]/covered:7.2%}")
+        if capped:
+            print(f"  (partition capped at {args.max_cand:,} for {capped:,}/{covered:,} queries)")
         print(f"\n  ORACLE CEILING (uncond.)    : {hits[maxk]/len(Ke):7.2%}")
         print("  -> bounds ANY gate/interpolation built on this key.")
 
