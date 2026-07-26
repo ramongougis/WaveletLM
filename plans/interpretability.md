@@ -606,6 +606,40 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   −0.02, and carries the lowest partial. The built-in falsifier behaved as predicted.
   *Honest calibration:* partial r 0.29 is ~8.5% of residual variance — real but modest. The gate
   should COMBINE flow with entropy, not replace it. One checkpoint, 73M, layer-0 measurement.
+- **Finding 20 — Study 4 v2 SUCCEEDS: the representation linearly encodes the SEMANTIC
+  CATEGORY of the UPCOMING token, and decodability rises monotonically with category
+  coherence.** `relatedness_ladder.py` on Mini/D3, 12 sets/rung, AUC metric.
+  **Two design fixes were required, both from failures:**
+  (a) *v1's saturation (Finding 18)* — labels must be **PREDICTIVE**, not descriptive:
+  `y[t] = token[t+1] in set X`. Probing position t for a property of t+1 cannot be solved
+  by reading off the current token, which is what made every v1 label trivial.
+  (b) *the first v2 run's null was not null* — naive random sets scored AUC **0.87-0.96**
+  at k=0, because a random set routinely contains a COMMON token and "a common token is
+  coming" is a highly learnable linguistic task. Positive rates swung 0.0011-0.0034 across
+  rungs, so set composition swamped coherence. Fixed by **frequency-matching** each filler
+  token to a related token's frequency neighbourhood, making coherence the only difference.
+  **The ladder (Ramon's dose-response design), after the fix — monotonic in ALL EIGHT cells:**
+
+  | cell | k=0 (null) | k=8 | AUC-vs-k |
+  |---|---|---|---|
+  | L00/s0 | 0.677 | 0.892 | **+0.992** |
+  | L00/s7 | 0.673 | 0.850 | **+0.986** |
+  | L09/s0 | 0.801 | 0.951 | +0.971 |
+  | L09/s1 | 0.773 | 0.930 | +0.948 |
+  | L09/s7 | 0.742 | 0.958 | +0.930 |
+  | L00/s1 | 0.640 | 0.876 | +0.926 |
+  | L00/s4 | 0.729 | 0.889 | +0.901 |
+  | L09/s4 | 0.840 | 0.947 | +0.895 |
+
+  Eight independent monotone ladders (r = +0.90 to +0.99) is very hard to produce by
+  artifact — which is exactly why the escalating design beats a binary control.
+  *Depth trend:* **L09 > L00 in every rung** (null 0.80 vs 0.68) — category information
+  concentrates toward the prediction head, consistent with Findings 17/18 showing coarse/late
+  representations carry integrated rather than local content.
+  **Honest scope:** the null still sits at 0.64-0.84, not 0.5, so frequency matching improved
+  it greatly but did not fully neutralise it — **the SLOPE is the result, not the level**. And
+  this cannot separate "the model learned semantics" from "language makes coherent categories
+  predictable"; the model must encode it either way to predict well. Do not overclaim.
 - **Finding 6 — the wavelet autopsy (Study 5 opens): what the lifting learned**
   (`wavelet_autopsy.py`, impulse-response probing, Mini/D2 vs seed-matched Haar-init;
   per-channel taps saved `.interp/autopsy_.../taps.npz`):

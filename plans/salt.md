@@ -206,6 +206,75 @@ doing exact top-k lookup replaced a soft, robust mechanism with a brittle one.
 report coverage, top-1, and oracle@k *separately* — the conflated number would have looked like
 "the key is wrong" when the true cause was store construction. This is the ladder working.
 
+## RESULT — the mechanism test, and the verdict (2026-07-26)
+
+Rebuilt with the fixes from the failed pilot: **store everything** (`keep_pct=100`,
+1,999,872 rows from 2M tokens, 4.10 GB fp16) instead of top-1%-by-loss. That fixed both
+earlier faults — coverage 51% -> **99.15%**, median partition 1 -> **7**.
+
+### The retrieval numbers, with the control
+
+| metric | similarity | RANDOM-rank control | lift |
+|---|---|---|---|
+| top-1 \| covered | **19.64%** | 11.43% | **1.72x** |
+| oracle@100 \| covered | 56.04% | 50.16% | 1.12x |
+| repair (top-1 \| model wrong) | 3.58% | 2.53% | 1.41x |
+| oracle@100 \| model wrong | 34.26% | 28.96% | 1.18x |
+
+**Scale-similarity IS doing real work** — 1.72x over chance-within-partition. But the
+decomposition is sobering: of the 19.64%, ~11.4 points come from the **last-token partition
+alone** (a bigram statistic) and only ~8.2 from the similarity ranking.
+**oracle@100 is confirmed as mostly bigram**: with p90 = 65 entries, ~90% of partitions are
+smaller than 100, so "top-100" is just "the whole partition" and ranking never operates. Its
+1.12x lift comes entirely from the ~10-13% of queries with large partitions.
+**Reference point that reframes everything: D3's own top-1 is 45.50%** on the same positions,
+versus retrieval's 19.64%. Retrieval is **2.3x worse than the model it was meant to help**, so
+substitution was never viable; only selective consultation could work.
+
+### The decisive test: kNN-LM interpolation — ALL COMBINATIONS WORSE
+
+`--interp` sweep, `p_mix = (1-lam)*p_model + lam*p_retrieval`, weights `softmax(sim/tau)`,
+baseline NLL 2.9448 nats on covered positions:
+
+| | best | worst |
+|---|---|---|
+| dBPB | **+0.0054** (tau 0.05, lam 0.05) | +0.1303 (tau 1.0, lam 0.5) |
+| dBPB \| model wrong | **+0.0018** | +0.1363 |
+
+**Not one of the 25 (tau, lam) cells improved anything.** Three properties make this decisive
+rather than a tuning failure:
+1. **Monotonic in lam** (+0.0054 -> +0.0140 -> +0.0350 -> +0.1260 as lam goes 0.05 -> 0.50).
+   More retrieval, more harm — the signature of the retrieved distribution being **pure noise**
+   relative to the model. Any real signal would make small lam helpful.
+2. **tau barely matters** (0.02 to 1.0 within ~0.0005), so it is not a sharpness problem.
+3. **`dBPB | wrong` is also positive**, so even restricted to the model's errors — the only
+   slice where SALT could ever help — retrieval degrades. That kills the selective-consultation
+   fallback too.
+
+### Verdict
+
+**A 34% oracle cannot be converted into any gain. SALT is DONE on this key** (layer-0 coarse
+bands s0+s1, cosine, per-scale normalized, last-token partition), per the pre-registered
+decision rule. The oracle-ceiling rung did its job: the whole direction was falsified in about
+ten minutes of eval, before any index, gate, or pipeline was built on top of it.
+
+**What remains open (do not read this as "retrieval cannot work here"):**
+- **Scale.** This is 1.7% of WT-103. Retrieval methods scale strongly with datastore size, and
+  the failure could be neighbour sparsity rather than a wrong key. The full-corpus build is
+  queued to eliminate that explanation rather than assume it.
+- **Learned metric** (Ramon, 2026-07-26). If raw cosine in the native space fails, *learn* the
+  mapping — a small secondary model from context-scales to the correct continuation. This is
+  **boosting** (train model 2 on model 1's residuals), which works when the base learner
+  underfits; D3 at 40 epochs is well-converged and its errors are 42% hapaxes, so expected
+  gains are modest — but it is cheap, CPU-viable, and the bypass problem already has an answer
+  in Finding 19's difficulty gate. Judge it the same way: does the GATED ENSEMBLE beat D3's BPB.
+- *Rejected variant:* replacing the model wholesale with a small net over layer-0 scales.
+  Layer-0 coefficients are an **invertible re-encoding of the input**, so predicting from them
+  is exactly as hard as predicting from tokens; and Finding 15 puts the work in the depth
+  (removing layers 1-9 costs +1.5063 dBPB, 8.3x super-additive). That proposal reduces to
+  "train a smaller LM". The legitimate form is **distillation** against the big model's output
+  distribution.
+
 ## Test ladder (all frozen, forward-only, no GPU)
 
 1. Build the store on Mini/D3 at top-1%; verify size and build time match the arithmetic above.
