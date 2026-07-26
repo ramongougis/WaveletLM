@@ -116,6 +116,12 @@ def main():
     dev = torch.device(args.device)
     model, cfg = load_model(args.run_dir, dev); model.eval()
     T = cfg.get("block_size", 256); S = model.layers[0].scale_weights.numel()
+    # Disable cross-window bypass state at BOTH levels. The persistent state lives on
+    # the MODEL (model.py ~3873), not the blocks, and it is batch-shaped: carrying it
+    # across forwards crashes the moment a batch has a different size — which is exactly
+    # what the final partial batch does. Setting only the per-block flags is insufficient.
+    model.decompose_bypass_cross_window = False
+    model._persistent_semantic_state = None
     for blk in model.layers:
         if hasattr(blk, "decompose_bypass_cross_window"):
             blk.decompose_bypass_cross_window = False
