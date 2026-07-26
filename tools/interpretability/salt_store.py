@@ -26,7 +26,7 @@ import torch.nn.functional as F
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, _ROOT); os.chdir(_ROOT)
 from train import load_and_encode_dataset        # noqa: E402
-from tools.interpretability.scale_ablation import load_model   # noqa: E402
+from tools.interpretability.scale_ablation import load_model, NATS_PER_BPB as NATS   # noqa: E402
 
 
 class _L:
@@ -97,6 +97,11 @@ def main():
                    help="%% highest-loss kept; 100 = store everything (recommended)")
     p.add_argument("--topk", type=int, nargs="+", default=[1, 5, 20, 100])
     p.add_argument("--no_partition", action="store_true")
+    p.add_argument("--interp", action="store_true",
+                   help="kNN-LM interpolation test: mix the similarity-weighted retrieved "
+                        "distribution with the model and report dBPB. This is the mechanism the "
+                        "method actually uses — top-1 accuracy understates it, since interpolation "
+                        "only needs MASS on the right token, not rank 1.")
     p.add_argument("--random_rank", action="store_true",
                    help="CONTROL: rank candidates RANDOMLY instead of by similarity. "
                         "With median partition ~7, oracle@100 is largely a bigram statistic; "
@@ -178,7 +183,7 @@ def main():
     print(f"[eval] partitions: {len(span):,} | median {np.median(sz):.0f} "
           f"p90 {np.percentile(sz,90):.0f} max {sz.max():,}")
 
-    Ke, Ne, Le, _, Ae = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
+    Ke, Ne, Le, Ee, Ae = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
                           args.scales, dev, "eval", batch=args.batch)
     Ksf = np.ascontiguousarray(Ks.astype(np.float32))
     Kef = Ke.astype(np.float32)
@@ -186,6 +191,7 @@ def main():
     rng = np.random.default_rng(0)
     hits = {k: 0 for k in args.topk}; top1 = 0; covered = 0; capped = 0
     mw = 0; mw_top1 = 0; mw_oracle = 0; model_ok = 0
+    I_sims, I_match, I_nll, I_wrong = [], [], [], []
     for i in range(len(Ke)):
         if args.no_partition:
             lo, hi = 0, len(Ns)
@@ -214,6 +220,11 @@ def main():
         if cont[0] == Ne[i]: top1 += 1
         for k in args.topk:
             if Ne[i] in cont[:k]: hits[k] += 1
+        if args.interp:
+            ss = sims[take].astype(np.float32)
+            I_sims.append(np.pad(ss, (0, maxk - len(ss)), constant_values=-1e9))
+            I_match.append(np.pad((cont == Ne[i]).astype(np.float32), (0, maxk - len(cont))))
+            I_nll.append(float(Ee[i])); I_wrong.append(bool(Ae[i] != Ne[i]))
         # THE decisive slice: SALT can only help where the model is already wrong.
         if Ae[i] == Ne[i]:
             model_ok += 1
@@ -241,6 +252,36 @@ def main():
             print(f"  oracle@{maxk} | model WRONG   : {mw_oracle/mw:7.2%}   <- ceiling on repair")
         print(f"\n  ORACLE CEILING (uncond.)    : {hits[maxk]/len(Ke):7.2%}")
         print("  -> bounds ANY gate/interpolation built on this key.")
+
+    if args.interp and I_sims:
+        # THE MECHANISM TEST. kNN-LM does not substitute the top-1 neighbour; it mixes a
+        # similarity-weighted distribution over the top-k with the model's own. So it only
+        # needs MASS on the true token, not rank 1 — which is why a 34% oracle with a 3.6%
+        # top-1 is exactly the profile where interpolation can win and exact retrieval loses.
+        # p_model[y] = exp(-nll) is already known, so no 50K-vocab distribution is needed.
+        Sm = np.stack(I_sims); Mm = np.stack(I_match)
+        nll0 = np.array(I_nll, dtype=np.float32); wrong = np.array(I_wrong)
+        p_model = np.exp(-nll0); base = float(nll0.mean())
+        print(f"\n=== kNN-LM INTERPOLATION (the mechanism the method actually uses) ===")
+        print(f"  baseline model NLL (covered positions): {base:.4f} nats")
+        print(f"  p_mix = (1-lam)*p_model + lam*p_retrieval,  weights = softmax(sim/tau)")
+        print(f"{'tau':>6} {'lam':>6} {'dNLL':>10} {'dBPB':>10} {'dBPB|wrong':>12}")
+        best = None
+        for tau in (0.02, 0.05, 0.1, 0.3, 1.0):
+            W = np.exp((Sm - Sm.max(1, keepdims=True)) / tau)
+            W /= W.sum(1, keepdims=True).clip(1e-9)
+            p_ret = (W * Mm).sum(1)                 # retrieval mass on the TRUE token
+            for lam in (0.05, 0.1, 0.2, 0.3, 0.5):
+                nll1 = -np.log(((1 - lam) * p_model + lam * p_ret).clip(1e-12))
+                d = float(nll1.mean() - base)
+                dw = float((nll1[wrong] - nll0[wrong]).mean()) if wrong.any() else float("nan")
+                print(f"{tau:6.2f} {lam:6.2f} {d:+10.4f} {d/NATS:+10.4f} {dw/NATS:+12.4f}")
+                if best is None or d < best[0]:
+                    best = (d, tau, lam)
+        print(f"\n  BEST: tau={best[1]} lam={best[2]}  dNLL={best[0]:+.4f}  dBPB={best[0]/NATS:+.4f}")
+        print("  NEGATIVE dBPB = improvement. Noise floor 0.0010.")
+        print("  If nothing is negative, a 34% oracle cannot be converted into a gain and")
+        print("  the retrieved neighbours are too noisy -> SALT is done on this key.")
 
 
 if __name__ == "__main__":
