@@ -55,7 +55,7 @@ def sweep(model, data, lo, hi, T, S, layer, scales, dev, tag, batch=32):
         return h
     for si in range(S):
         hooks.append(model.layers[layer].decomp_norms[si].register_forward_hook(mk(si)))
-    K, NXT, LST, NLL = [], [], [], []
+    K, NXT, LST, NLL, ARG = [], [], [], [], []
     starts = [lo + w * T for w in range((hi - lo) // T)]
     starts = [s0 for s0 in starts if s0 + T + 1 < len(data)]
     done = 0
@@ -73,12 +73,13 @@ def sweep(model, data, lo, hi, T, S, layer, scales, dev, tag, batch=32):
         NXT.append(y.reshape(-1).cpu().to(torch.int32))
         LST.append(x.reshape(-1).cpu().to(torch.int32))
         NLL.append(F.nll_loss(lp, y.reshape(-1), reduction="none").cpu().half())
+        ARG.append(lp.argmax(-1).cpu().to(torch.int32))   # model's own top-1
         done += len(grp)
         if done % 256 < batch:
             print(f"  [{tag}] {done*T:,}/{len(starts)*T:,}", flush=True)
     for h in hooks: h.remove()
     return (torch.cat(K).numpy(), torch.cat(NXT).numpy(),
-            torch.cat(LST).numpy(), torch.cat(NLL).numpy())
+            torch.cat(LST).numpy(), torch.cat(NLL).numpy(), torch.cat(ARG).numpy())
 
 
 def main():
@@ -128,7 +129,7 @@ def main():
         hi = lo + per
         print(f"[build] shard {args.shard}/{args.n_shards}: tokens [{lo:,},{hi:,}) "
               f"threads={args.threads} scales={args.scales} layer={args.layer}")
-        K, N, L, E = sweep(model, tr, lo, hi, T, S, args.layer, args.scales, dev,
+        K, N, L, E, _ = sweep(model, tr, lo, hi, T, S, args.layer, args.scales, dev,
                            f"s{args.shard}", batch=args.batch)
         if args.keep_pct < 100:
             thr = np.percentile(E.astype(np.float32), 100 - args.keep_pct)
@@ -171,13 +172,14 @@ def main():
     print(f"[eval] partitions: {len(span):,} | median {np.median(sz):.0f} "
           f"p90 {np.percentile(sz,90):.0f} max {sz.max():,}")
 
-    Ke, Ne, Le, _ = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
+    Ke, Ne, Le, _, Ae = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
                           args.scales, dev, "eval", batch=args.batch)
     Ksf = np.ascontiguousarray(Ks.astype(np.float32))
     Kef = Ke.astype(np.float32)
     maxk = max(args.topk)
     rng = np.random.default_rng(0)
     hits = {k: 0 for k in args.topk}; top1 = 0; covered = 0; capped = 0
+    mw = 0; mw_top1 = 0; mw_oracle = 0; model_ok = 0
     for i in range(len(Ke)):
         if args.no_partition:
             lo, hi = 0, len(Ns)
@@ -206,6 +208,13 @@ def main():
         if cont[0] == Ne[i]: top1 += 1
         for k in args.topk:
             if Ne[i] in cont[:k]: hits[k] += 1
+        # THE decisive slice: SALT can only help where the model is already wrong.
+        if Ae[i] == Ne[i]:
+            model_ok += 1
+        else:
+            mw += 1
+            if cont[0] == Ne[i]: mw_top1 += 1
+            if Ne[i] in cont[:maxk]: mw_oracle += 1
 
     cov = covered / max(len(Ke), 1)
     print(f"\n=== RESULTS ({len(Ke):,} eval positions, partition="
@@ -218,6 +227,12 @@ def main():
             print(f"  oracle@{k:<4}| covered         : {hits[k]/covered:7.2%}")
         if capped:
             print(f"  (partition capped at {args.max_cand:,} for {capped:,}/{covered:,} queries)")
+        print(f"\n  --- the slice that decides usefulness ---")
+        print(f"  model top-1 (same positions): {model_ok/covered:7.2%}")
+        print(f"  positions model got WRONG   : {mw:,} ({mw/covered:.1%})")
+        if mw:
+            print(f"  retrieval top1 | model WRONG: {mw_top1/mw:7.2%}   <- direct repair rate")
+            print(f"  oracle@{maxk} | model WRONG   : {mw_oracle/mw:7.2%}   <- ceiling on repair")
         print(f"\n  ORACLE CEILING (uncond.)    : {hits[maxk]/len(Ke):7.2%}")
         print("  -> bounds ANY gate/interpolation built on this key.")
 
