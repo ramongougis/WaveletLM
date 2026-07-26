@@ -923,6 +923,65 @@ run_ablation "FT2_C512_warmlifting_5ep Frozen-wavelet transfer — D2 lifting im
 run_ablation "PP1_C512_primepow11_crawlON_5ep Prime-power hedge — max=11, cap=128, crawl ON"     "$BASE_PATCH_5EP"     '{"prime_power_wavelet_basis_max": 11, "prime_power_dilation_cap": 128, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "PP1: 18-level prime-power union ladder (~133M est) crawl ON; kill rule: must beat ~1.015 (width-law at own params), not just D0"
 run_ablation "PP2_C512_primepow11_crawlOFF_5ep Prime-power hedge — max=11, cap=128, crawl OFF"     "$BASE_PATCH_5EP"     '{"prime_power_wavelet_basis_max": 11, "prime_power_dilation_cap": 128, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "PP2: crawl-OFF twin (clean ladder identity vs SB0); PP1-minus-PP2 = crawl redundancy of the prime rungs — the dead-weight question, answered directly"
 #
+# FAST-WEIGHT PKM RETRY (rewired 2026-07-26; model.py FastWeightPKM).
+# FwPKM has been in the codebase since April and NEVER contributed positively. An audit
+# found the reason is not "memory doesn't help" but four defects — three in the wiring,
+# one in every evaluation it ever received:
+#   1. NO IDENTITY AT INIT. alpha_fwpkm defaulted to 1.0, so a random value-mixture entered
+#      the residual at FULL GAIN from step 0 — the only module in the block that did not
+#      start as identity. Smoke-measured perturbation at init: max|dlogit| = 5.63. FIXED:
+#      alpha_fwpkm inits to 0.0 (gradient still reaches it immediately; no deadlock).
+#   2. UNSELECTIVE SOFTMAX. Keys init at std 0.02 over half_dim=256 gave dot products of
+#      std ~0.16, so the top-k softmax was EXACTLY uniform at init (measured entropy 3.4657
+#      vs ln(32) = 3.4657) and the lookup returned the MEAN of 32 random rows. Same DC-floor
+#      pathology that stalled the AMB's elu1 map. NOTE a plain 1/sqrt(d) scale is the WRONG
+#      SIGN here (it shrinks already-tiny scores) — tried, measured, rejected. FIXED: cosine
+#      scores x LEARNED temperature (log_tau, init ln 10) -> max weight 0.1145 vs 1/32 =
+#      0.0312, i.e. 3.7x peaked at init, and sharpness is now trained not accidental.
+#   3. NO USAGE REGULARISATION. top-32 of 8281 leaves rarely-selected keys at random init
+#      forever (dead memory). MoM and block-MoE both carry a usage penalty; FwPKM had none.
+#      FIXED: fwpkm_aux_weight (default 0.01) on negative selection entropy, TRAIN ONLY —
+#      _usage_aux is None at eval, so val loss and BPB stay uncontaminated.
+#   4. IT WAS ALWAYS TESTED IN THE SHADOW OF AN MLP. Of 277 historical fwpkm_enabled runs,
+#      276 had mlp_expansion >= 1 (246 at expansion 10) and 277 of 277 had projections on.
+#      At C=2048 an expansion-10 MLP is ~84M dense params/layer writing into the SAME
+#      mem_out sum — a 4M sparse memory was strictly redundant. FwPKM has NEVER run in the
+#      current fully-spectral (mlp_expansion=0, skip_proj_out=true) architecture, where
+#      nothing else occupies that slot. The old null does not transfer.
+# A/B TARGET: D0 = 1.0436 BPB / val 3.2600 @ 72.89M (logs/wikitext-103_2026-07-12_08-04-38,
+# log.txt:412). FWP1 is D0's config with ONLY the fwpkm keys changed.
+# DECISION RULE — judge against the WIDTH LAW at its own params, not against D0 (same
+# convention as PP1). FwPKM adds 4,548,610 params/layer x 10 = 45.49M, so 72.89M -> 118.37M.
+# Fitting BPB vs ln(params) over the four C-knee points (C=200 1.1562 / 300 1.1014 /
+# 400 1.0674 / 1024 0.9805) gives -0.065 BPB per e-fold; ln(118.37/72.89) = 0.485, so width
+# would buy ~0.031 BPB. Bar is therefore ~1.012 (range 1.009-1.017 across slope estimates).
+#   BPB >= 1.0426  -> no effect (within noise 0.0010 of D0); the fixes did not help. CLOSE
+#                     FwPKM out permanently and delete it (no dead code).
+#   1.012 - 1.0426 -> memory works but WIDTH IS A BETTER BUY at the same params. Report as a
+#                     negative result; do not ship. Optional follow-up at num_keys=1024
+#                     (+8.0M only), where the param bar drops to ~1.037.
+#   BPB < 1.012    -> sparse memory beats width iso-param. Real finding; then run the
+#                     num_keys sweep {1024, 8281, 16384} and inspect key-usage histograms.
+# WHY THIS SLOT (ahead of MoM/MoE): FwPKM (sparse memory, top-32 of 8281) and block-MoE
+# (sparse compute, top-2 of 4) are the same bet on conditional computation. Knowing whether
+# fine-grained sparsity pays here is worth having BEFORE spending 4x compute on MOEA.
+# COST: D0 ran 6h11m (08:04:41 -> 14:15:26). Expect ~7-8h with the lookup, ~$7-8 on a 5090.
+# VRAM: +45M params plus DENSE EmbeddingBag grads (8281x512 fp32 = 17MB/layer, 170MB total)
+# — comfortable at MBS=48 on 32GB, but if it OOMs set "gradient_checkpointing": true rather
+# than dropping MBS (preserves iso-batch comparability with D0).
+# FALLBACK: if it NaNs in warmup, halve lr to 0.0375. If the aux dominates (train loss drops
+# by ~0.09 with no val movement — the bound is ln(8281)*0.01 = 0.090), set fwpkm_aux_weight
+# to 0.001. The OPPOSITE also needs watching: in the CPU smoke test (single repeated batch,
+# so a memorisation setting where collapse is expected) usage entropy fell 6.20 -> 3.54 nats
+# in 40 steps at weight 0.01 — effective keys ~495 -> ~34. The task gradient dominates the
+# penalty, so 0.01 is a nudge, not a constraint; if the autopsy shows severe collapse, raise
+# to 0.05. Also note tau self-adjusted 10 -> 7.6 immediately, i.e. the model prefers a softer
+# softmax than the init — expected, and exactly why sharpness was made learnable.
+# AUTOPSY REGARDLESS OF OUTCOME: histogram key-selection frequency per layer and
+# read alpha_fwpkm — if alpha stays ~0 the model declined the memory, which is itself the
+# answer to "why did it never contribute".
+run_ablation "FWP1_C512_fwpkm8281_5ep Fast-weight PKM retry — rewired, D0 config + memory"     "$BASE_PATCH_5EP"     '{"fwpkm_enabled": true, "fwpkm_num_keys": 8281, "fwpkm_top_k": 32, "fwpkm_heads": 1, "fwpkm_aux_weight": 0.01, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "FWP1: first FwPKM trial in the fully-spectral architecture and the first with identity-init, a selective softmax, and a usage penalty; 118.37M, so the bar is the width law (~1.012), not D0 (1.0436)"
+#
 # MIXTURE-OF-MIXERS (plans/mixture_of_mixers.md; implemented + smoke-tested 2026-07-21).
 # Shared per-layer pool of E=4 full-width experts, learned STATIC per-scale top-2 router,
 # usage-entropy aux loss (w=0.01; zero-init aux = ln(1/4) verified). Pool at E=4 SAVES

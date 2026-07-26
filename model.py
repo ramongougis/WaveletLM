@@ -1269,6 +1269,10 @@ class FastWeightPKM(nn.Module):
             torch.randn(heads, self.sub_keys, half_dim,
                         device=device, dtype=dtype) * 0.02)
 
+        # Learned softmax temperature (see _pkm_lookup for the measured rationale).
+        self.log_tau = nn.Parameter(torch.full((1,), math.log(10.0),
+                                               device=device, dtype=dtype))
+
         # Value table: num_keys entries per head, each maps to C
         self.values = nn.EmbeddingBag(
             num_keys * heads, C, mode='sum',
@@ -1299,9 +1303,24 @@ class FastWeightPKM(nn.Module):
         q_a = q[..., :half]
         q_b = q[..., half:]
 
-        # Score against sub-key codebooks
-        scores_a = torch.einsum('bthd,hsd->bths', q_a, self.keys_a)
-        scores_b = torch.einsum('bthd,hsd->bths', q_b, self.keys_b)
+        # Score against sub-key codebooks — COSINE x LEARNED TEMPERATURE (fix, 2026-07-26).
+        # MEASURED pathology in the original: keys init at std 0.02 over half_dim=256 give
+        # dot products of std ~0.16, so the softmax over the final top-k was EXACTLY uniform
+        # at init (smoke test: entropy 3.4657 = ln(32) to 4 dp, max weight 0.0317 vs 1/32 =
+        # 0.0312). The lookup therefore returned the MEAN of k random value rows — an
+        # unselective average, not content-addressed retrieval. Same DC-floor failure that
+        # stalled the AMB's elu1 feature map.
+        #
+        # A plain 1/sqrt(d) attention scale is the WRONG SIGN here (it shrinks already-tiny
+        # scores). Instead normalise both sides to unit norm and apply a LEARNED temperature,
+        # so sharpness is a trained quantity rather than an accident of init scale. tau=10
+        # puts cosines in [-10, 10]: selective, but not so peaked that it commits to random
+        # keys at init and starves the rest (the dead-key risk the usage aux also guards).
+        _tau = self.log_tau.exp()
+        scores_a = torch.einsum('bthd,hsd->bths', F.normalize(q_a, dim=-1),
+                                F.normalize(self.keys_a, dim=-1)) * _tau
+        scores_b = torch.einsum('bthd,hsd->bths', F.normalize(q_b, dim=-1),
+                                F.normalize(self.keys_b, dim=-1)) * _tau
 
         # Top-k from each half (clamped to sub_keys)
         top_a_scores, top_a_idx = scores_a.topk(self.half_k, dim=-1)
@@ -1339,6 +1358,20 @@ class FastWeightPKM(nn.Module):
             delta_vals = self.value_deltas[flat_idx]  # [B*T*H, k, C]
             delta_out = (flat_w.unsqueeze(-1) * delta_vals).sum(dim=1)  # [B*T*H, C]
             out = out + delta_out
+
+        # USAGE-BALANCE AUX (fix, 2026-07-26). With num_keys=8281 and top_k=32, a key that
+        # is rarely selected never receives gradient and stays at random init forever —
+        # dead memory that costs parameters and injects noise. MoM and block-MoE both carry
+        # a usage penalty for exactly this; FwPKM had none. We store NEGATIVE entropy of the
+        # selection distribution: minimising it maximises entropy, i.e. spreads usage.
+        if self.training:
+            usage = torch.zeros(self.num_keys * self.heads, device=x.device, dtype=torch.float32)
+            usage = usage.scatter_add_(0, flat_idx.reshape(-1),
+                                       flat_w.reshape(-1).float())
+            u = usage / usage.sum().clamp_min(1e-9)
+            self._usage_aux = (u * (u + 1e-9).log()).sum()
+        else:
+            self._usage_aux = None
 
         out = out.view(B, T, self.heads, C)
         return out.sum(dim=2), flat_idx, flat_w  # [B, T, C]
@@ -2346,7 +2379,13 @@ class WaveletLMBlock(nn.Module):
         if pkm_enabled:
             self.alpha_pkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
         if fwpkm_enabled:
-            self.alpha_fwpkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
+            # IDENTITY AT INIT (fix, 2026-07-26). Was 1.0, which injected a random
+            # value-mixture into the residual at FULL GAIN from step 0 — the only module in
+            # the block that did not start as identity (mixer routing inits to identity, AMB
+            # zero-inits out_proj, shrinkage phi(z)~z). Starting at 0 makes FwPKM a safe
+            # perturbation that ramps in only if it earns it; alpha receives gradient
+            # immediately, so there is no deadlock.
+            self.alpha_fwpkm = nn.Parameter(torch.tensor(0.0, device=device, dtype=dtype))
 
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
@@ -3420,6 +3459,8 @@ class WaveletLM(nn.Module):
         self._dilation_schedule = _schedule
         self.mixer_mom_aux_weight = float(config.get("mixer_mom_aux_weight", 0.01)) \
             if config.get("mixer_mom_enabled", False) else 0.0
+        self.fwpkm_aux_weight = (float(config.get("fwpkm_aux_weight", 0.01))
+                                 if config.get("fwpkm_enabled", False) else 0.0)
 
         if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
             # Must match the block's self.Cp (this module is passed into every
@@ -3996,6 +4037,16 @@ class WaveletLM(nn.Module):
                        if getattr(l, '_l1_aux', None) is not None]
                 if _l1:
                     loss = loss + self.coefficient_l1_weight * (sum(_l1) / len(_l1))
+
+            # FwPKM usage-balance loss: negative selection entropy, meaned over layers
+            # so the weight means the same thing at any depth. Only set in training
+            # (_usage_aux is None at eval), so VAL LOSS AND BPB STAY UNCONTAMINATED —
+            # train loss carries a bounded offset of at most -ln(num_keys)*weight.
+            if getattr(self, 'fwpkm_aux_weight', 0):
+                _aux = [l.fwpkm._usage_aux for l in self.layers
+                        if getattr(getattr(l, 'fwpkm', None), '_usage_aux', None) is not None]
+                if _aux:
+                    loss = loss + self.fwpkm_aux_weight * (sum(_aux) / len(_aux))
 
             # Block-MoE auxiliary loss: Switch-style load-balance penalty summed
             # over layers (0 when block-MoE disabled — _moe_aux stays None).
