@@ -586,6 +586,26 @@ coefficients dumped from Mini/D2 (`.interp/mini_d2`, shards fp16, manifest'd).
   autocorrelation ~0.07 = memoryless/local) and Finding 16 (L0 s2-s7 exactly shift-insensitive =
   strictly local). Three instruments, one consistent picture: **fine bands carry local token
   identity, coarse bands carry integrated context.**
+- **Finding 19 — coefficient FLOW carries difficulty signal that output ENTROPY misses, and it
+  is available after ONE layer.** `flow_vs_entropy.py` on Mini/D3, 8,160 positions, layers
+  {0,4,9}. Gates the memory-mechanism design: a retrieval gate needs a LABEL-FREE difficulty
+  signal at inference, and entropy is the incumbent (label-free, standard, and measured here at
+  **r(entropy, NLL) = +0.613**, well above flow's +0.40). The question is therefore not whether
+  flow predicts difficulty but whether it adds anything entropy does not.
+  **It does.** Partial correlation r(flow, NLL | entropy) at layer 0: **s0 +0.293, s1 +0.293,
+  s2 +0.250**, decaying to s7 +0.090.
+  **Three structural facts that shape the design:**
+  (a) *Signal concentrates in EARLY layers* — partials L00 ~0.29, L04 ~0.16, L09 ~0.10. Entropy
+  is computed from final logits, so late-layer activity is largely redundant with it while
+  early-layer activity is independent.
+  (b) *Coarse bands win* — same s0/s1 > ... > s7 ordering as Findings 17 and 18.
+  (c) **Early-exit gating is possible.** Entropy needs the FULL forward pass (final logits);
+  layer-0 flow needs **one layer of ten**. A coarse-band L0 gate can trigger retrieval before
+  the forward pass completes — a capability entropy structurally cannot provide.
+  **Negative control PASSED:** s7 measured r(flow, NLL) = +0.025 at L0, matching Finding 17's
+  −0.02, and carries the lowest partial. The built-in falsifier behaved as predicted.
+  *Honest calibration:* partial r 0.29 is ~8.5% of residual variance — real but modest. The gate
+  should COMBINE flow with entropy, not replace it. One checkpoint, 73M, layer-0 measurement.
 - **Finding 6 — the wavelet autopsy (Study 5 opens): what the lifting learned**
   (`wavelet_autopsy.py`, impulse-response probing, Mini/D2 vs seed-matched Haar-init;
   per-channel taps saved `.interp/autopsy_.../taps.npz`):
