@@ -44,31 +44,38 @@ def make_keys(C, scales):
     return K / K.norm(dim=-1, keepdim=True).clamp_min(1e-6)
 
 
-def sweep(model, data, lo, hi, T, S, layer, scales, dev, tag):
+def sweep(model, data, lo, hi, T, S, layer, scales, dev, tag, batch=32):
+    """BATCHED sweep. At batch=1 a 73M model barely occupies BLAS — batching is
+    worth ~an order of magnitude on CPU and far more on GPU. Safe because
+    decompose_bypass_cross_window is disabled by the caller, so windows are
+    independent and batch composition cannot leak state between them."""
     store, hooks = {}, []
     def mk(si):
-        def h(_m, _i, out): store[si] = out.detach()[0]
+        def h(_m, _i, out): store[si] = out.detach()      # (B,T,Cp)
         return h
     for si in range(S):
         hooks.append(model.layers[layer].decomp_norms[si].register_forward_hook(mk(si)))
     K, NXT, LST, NLL = [], [], [], []
-    n_win = (hi - lo) // T
-    for w in range(n_win):
-        s0 = lo + w * T
-        if s0 + T + 1 >= len(data):
-            break
-        x = data[s0:s0 + T].unsqueeze(0).to(dev).long()
-        y = data[s0 + 1:s0 + T + 1].to(dev).long()
+    starts = [lo + w * T for w in range((hi - lo) // T)]
+    starts = [s0 for s0 in starts if s0 + T + 1 < len(data)]
+    done = 0
+    for b0 in range(0, len(starts), batch):
+        grp = starts[b0:b0 + batch]
+        x = torch.stack([data[s0:s0 + T] for s0 in grp]).to(dev).long()          # (B,T)
+        y = torch.stack([data[s0 + 1:s0 + T + 1] for s0 in grp]).to(dev).long()
         store.clear()
         with torch.no_grad():
             logits, _ = model(x)
-        C = torch.stack([store[s] for s in range(S)], dim=1)
-        lp = F.log_softmax(logits[0].float(), -1)
-        K.append(make_keys(C.float(), scales).half().cpu())      # fp16 keys: 2x smaller
-        NXT.append(y.cpu().to(torch.int32)); LST.append(x[0].cpu().to(torch.int32))
-        NLL.append(F.nll_loss(lp, y, reduction="none").cpu().half())
-        if (w + 1) % 250 == 0:
-            print(f"  [{tag}] {(w+1)*T:,}/{n_win*T:,}", flush=True)
+        C = torch.stack([store[s] for s in range(S)], dim=2)                      # (B,T,S,Cp)
+        B_, T_, S_, Cp_ = C.shape
+        lp = F.log_softmax(logits.float().reshape(-1, logits.shape[-1]), -1)
+        K.append(make_keys(C.float().reshape(B_ * T_, S_, Cp_), scales).half().cpu())
+        NXT.append(y.reshape(-1).cpu().to(torch.int32))
+        LST.append(x.reshape(-1).cpu().to(torch.int32))
+        NLL.append(F.nll_loss(lp, y.reshape(-1), reduction="none").cpu().half())
+        done += len(grp)
+        if done % 256 < batch:
+            print(f"  [{tag}] {done*T:,}/{len(starts)*T:,}", flush=True)
     for h in hooks: h.remove()
     return (torch.cat(K).numpy(), torch.cat(NXT).numpy(),
             torch.cat(LST).numpy(), torch.cat(NLL).numpy())
@@ -89,11 +96,17 @@ def main():
                    help="%% highest-loss kept; 100 = store everything (recommended)")
     p.add_argument("--topk", type=int, nargs="+", default=[1, 5, 20, 100])
     p.add_argument("--no_partition", action="store_true")
+    p.add_argument("--random_rank", action="store_true",
+                   help="CONTROL: rank candidates RANDOMLY instead of by similarity. "
+                        "With median partition ~7, oracle@100 is largely a bigram statistic; "
+                        "only top1-vs-random isolates what scale-similarity contributes.")
     p.add_argument("--max_cand", type=int, default=50000,
                    help="cap candidates scored per query (random subsample above this)")
     p.add_argument("--min_freq", type=int, default=0,
                    help="drop entries whose target token is rarer than this (anti-hapax)")
     p.add_argument("--threads", type=int, default=6)
+    p.add_argument("--batch", type=int, default=32,
+                   help="windows per forward; 1 wastes BLAS, 32+ is much faster")
     p.add_argument("--device", default="cpu")
     args = p.parse_args()
 
@@ -116,7 +129,7 @@ def main():
         print(f"[build] shard {args.shard}/{args.n_shards}: tokens [{lo:,},{hi:,}) "
               f"threads={args.threads} scales={args.scales} layer={args.layer}")
         K, N, L, E = sweep(model, tr, lo, hi, T, S, args.layer, args.scales, dev,
-                           f"s{args.shard}")
+                           f"s{args.shard}", batch=args.batch)
         if args.keep_pct < 100:
             thr = np.percentile(E.astype(np.float32), 100 - args.keep_pct)
             m = E.astype(np.float32) >= thr
@@ -159,7 +172,7 @@ def main():
           f"p90 {np.percentile(sz,90):.0f} max {sz.max():,}")
 
     Ke, Ne, Le, _ = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
-                          args.scales, dev, "eval")
+                          args.scales, dev, "eval", batch=args.batch)
     Ksf = np.ascontiguousarray(Ks.astype(np.float32))
     Kef = Ke.astype(np.float32)
     maxk = max(args.topk)
@@ -179,11 +192,13 @@ def main():
         covered += 1
         if n > args.max_cand:                 # bound per-query work
             idx = lo + rng.choice(n, args.max_cand, replace=False)
-            sims = Ksf[idx] @ Kef[i]
+            sims = (rng.standard_normal(len(idx)).astype(np.float32)
+                    if args.random_rank else Ksf[idx] @ Kef[i])
             capped += 1
         else:
-            sims = Ksf[lo:hi] @ Kef[i]        # VIEW, no copy
             idx = np.arange(lo, hi)
+            sims = (rng.standard_normal(n).astype(np.float32)
+                    if args.random_rank else Ksf[lo:hi] @ Kef[i])   # VIEW, no copy
         kk = min(maxk, len(sims))
         take = np.argpartition(-sims, kk - 1)[:kk] if kk < len(sims) else np.arange(len(sims))
         take = take[np.argsort(-sims[take])]
@@ -194,7 +209,8 @@ def main():
 
     cov = covered / max(len(Ke), 1)
     print(f"\n=== RESULTS ({len(Ke):,} eval positions, partition="
-          f"{'OFF' if args.no_partition else 'ON'}) ===")
+          f"{'OFF' if args.no_partition else 'ON'}"
+          f"{', RANDOM-RANK CONTROL' if args.random_rank else ''}) ===")
     print(f"  coverage                    : {cov:7.2%}")
     if covered:
         print(f"  top1  | covered             : {top1/covered:7.2%}")
