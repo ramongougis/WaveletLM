@@ -1,0 +1,26 @@
+[Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[Dataset] Loading wikitext-103 from cache...
+[Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[Dataset] Vocab size: 50257
+[MQAR-mixed] mixing WT-103 LM + MQAR (D=32,Q=32) @ p_mqar=0.5 | device=cuda
+[Lifting] Shared across all layers: 1.58M params (dense)
+[Mixer] Cross-scale gating (routing): learned (S, S) routing matrix per layer, init to identity
+[Lifting] Wavelet crawl: learned dilation mixing K=33 per level
+[proj_out] Skipped (C=256 == Cp=256): saves 0.26M params
+[Residual] Learned alpha (init=1.0, per-block spectral+MLP)
+[LM Head] Tied to token embedding
+
+--- +AMB (WT-103 + MQAR) (assoc=True, 18.7M params) ---
+  step   250 | WT-103 val 6.468 | MQAR acc   0.0% (chance 6.2%-ish)
+  step   500 | WT-103 val 6.123 | MQAR acc   0.0% (chance 6.2%-ish)
+  step   750 | WT-103 val 6.042 | MQAR acc   0.0% (chance 6.2%-ish)
+  step  1000 | WT-103 val 5.777 | MQAR acc   0.1% (chance 6.2%-ish)
+  step  1250 | WT-103 val 5.641 | MQAR acc   0.0% (chance 6.2%-ish)
+  step  1500 | WT-103 val 5.519 | MQAR acc   0.0% (chance 6.2%-ish)
+  step  1750 | WT-103 val 5.387 | MQAR acc   0.0% (chance 6.2%-ish)
+  step  2000 | WT-103 val 5.355 | MQAR acc   0.1% (chance 6.2%-ish)
+  step  2250 | WT-103 val 5.251 | MQAR acc   0.0% (chance 6.2%-ish)
+  step  2500 | WT-103 val 5.279 | MQAR acc   0.2% (chance 6.2%-ish)
+  step  2750 | WT-103 val 5.395 | MQAR acc   0.2% (chance 6.2%-ish)
+  step  3000 | WT-103 val 5.288 | MQAR acc   0.3% (chance 6.2%-ish)
