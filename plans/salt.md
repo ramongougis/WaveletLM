@@ -349,6 +349,41 @@ perfect corrector scores −0.5790 and a worthless one +0.0714 (opposite signs, 
 discriminates); a difficulty-targeted gate beats a random gate at equal fraction (−0.2961 vs
 −0.0607). Those had to pass before the metric was trusted with a release decision.
 
+## GATE RESULT (2026-07-27): SALT CLOSES. The Test A gain was the oracle.
+
+`salt_gate.py` ran to the pre-registered rule. Caveat 3 cleared first: the fresh held-out
+sweep put D3 at **2.9913 nats** (0.9575 BPB-equivalent), close to the benchmark's 3.0606, so
+this eval set is representative rather than an easy slice. Model top-1 44.20%, corrector
+22.65% — both consistent with Test A.
+
+| gate | frac | best lam | dBPB (SELECT) |
+|---|---|---|---|
+| ungated | 100% | 0.05 | +0.0001 |
+| entropy>p50 / p75 / p90 | 50 / 25 / 10% | 0.05 | **+0.0001 at every level** |
+| corrconf>p50 / p75 / p90 | 50 / 25 / 10% | 0.05 | +0.0000 / +0.0001 / +0.0001 |
+| disagree | 66.1% | 0.05 | −0.0001 |
+| ORACLE nll>p50 / p75 / p90 | 50 / 25 / 10% | 0.10 / 0.20 / 0.50 | **−0.0059 / −0.0114 / −0.0149** |
+
+**TEST half, config chosen blind:** best realizable (`disagree`, lam 0.05) = **−0.0003**.
+Oracle ceiling (`nll>p90`, lam 0.5) = **−0.0144**. Gap **+0.0140**.
+Pre-registered rule: −0.0003 >= −0.0010 -> **the gain lived in the oracle gate. SALT is
+closed.** Recorded as a negative result.
+
+**THE SUBSTANTIVE FINDING IS SHARPER THAN "IT DIDN'T WORK".** At the *same* 10% budget,
+`nll>p90` buys −0.0149 and `entropy>p90` buys +0.0001. The corrector genuinely helps on some
+positions — the oracle proves that, and it is not a small effect — but **predictive entropy
+does not identify them.** The failure is not the corrector and not the key; it is that
+*where the model is uncertain* and *where the model is wrong* are close to disjoint here.
+Every realizable difficulty signal we have (entropy, corrector confidence, model/corrector
+disagreement, and their conjunctions) lands within noise of zero.
+
+That is a calibration statement about D3 worth keeping independently of SALT: a
+well-calibrated model would make the entropy gate a good proxy for the NLL gate, and it is
+not. Confidently-wrong positions are where the value sits, and nothing computable at
+inference currently finds them. **Any future revival of this direction needs a better
+error-predictor, not a better retriever** — which is the same conclusion Finding 19's gate
+was probing, now measured rather than assumed.
+
 ## The n-token partition variant (Ramon, 2026-07-27) — skip-n-gram dynamics
 
 Proposal: hold **2, 3, or 4** tokens fixed instead of one, letting scale similarity match the

@@ -111,39 +111,89 @@ def partition_key(C, N, n, lags):
     """
     if n == 0 and not lags:
         return np.zeros(len(N), dtype=np.int64)
-    if C is None:
-        raise SystemExit(
-            "store has no CTX array, so only n=0 is available.\n"
-            "Rebuild with salt_store.py storing the last max(n) context tokens per row.")
     idx = [l - 1 for l in lags] if lags else list(range(n))
     if max(idx) >= C.shape[1]:
-        raise SystemExit(f"store keeps {C.shape[1]} context tokens; need {max(idx)+1}")
+        raise SystemExit(f"derived {C.shape[1]} lags; need {max(idx)+1}")
     sub = C[:, idx]                                  # (rows, |idx|), lag 1 first
+    # Rows whose lag reaches past the start of their window carry -1. They must NOT be
+    # grouped together: "unknown token" is not a context they share. Give each its own
+    # negative id so it forms a singleton and drops out, rather than silently merging.
+    bad = (sub < 0).any(axis=1)
     out = np.zeros(len(N), dtype=np.int64)
     for j in range(sub.shape[1]):                    # positional mix, order matters
-        out = out * 50257 + sub[:, j]
+        out = out * 50257 + np.maximum(sub[:, j], 0)
+    out[bad] = -(np.arange(int(bad.sum())) + 1)
     return out
 
 
-def score(K, N, pid, queries, rng):
-    """Two arms over an IDENTICAL candidate set: scale-ranked vs random-ranked."""
-    buckets = defaultdict(list)
-    for i, p in enumerate(pid):
-        buckets[p].append(i)
-    buckets = {p: np.asarray(v) for p, v in buckets.items()}
+def score(K, N, pid, queries, rng, max_cand, qbatch, label=""):
+    """Two arms over an IDENTICAL candidate set: scale-ranked vs random-ranked.
+
+    PERFORMANCE NOTE (bug fixed 2026-07-27, after a 15-hour hang). The obvious
+    implementation gathers K[cand] per query. At n=0 the partition is the ENTIRE store, so
+    that is a 6.1 GB fancy-index copy 20,000 times over — quadratic in the worst cell, and
+    the worst cell is the one we most want. Three changes make it tractable:
+      * group queries BY PARTITION so each candidate block is gathered at most once;
+      * skip the gather entirely when the bucket IS the whole store (use K directly);
+      * batch the query side into one matmul per (bucket, qbatch) instead of a matvec each.
+
+    max_cand subsamples oversized partitions. This is safe for the GAP measurement because
+    BOTH ARMS SEE THE IDENTICAL POOL — subsampling changes the absolute top-1 of each arm
+    but not, in expectation, the difference between them, which is the only column we read.
+    """
+    order = np.argsort(pid, kind="stable")
+    ps = pid[order]
+    edges = np.flatnonzero(np.r_[True, ps[1:] != ps[:-1], True])
+    buckets = {ps[edges[i]]: order[edges[i]:edges[i + 1]] for i in range(len(edges) - 1)}
+
+    qs_by_p = defaultdict(list)
+    for q in queries:
+        qs_by_p[pid[q]].append(q)
 
     sizes, hit_s, hit_r, oracle, n_eval = [], 0, 0, 0, 0
-    for q in queries:
-        cand = buckets[pid[q]]
-        cand = cand[cand != q]                        # never retrieve yourself
-        if len(cand) == 0:
-            continue                                  # uncovered: excluded from BOTH arms
-        n_eval += 1
-        sizes.append(len(cand))
-        oracle += int((N[cand] == N[q]).any())
-        sims = K[cand] @ K[q]
-        hit_s += int(N[cand[int(sims.argmax())]] == N[q])
-        hit_r += int(N[cand[rng.integers(len(cand))]] == N[q])
+    done = 0
+    for p, qs in qs_by_p.items():
+        cand = buckets[p]
+        if len(cand) > max_cand:
+            cand = np.sort(rng.choice(cand, max_cand, replace=False))
+        if len(cand) <= 1:
+            done += len(qs)
+            continue
+        Kc = K if len(cand) == len(K) else K[cand]
+        Nc = N[cand]
+        for b in range(0, len(qs), qbatch):
+            qb = np.asarray(qs[b:b + qbatch])
+            sims = Kc @ K[qb].T                              # (|cand|, |qb|)
+            # locate each query inside its own candidate block so we never retrieve self
+            loc = np.searchsorted(cand, qb)
+            locc = np.minimum(loc, len(cand) - 1)
+            is_self = cand[locc] == qb
+            cols = np.arange(len(qb))
+            sims[locc[is_self], cols[is_self]] = -np.inf
+            n_c = len(cand) - is_self.astype(np.int64)       # usable candidates per query
+            keep = n_c > 0
+            if not keep.any():
+                done += len(qb); continue
+
+            best = sims.argmax(0)
+            hit_s += int((Nc[best] == N[qb])[keep].sum())
+
+            # random arm: uniform over the SAME pool, self excluded by construction
+            r = rng.integers(0, np.maximum(n_c, 1))
+            r = r + ((is_self) & (r >= locc)).astype(np.int64)
+            r = np.minimum(r, len(cand) - 1)
+            hit_r += int((Nc[r] == N[qb])[keep].sum())
+
+            # oracle: is the answer present at all, ignoring the query's own row?
+            present = (Nc[:, None] == N[qb][None, :])
+            present[locc[is_self], cols[is_self]] = False
+            oracle += int(present.any(0)[keep].sum())
+
+            sizes.extend([int(v) for v in n_c[keep]])
+            n_eval += int(keep.sum())
+            done += len(qb)
+        if label and done % 5000 < qbatch:
+            print(f"    [{label}] {done:,}/{len(queries):,} queries", flush=True)
     if n_eval == 0:
         return None
     sizes = np.asarray(sizes)
@@ -165,6 +215,10 @@ def main():
                    help="block_size the store was built with; lag derivation needs it")
     p.add_argument("--max_rows", type=int, default=1_500_000)
     p.add_argument("--max_queries", type=int, default=20_000)
+    p.add_argument("--max_cand", type=int, default=100_000,
+                   help="cap candidates per partition; identical pool for BOTH "
+                        "arms, so the GAP column is unaffected in expectation")
+    p.add_argument("--qbatch", type=int, default=256)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default=None)
     args = p.parse_args()
@@ -191,7 +245,7 @@ def main():
         except SystemExit as e:
             print(f"{label:>12}  SKIPPED — {e}")
             continue
-        r = score(K, N, pid, queries, rng)
+        r = score(K, N, pid, queries, rng, args.max_cand, args.qbatch, label)
         if r is None:
             print(f"{label:>12}  no covered queries")
             continue
