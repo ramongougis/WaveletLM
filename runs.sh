@@ -1029,6 +1029,65 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # read alpha_fwpkm — if alpha stays ~0 the model declined the memory, which is itself the
 # answer to "why did it never contribute".
 run_ablation "FWP1_C512_fwpkm8281_5ep Fast-weight PKM retry — rewired, D0 config + memory"     "$BASE_PATCH_5EP"     '{"fwpkm_enabled": true, "fwpkm_num_keys": 8281, "fwpkm_top_k": 32, "fwpkm_heads": 1, "fwpkm_aux_weight": 0.01, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "FWP1: first FwPKM trial in the fully-spectral architecture and the first with identity-init, a selective softmax, and a usage penalty; 118.37M, so the bar is the width law (~1.012), not D0 (1.0436)"
+
+#
+# TWO BUGS FOUND 2026-07-27 while smoke-testing the scale ladder. Both matter here:
+#
+# (1) BLOCK-MoE COULD NOT RUN AT ALL. The top-level loop passes assoc_prev=... to every
+#     layer UNCONDITIONALLY (model.py ~3993), and MoE layers never take the checkpointing
+#     branch that omits it (the guard is `not is_moe_layer`), so WaveletLMBlockMoE.forward
+#     died on "unexpected keyword argument 'assoc_prev'" at step 0. MOEA WOULD HAVE
+#     CRASHED IMMEDIATELY. Fixed: the MoE forward now accepts assoc_prev, and REFUSES
+#     (NotImplementedError) if it is non-None, because cross-layer AMB state has no single
+#     owner under top-k routing. AMB is parked, so shipping configs pass None.
+#
+# (2) MOE0 WAS NOT A 1-EXPERT MoE. Its override never set block_moe_enabled, so it ran as
+#     a plain shared-lifting-OFF model — byte-identical param count to SB4 (139,077,098,
+#     a router would have added 512). It therefore did NOT isolate routing from lifting-
+#     untying — BUT DO NOT RE-QUEUE IT. A 1-expert block-MoE is provably identical to its
+#     bare expert: with num_experts=1 the router softmax is 1.0 by construction, and a CPU
+#     check gives max|moe(x) - expert(x)| = 0.000e+00 exactly. The control is an IDENTITY,
+#     discharged for free and permanently; five epochs of GPU could never have shown more.
+#     The right lesson is that this arm was the wrong instrument, not that it was run
+#     wrong. What it accidentally produced is more
+#     useful than it sounds: a same-config same-seed REPLICATE of SB4, and the matched-step
+#     val agreement is 0.0009 nats max (steps 38500/41000/43000/45000/45500/46000:
+#     3.2583/3.2576, 3.2438/3.2447, 3.2373/3.2376, 3.2300/3.2299, 3.2266/3.2268,
+#     3.2344/3.2347). That is ~0.0003 BPB of pure run-to-run nondeterminism — an EMPIRICAL
+#     noise floor that independently corroborates the 0.0010 BPB threshold we rank by.
+#
+# HOW TO JUDGE BLOCK-MoE (the width law does not apply cleanly). At E=4 these are ~479M,
+# where the width law demands 0.9212 — below the C=1024 headline (0.9805). No block-MoE
+# arm can clear that, because block-MoE replicates the WHOLE block per expert and (per its
+# own docstring) runs every expert in training, so it buys neither param- nor compute-
+# efficiency. Judge MOEA against MOE0/SB4 (1.0198) for "does routing help at all", and
+# judge MLR1 against MOEA ONLY — same E, same params, same compute, differing solely in
+# the scale ladder. That difference is the one clean measurement in the family.
+#
+# MLR1 — MULTIRESOLUTION LADDER (plans/multiresolution_moe.md; Ramon 2026-07-27).
+# Expert k reconstructs from only the COARSEST scales: e0<-s0..s7, e1<-s0..s5, e2<-s0..s3,
+# e3<-s0..s1 (smoke-verified). s0 is coarsest and coarse bands integrate (lag-1 rho ~0.41)
+# while fine bands are memoryless (~0.07, Finding 17), so higher k = longer effective span,
+# less detail. Nested, so no expert is starved.
+# HONEST SCOPE — THIS IS THE RESOLUTION HALF ONLY. Without the decimating compressor the
+# window is still block_size=256, so experts get LESS DETAIL WITHOUT MORE SPAN. Therefore:
+#   MLR1 < MOEA  -> weak evidence against; dropping fine bands costs information by itself,
+#                   so a loss is confounded and does NOT falsify the compressed version.
+#   MLR1 >= MOEA -> the INFORMATIVE outcome: resolution specialisation pays even when the
+#                   span benefit is absent, which is the strongest possible motivation for
+#                   building the compressor.
+# Watch aux (balanced = 2.0 for top-2 of 4; smoke-measured 2.0003 at init) for collapse
+# onto e0, which is the failure mode to expect since e0 alone sees every scale.
+# COST: ~4x compute like MOEA; gradient_checkpointing=true (MOEA needed it). ~$15-20.
+#
+# ORDERING (Ramon, 2026-07-27): MLR1 runs BEFORE MOEA at his request. The pair is what
+# matters, not the order — MLR1-minus-MOEA is the same measurement either way. The ONE
+# risk of this order: if budget stops after MLR1, its number is UNINTERPRETABLE on its own
+# (479M against a 0.9212 width-law bar it cannot clear, and no matched control). MOEA is
+# the arm that stands alone, against SB4/MOE0 1.0198. So if only one of the two can run,
+# run MOEA.
+run_ablation "MLR1_C512_moe4_scaleladder_5ep Multiresolution ladder — E=4 coarse-only experts"     "$BASE_PATCH_5EP"     '{"block_moe_enabled": true, "block_moe_experts": 4, "block_moe_topk": 2, "block_moe_aux_weight": 0.01, "block_moe_scale_ladder": true, "shared_lifting_weights": false, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0375, "min_lr": 0.00075, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "MLR1: coarse-only resolution ladder over E=4 experts; the ONLY valid A/B is vs MOEA (same params/compute, ladder is the sole difference). Resolution half only - no compressor yet, so a LOSS is confounded and a WIN is the informative result"
+run_ablation "MOEA_C512_moe4top2_5ep Block-MoE A — E=4 full-block experts, top-2, per-token router"     "$BASE_PATCH_5EP"     '{"block_moe_enabled": true, "block_moe_experts": 4, "block_moe_topk": 2, "block_moe_aux_weight": 0.01, "shared_lifting_weights": false, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0375, "min_lr": 0.00075, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "MOEA: block-MoE E=4 (479M, ~4x compute); vs MOE0 = does per-token routing beat one big expert; watch aux (balanced=2.0) for router collapse + inspect learned specialization"
 # ==============================================================================
 # OOM RETRIES (2026-07-27). Six runs died in the 01:38-01:44 batch. They failed for THREE
 # different reasons, and only three were OOM — the logs distinguish them by how far they got:
@@ -1050,7 +1109,6 @@ run_ablation "PP2_C512_primepow11_crawlOFF_5ep Prime-power hedge — max=11, cap
 run_ablation "MOMA_C512_mom4top2_5ep Mixture-of-Mixers A — E=4, top-2, from scratch (OOM retry)"     "$BASE_PATCH_5EP"     '{"mixer_mom_enabled": true, "mixer_mom_experts": 4, "mixer_mom_topk": 2, "mixer_mom_aux_weight": 0.01, "per_scale_mixer_widths": null, "levels": 7, "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "MOMA retry: MoM existence test — 57.08M MEASURED (the ~12M-saved estimate was low; it saves 15.81M vs D0 72.89M). This is the one arm SMALLER than D0, so the width law works FOR it: 57.08M is expected at 1.0595, and anything under that is a win on params while under 1.0436 beats D0 outright. Watch expert-usage collapse via aux magnitude"
 # ==============================================================================
 # BLOCK-LEVEL MIXTURE OF EXPERTS (continued).
-run_ablation "MOEA_C512_moe4top2_5ep Block-MoE A — E=4 full-block experts, top-2, per-token router"     "$BASE_PATCH_5EP"     '{"block_moe_enabled": true, "block_moe_experts": 4, "block_moe_topk": 2, "block_moe_aux_weight": 0.01, "shared_lifting_weights": false, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.0375, "min_lr": 0.00075, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 512}'     "MOEA: block-MoE E=4 (479M, ~4x compute); vs MOE0 = does per-token routing beat one big expert; watch aux (balanced=2.0) for router collapse + inspect learned specialization"
 # ==============================================================================
 
 run_ablation "K5_C768_L10_noMLP_5ep C-knee sweep 5/5 — C=768 (5ep)"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.06, "min_lr": 0.0012, "checkpoint_interval_steps": 5000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 768}'     "K5_C768_L10_noMLP_5ep: C-knee 5/5, C=768 (~150.0M), lr=0.06; completes the 7-point law with the C=1024/2048 anchors"

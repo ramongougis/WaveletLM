@@ -2225,6 +2225,14 @@ class WaveletLMBlock(nn.Module):
             torch.full((S,), 1.0, device=device, dtype=dtype)
         )
 
+        # Per-scale MASK (all-ones = no-op). Set by WaveletLMBlockMoE when
+        # block_moe_scale_ladder is on, so expert k reconstructs from only the COARSEST
+        # scales — the resolution half of the span/detail tradeoff the multiresolution-MoE
+        # proposal is built on (plans/multiresolution_moe.md). A buffer, not a parameter:
+        # the ladder is a fixed architectural assignment, not something the model may undo.
+        self.register_buffer("scale_mask",
+                             torch.ones(S, device=device, dtype=dtype), persistent=True)
+
         self.skip_proj_out = skip_proj_out and (self.Cp == self.C)
         if not self.skip_proj_out:
             self.proj_out = nn.Linear(self.Cp, self.C)
@@ -2537,7 +2545,8 @@ class WaveletLMBlock(nn.Module):
             mixed_list = list(mixed_all.unbind(dim=2))
             out = []
             for idx, m in enumerate(mixed_list):
-                out.append(self.dropout_mix(m) * self.scale_weights[idx])
+                out.append(self.dropout_mix(m) * self.scale_weights[idx]
+                           * self.scale_mask[idx])
             return out
         proc_r = _post(new_r)
         proc_i = _post(new_i)
@@ -2634,7 +2643,7 @@ class WaveletLMBlock(nn.Module):
 
         # Per-scale dropout + scale weights, then REAL reconstruct.
         mixed_list = list(mixed_all.unbind(dim=2))
-        processed = [self.dropout_mix(m) * self.scale_weights[idx]
+        processed = [self.dropout_mix(m) * self.scale_weights[idx] * self.scale_mask[idx]
                      for idx, m in enumerate(mixed_list)]
         approx_proc = processed[0]
         details_proc = processed[1:][::-1]
@@ -3068,7 +3077,7 @@ class WaveletLMBlock(nn.Module):
         processed_top_down = []
         for idx, mixed in enumerate(mixed_list):
             mixed = self.dropout_mix(mixed)
-            scaled = mixed * self.scale_weights[idx]
+            scaled = mixed * self.scale_weights[idx] * self.scale_mask[idx]
             if amb_out is not None:
                 scaled = scaled + self.assoc_beta_scale[idx] * amb_out
             processed_top_down.append(scaled)
@@ -3158,7 +3167,7 @@ class WaveletLMBlockMoE(nn.Module):
     """
 
     def __init__(self, C, block_factory, num_experts=4, top_k=2, device=None,
-                 gradient_checkpointing=False):
+                 gradient_checkpointing=False, scale_ladder=False):
         super().__init__()
         if top_k > num_experts:
             raise ValueError("block_moe_topk cannot exceed block_moe_experts")
@@ -3166,6 +3175,25 @@ class WaveletLMBlockMoE(nn.Module):
         self.num_experts = num_experts
         self.top_k = top_k
         self.experts = nn.ModuleList([block_factory() for _ in range(num_experts)])
+        if scale_ladder:
+            # COARSE-ONLY LADDER. Expert k keeps scales [0, S - k*S//E), and s0 is the
+            # COARSEST band, so higher k = fewer, coarser scales = longer effective span
+            # with less detail (coarse bands integrate, lag-1 rho ~0.41; fine bands are
+            # memoryless, ~0.07 — Finding 17). Expert 0 keeps everything, so the ladder is
+            # nested and no expert is starved.
+            #
+            # HONEST SCOPE: this is the RESOLUTION half only. Without the decimating
+            # compressor the window is still block_size, so experts get less detail
+            # WITHOUT more span. A loss here is therefore weak evidence (dropping fine
+            # bands costs information by itself); a WIN is the informative outcome.
+            S_ = self.experts[0].scale_mask.numel()
+            for k, ex in enumerate(self.experts):
+                keep = max(1, S_ - k * (S_ // max(num_experts, 1)))
+                m = torch.zeros_like(ex.scale_mask); m[:keep] = 1.0
+                ex.scale_mask.copy_(m)
+            print("[Block-MoE] coarse-only scale ladder: "
+                  + ", ".join(f"e{k}<-s0..s{int(ex.scale_mask.sum())-1}"
+                              for k, ex in enumerate(self.experts)))
         self.router = nn.Linear(C, num_experts, bias=False, device=device)
         nn.init.normal_(self.router.weight, std=0.02)
         self._moe_aux = None
@@ -3175,7 +3203,20 @@ class WaveletLMBlockMoE(nn.Module):
         # checkpoints its experts and the top-level loop skips it (see forward).
         self.gradient_checkpointing = gradient_checkpointing
 
-    def forward(self, x, prev_state=None, token_embeddings=None):
+    def forward(self, x, prev_state=None, token_embeddings=None, assoc_prev=None):
+        # assoc_prev is accepted because the top-level loop passes it UNCONDITIONALLY
+        # (model.py ~3993) and MoE layers never take the checkpointing branch that omits
+        # it — so without this parameter every block-MoE run dies on the first forward with
+        # "unexpected keyword argument 'assoc_prev'". Caught by the scale-ladder smoke test
+        # 2026-07-27; MOEA would have crashed at step 0.
+        #
+        # AMB is parked, so assoc_prev is None in every shipping config. Cross-layer AMB
+        # state through a top-k router is genuinely undefined (which expert's memory
+        # continues the chain?), so refuse rather than silently pick one.
+        if assoc_prev is not None:
+            raise NotImplementedError(
+                "block-MoE with associative_bypass_cross_layer is undefined: cross-layer "
+                "AMB state has no single owner under top-k routing. Disable one of them.")
         probs = F.softmax(self.router(x.float()), dim=-1)          # (B,T,E)
         topw, topi = torch.topk(probs, self.top_k, dim=-1)         # (B,T,k)
         topw = (topw / topw.sum(dim=-1, keepdim=True)).to(x.dtype)
@@ -3742,6 +3783,7 @@ class WaveletLM(nn.Module):
                     top_k=config.get("block_moe_topk", 2),
                     device=device,
                     gradient_checkpointing=config.get("gradient_checkpointing", False),
+                    scale_ladder=config.get("block_moe_scale_ladder", False),
                 )
                 for _ in range(layer_build_count)
             ])

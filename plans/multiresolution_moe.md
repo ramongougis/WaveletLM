@@ -1,6 +1,22 @@
 # Multi-Resolution MoE — experts over compressed context lengths
 
-**Status:** proposed 2026-07-27 (Ramon). Not queued. Blocked on decimation; see Dependencies.
+**Status:** proposed 2026-07-27 (Ramon). The **scale-ladder proxy is IMPLEMENTED and queued
+as MLR1** (`block_moe_scale_ladder`, coarse-only nested ladder, CPU smoke-tested). The full
+compressed-context version is still blocked on the decimating compressor — to be built during
+the pod suspension; see Dependencies and the decimation resolution below.
+
+**Decimation resolution (2026-07-27).** Finding 16 measured the decomposition to be
+shift-EQUIVARIANT (odd/pow2 contrast 0.87x, no parity effect), and rules out a position
+artifact for the channel census, Study 2 and Finding 17. Classical decimated wavelets are
+shift-VARIANT, so decimating the block's INTERNAL transform would retract a property three
+findings rest on. Resolution: decimate only in an **input-side compressor** feeding the
+long-context experts, leaving the main path a-trous. The compressor may be close to free —
+DWT coefficients are the SWT sampled every 2^k-th position, so it is plausibly a strided read
+of the approximation band we already compute. CAVEAT: that equivalence is exact for a pure
+dilated lifting, and the crawl (learned K=33 mixture over dilations) breaks the clean
+correspondence — verify on CPU before relying on it. Separately noted: decimating the main
+path would cut mixer compute from ~8T to ~2T positions, which makes it tempting; that is a
+distinct experiment needing its own argument, not something to smuggle in via this work.
 
 ## The idea
 
