@@ -105,10 +105,18 @@ def matmul_tflops():
     return tf
 
 
-def model_probe(run_dir, C, us_per_launch, steps=12):
+def model_probe(run_dir, C, us_per_launch, steps=12, mbs=None):
+    """mbs=None uses the config's own batch. On OOM the caller retries at half batch —
+    EAGER mode holds more intermediates than compiled training (no fusion), so a config
+    that trains fine at MBS=48 compiled can OOM here (measured: C=512 eager needs >31GB
+    at MBS=48, 2026-07-28). Kernel COUNT is batch-independent (same graph), so the
+    dispatch census stays valid at any MBS; only ms/step loses direct comparability."""
+    import gc
     from model import WaveletLM
     cfg = json.load(open(os.path.join(run_dir, "config.json")))
     cfg.update(C=C, compile=False, device="cuda")
+    if mbs is not None:
+        cfg["micro_batch_size"] = mbs
     torch.manual_seed(0)
     m = WaveletLM(50257, cfg, device="cuda").to("cuda")
     m.train()
@@ -154,7 +162,8 @@ def model_probe(run_dir, C, us_per_launch, steps=12):
               f"{pred*1000:.0f} ms ({100*pred/per:.0f}% of measured)")
     else:
         print()
-    del m, opt
+    del m, opt, scaler
+    gc.collect()
     torch.cuda.empty_cache()
     return per, kcount
 
@@ -174,8 +183,24 @@ def main():
     if not args.skip_model:
         print("=" * 70)
         print("[D] THE REAL MODEL (eager, fwd+bwd+Adagrad, MBS/block from D0 config)")
-        p256, k256 = model_probe(args.run_dir, 256, us)
-        p512, k512 = model_probe(args.run_dir, 512, us)
+        def probe_with_fallback(C):
+            mbs = None
+            for _ in range(3):
+                try:
+                    return model_probe(args.run_dir, C, us, mbs=mbs)
+                except torch.OutOfMemoryError:
+                    cfg_mbs = json.load(open(os.path.join(
+                        args.run_dir, "config.json")))["micro_batch_size"]
+                    mbs = (mbs or cfg_mbs) // 2
+                    torch.cuda.empty_cache()
+                    print(f"    C={C}: OOM in eager mode, retrying at MBS={mbs} "
+                          f"(kernel count unaffected; ms/step not comparable to training)")
+            return None, None
+        p256, k256 = probe_with_fallback(256)
+        p512, k512 = probe_with_fallback(512)
+        if p256 is None or p512 is None:
+            print("    (a probe arm failed even at reduced MBS)")
+            return
         print(f"    C=512 / C=256 step-time ratio: {p512/p256:.2f}x "
               f"(compute-bound would be ~2.6x; dispatch-bound is ~1.0x)")
         if k256 and k512:

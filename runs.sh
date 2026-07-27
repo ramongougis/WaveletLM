@@ -1064,6 +1064,27 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 #     comparisons - the only ones these runs exist for - remain valid.
 #
 # COST: ~45 dollars for all nine, vs ~144 for the Mini MoE pair alone.
+#
+# PERF POSTSCRIPT (2026-07-28, tools/perf_probe.py on the current pod — READ BEFORE
+# TRUSTING ANY $/RUN ESTIMATE IN THIS BLOCK):
+#   * GPU healthy: 219 TFLOPS sustained fp16. Launch rate 9.8us. NOT compute-bound:
+#     eager C=256 step is 596ms where compute-bound would be ~37ms.
+#   * THE MODEL ISSUES ~41,726 CUDA KERNELS PER STEP (eager). At 9.8us/launch that is
+#     ~410ms of pure dispatch = 69% of the step — and kernel count is C-INDEPENDENT,
+#     which is why C=256 ran no faster than C=512 overall. Chief suspect: the crawl
+#     (7 levels x 33 offsets x 10 layers, fwd+bwd). This is the architecture's real
+#     performance bug and the quantitative case for dispatch work (crawl batching,
+#     CUDA graphs, decimation) during the suspension.
+#   * OVERSUBSCRIPTION HYPOTHESIS DEAD: OMP_NUM_THREADS=4 changed launch rate 9.8->9.5us
+#     (nothing) and did not help the model step. Do NOT add thread env vars to runs.sh.
+#   * The earlier "C=256 == C=512 at 1.30 it/s" comparison was TRAIN+EVAL wall rate; the
+#     eval half (1000 dispatch-bound forwards) is itself C-insensitive and flattened the
+#     comparison. With eval_batches=64 (fixed 2026-07-27) the flattening term is ~gone.
+#   * DECISION RULE FOR THIS TIER: read the FIRST 500-step interval of the Micro
+#     baseline under the eval fix. <=~210s -> Micro is ~2x cheaper than Mini and the
+#     tier proceeds as written. >=~350s -> dispatch floor erases width entirely; fold
+#     the Micro arms back into Mini (same price, no sign-flip risk) except PROJ_Micro,
+#     which stays (the calibration question stands regardless of cost).
 # gradient_checkpointing is left ON for arms that already OOM'd at Mini rather
 # than re-risk a wasted slot, and OFF for the baselines, which never have.
 # NOTE FWP1 (Mini, C=512) is deliberately still running and NOT converted: at
