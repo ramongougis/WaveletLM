@@ -1028,6 +1028,57 @@ DO_COMMON='"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5,
 # AUTOPSY REGARDLESS OF OUTCOME: histogram key-selection frequency per layer and
 # read alpha_fwpkm — if alpha stays ~0 the model declined the memory, which is itself the
 # answer to "why did it never contribute".
+
+# ==============================================================================
+# ===== WaveletLM MICRO (C=256) - PRIORITISATION TIER, NOT A SCREEN ============
+# ==============================================================================
+# Ramon 2026-07-27. Purpose: run the cheap ablations at C=256 first to PRIORITISE
+# which features deserve Mini (C=512) compute, then test combinations of whatever
+# works. The Mini arms below are NOT removed and NOT replaced.
+#
+# THE RULE IS ASYMMETRIC, AND THAT IS THE WHOLE POINT:
+#   PASS at Micro -> promote to Mini for confirmation.
+#   FAIL at Micro -> record as "failed at Micro". Do NOT kill the feature.
+# This project has the canonical counterexample. Removing projections scored
+# +0.0115 BPB at C=100 (a clear failure) and -0.0079 at C=1024 (a win). That
+# feature is now skip_proj_out=true, the default, and the "fully spectral"
+# headline. A symmetric Micro screen would have killed the biggest architectural
+# win in the repo. Treat Micro negatives as weak evidence unless there is a
+# mechanistic reason the sign cannot depend on width. PROJ_Micro at the end of
+# this block measures that bias directly.
+#
+# WHAT CHANGES FROM MINI, AND WHAT DELIBERATELY DOES NOT:
+#   C 512 -> 256, and LR doubles per the 48/C width rule (shared 0.075 -> 0.15,
+#   untied 0.0375 -> 0.075, min_lr = lr/50). NOTHING ELSE MOVES.
+#   * levels stay 7: levels are a TIME-axis property (dilations over the
+#     sequence), independent of C - they track block_size, not width.
+#   * per_scale_mixer_widths stay: they are C-multipliers, so the 0.5 scales are
+#     128 channels at C=256, still reasonable.
+#   * MBS stays 48: the NaN ceiling is width-bound and batch-INVARIANT
+#     (project_sqrt_batch_lr_rule_fails), so LR transfers; and a different batch
+#     would forfeit comparability with Mini, which is what promotion depends on.
+#     A bigger batch also buys little here - the LM head is 71 pct of compute at
+#     C=256 and its matmul already saturates.
+#   * dropout stays: tuned at C=512 and probably too strong for a 24.78M model on
+#     655M tokens, but it is CONSTANT ACROSS EVERY MICRO ARM, so the internal
+#     comparisons - the only ones these runs exist for - remain valid.
+#
+# COST: ~45 dollars for all nine, vs ~144 for the Mini MoE pair alone.
+# gradient_checkpointing is left ON for arms that already OOM'd at Mini rather
+# than re-risk a wasted slot, and OFF for the baselines, which never have.
+# NOTE FWP1 (Mini, C=512) is deliberately still running and NOT converted: at
+# C=256 FwPKM would be +90 pct of params instead of +62 pct unless num_keys is
+# retuned, which FWPKM_Micro above does.
+run_ablation "Micro_C256_L10_noMLP_5ep Micro baseline - C=256 shared lifting"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.15, "min_lr": 0.003, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216}'     "Micro baseline (24.78M): the reference every other Micro arm is judged against, AND the missing C=256 rung of the C-knee ladder. Critically it is the FIRST C-knee point at MBS=48 besides D0 - the -0.065/e-fold slope was fitted entirely on MBS=8 points, and every width-law kill rule in this file depends on it. Two same-batch anchors let us check that slope directly for ~2 dollars"
+run_ablation "Micro-untied_C256_L10_5ep Micro-untied - C=256 per-layer lifting bases"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "shared_lifting_weights": false}'     "Micro-untied: the control the MoE arms need, since block_moe HARD-REQUIRES shared_lifting_weights=false (model.py:3773). Also the Micro echo of SB4 (1.0198/1.0201 at C=512), so it doubles as a width-transfer check on the untied-lifting verdict"
+run_ablation "FWPKM_Micro_C256_5ep FwPKM Micro - rewired memory at matched param share"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.15, "min_lr": 0.003, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": true, "gradient_checkpointing": false, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "fwpkm_num_keys": 5625, "fwpkm_top_k": 32, "fwpkm_heads": 1, "fwpkm_aux_weight": 0.01}'     "FWPKM Micro: num_keys=5625 (75^2) chosen so the memory is +61.5% of base params, matching Mini FWP1 at +62.4%. WITHOUT retuning, 8281 keys would be +90% here, because the value table scales as num_keys*C (linear) while blocks scale as C^2 - memory gets relatively MORE expensive as the model shrinks. Verified by building it: 40,025,311 params. sub_keys=75 >= top_k=32 so half_k does not clamp"
+run_ablation "MOEA_Micro_C256_5ep Block-MoE Micro - E=4 full-block experts, top-2"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "shared_lifting_weights": false, "block_moe_enabled": true, "block_moe_experts": 4, "block_moe_topk": 2, "block_moe_aux_weight": 0.01}'     "MOEA Micro: vs Micro-untied = does per-token routing help at all. NOTE MoE is much cheaper at Micro - the tied LM head is 71 pct of compute at C=256 vs 55 pct at C=512, so E=4 costs 1.87x the baseline here against 2.35x at Mini"
+run_ablation "MLR1_Micro_C256_5ep Multiresolution ladder Micro - E=4 coarse-only experts"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "shared_lifting_weights": false, "block_moe_enabled": true, "block_moe_experts": 4, "block_moe_topk": 2, "block_moe_aux_weight": 0.01, "block_moe_scale_ladder": true}'     "MLR1 Micro: the ONLY valid A/B is vs MOEA_Micro (identical params and compute, the ladder is the sole difference). The MoE capacity effect - the thing most likely to inflate at small C - appears in BOTH arms and cancels. What does NOT cancel is the ladder information cost, which should bite HARDER at C=256 where there is less redundancy, so a WIN here is strong evidence while a LOSS stays weak"
+run_ablation "PP1_Micro_C256_5ep Prime-power Micro - max=11, cap=128, crawl ON"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.15, "min_lr": 0.003, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "prime_power_wavelet_basis_max": 11, "prime_power_dilation_cap": 128}'     "PP1 Micro: 18-level prime-power union ladder. Judge PP1-minus-PP2, not PP1 vs baseline - the subtraction answers the crawl-redundancy question and is far more robust to width than absolute BPB"
+run_ablation "PP2_Micro_C256_5ep Prime-power Micro - max=11, cap=128, crawl OFF"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": false, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.15, "min_lr": 0.003, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "prime_power_wavelet_basis_max": 11, "prime_power_dilation_cap": 128}'     "PP2 Micro: crawl-OFF twin. PP1-minus-PP2 = crawl redundancy of the prime rungs, answered directly"
+run_ablation "MOMA_Micro_C256_5ep Mixture-of-Mixers Micro - E=4, top-2"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": null, "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.15, "min_lr": 0.003, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": true, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216, "mixer_mom_enabled": true, "mixer_mom_experts": 4, "mixer_mom_topk": 2, "mixer_mom_aux_weight": 0.01}'     "MOMA Micro: the one arm that SAVES params (at Mini it is 57.08M vs D0 72.89M), so a tie is a win. Watch expert-usage collapse via aux magnitude"
+run_ablation "PROJ_Micro_C256_5ep Micro CALIBRATION - skip_proj_out OFF"     "$BASE_PATCH_5EP"     '{"levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.15, "min_lr": 0.003, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": false, "weight_decay": 2e-06, "fwpkm_enabled": false, "gradient_checkpointing": false, "layers": 10, "C": 256, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.1, "dropout_lm_head": 0.216}'     "PROJ Micro (Ramon 2026-07-27): the run that measures HOW MUCH MICRO LIES. skip_proj_out scored +0.0115 at C=100 (a failure) and -0.0079 at C=1024 (the fully-spectral headline) - a MEASURED SIGN FLIP. Re-running it at C=256 locates where that flip happens and calibrates every other Micro verdict here. If skip_proj_out is already winning at C=256, Micro is a trustworthy prioritiser; if it is still losing, Micro systematically punishes this whole class of simplification and Micro negatives mean very little"
+
 run_ablation "FWP1_C512_fwpkm8281_5ep Fast-weight PKM retry — rewired, D0 config + memory"     "$BASE_PATCH_5EP"     '{"fwpkm_enabled": true, "fwpkm_num_keys": 8281, "fwpkm_top_k": 32, "fwpkm_heads": 1, "fwpkm_aux_weight": 0.01, "levels": 7, "per_scale_mixer_widths": [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5], "wavelet_crawl": true, "wavelet_crawl_k": 33, "wavelet_decomp_norm": true, "wavelet_recon_norm": true, "lr": 0.075, "min_lr": 0.0015, "micro_batch_size": 48, "eval_interval": 500, "checkpoint_interval_steps": 2000, "wavelet_basis": "real", "mixer_transform": "identity", "mlp_expansion": 0, "skip_proj_out": true, "dropout_embedding": 0.18, "dropout_projection": 0.09, "dropout_mixer": 0.09, "dropout_mlp": 0.10, "dropout_lm_head": 0.216, "weight_decay": 2e-6, "gradient_checkpointing": false, "layers": 10, "C": 512}'     "FWP1: first FwPKM trial in the fully-spectral architecture and the first with identity-init, a selective softmax, and a usage penalty; 118.37M, so the bar is the width law (~1.012), not D0 (1.0436)"
 
 #
@@ -1050,7 +1101,29 @@ run_ablation "FWP1_C512_fwpkm8281_5ep Fast-weight PKM retry — rewired, D0 conf
 #     discharged for free and permanently; five epochs of GPU could never have shown more.
 #     The right lesson is that this arm was the wrong instrument, not that it was run
 #     wrong. What it accidentally produced is more
-#     useful than it sounds: a same-config same-seed REPLICATE of SB4, and the matched-step
+#     useful than it sounds — and it COMPLETED, so the numbers are final:
+#
+#     *** EMPIRICAL NOISE FLOOR, MEASURED (logs/wikitext-103_2026-07-27_01-45-36) ***
+#     SB4 and MOE0 differ in ZERO of 154 config keys, same seed 1337, same 139,077,098
+#     params. Two runs of a bit-identical configuration:
+#         metric            SB4        MOE0       delta
+#         sliding BPB       1.0198     1.0201     +0.0003
+#         PPL              24.1871    24.2074     +0.0203
+#         sliding avg loss  3.1858     3.1867     +0.0009
+#         best val          3.2198     3.2199     +0.0001
+#     So end-to-end run-to-run drift is ~0.0003 BPB — about a THIRD of the 0.0010 threshold
+#     everything in this repo is ranked by. That threshold was a stipulation until now; it
+#     is now measured, and it is conservative. Residual drift is fp16 atomics + cuDNN algo
+#     selection + torch.compile kernel choice; bitwise reproducibility was never available.
+#     Robustness note: the two runs took 13.7h and 15.15h (~10% apart, so real contention
+#     or thermal variation) and the result still barely moved.
+#     LIMIT, STATED HONESTLY: n=2 is ONE PAIRED DIFFERENCE, not a distribution. It shows
+#     drift CAN be 0.0003 and that 0.0010 is not optimistic; it does NOT give a sigma.
+#     Do not buy more replicates at ~$15 each just to tighten this.
+#     BONUS: SB4's untied-lifting result is now n=2 (1.0198, 1.0201; mean 1.01995) rather
+#     than a single seed — worth having for a number heading into the paper.
+#
+#     The matched-step
 #     val agreement is 0.0009 nats max (steps 38500/41000/43000/45000/45500/46000:
 #     3.2583/3.2576, 3.2438/3.2447, 3.2373/3.2376, 3.2300/3.2299, 3.2266/3.2268,
 #     3.2344/3.2347). That is ~0.0003 BPB of pure run-to-run nondeterminism — an EMPIRICAL
