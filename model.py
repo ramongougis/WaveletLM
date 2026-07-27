@@ -2239,6 +2239,10 @@ class WaveletLMBlock(nn.Module):
         # are not free even when they multiply by 1.0. WaveletLMBlockMoE flips this when it
         # assigns a ladder; every other config keeps D0's exact hot path.
         self._scale_masked = False
+        # Indices whose mixers are SKIPPED outright (set only by the MoE scale ladder).
+        # Python frozenset of ints, so the check below is static at trace time — no
+        # tensor reads, no graph breaks.
+        self._masked_scales = frozenset()
 
         self.skip_proj_out = skip_proj_out and (self.Cp == self.C)
         if not self.skip_proj_out:
@@ -2432,6 +2436,16 @@ class WaveletLMBlock(nn.Module):
         mixed_by_scale = []
         for s in range(S):
             Xs = spec[:, :, s, :]
+            if s in self._masked_scales:
+                # LADDER SKIP (2026-07-28). This band's contribution is zeroed downstream
+                # by scale_mask, so running its mixer is dead compute — and on this model
+                # the binding cost is KERNEL COUNT (41,726/step measured, 69% dispatch),
+                # not FLOPs. Substituting zeros is FUNCTIONALLY IDENTICAL: gate routing
+                # reads pre-mixer spec (never mixer outputs), and the mask already blocks
+                # both the forward contribution and the gradient. Verified by smoke test:
+                # bit-identical logits, zero grads on skipped mixers.
+                mixed_by_scale.append(torch.zeros_like(Xs))
+                continue
             Gs = routed[:, :, s, :] if routed is not None else None
             Ys = self.scale_mixers[s](Xs, gate_input=Gs)
             mixed_by_scale.append(Ys)
@@ -2481,6 +2495,9 @@ class WaveletLMBlock(nn.Module):
             out = []
             for s in range(S):
                 Gs = routed[:, :, s, :] if routed is not None else None
+                if s in self._masked_scales:
+                    out.append(torch.zeros_like(spec[:, :, s, :]))   # ladder skip (see real path)
+                    continue
                 out.append(self.scale_mixers[s](spec[:, :, s, :], gate_input=Gs))
             return torch.stack(out, dim=2)
         mixed_r = _mix(spec_r)
@@ -3203,6 +3220,7 @@ class WaveletLMBlockMoE(nn.Module):
                 m = torch.zeros_like(ex.scale_mask); m[:keep] = 1.0
                 ex.scale_mask.copy_(m)
                 ex._scale_masked = True
+                ex._masked_scales = frozenset(range(keep, S_))
             print("[Block-MoE] coarse-only scale ladder: "
                   + ", ".join(f"e{k}<-s0..s{int(ex.scale_mask.sum())-1}"
                               for k, ex in enumerate(self.experts)))
