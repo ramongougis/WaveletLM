@@ -55,7 +55,7 @@ def sweep(model, data, lo, hi, T, S, layer, scales, dev, tag, batch=32):
         return h
     for si in range(S):
         hooks.append(model.layers[layer].decomp_norms[si].register_forward_hook(mk(si)))
-    K, NXT, LST, NLL, ARG = [], [], [], [], []
+    K, NXT, LST, NLL, ARG, ENT = [], [], [], [], [], []
     starts = [lo + w * T for w in range((hi - lo) // T)]
     starts = [s0 for s0 in starts if s0 + T + 1 < len(data)]
     done = 0
@@ -74,12 +74,17 @@ def sweep(model, data, lo, hi, T, S, layer, scales, dev, tag, batch=32):
         LST.append(x.reshape(-1).cpu().to(torch.int32))
         NLL.append(F.nll_loss(lp, y.reshape(-1), reduction="none").cpu().half())
         ARG.append(lp.argmax(-1).cpu().to(torch.int32))   # model's own top-1
+        # Predictive entropy. The ONLY difficulty signal here that is computable at
+        # inference: NLL needs the true next token, so an NLL gate silently peeks at the
+        # answer and can only ever be an upper bound (see plans/salt.md Test A caveat 1).
+        ENT.append((-(lp.exp() * lp).sum(-1)).cpu().half())
         done += len(grp)
         if done % 256 < batch:
             print(f"  [{tag}] {done*T:,}/{len(starts)*T:,}", flush=True)
     for h in hooks: h.remove()
     return (torch.cat(K).numpy(), torch.cat(NXT).numpy(),
-            torch.cat(LST).numpy(), torch.cat(NLL).numpy(), torch.cat(ARG).numpy())
+            torch.cat(LST).numpy(), torch.cat(NLL).numpy(),
+            torch.cat(ARG).numpy(), torch.cat(ENT).numpy())
 
 
 def main():
@@ -140,15 +145,17 @@ def main():
         hi = lo + per
         print(f"[build] shard {args.shard}/{args.n_shards}: tokens [{lo:,},{hi:,}) "
               f"threads={args.threads} scales={args.scales} layer={args.layer}")
-        K, N, L, E, _ = sweep(model, tr, lo, hi, T, S, args.layer, args.scales, dev,
+        K, N, L, E, A, H = sweep(model, tr, lo, hi, T, S, args.layer, args.scales, dev,
                            f"s{args.shard}", batch=args.batch)
         if args.keep_pct < 100:
             thr = np.percentile(E.astype(np.float32), 100 - args.keep_pct)
             m = E.astype(np.float32) >= thr
-            K, N, L, E = K[m], N[m], L[m], E[m]
+            K, N, L, E, A, H = K[m], N[m], L[m], E[m], A[m], H[m]
             print(f"[build] kept {m.sum():,} ({100*m.mean():.2f}%) at nll>={thr:.2f}")
         out = os.path.join(args.store_dir, f"shard{args.shard:03d}.npz")
-        np.savez(out, K=K, N=N, L=L, E=E)
+        # A (model argmax) and H (predictive entropy) are saved so gate selection never
+        # needs a re-sweep. Earlier builds lack them; salt_gate.py re-sweeps in that case.
+        np.savez(out, K=K, N=N, L=L, E=E, A=A, H=H)
         print(f"[build] wrote {out}  rows={len(N):,}  keys={K.nbytes/1e9:.2f} GB")
         return
 
@@ -183,7 +190,7 @@ def main():
     print(f"[eval] partitions: {len(span):,} | median {np.median(sz):.0f} "
           f"p90 {np.percentile(sz,90):.0f} max {sz.max():,}")
 
-    Ke, Ne, Le, Ee, Ae = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
+    Ke, Ne, Le, Ee, Ae, He = sweep(model, va, 0, args.eval_tokens, T, S, args.layer,
                           args.scales, dev, "eval", batch=args.batch)
     Ksf = np.ascontiguousarray(Ks.astype(np.float32))
     Kef = Ke.astype(np.float32)

@@ -255,7 +255,9 @@ rather than a tuning failure:
 
 **A 34% oracle cannot be converted into any gain. SALT is DONE on this key** (layer-0 coarse
 bands s0+s1, cosine, per-scale normalized, last-token partition), per the pre-registered
-decision rule. The oracle-ceiling rung did its job: the whole direction was falsified in about
+decision rule. *(This verdict stands and is left visible: it is about the COSINE key. The
+learned-metric escape hatch below was subsequently run and flipped the sign — see "Test A
+RESULT" — but on a different key, so it does not overturn anything stated here.)* The oracle-ceiling rung did its job: the whole direction was falsified in about
 ten minutes of eval, before any index, gate, or pipeline was built on top of it.
 
 **What remains open (do not read this as "retrieval cannot work here"):**
@@ -274,6 +276,109 @@ ten minutes of eval, before any index, gate, or pipeline was built on top of it.
   (removing layers 1-9 costs +1.5063 dBPB, 8.3x super-additive). That proposal reduces to
   "train a smaller LM". The legitimate form is **distillation** against the big model's output
   distribution.
+
+## Test A RESULT (2026-07-27): the learned corrector FLIPS THE SIGN
+
+`salt_corrector.py` on the same D3 store (1,500,000 rows, key dim 1024; 1,350,000 train /
+150,000 val). Corrector = 1.57M trainable params, `key -> MLP -> C -> [FROZEN tied embedding]
+-> vocab`. Three epochs: val 5.3117 -> 5.0216 -> **4.8760 nats**, standalone top-1 **23.65%**
+(vs lookup's 19.64% and D3's 45.50%). D3 baseline on these rows: **2.6946 nats**.
+
+| gate | frac | lam | dBPB |
+|---|---|---|---|
+| ungated | 100% | 0.05 | +0.0057 |
+| ungated | 100% | 0.80 | +0.2623 |
+| nll>p50 | 50.0% | 0.05 | +0.0002 |
+| nll>p75 | 25.0% | 0.10 | −0.0021 |
+| **nll>p90** | **10.0%** | **0.20** | **−0.0038** |
+| nll>p90 | 10.0% | 0.80 | +0.0050 |
+
+**Lookup's best was +0.0054; the corrector's best is −0.0038** — a swing of 0.0092 against a
+0.0010 noise floor. Two structural properties argue this is signal, not a lucky cell:
+1. **Monotone in gate tightness**: ungated all-positive -> p50 ~neutral -> p75 negative -> p90
+   most negative. Exactly Finding 19's prediction — value concentrates where the model is weak.
+   Note this is the *opposite* of the lookup sweep, where even `dBPB | wrong` was positive.
+2. **Smooth interior optimum in lam** at p90 (−0.0022, −0.0030, **−0.0038**, −0.0037, −0.0021,
+   +0.0050 across lam 0.05 -> 0.80). A unimodal curve over six lam values *and* a monotone
+   trend over four gates is not the shape selection noise takes.
+
+**Mechanism — as hypothesized, not as designed.** The gain comes from *a distribution over
+neighbours, not from one exactly-correct match*: the corrector's top-1 (23.65%) is still far
+below D3's (45.50%), so it cannot be right more often — its diffuse-but-correctly-shaped
+distribution is what helps when mixed at lam=0.2. The learned metric beat cosine, as predicted.
+
+**THREE CAVEATS, AND THE FIRST IS LOAD-BEARING:**
+1. **The gate peeks at the answer.** `gates` is built from `nll0 = Eva`, D3's NLL *on the true
+   next token*, so `nll>p90` means "apply the corrector where the model turned out to be wrong."
+   That is NOT computable at inference. The docstring calls it a stand-in for entropy, but
+   entropy and NLL diverge precisely on confidently-wrong positions. **−0.0038 is an upper
+   bound, not a deployable number.**
+2. **(gate, lam) were selected on the same 150,000 rows they are scored on.** Best-of-24 against
+   a 0.0010 floor is optimistic; needs a held-out third split for selection.
+3. **Store-val subset, not the benchmark.** D3 scores 2.6946 nats here vs 3.0606 on the
+   sliding-window eval — an easier slice, so dBPB need not transfer.
+
+**What was actually bought:** the corrector's key is the position's OWN coarse bands, so this is
+boosting on a decorrelated weak learner — an **ensembling** gain, not new information, and not
+evidence about long-range retrieval. Real, but it caps the ceiling.
+
+**Next rung — BUILT 2026-07-27: `tools/interpretability/salt_gate.py`** (CPU-only, no budget).
+Kills all three caveats at once:
+- **Realizable gates.** Entropy was not recoverable from the store — `sweep` computed the
+  model's argmax but `savez` wrote only `K, N, L, E`. Fixed at source: `sweep` now also
+  returns predictive entropy, and build mode persists `A` (argmax) and `H` (entropy), so no
+  future run needs a re-sweep. `salt_gate.py` works with OLD stores too (it reads only `K`/`N`
+  and re-sweeps for the eval set). Nine realizable gates — `entropy>pQ`, `corrconf>pQ`,
+  `disagree`, `combo` — versus three `ORACLE nll>pQ` reported only as the ceiling.
+- **SELECT/TEST split.** The (gate, lam) sweep runs on SELECT; the single winning config is
+  scored ONCE on TEST. The oracle ceiling is scored on TEST too, so "how much the realizable
+  gate gives up" is a measured number rather than an argument.
+- **Fresh independent eval set.** Rather than reuse store rows (which the corrector trained
+  on), it re-sweeps a held-out token range and applies `--min_context 128`, matching the
+  sliding-window protocol — so dBPB is comparable to the BPB everything else is ranked by.
+
+**PRE-REGISTERED DECISION RULE** (in the script, printed with the result; noise floor 0.0010):
+| TEST dBPB on a REALIZABLE gate | verdict |
+|---|---|
+| <= −0.0020 | **SHIP** — SALT is a viable post-hoc release feature |
+| −0.0020 to −0.0010 | real but marginal; NOT worth the release complexity |
+| >= −0.0010 | the Test A gain lived in the ORACLE gate; SALT closes, record as negative |
+
+Scoring core is self-tested (`--selftest`, passing): empty gate and lam=0 are exactly 0.0; a
+perfect corrector scores −0.5790 and a worthless one +0.0714 (opposite signs, so the metric
+discriminates); a difficulty-targeted gate beats a random gate at equal fraction (−0.2961 vs
+−0.0607). Those had to pass before the metric was trusted with a release decision.
+
+## The n-token partition variant (Ramon, 2026-07-27) — skip-n-gram dynamics
+
+Proposal: hold **2, 3, or 4** tokens fixed instead of one, letting scale similarity match the
+rest. **This cuts directly at the central diagnosis above**, and the arithmetic runs both ways:
+- It WILL raise match accuracy — but the decomposition already says ~11.4 of the 19.64 points
+  are the last-token partition (a bigram statistic) and only ~8.2 are the scale ranking. Fixing
+  more tokens grows the term that is already dominant, so the method converges toward **being an
+  n-gram table with a wavelet garnish**. A win at n=4 that is really a 5-gram model is not a
+  result about wavelets, and per the unit-discipline rule it must not be reported as one.
+- **Sparsity moves the opposite way.** At n=1 the store already has p90 = 65 entries/partition
+  and median 7. Distinct-context count grows ~geometrically in n, so at n=3-4 most partitions go
+  singleton or empty and there is nothing left to rank — the same failure that killed the
+  top-1% pilot (median partition 1).
+
+**The design that cannot be fooled** — measure both axes at once, n = 0, 1, 2, 3, 4:
+| | what it isolates |
+|---|---|
+| top-1, scale-ranked within partition | the full method |
+| top-1, RANDOM-ranked within partition | the pure n-gram contribution |
+| **difference** | **the wavelet contribution, at each n** |
+plus partition-size distribution (median, p90, % singleton) per n to find where sparsity bites.
+n=0 (no partition at all) is the single most informative cell and is missing from every run so
+far: it measures pure scale retrieval with the bigram effect removed. **If the scale-vs-random
+gap is ~0 at every n, scale retrieval is decorative and the whole direction closes** — for the
+corrector too, since it shares the key.
+
+**True skip-grams are the more interesting variant.** Fixing a CONTIGUOUS suffix is what an
+n-gram model does. Fixing NON-adjacent lags (e.g. {1,3} or {1,2,5}) is not, so it escapes the
+"it's just an n-gram" critique and is the version genuinely worth testing. Same measurement
+design; add lag-set as a third axis.
 
 ## Test ladder (all frozen, forward-only, no GPU)
 
