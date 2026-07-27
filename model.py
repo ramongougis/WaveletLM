@@ -2232,6 +2232,13 @@ class WaveletLMBlock(nn.Module):
         # the ladder is a fixed architectural assignment, not something the model may undo.
         self.register_buffer("scale_mask",
                              torch.ones(S, device=device, dtype=dtype), persistent=True)
+        # Static flag so the mask multiply is ABSENT from the traced graph unless a ladder
+        # is actually assigned. Perf regression guard: added 2026-07-27 after Micro (C=256)
+        # ran 1.8x SLOWER than D0 (C=512). This model is launch-overhead-bound on a
+        # CPU-quota-limited pod, so 80 extra elementwise ops/forward (8 scales x 10 layers)
+        # are not free even when they multiply by 1.0. WaveletLMBlockMoE flips this when it
+        # assigns a ladder; every other config keeps D0's exact hot path.
+        self._scale_masked = False
 
         self.skip_proj_out = skip_proj_out and (self.Cp == self.C)
         if not self.skip_proj_out:
@@ -2545,8 +2552,9 @@ class WaveletLMBlock(nn.Module):
             mixed_list = list(mixed_all.unbind(dim=2))
             out = []
             for idx, m in enumerate(mixed_list):
-                out.append(self.dropout_mix(m) * self.scale_weights[idx]
-                           * self.scale_mask[idx])
+                _sw = (self.scale_weights[idx] * self.scale_mask[idx]
+                       if self._scale_masked else self.scale_weights[idx])
+                out.append(self.dropout_mix(m) * _sw)
             return out
         proc_r = _post(new_r)
         proc_i = _post(new_i)
@@ -2643,7 +2651,9 @@ class WaveletLMBlock(nn.Module):
 
         # Per-scale dropout + scale weights, then REAL reconstruct.
         mixed_list = list(mixed_all.unbind(dim=2))
-        processed = [self.dropout_mix(m) * self.scale_weights[idx] * self.scale_mask[idx]
+        _sm = self._scale_masked
+        processed = [self.dropout_mix(m) * (self.scale_weights[idx] * self.scale_mask[idx]
+                                            if _sm else self.scale_weights[idx])
                      for idx, m in enumerate(mixed_list)]
         approx_proc = processed[0]
         details_proc = processed[1:][::-1]
@@ -3077,7 +3087,8 @@ class WaveletLMBlock(nn.Module):
         processed_top_down = []
         for idx, mixed in enumerate(mixed_list):
             mixed = self.dropout_mix(mixed)
-            scaled = mixed * self.scale_weights[idx] * self.scale_mask[idx]
+            scaled = mixed * (self.scale_weights[idx] * self.scale_mask[idx]
+                              if self._scale_masked else self.scale_weights[idx])
             if amb_out is not None:
                 scaled = scaled + self.assoc_beta_scale[idx] * amb_out
             processed_top_down.append(scaled)
@@ -3191,6 +3202,7 @@ class WaveletLMBlockMoE(nn.Module):
                 keep = max(1, S_ - k * (S_ // max(num_experts, 1)))
                 m = torch.zeros_like(ex.scale_mask); m[:keep] = 1.0
                 ex.scale_mask.copy_(m)
+                ex._scale_masked = True
             print("[Block-MoE] coarse-only scale ladder: "
                   + ", ".join(f"e{k}<-s0..s{int(ex.scale_mask.sum())-1}"
                               for k, ex in enumerate(self.experts)))

@@ -590,7 +590,17 @@ def make_get_batch(train_data, val_data, config, device):
 @torch.no_grad()
 def estimate_loss(model, get_batch, config, device, use_amp, amp_dtype):
     """Estimate train and val loss over eval_interval batches each."""
-    eval_batches = config['eval_interval']
+    # Was `config['eval_interval']`, which coupled eval COST to eval FREQUENCY and made the
+    # overhead invariant to the knob: evals fire every EI steps and cost 2*EI forwards, i.e.
+    # ~2 forward passes per training step NO MATTER WHAT EI IS. At MBS=48/T=256 that ran 500
+    # batches = 6.14M tokens against a 251,048-token val split — the val set 24.5x OVER,
+    # twice (train split too), every eval. Measured on the C=256 run: 1132s of eval against
+    # 822s of training, i.e. 58% of wall clock. Decoupled 2026-07-27.
+    # Default 64 batches = 786K tokens ~ 3.1x val coverage: enough that the estimate is not
+    # meaningfully noisier, ~8x cheaper. Rankings are unaffected either way — those come from
+    # evaluate_sliding_window on the full TEST split, not from here; this feeds trajectory
+    # logging and best-val checkpoint selection only.
+    eval_batches = int(config.get('eval_batches', 64))
     out = {}
     model.eval()
     for split in ['train', 'val']:
