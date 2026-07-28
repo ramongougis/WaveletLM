@@ -1664,6 +1664,7 @@ class WaveletLMBlock(nn.Module):
         pkm_top_k: int = 32,
         pkm_heads: int = 1,
         fwpkm_enabled: bool = False,
+        layer_idx: int = 0,
         fwpkm_chunk_size: int = 64,
         fwpkm_num_keys: int = 529,
         fwpkm_top_k: int = 32,
@@ -1676,6 +1677,7 @@ class WaveletLMBlock(nn.Module):
         fwpkm_compress_value: str = "zero_mean",
         fwpkm_grad_clip: bool = False,
         fwpkm_idw_eps: float = 1e-3,
+        fwpkm_layers: Optional[List[int]] = None,
         fwpkm_heads: int = 1,
         mixer_depth: int = 1,
         mixer_depth_stabilizers: bool = False,
@@ -2475,6 +2477,17 @@ class WaveletLMBlock(nn.Module):
                 self.C, num_keys=pkm_num_keys, pkm_top_k=pkm_top_k,
                 pkm_heads=pkm_heads, device=device, dtype=dtype)
 
+        # SELECTIVE PLACEMENT (reference cfg `fwpkm_layers: [2, 10]`, applied at
+        # qwen3_next_mem.py:1031 `if layer_idx in config.fwpkm_layers`). Their 12-layer stack
+        # puts FwPKM in 2 layers and a slow-weight PKM in layer 6 (`pkm_layers: [6]`), so the
+        # memory is sparse in depth, not present everywhere. An empty/None list means EVERY
+        # layer, which is what we did before and costs 5x more parameters and state.
+        # DEFAULT [2, 6]: start at layer 2, every 4 layers after. On our 10-layer stack
+        # (indices 0..9) the next rung, 10, does not exist — their 12-layer stack has room
+        # for [2, 6, 10], ours does not, so the same rule terminates at 6.
+        self.layer_idx = layer_idx
+        if fwpkm_layers:
+            fwpkm_enabled = fwpkm_enabled and (layer_idx in set(fwpkm_layers))
         self.fwpkm_enabled = fwpkm_enabled
         if fwpkm_enabled:
             self.fwpkm = FastWeightPKM(
@@ -3835,6 +3848,7 @@ class WaveletLM(nn.Module):
                 fwpkm_compress_value=config.get("fwpkm_compress_value", "zero_mean"),
                 fwpkm_grad_clip=config.get("fwpkm_grad_clip", False),
                 fwpkm_idw_eps=config.get("fwpkm_idw_eps", 1e-3),
+                fwpkm_layers=config.get("fwpkm_layers", [2, 6]),
                 fwpkm_heads=config.get("fwpkm_heads", 1),
                 mixer_depth=config.get("mixer_depth", 1),
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
@@ -3891,8 +3905,8 @@ class WaveletLM(nn.Module):
                 wavelet_recon_norm=config.get("wavelet_recon_norm", False),
         )
 
-        def _make_block():
-            return WaveletLMBlock(C, **_block_kwargs)
+        def _make_block(layer_idx=0):
+            return WaveletLMBlock(C, layer_idx=layer_idx, **_block_kwargs)
 
         # Block-level Mixture of Experts (plans/mixture_of_mixers.md, block-MoE
         # section). Each expert is a full independent WaveletLMBlock, so experts
@@ -3923,7 +3937,7 @@ class WaveletLM(nn.Module):
             ])
         else:
             self.layers = nn.ModuleList([
-                _make_block() for _ in range(layer_build_count)
+                _make_block(layer_idx=i) for i in range(layer_build_count)
             ])
 
         # Study 2b: coefficient L1 sparsity weight (0 = off). The dial is OURS — an

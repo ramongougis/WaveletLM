@@ -86,15 +86,20 @@ for WT-103, which has no padding, but wrong if we ever train on padded batches.
 | | theirs | ours |
 |---|---|---|
 | placement | configurable `fwpkm_before_attn` (`qwen3_next_mem.py:1358`, and after at `1418`) | hardcoded pre-mixer, `model.py:2635`, `2726`, `2941` |
-| which layers | **2 of 12** (`fwpkm_layers: [2, 10]`) | **all 10** |
+| which layers | FwPKM at **[2, 10]** of 12, plus a slow-weight PKM at **[6]** (`pkm_layers`) | FwPKM at **[2, 6]** of 10 (`fwpkm_layers`, `model.py:2456-2466`) — start at 2, every 4 after; index 10 does not exist on a 10-layer stack |
 | slots | 512² = **262,144** | 5,625 / 18,769 |
 | chunk | 512 | 64 |
 | heads | 1 | 1 |
 | top-k | 8 or 32 | 32 / 8 |
 | host mixer | sliding-window attention or Gated DeltaNet | causal wavelet lifting |
 
-Putting FwPKM in every layer rather than 2 of 12 multiplies both parameter and state cost
-by 5 — worth revisiting if cost binds.
+Depth placement now matches: 2 host layers, at the same early/middle depths. Note they put a
+SLOW-weight PKM at layer 6 where we put a second FwPKM — a deliberate substitution, so their
+layer 6 stores semantic knowledge frozen at inference while ours adapts online.
+
+Cost with 2 hosts instead of 10: FWPKM2 **28,095,691 (+13.4%)**, 0.55 GB state, width-law bar
+**1.1226**; FWPKM3 **34,857,163 (+40.7%)**, 1.85 GB state, bar **1.1047**. Both bars are now
+reachable, where the all-layers variants demanded 1.0905 and 0.9977.
 
 ### 2.6 MINOR — options we did not port
 
