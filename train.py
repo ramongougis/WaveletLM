@@ -640,9 +640,18 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
     # non-deterministic and contaminating state across benchmark runs.
     _prev_fwpkm_upd = []
     for layer in base_model.layers if hasattr(base_model, 'layers') else []:
-        if hasattr(layer, 'fwpkm') and getattr(layer.fwpkm, 'inference_updates', False):
-            _prev_fwpkm_upd.append((layer, layer.fwpkm.inference_updates))
-            layer.fwpkm.inference_updates = False
+        if hasattr(layer, 'fwpkm') and getattr(layer, 'fwpkm_enabled', False):
+            _prev_fwpkm_upd.append((layer, layer.fwpkm.fast_updates))
+            layer.fwpkm.fast_updates = False
+    # BUG FIX 2026-07-28: the test above read `inference_updates`, an attribute the module
+    # has not had since the rewrite, so getattr(..., False) always fired and this guard did
+    # NOTHING — fast weights mutated all through the benchmark, the exact non-determinism it
+    # exists to prevent. Correct attribute is `fast_updates`. The reset below is also new:
+    # nothing outside generate.py called reset_fast_weights(), so state leaked from training
+    # into eval and then accumulated across every sliding window. The reference re-seeds fast
+    # weights per forward (fwpkm.py:427, :616); its past_key_values carries tokens, not weights.
+    if hasattr(base_model, 'reset_fast_weights'):
+        base_model.reset_fast_weights()
 
     T = config['block_size']
     # Force MBS=1 for benchmarks. The benchmark path runs in eager mode (no
@@ -660,7 +669,9 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
     def _restore_flags():
         base_model.decompose_bypass_cross_window = _prev_cwb
         for layer, v in _prev_fwpkm_upd:
-            layer.fwpkm.inference_updates = v
+            layer.fwpkm.fast_updates = v
+        if hasattr(base_model, 'reset_fast_weights'):
+            base_model.reset_fast_weights()
 
     if num_windows == 0:
         logger.log("[WARN] Test data too small for evaluation")
@@ -745,14 +756,25 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
     # as evaluate_full_validation).
     _prev_fwpkm_upd = []
     for layer in base_model.layers if hasattr(base_model, 'layers') else []:
-        if hasattr(layer, 'fwpkm') and getattr(layer.fwpkm, 'inference_updates', False):
-            _prev_fwpkm_upd.append((layer, layer.fwpkm.inference_updates))
-            layer.fwpkm.inference_updates = False
+        if hasattr(layer, 'fwpkm') and getattr(layer, 'fwpkm_enabled', False):
+            _prev_fwpkm_upd.append((layer, layer.fwpkm.fast_updates))
+            layer.fwpkm.fast_updates = False
+    # BUG FIX 2026-07-28: the test above read `inference_updates`, an attribute the module
+    # has not had since the rewrite, so getattr(..., False) always fired and this guard did
+    # NOTHING — fast weights mutated all through the benchmark, the exact non-determinism it
+    # exists to prevent. Correct attribute is `fast_updates`. The reset below is also new:
+    # nothing outside generate.py called reset_fast_weights(), so state leaked from training
+    # into eval and then accumulated across every sliding window. The reference re-seeds fast
+    # weights per forward (fwpkm.py:427, :616); its past_key_values carries tokens, not weights.
+    if hasattr(base_model, 'reset_fast_weights'):
+        base_model.reset_fast_weights()
 
     def _restore_flags():
         base_model.decompose_bypass_cross_window = _prev_cwb
         for layer, v in _prev_fwpkm_upd:
-            layer.fwpkm.inference_updates = v
+            layer.fwpkm.fast_updates = v
+        if hasattr(base_model, 'reset_fast_weights'):
+            base_model.reset_fast_weights()
 
     T = config['block_size']
     # Force MBS=1 for benchmarks — see companion comment in
@@ -877,14 +899,25 @@ def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
     base_model.decompose_bypass_cross_window = False
     _prev_fwpkm_upd = []
     for layer in base_model.layers if hasattr(base_model, 'layers') else []:
-        if hasattr(layer, 'fwpkm') and getattr(layer.fwpkm, 'inference_updates', False):
-            _prev_fwpkm_upd.append((layer, layer.fwpkm.inference_updates))
-            layer.fwpkm.inference_updates = False
+        if hasattr(layer, 'fwpkm') and getattr(layer, 'fwpkm_enabled', False):
+            _prev_fwpkm_upd.append((layer, layer.fwpkm.fast_updates))
+            layer.fwpkm.fast_updates = False
+    # BUG FIX 2026-07-28: the test above read `inference_updates`, an attribute the module
+    # has not had since the rewrite, so getattr(..., False) always fired and this guard did
+    # NOTHING — fast weights mutated all through the benchmark, the exact non-determinism it
+    # exists to prevent. Correct attribute is `fast_updates`. The reset below is also new:
+    # nothing outside generate.py called reset_fast_weights(), so state leaked from training
+    # into eval and then accumulated across every sliding window. The reference re-seeds fast
+    # weights per forward (fwpkm.py:427, :616); its past_key_values carries tokens, not weights.
+    if hasattr(base_model, 'reset_fast_weights'):
+        base_model.reset_fast_weights()
 
     def _restore_flags():
         base_model.decompose_bypass_cross_window = _prev_cwb
         for layer, v in _prev_fwpkm_upd:
-            layer.fwpkm.inference_updates = v
+            layer.fwpkm.fast_updates = v
+        if hasattr(base_model, 'reset_fast_weights'):
+            base_model.reset_fast_weights()
 
     from tools.bbce import pad_idx_for_bbce
 

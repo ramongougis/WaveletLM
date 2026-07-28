@@ -20,6 +20,7 @@ import random
 import warnings
 import math
 import datetime
+from collections import OrderedDict
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 warnings.filterwarnings("ignore", message=r".*Online softmax is disabled.*")
@@ -1232,211 +1233,261 @@ class ProductKeyMemory(nn.Module):
 # ==============================================================================
 
 class _RMSNorm(nn.Module):
-    """Bias-free RMSNorm, applied to every FwPKM projection input (paper Eqs. 8-10, 12)."""
+    """Bias-free RMSNorm. Mirrors Qwen3NextMemRMSNorm (reference qwen3_next_mem.py:410-427)."""
 
     def __init__(self, C, eps=1e-6, device=None, dtype=None):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(C, device=device, dtype=dtype))
+        # ZERO-init, gain applied as (1 + weight). Identical to ones-init * weight at
+        # step 0, but NOT under weight decay: theirs decays the gain toward 1, a ones-init
+        # would decay it toward 0. Reference: qwen3_next_mem.py:413 (zeros) and :422
+        # ((1.0 + weight)), with the init hook at :1477-1479.
+        self.weight = nn.Parameter(torch.zeros(C, device=device, dtype=dtype))
 
     def forward(self, x):
         xf = x.float()
         out = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + self.eps)
-        return (out * self.weight.float()).to(x.dtype)
+        return (out * (1.0 + self.weight.float())).to(x.dtype)
 
 
 class FastWeightPKM(nn.Module):
-    """Fast-weight Product Key Memory (arXiv:2601.00671), Sections 3.2-3.5.
+    """Fast-weight Product Key Memory — ported to match the SakanaAI reference implementation
+    (`fast-weight-product-key-memory`, src/models/fwpkm/fwpkm.py + qwen3_next_mem.py).
 
-    Standard PKM is a SLOW-weight sparse channel mixer: value/key matrices are learned by
-    the global LM loss and frozen at inference, so it stores semantic knowledge but cannot
-    absorb episodic information from the stream it is reading. FwPKM keeps PKM's retrieval
-    unchanged and redesigns MEMORISATION -- the value matrix V and sub-key codebooks K1/K2
-    are updated ONLINE, per chunk, by local objectives.
+    Every method below mirrors a named method there; the residual differences are catalogued
+    in plans/fwpkm_reference_comparison.md. The correspondence, ours -> theirs:
+        get_fw_named_params  -> fwpkm.py:97      score_transform     -> fwpkm.py:105
+        marginal_entropy     -> fwpkm.py:117     retrieve_values     -> fwpkm.py:149
+        compute_mem_loss     -> fwpkm.py:200     compute_addr_loss   -> fwpkm.py:233
+        update_fw_param      -> fwpkm.py:266     update_fw           -> fwpkm.py:274
+        compute_qk_scores    -> fwpkm.py:853     get_indices         -> fwpkm.py:871
+        forward chunk loop   -> fwpkm.py:395 (forward_wo_past)
+    The projections/norms/gate that the reference keeps in its decoder layer
+    (qwen3_next_mem.py:1032-1084, applied 1197-1330) live inside this module instead — same
+    operations in the same order, encapsulated rather than spread across the block.
 
-    WHAT THIS REPLACES. The previous class in this slot implemented only the retrieval half:
-    a PKM wearing FwPKM's name, sited after the token mixer instead of before it, whose
-    fast-weight path lived solely in generate.py and defaulted off. Every FwPKM benchmark
-    this project ever recorded therefore measured a PKM. Added here, all previously absent:
-    the value path v_t, gate g_t, output projection, four RMSNorms, IDW scoring, the
-    addressing loss, read-count gradient aggregation, lookahead targets, target
-    normalisation, and chunked online updates.
-
-    CAUSALITY. Chunks run APPLY-then-UPDATE: a chunk is read with fast weights left by
-    PREVIOUS chunks, and only then writes. Lookahead pairs q_t with v_{t+1} strictly inside
-    the closed chunk, so the final position writes nothing. No prediction can see its own
-    target or beyond.
-
-    THREE DELIBERATE DEVIATIONS:
-      1. UPDATES ARE DETACHED (hand-derived, under no_grad). The paper calls L_mem/L_addr
-         *local* objectives; differentiating the LM loss through them would be second-order
-         TTT, far beyond this budget. Slow weights learn only via retrieval.
-      2. V_init/K_init ARE LEARNABLE SLOW PARAMETERS, V_init ZERO. The paper does not state
-         what fast weights start from; LaCT (arXiv:2505.23884) uses learnable initial fast
-         weights and we follow it. Zero V_init gives exact identity at init while still
-         admitting a task gradient -- the LoRA pattern, and the fix for the alpha=0 deadlock
-         measured 2026-07-28.
-      3. STATE IS PER BATCH LANE, persisting across steps under sequential_blocks so the
-         episodic horizon is the corpus traversal, not one window. The eval protocol is
-         UNCHANGED, so state resets per window at benchmark time exactly as
-         decompose_bypass_cross_window does: the memory must prove itself WITHIN a window
-         there. That train/eval asymmetry is deliberate and is what the first run measures.
+    FAST WEIGHTS RESET PER FORWARD BY DEFAULT, exactly as the reference does: both
+    forward_wo_past (fwpkm.py:427) and forward_w_past (fwpkm.py:616) re-seed from
+    get_fw_named_params(), and their past_key_values (fwpkm.py:788) carries only leftover
+    TOKENS, never weights. `persist_state=True` opts into carrying the evolved weights across
+    calls — our own adaptation, needed because our windows are 256 tokens against their 32K,
+    and the ONLY intentional structural divergence.
     """
 
     def __init__(self, C: int, num_keys: int = 5625, top_k: int = 32,
-                 heads: int = 1, chunk_size: int = 64, idw_eps: float = 1e-4,
-                 addr_lr: float = 0.01, state_fp16: bool = True,
-                 device=None, dtype=None):
+                 heads: int = 1, chunk_size: int = 64, idw_eps: float = 1e-3,
+                 lookahead: int = 1, learning_rate: float = 1.0, weight_decay: float = 0.0,
+                 addr_loss_weight: float = 1.0, second_order: bool = True,
+                 persist_state: bool = False, compress_value: str = "zero_mean",
+                 grad_clip: bool = False, fp32_fw: bool = True,
+                 score_temperature: float = 1.0, device=None, dtype=None):
         super().__init__()
-        self.C, self.num_keys, self.top_k, self.heads = C, num_keys, top_k, heads
-        self.chunk_size, self.idw_eps, self.addr_lr = chunk_size, idw_eps, addr_lr
-        self.fast_updates = True
-        # Fast state is PER BATCH LANE, so it scales as num_keys*C*batch*layers and is the
-        # real cap on store size — not the parameter count. fp16 halves it and doubles the
-        # testable range. Safe here because updates are unit-step REWRITES of magnitude
-        # ~0.1 (measured), not long accumulations of tiny increments, so fp16's ~1e-4
-        # resolution is far below the signal. Set false to rule precision out if a
-        # large-store run behaves oddly.
-        self.state_dtype = torch.float16 if state_fp16 else torch.float32
-        self.sub_keys = int(math.sqrt(num_keys))
-        if self.sub_keys ** 2 != num_keys:
+        self.subsize = int(math.isqrt(num_keys))
+        if self.subsize ** 2 != num_keys:
             raise ValueError(f"num_keys ({num_keys}) must be a perfect square")
-        if self.sub_keys < top_k:
-            raise ValueError(
-                f"sqrt(num_keys)={self.sub_keys} < top_k={top_k}: the per-half top-k would "
-                "silently clamp, testing a narrower lookup than configured")
-        self.head_dim = C // heads
-        self.half = self.head_dim // 2
+        if self.subsize < top_k:
+            raise ValueError(f"sqrt(num_keys)={self.subsize} < top_k={top_k}: per-half top-k "
+                             "would clamp, testing a narrower lookup than configured")
+        self.size = num_keys
+        self.C, self.heads, self.topk = C, heads, top_k
+        self.k_dim = C                       # per-head query width (reference: mem_k_dim)
+        self.v_dim = C                       # reference: mem_v_dim
+        self.chunk_size, self.idw_eps, self.lookahead = chunk_size, idw_eps, lookahead
+        self.learning_rate, self.weight_decay = learning_rate, weight_decay
+        self.addr_loss_weight, self.second_order = addr_loss_weight, second_order
+        self.persist_state, self.compress_value = persist_state, compress_value
+        self.grad_clip, self.fp32_fw = grad_clip, fp32_fw
+        self.score_temperature = score_temperature
+        self.fast_updates = True             # train.py's benchmark guard toggles THIS name
 
-        self.norm_q = _RMSNorm(C, device=device, dtype=dtype)
-        self.norm_v = _RMSNorm(C, device=device, dtype=dtype)
-        self.norm_g = _RMSNorm(C, device=device, dtype=dtype)
-        self.norm_o = _RMSNorm(C, device=device, dtype=dtype)
-        self.proj_q = nn.Linear(C, heads * self.head_dim, bias=False, device=device, dtype=dtype)
-        self.proj_v = nn.Linear(C, C, bias=False, device=device, dtype=dtype)
-        self.proj_g = nn.Linear(C, 1, bias=False, device=device, dtype=dtype)
-        self.proj_o = nn.Linear(C, C, bias=False, device=device, dtype=dtype)
+        # --- slow weights: reference keeps these in the decoder layer ---
+        self.norm_q = _RMSNorm(C, device=device, dtype=dtype)   # qwen3_next_mem.py:1034
+        self.norm_v = _RMSNorm(C, device=device, dtype=dtype)   # :1039
+        self.norm_g = _RMSNorm(C, device=device, dtype=dtype)   # :1080
+        self.norm_o = _RMSNorm(C, device=device, dtype=dtype)   # :1083
+        self.proj_q = nn.Linear(C, heads * self.k_dim, bias=False, device=device, dtype=dtype)
+        self.proj_v = nn.Linear(C, self.v_dim, bias=False, device=device, dtype=dtype)
+        self.proj_g = nn.Linear(C, 8, bias=False, device=device, dtype=dtype)  # :1081, mean()'d
+        self.proj_o = nn.Linear(self.v_dim, C, bias=False, device=device, dtype=dtype)
 
-        self.v_init = nn.Parameter(torch.zeros(num_keys * heads, C, device=device, dtype=dtype))
-        self.k1_init = nn.Parameter(
-            torch.randn(heads, self.sub_keys, self.half, device=device, dtype=dtype) * 0.02)
-        self.k2_init = nn.Parameter(
-            torch.randn(heads, self.sub_keys, self.half, device=device, dtype=dtype) * 0.02)
+        # --- fast weights. Shapes and init copy fwpkm.py:87-95 exactly. Note VALUES ARE
+        # SHARED ACROSS HEADS there (size, v_dim), not (size*heads, v_dim). ---
+        self.keys = nn.Parameter(torch.zeros(2 * heads * self.subsize, self.k_dim // 2,
+                                             device=device, dtype=dtype))
+        self.values = nn.Parameter(torch.zeros(self.size, self.v_dim, device=device, dtype=dtype))
+        self.reset_parameters()
 
-        self.dV = None
-        self.dK1 = None
-        self.dK2 = None
-        self._addr_aux = None
+        self._state = None                   # persisted fast weights, when persist_state
+        self._addr_aux = None                # last chunk's addressing loss, for logging
+
+    def reset_parameters(self):
+        """fwpkm.py:90-96 — uniform keys, normal values."""
+        bound = 1 / math.sqrt(self.k_dim)
+        nn.init.uniform_(self.keys, a=-bound, b=bound)
+        nn.init.normal_(self.values, mean=0, std=self.v_dim ** -0.5)
 
     def reset_fast_weights(self):
-        """Drop episodic state: per eval window, and at sequence starts."""
-        self.dV = self.dK1 = self.dK2 = None
+        self._state = None
         self._addr_aux = None
 
-    def _ensure_state(self, B, device):
-        if self.dV is None or self.dV.shape[0] != B or self.dV.device != device:
-            f = self.state_dtype
-            self.dV = torch.zeros(B, self.num_keys * self.heads, self.C, device=device, dtype=f)
-            self.dK1 = torch.zeros(B, *self.k1_init.shape, device=device, dtype=f)
-            self.dK2 = torch.zeros(B, *self.k2_init.shape, device=device, dtype=f)
+    def get_fw_named_params(self):
+        """fwpkm.py:97-104."""
+        d = OrderedDict()
+        for n, p in (("keys", self.keys), ("values", self.values)):
+            d[n] = p.float() if self.fp32_fw else p
+        return d
 
-    def _idw(self, q, K):
-        """IDW scoring (paper 3.5): -log(eps + ||q - K_i||^2) in place of a dot product,
-        which encourages keys to become clustering centroids.
-        q:(B,T,H,half)  K:(B,H,S,half)  ->  (B,T,H,S)"""
-        q2 = q.pow(2).sum(-1, keepdim=True)
-        k2 = K.pow(2).sum(-1).unsqueeze(1)
-        qk = torch.einsum('bthd,bhsd->bths', q, K)
-        return -torch.log(self.idw_eps + (q2 + k2 - 2 * qk).clamp_min(0))
+    def score_transform(self, scores):
+        """fwpkm.py:105-116 (softmax branch)."""
+        return F.softmax(scores / self.score_temperature, dim=-1).type_as(scores)
 
-    def _retrieve(self, h, V, K1, K2):
-        B, T, _ = h.shape
-        H, S, k = self.heads, self.sub_keys, self.top_k
-        q = self.proj_q(self.norm_q(h)).view(B, T, H, self.head_dim)
-        v = self.proj_v(self.norm_v(h))
-        g = torch.sigmoid(self.proj_g(self.norm_g(h)).float()).to(h.dtype)
+    def compute_marginal_entropy(self, M, epsilon=1e-8):
+        """fwpkm.py:117-147. Mask non-top-k to -inf, softmax over the FULL subsize, mean the
+        rows into a marginal, return its entropy."""
+        if self.addr_loss_weight == 0.0:
+            return torch.tensor(0.0, device=M.device, dtype=M.dtype)
+        topk_values, _ = torch.topk(M, self.topk, dim=1)
+        threshold = topk_values[:, -1].unsqueeze(1)
+        M = torch.where(M >= threshold, M, torch.full_like(M, float("-inf"))).float()
+        P = F.softmax(M, dim=1)
+        P_bar = torch.mean(P, dim=0)
+        return -torch.sum(P_bar * torch.log(P_bar + epsilon))
 
-        sc1, sc2 = self._idw(q[..., :self.half], K1), self._idw(q[..., self.half:], K2)
-        t1, i1 = sc1.topk(k, dim=-1)
-        t2, i2 = sc2.topk(k, dim=-1)
-        cand = (t1.unsqueeze(-1) + t2.unsqueeze(-2)).reshape(B, T, H, -1)
-        cidx = (i1.unsqueeze(-1) * S + i2.unsqueeze(-2)).reshape(B, T, H, -1)
-        fs, fp = cand.topk(k, dim=-1)
-        idx = cidx.gather(-1, fp) + (torch.arange(H, device=h.device) * self.num_keys).view(1, 1, -1, 1)
-        w = torch.softmax(fs.float(), dim=-1).to(h.dtype)
+    def compute_qk_scores(self, q, k):
+        """fwpkm.py:853-869, IDW branch: -log(1e-3 + ||q-k||^2) via cdist."""
+        q_perm = q.permute(1, 0, 2)
+        dists = torch.cdist(q_perm, k, p=2).permute(1, 0, 2)
+        return -torch.log(self.idw_eps + dists.pow(2))
 
-        # gather ONLY the selected rows: (B, T*H*k, C), never the full table per position
-        flat = idx.reshape(B, -1)
-        rows = V.gather(1, flat.unsqueeze(-1).expand(-1, -1, self.C)).view(B, T, H, k, self.C)
-        vhat = (w.unsqueeze(-1) * rows).sum(dim=(2, 3))
+    def get_indices(self, query, keys):
+        """fwpkm.py:871-934. query (BT,heads,k_dim); keys (2*heads*subsize, k_dim//2)."""
+        BT, topk, half = query.size(0), self.topk, self.k_dim // 2
+        keys = keys.view(self.heads, 2, -1, half)
+        s1 = self.compute_qk_scores(query[:, :, :half], keys[:, 0])
+        s2 = self.compute_qk_scores(query[:, :, half:], keys[:, 1])
+        t1, i1 = s1.topk(topk, dim=2)
+        t2, i2 = s2.topk(topk, dim=2)
+        all_scores = (t1.view(BT, self.heads, topk, 1) + t2.view(BT, self.heads, 1, topk)
+                      ).view(BT, self.heads, topk ** 2)
+        all_indices = (i1.view(BT, self.heads, topk, 1) * self.subsize
+                       + i2.view(BT, self.heads, 1, topk)).view(BT, self.heads, topk ** 2)
+        scores, best = torch.topk(all_scores, k=topk, dim=2, sorted=True)
+        return scores, all_indices.gather(2, best), i1, i2, s1, s2
 
-        # normalized per-sub-key score vectors, unselected = 0 (paper Eq. 16 inputs)
-        s1 = torch.zeros_like(sc1).scatter_(-1, i1, torch.softmax(t1.float(), -1).to(sc1.dtype))
-        s2 = torch.zeros_like(sc2).scatter_(-1, i2, torch.softmax(t2.float(), -1).to(sc2.dtype))
+    def retrieve_values(self, query, fw):
+        """fwpkm.py:149-198. Values are shared across heads; the sum runs over heads*topk."""
+        B, T = query.shape[:2]
+        scores, indices, i1, i2, s1, s2 = self.get_indices(
+            query.reshape(B * T, self.heads, self.k_dim), fw["keys"])
+        normed = self.score_transform(scores.view(B * T, self.heads * self.topk))
+        flat = indices.view(B * T, self.heads * self.topk)
+        vals = (fw["values"][flat] * normed.unsqueeze(-1)).sum(1)     # == xformers_embedding_bag
+        return dict(retrieved=vals, indices=indices, normed_scores=normed,
+                    sub_indices1=i1, sub_indices2=i2, all_sub_scores1=s1, all_sub_scores2=s2)
 
-        o = g * vhat + (1 - g) * v                       # gated residual (Eq. 12)
-        return self.proj_o(self.norm_o(o)), v, g, vhat, idx, w, s1, s2
+    def compute_mem_loss(self, hyp, ref, loss_weights=None):
+        """fwpkm.py:200-231. Per-example MSE meaned over features, optionally gate-weighted."""
+        losses = F.mse_loss(hyp, ref, reduction="none").mean(dim=-1)
+        if loss_weights is not None:
+            losses = losses * loss_weights
+        return losses
+
+    def compute_addr_loss(self, s1, s2):
+        """fwpkm.py:233-264."""
+        s1 = s1.reshape(-1, self.subsize)
+        s2 = s2.reshape(-1, self.subsize)
+        return self.addr_loss_weight * (-self.compute_marginal_entropy(s1)
+                                        - self.compute_marginal_entropy(s2))
+
+    def update_fw_param(self, p, g, lr, wd):
+        """fwpkm.py:266-273, SGD with decoupled weight decay."""
+        return p - lr * (g + wd * p)
+
+    def update_fw(self, fw, num_samples, indices, mem_loss, addr_loss):
+        """fwpkm.py:274-368. Autograd on the LOCAL losses, with create_graph in training so
+        the LM loss can differentiate through the update (second-order TTT)."""
+        mem_loss = mem_loss * 0.5                                     # fwpkm.py:299
+        cg = self.second_order and self.training
+        if addr_loss is not None:
+            addr_grads = torch.autograd.grad(addr_loss, tuple(fw.values()),
+                                             create_graph=cg, allow_unused=True)
+        else:
+            addr_grads = [None] * len(fw)
+        mem_grads = torch.autograd.grad(mem_loss, fw["values"], create_graph=cg)
+        grads = [mem_grads[0] if n == "values" else addr_grads[i]
+                 for i, n in enumerate(fw.keys())]
+
+        scaled = []
+        for n, g in zip(fw.keys(), grads):
+            if n == "values":
+                # fwpkm.py:333-347: undo the mean-reductions to recover a SUM, then divide
+                # each row by how many times it was read this chunk (consensus writing).
+                g = g * (num_samples * self.v_dim * self.topk * self.heads)
+                binc = torch.bincount(indices.reshape(-1), minlength=self.size).to(g.dtype)
+                binc[binc == 0] = 1.0
+                g = g / binc.unsqueeze(-1)
+            scaled.append(g)
+        if self.grad_clip:
+            scaled = [None if g is None else torch.clamp(g, -1.0, 1.0) for g in scaled]
+
+        out = OrderedDict()
+        for i, n in enumerate(fw.keys()):
+            out[n] = (fw[n] if scaled[i] is None else
+                      self.update_fw_param(fw[n], scaled[i], self.learning_rate, self.weight_decay))
+        return out
 
     @staticmethod
-    def _znorm(v):
-        """Target normalization (paper 3.5): z-score along features, for update stability."""
-        return (v - v.mean(-1, keepdim=True)) / v.std(-1, keepdim=True).clamp_min(1e-5)
-
-    def _write(self, v_tgt, gate, vhat, idx, w, s1, s2, K1, K2):
-        """Local objectives, applied only AFTER the chunk has been read.
-
-        L_mem = sum_t 1/2 g_t ||v_t - vhat_t||^2  (Eq. 13). The 1/2 makes d/dvhat exactly
-        -(v - vhat), so a unit step rewrites the prediction to the target -- the paper's
-        "explicit memory rewriting". We update the value ROWS that produced vhat, dividing
-        each row's gradient by its read count N_read_i (Eq. 14) so that competing writes to
-        one row reach consensus instead of compounding.
-
-        L_addr = -H(pbar1) - H(pbar2)  (Eq. 17) on CHUNK-MARGINAL usage: balanced slots on
-        average, without forcing any individual query to be uniform.
-        """
-        B, T, C = v_tgt.shape
-        H, k = self.heads, self.top_k
-        resid = (v_tgt - vhat) * gate                                  # (B,T,C)
-        flat_i = idx.reshape(B, -1)                                    # (B,T*H*k)
-        flat_w = w.reshape(B, -1).float()
-        resid_e = resid.unsqueeze(2).unsqueeze(3).expand(B, T, H, k, C).reshape(B, -1, C).float()
-
-        upd = (-flat_w.unsqueeze(-1) * resid_e).to(self.dV.dtype)
-        gradV = torch.zeros_like(self.dV).scatter_add_(
-            1, flat_i.unsqueeze(-1).expand(-1, -1, C), upd)
-        nread = torch.zeros(B, self.dV.shape[1], 1, device=self.dV.device,
-                            dtype=self.dV.dtype).scatter_add_(
-            1, flat_i.unsqueeze(-1), torch.ones_like(flat_w).unsqueeze(-1).to(self.dV.dtype))
-        self.dV = self.dV - gradV / nread.clamp_min(1.0)               # V <- V - agg grad
-
-        aux = 0.0
-        for s, name, K in ((s1, 'dK1', K1), (s2, 'dK2', K2)):
-            p = s.float().mean(dim=1)                                  # (B,H,S) chunk marginal
-            p = p / p.sum(-1, keepdim=True).clamp_min(1e-9)
-            aux = aux + (p * (p + 1e-9).log()).sum(-1).mean()
-            gp = (1.0 + (p + 1e-9).log()).unsqueeze(-1)                # d(-H)/dp
-            setattr(self, name, getattr(self, name)
-                    - (self.addr_lr * (gp * K.float())).to(self.dV.dtype))
-        self._addr_aux = float(aux)
+    def _zero_mean(x):
+        """qwen3_next_mem.py:1154-1157 — the `zero_mean` value compression their shipped
+        config enables. Applied to v BEFORE the module there, so BOTH the gated-residual
+        path and the memorisation target see the normalised value."""
+        return (x - x.mean(-1, keepdim=True)) / (x.std(-1, keepdim=True) + 1e-6)
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
         B, T, _ = h.shape
-        self._ensure_state(B, h.device)
-        out = torch.empty_like(h)
-        for c0 in range(0, T, self.chunk_size):
-            c1 = min(c0 + self.chunk_size, T)
-            V = self.v_init.unsqueeze(0) + self.dV.to(self.v_init.dtype)
-            K1 = self.k1_init.unsqueeze(0) + self.dK1.to(self.k1_init.dtype)
-            K2 = self.k2_init.unsqueeze(0) + self.dK2.to(self.k2_init.dtype)
-            o, v, g, vhat, idx, w, s1, s2 = self._retrieve(h[:, c0:c1], V, K1, K2)
-            out[:, c0:c1] = o
-            if self.fast_updates and (c1 - c0) >= 2:
-                with torch.no_grad():
-                    self._write(self._znorm(v[:, 1:].detach()), g[:, :-1].detach(),
-                                vhat[:, :-1].detach(), idx[:, :-1].detach(),
-                                w[:, :-1].detach(), s1[:, :-1].detach(),
-                                s2[:, :-1].detach(), K1.detach(), K2.detach())
-        return out
+        q = self.proj_q(self.norm_q(h)).view(B, T, self.heads * self.k_dim)
+        v = self.proj_v(self.norm_v(h))
+        if self.compress_value == "zero_mean":
+            v = self._zero_mean(v)
+        g = torch.sigmoid(self.proj_g(self.norm_g(h)).mean(-1, keepdim=True))  # :1146-1147
+        if self.fp32_fw:
+            q, v = q.float(), v.float()
+
+        if self.persist_state and self._state is not None:
+            # Re-attach. Carried state is stored DETACHED so no graph spans optimizer steps,
+            # but the local losses below still differentiate w.r.t. it, so it must require
+            # grad again on entry. Only reachable when persist_state is on — our divergence.
+            fw = OrderedDict((k, t.detach().requires_grad_(True))
+                             for k, t in self._state.items())
+        else:
+            fw = self.get_fw_named_params()
+        outs = []
+        with torch.enable_grad():
+            for c0 in range(0, T, self.chunk_size):
+                c1 = min(c0 + self.chunk_size, T)
+                ret = self.retrieve_values(q[:, c0:c1].reshape(B, c1 - c0, -1), fw)
+                hyp = ret["retrieved"].view(B, c1 - c0, -1)
+                outs.append(hyp)
+                # APPLY-then-UPDATE: this chunk was read with the PREVIOUS chunk's weights.
+                if not self.fast_updates or (c1 - c0) <= self.lookahead:
+                    continue
+                la = self.lookahead
+                upd_hyp = hyp[:, :-la] if la else hyp
+                upd_ref = v[:, c0 + la:c1] if la else v[:, c0:c1]
+                upd_w = g[:, c0:c1].squeeze(-1)[:, :-la] if la else g[:, c0:c1].squeeze(-1)
+                mem_losses = self.compute_mem_loss(
+                    upd_hyp.reshape(-1, upd_hyp.size(-1)),
+                    upd_ref.reshape(-1, upd_ref.size(-1)), upd_w.reshape(-1))
+                addr = self.compute_addr_loss(ret["all_sub_scores1"], ret["all_sub_scores2"])
+                self._addr_aux = float(addr.detach())
+                fw = self.update_fw(fw, B * (c1 - c0), ret["indices"],
+                                    mem_losses.mean(), addr)
+        if self.persist_state:
+            self._state = OrderedDict((k, t.detach()) for k, t in fw.items())
+
+        vhat = torch.cat(outs, dim=1).to(h.dtype)
+        o = g.to(h.dtype) * vhat + (1 - g.to(h.dtype)) * v.to(h.dtype)   # :1305-1310
+        return self.proj_o(self.norm_o(o))                               # :1316-1317
 
 
 # ==============================================================================
@@ -1614,9 +1665,17 @@ class WaveletLMBlock(nn.Module):
         pkm_heads: int = 1,
         fwpkm_enabled: bool = False,
         fwpkm_chunk_size: int = 64,
-        fwpkm_state_fp16: bool = True,
         fwpkm_num_keys: int = 529,
         fwpkm_top_k: int = 32,
+        fwpkm_lookahead: int = 1,
+        fwpkm_lr: float = 1.0,
+        fwpkm_weight_decay: float = 0.0,
+        fwpkm_addr_loss_weight: float = 1.0,
+        fwpkm_second_order: bool = True,
+        fwpkm_persist_state: bool = False,
+        fwpkm_compress_value: str = "zero_mean",
+        fwpkm_grad_clip: bool = False,
+        fwpkm_idw_eps: float = 1e-3,
         fwpkm_heads: int = 1,
         mixer_depth: int = 1,
         mixer_depth_stabilizers: bool = False,
@@ -2421,26 +2480,27 @@ class WaveletLMBlock(nn.Module):
             self.fwpkm = FastWeightPKM(
                 self.C, num_keys=fwpkm_num_keys, top_k=fwpkm_top_k,
                 heads=fwpkm_heads, chunk_size=fwpkm_chunk_size,
-                state_fp16=fwpkm_state_fp16,
+                lookahead=fwpkm_lookahead, learning_rate=fwpkm_lr,
+                weight_decay=fwpkm_weight_decay,
+                addr_loss_weight=fwpkm_addr_loss_weight,
+                second_order=fwpkm_second_order,
+                persist_state=fwpkm_persist_state,
+                compress_value=fwpkm_compress_value,
+                grad_clip=fwpkm_grad_clip, idw_eps=fwpkm_idw_eps,
                 device=device, dtype=dtype)
-            # FwPKM is its OWN SUBLAYER AHEAD OF THE MIXER (paper Fig. 1: "An FwPKM layer
-            # is placed before a token mixer"), not a tenant of the MLP slot. Placement
-            # matters more here than in a transformer: with mlp_expansion=0 the mixer IS
-            # the block, so post-mixer placement would isolate the memory from every piece
-            # of machinery in the layer. Its own norm, per the paper's per-input RMSNorms.
-            self.ln_fwpkm = nn.LayerNorm(self.C, device=device, dtype=dtype)
+            # FwPKM is its OWN SUBLAYER AHEAD OF THE MIXER (paper Fig. 1; reference
+            # qwen3_next_mem.py:1358 with fwpkm_before_attn). NO extra LayerNorm and NO
+            # alpha gain here: the reference feeds RAW hidden states to the module, whose
+            # own per-projection RMSNorms do the normalising (fw_q_norm/fw_v_norm/fw_g_norm,
+            # :1226/:1234/:1146), and adds the result straight to the residual (:1320).
+            # We previously wrapped it in ln_fwpkm AND scaled by alpha_fwpkm — a double
+            # normalisation plus a learned gain the reference does not have. Both removed.
 
         # Learned scalars for memory module combination
         if self.use_mlp:
             self.alpha_mlp = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
         if pkm_enabled:
             self.alpha_pkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
-        if fwpkm_enabled:
-            # alpha stays at 1.0; IDENTITY AT INIT is provided by the ZERO-INIT VALUE
-            # TABLE instead (see FastWeightPKM.__init__). Zeroing alpha here was tried
-            # 2026-07-26 and measured inert 2026-07-28 — it gives identity but freezes
-            # every parameter inside the module. Do not re-zero this.
-            self.alpha_fwpkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
 
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
@@ -2569,9 +2629,9 @@ class WaveletLMBlock(nn.Module):
         if self.per_layer_embedding and token_embeddings is not None:
             x = x + self.embedding_residual_gamma * token_embeddings
         if self.fwpkm_enabled:
-            # x <- x + alpha * FwPKM(norm(x)), BEFORE decomposition, so retrieved memory
-            # is mixed across time by the wavelet path rather than appended after it.
-            x = x + self.alpha_fwpkm * self.fwpkm(self.ln_fwpkm(x))
+            # residual = x; x = residual + FwPKM(x)   (reference qwen3_next_mem.py:1209/:1320)
+            # Raw x in: the module's own RMSNorms normalise each projection input.
+            x = x + self.fwpkm(x)
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
 
@@ -2660,9 +2720,9 @@ class WaveletLMBlock(nn.Module):
         if self.per_layer_embedding and token_embeddings is not None:
             x = x + self.embedding_residual_gamma * token_embeddings
         if self.fwpkm_enabled:
-            # x <- x + alpha * FwPKM(norm(x)), BEFORE decomposition, so retrieved memory
-            # is mixed across time by the wavelet path rather than appended after it.
-            x = x + self.alpha_fwpkm * self.fwpkm(self.ln_fwpkm(x))
+            # residual = x; x = residual + FwPKM(x)   (reference qwen3_next_mem.py:1209/:1320)
+            # Raw x in: the module's own RMSNorms normalise each projection input.
+            x = x + self.fwpkm(x)
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
 
@@ -2875,9 +2935,9 @@ class WaveletLMBlock(nn.Module):
             x = x + self.embedding_residual_gamma * token_embeddings
 
         if self.fwpkm_enabled:
-            # x <- x + alpha * FwPKM(norm(x)), BEFORE decomposition, so retrieved memory
-            # is mixed across time by the wavelet path rather than appended after it.
-            x = x + self.alpha_fwpkm * self.fwpkm(self.ln_fwpkm(x))
+            # residual = x; x = residual + FwPKM(x)   (reference qwen3_next_mem.py:1209/:1320)
+            # Raw x in: the module's own RMSNorms normalise each projection input.
+            x = x + self.fwpkm(x)
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
 
@@ -3566,8 +3626,6 @@ class WaveletLM(nn.Module):
         self._dilation_schedule = _schedule
         self.mixer_mom_aux_weight = float(config.get("mixer_mom_aux_weight", 0.01)) \
             if config.get("mixer_mom_enabled", False) else 0.0
-        self.fwpkm_aux_weight = (float(config.get("fwpkm_aux_weight", 0.01))
-                                 if config.get("fwpkm_enabled", False) else 0.0)
 
         if wavelet_mode == "lifting" and self.shared_lifting_weights and wavelet_basis != "complex":
             # Must match the block's self.Cp (this module is passed into every
@@ -3766,9 +3824,17 @@ class WaveletLM(nn.Module):
                 pkm_heads=config.get("pkm_heads", 1),
                 fwpkm_enabled=config.get("fwpkm_enabled", False),
                 fwpkm_chunk_size=config.get("fwpkm_chunk_size", 64),
-                fwpkm_state_fp16=config.get("fwpkm_state_fp16", True),
                 fwpkm_num_keys=config.get("fwpkm_num_keys", 529),
                 fwpkm_top_k=config.get("fwpkm_top_k", 32),
+                fwpkm_lookahead=config.get("fwpkm_lookahead", 1),
+                fwpkm_lr=config.get("fwpkm_lr", 1.0),
+                fwpkm_weight_decay=config.get("fwpkm_weight_decay", 0.0),
+                fwpkm_addr_loss_weight=config.get("fwpkm_addr_loss_weight", 1.0),
+                fwpkm_second_order=config.get("fwpkm_second_order", True),
+                fwpkm_persist_state=config.get("fwpkm_persist_state", False),
+                fwpkm_compress_value=config.get("fwpkm_compress_value", "zero_mean"),
+                fwpkm_grad_clip=config.get("fwpkm_grad_clip", False),
+                fwpkm_idw_eps=config.get("fwpkm_idw_eps", 1e-3),
                 fwpkm_heads=config.get("fwpkm_heads", 1),
                 mixer_depth=config.get("mixer_depth", 1),
                 mixer_depth_stabilizers=config.get("mixer_depth_stabilizers", False),
@@ -4119,16 +4185,10 @@ class WaveletLM(nn.Module):
                 if _l1:
                     loss = loss + self.coefficient_l1_weight * (sum(_l1) / len(_l1))
 
-            # FwPKM usage-balance loss: negative selection entropy, meaned over layers
-            # so the weight means the same thing at any depth. Only set in training
-            # (_usage_aux is None at eval), so VAL LOSS AND BPB STAY UNCONTAMINATED —
-            # train loss carries a bounded offset of at most -ln(num_keys)*weight.
-            if getattr(self, 'fwpkm_aux_weight', 0):
-                _aux = [l.fwpkm._usage_aux for l in self.layers
-                        if getattr(getattr(l, 'fwpkm', None), '_usage_aux', None) is not None]
-                if _aux:
-                    loss = loss + self.fwpkm_aux_weight * (sum(_aux) / len(_aux))
-
+            # FwPKM's addressing loss is a LOCAL objective applied to the fast weights
+            # inside the module (reference fwpkm.py:233-264, applied at :300-305), NOT a term
+            # on the global LM loss. The earlier global usage-entropy aux was our own
+            # invention and is removed: keeping both would double-count the same objective.
             # Block-MoE auxiliary loss: Switch-style load-balance penalty summed
             # over layers (0 when block-MoE disabled — _moe_aux stays None).
             if getattr(self, 'block_moe_aux_weight', 0):
