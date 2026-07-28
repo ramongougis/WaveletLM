@@ -500,14 +500,9 @@ def generate_one(
 
         idx = torch.cat((idx, idx_next), dim=1)
 
-        # FwPKM: update fast weights after each chunk
-        if (fwpkm_inference_updates and hasattr(model, 'update_fast_weights')
-                and (i + 1) % fwpkm_chunk_size == 0
-                and idx.size(1) > fwpkm_chunk_size):
-            chunk_end = idx.size(1)
-            chunk_start = chunk_end - fwpkm_chunk_size
-            chunk_ids = idx[:, chunk_start:chunk_end]
-            model.update_fast_weights(chunk_ids, lr=fwpkm_update_lr)
+        # FwPKM fast weights now update INSIDE the layer's forward, chunk by chunk
+        # (2026-07-28 rewrite), so generation needs no explicit update call: every
+        # forward already writes after reading. Nothing to do here.
 
     text = enc.decode(idx[0].tolist())
     generated_ids = idx[0, prompt_len:].tolist()

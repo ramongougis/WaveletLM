@@ -1231,185 +1231,213 @@ class ProductKeyMemory(nn.Module):
 # 5b. FAST-WEIGHT PRODUCT KEY MEMORY (FwPKM)
 # ==============================================================================
 
-class FastWeightPKM(nn.Module):
-    """
-    Fast-Weight Product Key Memory.
+class _RMSNorm(nn.Module):
+    """Bias-free RMSNorm, applied to every FwPKM projection input (paper Eqs. 8-10, 12)."""
 
-    Structurally identical to ProductKeyMemory during training. At inference,
-    an optional update_fast_weights() method updates value deltas per chunk,
-    enabling episodic/contextual memory without retraining.
-    """
-
-    def __init__(self, C: int, num_keys: int = 529, top_k: int = 32,
-                 heads: int = 1, device=None, dtype=None):
+    def __init__(self, C, eps=1e-6, device=None, dtype=None):
         super().__init__()
-        self.C = C
-        self.num_keys = num_keys
-        self.top_k = top_k
-        self.heads = heads
-        self.head_dim = C // heads
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(C, device=device, dtype=dtype))
 
-        # Sub-key size: sqrt(num_keys) entries per half
+    def forward(self, x):
+        xf = x.float()
+        out = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + self.eps)
+        return (out * self.weight.float()).to(x.dtype)
+
+
+class FastWeightPKM(nn.Module):
+    """Fast-weight Product Key Memory (arXiv:2601.00671), Sections 3.2-3.5.
+
+    Standard PKM is a SLOW-weight sparse channel mixer: value/key matrices are learned by
+    the global LM loss and frozen at inference, so it stores semantic knowledge but cannot
+    absorb episodic information from the stream it is reading. FwPKM keeps PKM's retrieval
+    unchanged and redesigns MEMORISATION -- the value matrix V and sub-key codebooks K1/K2
+    are updated ONLINE, per chunk, by local objectives.
+
+    WHAT THIS REPLACES. The previous class in this slot implemented only the retrieval half:
+    a PKM wearing FwPKM's name, sited after the token mixer instead of before it, whose
+    fast-weight path lived solely in generate.py and defaulted off. Every FwPKM benchmark
+    this project ever recorded therefore measured a PKM. Added here, all previously absent:
+    the value path v_t, gate g_t, output projection, four RMSNorms, IDW scoring, the
+    addressing loss, read-count gradient aggregation, lookahead targets, target
+    normalisation, and chunked online updates.
+
+    CAUSALITY. Chunks run APPLY-then-UPDATE: a chunk is read with fast weights left by
+    PREVIOUS chunks, and only then writes. Lookahead pairs q_t with v_{t+1} strictly inside
+    the closed chunk, so the final position writes nothing. No prediction can see its own
+    target or beyond.
+
+    THREE DELIBERATE DEVIATIONS:
+      1. UPDATES ARE DETACHED (hand-derived, under no_grad). The paper calls L_mem/L_addr
+         *local* objectives; differentiating the LM loss through them would be second-order
+         TTT, far beyond this budget. Slow weights learn only via retrieval.
+      2. V_init/K_init ARE LEARNABLE SLOW PARAMETERS, V_init ZERO. The paper does not state
+         what fast weights start from; LaCT (arXiv:2505.23884) uses learnable initial fast
+         weights and we follow it. Zero V_init gives exact identity at init while still
+         admitting a task gradient -- the LoRA pattern, and the fix for the alpha=0 deadlock
+         measured 2026-07-28.
+      3. STATE IS PER BATCH LANE, persisting across steps under sequential_blocks so the
+         episodic horizon is the corpus traversal, not one window. The eval protocol is
+         UNCHANGED, so state resets per window at benchmark time exactly as
+         decompose_bypass_cross_window does: the memory must prove itself WITHIN a window
+         there. That train/eval asymmetry is deliberate and is what the first run measures.
+    """
+
+    def __init__(self, C: int, num_keys: int = 5625, top_k: int = 32,
+                 heads: int = 1, chunk_size: int = 64, idw_eps: float = 1e-4,
+                 addr_lr: float = 0.01, state_fp16: bool = True,
+                 device=None, dtype=None):
+        super().__init__()
+        self.C, self.num_keys, self.top_k, self.heads = C, num_keys, top_k, heads
+        self.chunk_size, self.idw_eps, self.addr_lr = chunk_size, idw_eps, addr_lr
+        self.fast_updates = True
+        # Fast state is PER BATCH LANE, so it scales as num_keys*C*batch*layers and is the
+        # real cap on store size — not the parameter count. fp16 halves it and doubles the
+        # testable range. Safe here because updates are unit-step REWRITES of magnitude
+        # ~0.1 (measured), not long accumulations of tiny increments, so fp16's ~1e-4
+        # resolution is far below the signal. Set false to rule precision out if a
+        # large-store run behaves oddly.
+        self.state_dtype = torch.float16 if state_fp16 else torch.float32
         self.sub_keys = int(math.sqrt(num_keys))
-        assert self.sub_keys ** 2 == num_keys, \
-            f"num_keys ({num_keys}) must be a perfect square"
+        if self.sub_keys ** 2 != num_keys:
+            raise ValueError(f"num_keys ({num_keys}) must be a perfect square")
+        if self.sub_keys < top_k:
+            raise ValueError(
+                f"sqrt(num_keys)={self.sub_keys} < top_k={top_k}: the per-half top-k would "
+                "silently clamp, testing a narrower lookup than configured")
+        self.head_dim = C // heads
+        self.half = self.head_dim // 2
 
-        half_dim = self.head_dim // 2
-        self.half_k = min(self.top_k, self.sub_keys)
+        self.norm_q = _RMSNorm(C, device=device, dtype=dtype)
+        self.norm_v = _RMSNorm(C, device=device, dtype=dtype)
+        self.norm_g = _RMSNorm(C, device=device, dtype=dtype)
+        self.norm_o = _RMSNorm(C, device=device, dtype=dtype)
+        self.proj_q = nn.Linear(C, heads * self.head_dim, bias=False, device=device, dtype=dtype)
+        self.proj_v = nn.Linear(C, C, bias=False, device=device, dtype=dtype)
+        self.proj_g = nn.Linear(C, 1, bias=False, device=device, dtype=dtype)
+        self.proj_o = nn.Linear(C, C, bias=False, device=device, dtype=dtype)
 
-        # Query projection
-        self.query_proj = nn.Linear(C, heads * self.head_dim, bias=False,
-                                    device=device, dtype=dtype)
+        self.v_init = nn.Parameter(torch.zeros(num_keys * heads, C, device=device, dtype=dtype))
+        self.k1_init = nn.Parameter(
+            torch.randn(heads, self.sub_keys, self.half, device=device, dtype=dtype) * 0.02)
+        self.k2_init = nn.Parameter(
+            torch.randn(heads, self.sub_keys, self.half, device=device, dtype=dtype) * 0.02)
 
-        # Two codebooks of sub-keys per head
-        self.keys_a = nn.Parameter(
-            torch.randn(heads, self.sub_keys, half_dim,
-                        device=device, dtype=dtype) * 0.02)
-        self.keys_b = nn.Parameter(
-            torch.randn(heads, self.sub_keys, half_dim,
-                        device=device, dtype=dtype) * 0.02)
-
-        # Learned softmax temperature (see _pkm_lookup for the measured rationale).
-        self.log_tau = nn.Parameter(torch.full((1,), math.log(10.0),
-                                               device=device, dtype=dtype))
-
-        # Value table: num_keys entries per head, each maps to C
-        self.values = nn.EmbeddingBag(
-            num_keys * heads, C, mode='sum',
-            device=device, dtype=dtype)
-        nn.init.normal_(self.values.weight, std=0.02)
-
-        # Fast-weight deltas: same shape as values, zeroed during training
-        self.register_buffer(
-            'value_deltas',
-            torch.zeros(num_keys * heads, C, device=device,
-                        dtype=dtype if dtype else torch.float32))
-
-    def _pkm_lookup(self, x: torch.Tensor):
-        """Core PKM lookup returning output and indices/weights for updates.
-
-        Returns:
-            out: [B, T, C] retrieved values
-            flat_idx: [B*T*H, k] indices used
-            flat_w: [B*T*H, k] softmax weights used
-        """
-        B, T, C = x.shape
-
-        # Project to queries: [B, T, heads, head_dim]
-        q = self.query_proj(x).view(B, T, self.heads, self.head_dim)
-
-        # Split each query into two halves
-        half = self.head_dim // 2
-        q_a = q[..., :half]
-        q_b = q[..., half:]
-
-        # Score against sub-key codebooks — COSINE x LEARNED TEMPERATURE (fix, 2026-07-26).
-        # MEASURED pathology in the original: keys init at std 0.02 over half_dim=256 give
-        # dot products of std ~0.16, so the softmax over the final top-k was EXACTLY uniform
-        # at init (smoke test: entropy 3.4657 = ln(32) to 4 dp, max weight 0.0317 vs 1/32 =
-        # 0.0312). The lookup therefore returned the MEAN of k random value rows — an
-        # unselective average, not content-addressed retrieval. Same DC-floor failure that
-        # stalled the AMB's elu1 feature map.
-        #
-        # A plain 1/sqrt(d) attention scale is the WRONG SIGN here (it shrinks already-tiny
-        # scores). Instead normalise both sides to unit norm and apply a LEARNED temperature,
-        # so sharpness is a trained quantity rather than an accident of init scale. tau=10
-        # puts cosines in [-10, 10]: selective, but not so peaked that it commits to random
-        # keys at init and starves the rest (the dead-key risk the usage aux also guards).
-        _tau = self.log_tau.exp()
-        scores_a = torch.einsum('bthd,hsd->bths', F.normalize(q_a, dim=-1),
-                                F.normalize(self.keys_a, dim=-1)) * _tau
-        scores_b = torch.einsum('bthd,hsd->bths', F.normalize(q_b, dim=-1),
-                                F.normalize(self.keys_b, dim=-1)) * _tau
-
-        # Top-k from each half (clamped to sub_keys)
-        top_a_scores, top_a_idx = scores_a.topk(self.half_k, dim=-1)
-        top_b_scores, top_b_idx = scores_b.topk(self.half_k, dim=-1)
-
-        # Product scores: all hk*hk combinations -> top-k of those
-        prod_scores = top_a_scores.unsqueeze(-1) + top_b_scores.unsqueeze(-2)
-        prod_scores_flat = prod_scores.view(B, T, self.heads, -1)
-
-        prod_idx = (top_a_idx.unsqueeze(-1) * self.sub_keys +
-                    top_b_idx.unsqueeze(-2))
-        prod_idx_flat = prod_idx.view(B, T, self.heads, -1)
-
-        # Select final top-k from hk*hk candidates
-        final_top_k = min(self.top_k, prod_scores_flat.size(-1))
-        final_scores, final_pos = prod_scores_flat.topk(final_top_k, dim=-1)
-        final_idx = prod_idx_flat.gather(-1, final_pos)
-
-        # Softmax weights over final top-k
-        weights = F.softmax(final_scores.float(), dim=-1).to(x.dtype)
-
-        # Offset indices per head
-        head_offsets = torch.arange(self.heads, device=x.device) * self.num_keys
-        final_idx = final_idx + head_offsets.view(1, 1, -1, 1)
-
-        # Flatten for lookup
-        flat_idx = final_idx.reshape(-1, final_top_k)
-        flat_w = weights.reshape(-1, final_top_k)
-
-        # Weighted lookup from base values
-        out = self.values(flat_idx, per_sample_weights=flat_w)
-
-        # Add fast-weight delta contribution (always when grad needed, else only if nonzero)
-        if self.value_deltas.requires_grad or self.value_deltas.any():
-            delta_vals = self.value_deltas[flat_idx]  # [B*T*H, k, C]
-            delta_out = (flat_w.unsqueeze(-1) * delta_vals).sum(dim=1)  # [B*T*H, C]
-            out = out + delta_out
-
-        # USAGE-BALANCE AUX (fix, 2026-07-26). With num_keys=8281 and top_k=32, a key that
-        # is rarely selected never receives gradient and stays at random init forever —
-        # dead memory that costs parameters and injects noise. MoM and block-MoE both carry
-        # a usage penalty for exactly this; FwPKM had none. We store NEGATIVE entropy of the
-        # selection distribution: minimising it maximises entropy, i.e. spreads usage.
-        if self.training:
-            usage = torch.zeros(self.num_keys * self.heads, device=x.device, dtype=torch.float32)
-            usage = usage.scatter_add_(0, flat_idx.reshape(-1),
-                                       flat_w.reshape(-1).float())
-            u = usage / usage.sum().clamp_min(1e-9)
-            self._usage_aux = (u * (u + 1e-9).log()).sum()
-        else:
-            self._usage_aux = None
-
-        out = out.view(B, T, self.heads, C)
-        return out.sum(dim=2), flat_idx, flat_w  # [B, T, C]
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out, _, _ = self._pkm_lookup(x)
-        return out
-
-    def update_fast_weights(self, queries: torch.Tensor,
-                            targets: torch.Tensor, lr: float = 0.01):
-        """Update value deltas using local MSE loss. Called between chunks
-        during inference only.
-
-        Args:
-            queries: [B, chunk_size, C] - input representations from this chunk
-            targets: [B, chunk_size, C] - lookahead targets (shifted by 1)
-            lr: learning rate for fast-weight update
-        """
-        # Temporarily enable grad for value_deltas
-        self.value_deltas.requires_grad_(True)
-
-        # Retrieve current values
-        retrieved, flat_idx, flat_w = self._pkm_lookup(queries)
-
-        # MSE loss against targets
-        loss = F.mse_loss(retrieved, targets)
-
-        # Gradient w.r.t. value_deltas only
-        grad = torch.autograd.grad(loss, self.value_deltas, retain_graph=False)[0]
-
-        # Update deltas (gradient descent)
-        with torch.no_grad():
-            self.value_deltas -= lr * grad
-            self.value_deltas.requires_grad_(False)
+        self.dV = None
+        self.dK1 = None
+        self.dK2 = None
+        self._addr_aux = None
 
     def reset_fast_weights(self):
-        """Reset deltas to zero. Call at start of new document/sequence."""
-        self.value_deltas.zero_()
+        """Drop episodic state: per eval window, and at sequence starts."""
+        self.dV = self.dK1 = self.dK2 = None
+        self._addr_aux = None
+
+    def _ensure_state(self, B, device):
+        if self.dV is None or self.dV.shape[0] != B or self.dV.device != device:
+            f = self.state_dtype
+            self.dV = torch.zeros(B, self.num_keys * self.heads, self.C, device=device, dtype=f)
+            self.dK1 = torch.zeros(B, *self.k1_init.shape, device=device, dtype=f)
+            self.dK2 = torch.zeros(B, *self.k2_init.shape, device=device, dtype=f)
+
+    def _idw(self, q, K):
+        """IDW scoring (paper 3.5): -log(eps + ||q - K_i||^2) in place of a dot product,
+        which encourages keys to become clustering centroids.
+        q:(B,T,H,half)  K:(B,H,S,half)  ->  (B,T,H,S)"""
+        q2 = q.pow(2).sum(-1, keepdim=True)
+        k2 = K.pow(2).sum(-1).unsqueeze(1)
+        qk = torch.einsum('bthd,bhsd->bths', q, K)
+        return -torch.log(self.idw_eps + (q2 + k2 - 2 * qk).clamp_min(0))
+
+    def _retrieve(self, h, V, K1, K2):
+        B, T, _ = h.shape
+        H, S, k = self.heads, self.sub_keys, self.top_k
+        q = self.proj_q(self.norm_q(h)).view(B, T, H, self.head_dim)
+        v = self.proj_v(self.norm_v(h))
+        g = torch.sigmoid(self.proj_g(self.norm_g(h)).float()).to(h.dtype)
+
+        sc1, sc2 = self._idw(q[..., :self.half], K1), self._idw(q[..., self.half:], K2)
+        t1, i1 = sc1.topk(k, dim=-1)
+        t2, i2 = sc2.topk(k, dim=-1)
+        cand = (t1.unsqueeze(-1) + t2.unsqueeze(-2)).reshape(B, T, H, -1)
+        cidx = (i1.unsqueeze(-1) * S + i2.unsqueeze(-2)).reshape(B, T, H, -1)
+        fs, fp = cand.topk(k, dim=-1)
+        idx = cidx.gather(-1, fp) + (torch.arange(H, device=h.device) * self.num_keys).view(1, 1, -1, 1)
+        w = torch.softmax(fs.float(), dim=-1).to(h.dtype)
+
+        # gather ONLY the selected rows: (B, T*H*k, C), never the full table per position
+        flat = idx.reshape(B, -1)
+        rows = V.gather(1, flat.unsqueeze(-1).expand(-1, -1, self.C)).view(B, T, H, k, self.C)
+        vhat = (w.unsqueeze(-1) * rows).sum(dim=(2, 3))
+
+        # normalized per-sub-key score vectors, unselected = 0 (paper Eq. 16 inputs)
+        s1 = torch.zeros_like(sc1).scatter_(-1, i1, torch.softmax(t1.float(), -1).to(sc1.dtype))
+        s2 = torch.zeros_like(sc2).scatter_(-1, i2, torch.softmax(t2.float(), -1).to(sc2.dtype))
+
+        o = g * vhat + (1 - g) * v                       # gated residual (Eq. 12)
+        return self.proj_o(self.norm_o(o)), v, g, vhat, idx, w, s1, s2
+
+    @staticmethod
+    def _znorm(v):
+        """Target normalization (paper 3.5): z-score along features, for update stability."""
+        return (v - v.mean(-1, keepdim=True)) / v.std(-1, keepdim=True).clamp_min(1e-5)
+
+    def _write(self, v_tgt, gate, vhat, idx, w, s1, s2, K1, K2):
+        """Local objectives, applied only AFTER the chunk has been read.
+
+        L_mem = sum_t 1/2 g_t ||v_t - vhat_t||^2  (Eq. 13). The 1/2 makes d/dvhat exactly
+        -(v - vhat), so a unit step rewrites the prediction to the target -- the paper's
+        "explicit memory rewriting". We update the value ROWS that produced vhat, dividing
+        each row's gradient by its read count N_read_i (Eq. 14) so that competing writes to
+        one row reach consensus instead of compounding.
+
+        L_addr = -H(pbar1) - H(pbar2)  (Eq. 17) on CHUNK-MARGINAL usage: balanced slots on
+        average, without forcing any individual query to be uniform.
+        """
+        B, T, C = v_tgt.shape
+        H, k = self.heads, self.top_k
+        resid = (v_tgt - vhat) * gate                                  # (B,T,C)
+        flat_i = idx.reshape(B, -1)                                    # (B,T*H*k)
+        flat_w = w.reshape(B, -1).float()
+        resid_e = resid.unsqueeze(2).unsqueeze(3).expand(B, T, H, k, C).reshape(B, -1, C).float()
+
+        upd = (-flat_w.unsqueeze(-1) * resid_e).to(self.dV.dtype)
+        gradV = torch.zeros_like(self.dV).scatter_add_(
+            1, flat_i.unsqueeze(-1).expand(-1, -1, C), upd)
+        nread = torch.zeros(B, self.dV.shape[1], 1, device=self.dV.device,
+                            dtype=self.dV.dtype).scatter_add_(
+            1, flat_i.unsqueeze(-1), torch.ones_like(flat_w).unsqueeze(-1).to(self.dV.dtype))
+        self.dV = self.dV - gradV / nread.clamp_min(1.0)               # V <- V - agg grad
+
+        aux = 0.0
+        for s, name, K in ((s1, 'dK1', K1), (s2, 'dK2', K2)):
+            p = s.float().mean(dim=1)                                  # (B,H,S) chunk marginal
+            p = p / p.sum(-1, keepdim=True).clamp_min(1e-9)
+            aux = aux + (p * (p + 1e-9).log()).sum(-1).mean()
+            gp = (1.0 + (p + 1e-9).log()).unsqueeze(-1)                # d(-H)/dp
+            setattr(self, name, getattr(self, name)
+                    - (self.addr_lr * (gp * K.float())).to(self.dV.dtype))
+        self._addr_aux = float(aux)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        B, T, _ = h.shape
+        self._ensure_state(B, h.device)
+        out = torch.empty_like(h)
+        for c0 in range(0, T, self.chunk_size):
+            c1 = min(c0 + self.chunk_size, T)
+            V = self.v_init.unsqueeze(0) + self.dV.to(self.v_init.dtype)
+            K1 = self.k1_init.unsqueeze(0) + self.dK1.to(self.k1_init.dtype)
+            K2 = self.k2_init.unsqueeze(0) + self.dK2.to(self.k2_init.dtype)
+            o, v, g, vhat, idx, w, s1, s2 = self._retrieve(h[:, c0:c1], V, K1, K2)
+            out[:, c0:c1] = o
+            if self.fast_updates and (c1 - c0) >= 2:
+                with torch.no_grad():
+                    self._write(self._znorm(v[:, 1:].detach()), g[:, :-1].detach(),
+                                vhat[:, :-1].detach(), idx[:, :-1].detach(),
+                                w[:, :-1].detach(), s1[:, :-1].detach(),
+                                s2[:, :-1].detach(), K1.detach(), K2.detach())
+        return out
+
 
 # ==============================================================================
 # 6. DECOMPOSE BYPASS - Running Mean
@@ -1585,6 +1613,8 @@ class WaveletLMBlock(nn.Module):
         pkm_top_k: int = 32,
         pkm_heads: int = 1,
         fwpkm_enabled: bool = False,
+        fwpkm_chunk_size: int = 64,
+        fwpkm_state_fp16: bool = True,
         fwpkm_num_keys: int = 529,
         fwpkm_top_k: int = 32,
         fwpkm_heads: int = 1,
@@ -2390,7 +2420,15 @@ class WaveletLMBlock(nn.Module):
         if fwpkm_enabled:
             self.fwpkm = FastWeightPKM(
                 self.C, num_keys=fwpkm_num_keys, top_k=fwpkm_top_k,
-                heads=fwpkm_heads, device=device, dtype=dtype)
+                heads=fwpkm_heads, chunk_size=fwpkm_chunk_size,
+                state_fp16=fwpkm_state_fp16,
+                device=device, dtype=dtype)
+            # FwPKM is its OWN SUBLAYER AHEAD OF THE MIXER (paper Fig. 1: "An FwPKM layer
+            # is placed before a token mixer"), not a tenant of the MLP slot. Placement
+            # matters more here than in a transformer: with mlp_expansion=0 the mixer IS
+            # the block, so post-mixer placement would isolate the memory from every piece
+            # of machinery in the layer. Its own norm, per the paper's per-input RMSNorms.
+            self.ln_fwpkm = nn.LayerNorm(self.C, device=device, dtype=dtype)
 
         # Learned scalars for memory module combination
         if self.use_mlp:
@@ -2398,13 +2436,11 @@ class WaveletLMBlock(nn.Module):
         if pkm_enabled:
             self.alpha_pkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
         if fwpkm_enabled:
-            # IDENTITY AT INIT (fix, 2026-07-26). Was 1.0, which injected a random
-            # value-mixture into the residual at FULL GAIN from step 0 — the only module in
-            # the block that did not start as identity (mixer routing inits to identity, AMB
-            # zero-inits out_proj, shrinkage phi(z)~z). Starting at 0 makes FwPKM a safe
-            # perturbation that ramps in only if it earns it; alpha receives gradient
-            # immediately, so there is no deadlock.
-            self.alpha_fwpkm = nn.Parameter(torch.tensor(0.0, device=device, dtype=dtype))
+            # alpha stays at 1.0; IDENTITY AT INIT is provided by the ZERO-INIT VALUE
+            # TABLE instead (see FastWeightPKM.__init__). Zeroing alpha here was tried
+            # 2026-07-26 and measured inert 2026-07-28 — it gives identity but freezes
+            # every parameter inside the module. Do not re-zero this.
+            self.alpha_fwpkm = nn.Parameter(torch.tensor(1.0, device=device, dtype=dtype))
 
         self.dropout_proj = nn.Dropout(dropout_projection)
         self.dropout_mix = nn.Dropout(dropout_mixer)
@@ -2532,6 +2568,10 @@ class WaveletLMBlock(nn.Module):
 
         if self.per_layer_embedding and token_embeddings is not None:
             x = x + self.embedding_residual_gamma * token_embeddings
+        if self.fwpkm_enabled:
+            # x <- x + alpha * FwPKM(norm(x)), BEFORE decomposition, so retrieved memory
+            # is mixed across time by the wavelet path rather than appended after it.
+            x = x + self.alpha_fwpkm * self.fwpkm(self.ln_fwpkm(x))
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
 
@@ -2595,15 +2635,11 @@ class WaveletLMBlock(nn.Module):
             x = x + self.dropout_proj(projected)
 
         h2 = self.ln2(x)
-        if self._cache_h2:
-            self._cached_h2 = h2.detach()
         mem_out = torch.zeros_like(h2)
         if self.use_mlp:
             mem_out = mem_out + self.alpha_mlp * self.ffwd(h2)
         if self.pkm_enabled:
             mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
-        if self.fwpkm_enabled:
-            mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
         if self.disable_residual:
             x = mem_out
         elif self.learned_residual:
@@ -2623,6 +2659,10 @@ class WaveletLMBlock(nn.Module):
 
         if self.per_layer_embedding and token_embeddings is not None:
             x = x + self.embedding_residual_gamma * token_embeddings
+        if self.fwpkm_enabled:
+            # x <- x + alpha * FwPKM(norm(x)), BEFORE decomposition, so retrieved memory
+            # is mixed across time by the wavelet path rather than appended after it.
+            x = x + self.alpha_fwpkm * self.fwpkm(self.ln_fwpkm(x))
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
 
@@ -2691,15 +2731,11 @@ class WaveletLMBlock(nn.Module):
             x = x + self.dropout_proj(projected)
 
         h2 = self.ln2(x)
-        if self._cache_h2:
-            self._cached_h2 = h2.detach()
         mem_out = torch.zeros_like(h2)
         if self.use_mlp:
             mem_out = mem_out + self.alpha_mlp * self.ffwd(h2)
         if self.pkm_enabled:
             mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
-        if self.fwpkm_enabled:
-            mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
         if self.disable_residual:
             x = mem_out
         elif self.learned_residual:
@@ -2838,6 +2874,10 @@ class WaveletLMBlock(nn.Module):
         if self.per_layer_embedding and token_embeddings is not None:
             x = x + self.embedding_residual_gamma * token_embeddings
 
+        if self.fwpkm_enabled:
+            # x <- x + alpha * FwPKM(norm(x)), BEFORE decomposition, so retrieved memory
+            # is mixed across time by the wavelet path rather than appended after it.
+            x = x + self.alpha_fwpkm * self.fwpkm(self.ln_fwpkm(x))
         h = self.ln1(x)
         h = pad_features_to_pow2(h, self.Cp)
 
@@ -3141,15 +3181,11 @@ class WaveletLMBlock(nn.Module):
 
         # Memory modules (parallel, learned scalar combination)
         h2 = self.ln2(x)
-        if self._cache_h2:
-            self._cached_h2 = h2.detach()
         mem_out = torch.zeros_like(h2)
         if self.use_mlp:
             mem_out = mem_out + self.alpha_mlp * self.ffwd(h2)
         if self.pkm_enabled:
             mem_out = mem_out + self.alpha_pkm * self.pkm(h2)
-        if self.fwpkm_enabled:
-            mem_out = mem_out + self.alpha_fwpkm * self.fwpkm(h2)
 
         if self.disable_residual:
             x = mem_out
@@ -3729,6 +3765,8 @@ class WaveletLM(nn.Module):
                 pkm_top_k=config.get("pkm_top_k", 32),
                 pkm_heads=config.get("pkm_heads", 1),
                 fwpkm_enabled=config.get("fwpkm_enabled", False),
+                fwpkm_chunk_size=config.get("fwpkm_chunk_size", 64),
+                fwpkm_state_fp16=config.get("fwpkm_state_fp16", True),
                 fwpkm_num_keys=config.get("fwpkm_num_keys", 529),
                 fwpkm_top_k=config.get("fwpkm_top_k", 32),
                 fwpkm_heads=config.get("fwpkm_heads", 1),
@@ -3917,35 +3955,6 @@ class WaveletLM(nn.Module):
         for layer in self.layers:
             if hasattr(layer, 'fwpkm') and layer.fwpkm_enabled:
                 layer.fwpkm.reset_fast_weights()
-
-    def update_fast_weights(self, chunk_ids: torch.Tensor, lr: float = 0.01):
-        """Update FwPKM deltas using per-layer representations from a forward pass.
-
-        Runs a no-grad forward pass on chunk_ids to populate each layer's
-        cached h2, then updates each layer's FwPKM using its own representations.
-
-        Args:
-            chunk_ids: [B, chunk_size] - token IDs for the chunk
-            lr: learning rate for fast-weight updates
-        """
-        # Enable h2 caching
-        for layer in self.layers:
-            if layer.fwpkm_enabled:
-                layer._cache_h2 = True
-
-        # Forward pass to populate per-layer cached h2
-        with torch.no_grad():
-            self.forward(chunk_ids)
-
-        # Update each layer's FwPKM with its own representations
-        for layer in self.layers:
-            if layer.fwpkm_enabled:
-                h2 = layer._cached_h2
-                queries = h2[:, :-1, :]  # [B, T-1, C]
-                targets = h2[:, 1:, :]   # [B, T-1, C]
-                layer.fwpkm.update_fast_weights(queries, targets, lr=lr)
-                layer._cache_h2 = False
-                layer._cached_h2 = None
 
     def _forward_embed(self, idx):
         """Embedding lookup + dropout. Used by MultiNodeWaveletLM lockstep forward."""
@@ -4768,9 +4777,9 @@ def quantize_model(model, config):
             if layer.pkm_enabled and hasattr(layer.pkm, 'query_proj'):
                 layer.pkm.query_proj = QuantizedLinear(layer.pkm.query_proj, mlp_bits)
 
-            # FwPKM query_proj
-            if layer.fwpkm_enabled and hasattr(layer.fwpkm, 'query_proj'):
-                layer.fwpkm.query_proj = QuantizedLinear(layer.fwpkm.query_proj, mlp_bits)
+            # FwPKM query projection (renamed proj_q in the 2026-07-28 rewrite)
+            if layer.fwpkm_enabled and hasattr(layer.fwpkm, 'proj_q'):
+                layer.fwpkm.proj_q = QuantizedLinear(layer.fwpkm.proj_q, mlp_bits)
 
     # Compute quantized size
     quantized_bytes = 0

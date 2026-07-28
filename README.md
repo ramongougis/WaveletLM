@@ -745,6 +745,7 @@ Longer training time, more regularization, and parameter compression are the sur
 - [(Done) Mixer Low Rank](#done-mixer-low-rank)
 - [(Done) T1 Baseline Without Wavelet Crawl](#done-t1-baseline-without-wavelet-crawl)
 - [(Done) New Baseline T2 with 7 Levels, more Per-Scale Mixer Weights, and Wavelet Crawl](#new-baseline-t2-with-7-levels-more-per-scale-mixer-weights-and-wavelet-crawl)
+- [(Post-Release) Large-Chunk Test-Time Training (LaCT)](#post-release-large-chunk-test-time-training-lact)
 - [(Post-Release) Optimizer Swap (Muon)](#post-release-optimizer-swap-muon)
 - [(Done) Sequential Block Ordering](#done-sequential-block-ordering)
 - [(Shelved on WikiText-103) 2D Wavelet over (Batch, Token) with Sequential Training](#shelved-on-WikiText-103-2d-wavelet-over-batch-token-with-sequential-training)
@@ -990,6 +991,14 @@ The new baseline shall be named **T2**.
 | **T2** | **7** | **✓** | **5** | **392.91M** | **1.0485** | **26.4564** | **3.2630** | **7,788 MiB** | **3,238 MiB** | [link](logs/wikitext-103_2026-05-10_05-33-24/log.txt) |
 
 **Conclusion:** T2 baseline now includes wavelet crawl, levels = 7, and per_scale_mixer_weights = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5].
+
+<p align="center">
+  <img src="assets/divider.svg" alt="" width="50%" height="1"/>
+</p>
+
+### (Post-Release) Large-Chunk Test-Time Training (LaCT)
+
+Banked for later, no implementation planned yet — see [plans/large_chunk_ttt.md](plans/large_chunk_ttt.md). [Zhang et al., 2025](https://arxiv.org/abs/2505.23884) invert the usual TTT design by updating fast weights **once per 2K–1M-token chunk** rather than every 16–64 tokens, lifting GPU utilization from below 5% to ~70% in plain PyTorch and thereby making it affordable to scale the *state* to ~40% of model parameter size — where their measured gains come from. Directly relevant to us because our profiled bottleneck is **kernel dispatch** (~41,726 kernels/step, ~69% dispatch), which is exactly what fewer-and-larger operations address. Parked on two blockers: their language-model setting uses chunk = attention window = 2048+ tokens against our 256, and the design is **attention-hybrid by construction** (a chunk is an unordered set, so sliding-window attention restores per-token causality) — which belongs in the separate hybrid repo under the attention-free rule, unless the wavelet mixer can be shown to play that role. Revisit after decimation lands and after FwPKM answers the cheaper form of the same question.
 
 <p align="center">
   <img src="assets/divider.svg" alt="" width="50%" height="1"/>
