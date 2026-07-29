@@ -1679,8 +1679,14 @@ def train():
             # per epoch puts them back in the graph 5 times while preserving the
             # within-epoch accumulation the persistence exists for. Harmless when
             # persist_state is off (the reference re-seeds every forward anyway).
-            if hasattr(base_model, 'reset_fast_weights'):
-                base_model.reset_fast_weights()
+            # `base_model` is a local of the three benchmark helpers, NOT of train() —
+            # referencing it here was a NameError that killed FWPKM2 at epoch 1 on
+            # 2026-07-29. Unwrap both wrappers the way the benchmark helpers do
+            # (train.py:628): DDP's .module and torch.compile's ._orig_mod.
+            _fw_model = model.module if hasattr(model, 'module') else model
+            _fw_model = getattr(_fw_model, '_orig_mod', _fw_model)
+            if hasattr(_fw_model, 'reset_fast_weights'):
+                _fw_model.reset_fast_weights()
 
             first_step = start_step_in_epoch if epoch == start_epoch else 0
             pbar = tqdm(range(first_step, steps_per_epoch), desc=f"Epoch {epoch+1}",
