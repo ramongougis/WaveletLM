@@ -1671,6 +1671,17 @@ def train():
             epoch_start = time.time()
             logger.log(f"\n=== EPOCH {epoch+1}/{config['epochs']} ===")
 
+            # Re-seed FwPKM fast weights at each epoch boundary. Required when
+            # fwpkm_persist_state is on: the carried state is detached, so from step 2
+            # onward `fw` no longer touches self.keys/self.values and those parameters
+            # receive NO GRADIENT — measured None after 4 steps, 2026-07-29. They would
+            # train for exactly one step and then sit frozen for the whole run. Resetting
+            # per epoch puts them back in the graph 5 times while preserving the
+            # within-epoch accumulation the persistence exists for. Harmless when
+            # persist_state is off (the reference re-seeds every forward anyway).
+            if hasattr(base_model, 'reset_fast_weights'):
+                base_model.reset_fast_weights()
+
             first_step = start_step_in_epoch if epoch == start_epoch else 0
             pbar = tqdm(range(first_step, steps_per_epoch), desc=f"Epoch {epoch+1}",
                         initial=first_step, total=steps_per_epoch)

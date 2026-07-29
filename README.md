@@ -2879,6 +2879,7 @@ See [plans/other_post_release_plans.md](plans/other_post_release_plans.md) for i
 - Wavelet Packet Decomposition (WPD)
 - Top-K / hard thresholding in the Hadamard domain
 - Complete Muon sweep
+- MoE tuning
 - 2-D Wavelets for PG-19 and other non-chunk-level-independent datasets
 - Long-context scaling: **decimated wavelet transform** (coarse-decimation hybrid) + content-dependent **retrieval** / **length-generalization** study — see [plans/long_context_decimation.md](plans/long_context_decimation.md)
 - **Fused int8 PTQ kernels** — the `--ptq8_fast` path (torchao `int8_weight_only`, LM head kept fp16) is wired but blocked on torchao instability in the current environment; revisit by pinning a known-good torchao or writing a Triton int8 GEMV — see [Bit-Packed PTQ Kernels](#bit-packed-ptq-kernels)

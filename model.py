@@ -1409,11 +1409,20 @@ class FastWeightPKM(nn.Module):
         mem_loss = mem_loss * 0.5                                     # fwpkm.py:299
         cg = self.second_order and self.training
         if addr_loss is not None:
+            # retain_graph=True is REQUIRED, not optional. These local grads traverse the
+            # OUTER graph (q/v come from the slow projections), and with create_graph=False
+            # autograd would free it here — the subsequent LM-loss backward then dies with
+            # "Trying to backward through the graph a second time". create_graph=True
+            # implies retain, which is why the reference never needs it (their
+            # create_graph=self.training is always True in training); we must be explicit
+            # so the second_order=False fallback works too.
             addr_grads = torch.autograd.grad(addr_loss, tuple(fw.values()),
-                                             create_graph=cg, allow_unused=True)
+                                             create_graph=cg, retain_graph=True,
+                                             allow_unused=True)
         else:
             addr_grads = [None] * len(fw)
-        mem_grads = torch.autograd.grad(mem_loss, fw["values"], create_graph=cg)
+        mem_grads = torch.autograd.grad(mem_loss, fw["values"], create_graph=cg,
+                                        retain_graph=True)
         grads = [mem_grads[0] if n == "values" else addr_grads[i]
                  for i, n in enumerate(fw.keys())]
 
@@ -1443,7 +1452,16 @@ class FastWeightPKM(nn.Module):
         path and the memorisation target see the normalised value."""
         return (x - x.mean(-1, keepdim=True)) / (x.std(-1, keepdim=True) + 1e-6)
 
+    @torch.compiler.disable(recursive=True)
     def forward(self, h: torch.Tensor) -> torch.Tensor:
+        """EAGER BY DECREE. The fast-weight update calls torch.autograd.grad with
+        create_graph=True (second-order TTT, matching the reference), and aot_autograd
+        raises "torch.compile with aot_autograd does not currently support double backward"
+        the first time the outer .backward() reaches it — FWPKM2 died exactly there on
+        2026-07-28. Excluding this module from compilation keeps the double backward in
+        eager, where it is supported, while the rest of the network stays compiled. Same
+        pattern the codebase already uses for the causal scans below (model.py:1497+).
+        Cost is contained because FwPKM lives in only 2 of 10 layers."""
         B, T, _ = h.shape
         q = self.proj_q(self.norm_q(h)).view(B, T, self.heads * self.k_dim)
         v = self.proj_v(self.norm_v(h))
@@ -1479,7 +1497,10 @@ class FastWeightPKM(nn.Module):
                     upd_hyp.reshape(-1, upd_hyp.size(-1)),
                     upd_ref.reshape(-1, upd_ref.size(-1)), upd_w.reshape(-1))
                 addr = self.compute_addr_loss(ret["all_sub_scores1"], ret["all_sub_scores2"])
-                self._addr_aux = float(addr.detach())
+                # Keep it a TENSOR: float() forces a device sync and a Dynamo graph break
+                # ("Graph break from `Tensor.item()`", observed 2026-07-28). Nothing in the
+                # training loop reads this per-step; it is diagnostic only.
+                self._addr_aux = addr.detach()
                 fw = self.update_fw(fw, B * (c1 - c0), ret["indices"],
                                     mem_losses.mean(), addr)
         if self.persist_state:
@@ -3924,16 +3945,25 @@ class WaveletLM(nn.Module):
                 raise ValueError("block_moe is incompatible with looped_blocks")
             if config.get("mixer_mom_enabled", False):
                 raise ValueError("block_moe and mixer_mom are mutually exclusive")
+            # SELECTIVE DEPTH, same idea as fwpkm_layers. Block-MoE replicates the WHOLE
+            # block per expert and runs every expert (dense compute by design), so putting
+            # it in all layers multiplies cost by E across the entire stack: MOEA at E=4
+            # measured 4.36 s/it against SEQ0's 0.284, i.e. 15x and ~59h for 5 epochs.
+            # Restricting it to a few layers cuts that almost linearly, and mixing MoE and
+            # plain blocks is already supported (the forward dispatches per layer via
+            # isinstance at model.py:4140). None/[] keeps the old every-layer behaviour.
+            _moe_layers = config.get("block_moe_layers", None)
+            _moe_set = set(_moe_layers) if _moe_layers else set(range(layer_build_count))
             self.layers = nn.ModuleList([
-                WaveletLMBlockMoE(
+                (WaveletLMBlockMoE(
                     C, _make_block,
                     num_experts=config.get("block_moe_experts", 4),
                     top_k=config.get("block_moe_topk", 2),
                     device=device,
                     gradient_checkpointing=config.get("gradient_checkpointing", False),
                     scale_ladder=config.get("block_moe_scale_ladder", False),
-                )
-                for _ in range(layer_build_count)
+                ) if i in _moe_set else _make_block(layer_idx=i))
+                for i in range(layer_build_count)
             ])
         else:
             self.layers = nn.ModuleList([
