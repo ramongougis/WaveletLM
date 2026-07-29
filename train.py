@@ -642,7 +642,16 @@ def evaluate_full_validation(model, eval_data, config, logger, device, use_amp, 
     for layer in base_model.layers if hasattr(base_model, 'layers') else []:
         if hasattr(layer, 'fwpkm') and getattr(layer, 'fwpkm_enabled', False):
             _prev_fwpkm_upd.append((layer, layer.fwpkm.fast_updates))
-            layer.fwpkm.fast_updates = False
+            # KEEP WRITES ON (2026-07-29). This used to force False, which skips the update
+            # branch entirely (model.py:1488) — the memory never writes, so the benchmark
+            # scored a static PKM while training taught a memory that writes in chunk 1 and
+            # reads it back in chunks 2-4 of the SAME window. That train/eval mismatch would
+            # make FwPKM look inert no matter how well it learned. Determinism, which is why
+            # the guard exists, comes from persist_state=False instead: every forward
+            # re-seeds from the learned keys/values (model.py:1481), so each window is
+            # independent, order-free, and reproducible — and BPB stays comparable to every
+            # run in the repo. Only cross-window persistence breaks that, and it stays off.
+            layer.fwpkm.fast_updates = True
     # BUG FIX 2026-07-28: the test above read `inference_updates`, an attribute the module
     # has not had since the rewrite, so getattr(..., False) always fired and this guard did
     # NOTHING — fast weights mutated all through the benchmark, the exact non-determinism it
@@ -758,7 +767,16 @@ def evaluate_sliding_window(model, eval_data, config, logger, device, use_amp, a
     for layer in base_model.layers if hasattr(base_model, 'layers') else []:
         if hasattr(layer, 'fwpkm') and getattr(layer, 'fwpkm_enabled', False):
             _prev_fwpkm_upd.append((layer, layer.fwpkm.fast_updates))
-            layer.fwpkm.fast_updates = False
+            # KEEP WRITES ON (2026-07-29). This used to force False, which skips the update
+            # branch entirely (model.py:1488) — the memory never writes, so the benchmark
+            # scored a static PKM while training taught a memory that writes in chunk 1 and
+            # reads it back in chunks 2-4 of the SAME window. That train/eval mismatch would
+            # make FwPKM look inert no matter how well it learned. Determinism, which is why
+            # the guard exists, comes from persist_state=False instead: every forward
+            # re-seeds from the learned keys/values (model.py:1481), so each window is
+            # independent, order-free, and reproducible — and BPB stays comparable to every
+            # run in the repo. Only cross-window persistence breaks that, and it stays off.
+            layer.fwpkm.fast_updates = True
     # BUG FIX 2026-07-28: the test above read `inference_updates`, an attribute the module
     # has not had since the rewrite, so getattr(..., False) always fired and this guard did
     # NOTHING — fast weights mutated all through the benchmark, the exact non-determinism it
@@ -901,7 +919,16 @@ def evaluate_bbce(model, eval_data, config, logger, device, use_amp, amp_dtype,
     for layer in base_model.layers if hasattr(base_model, 'layers') else []:
         if hasattr(layer, 'fwpkm') and getattr(layer, 'fwpkm_enabled', False):
             _prev_fwpkm_upd.append((layer, layer.fwpkm.fast_updates))
-            layer.fwpkm.fast_updates = False
+            # KEEP WRITES ON (2026-07-29). This used to force False, which skips the update
+            # branch entirely (model.py:1488) — the memory never writes, so the benchmark
+            # scored a static PKM while training taught a memory that writes in chunk 1 and
+            # reads it back in chunks 2-4 of the SAME window. That train/eval mismatch would
+            # make FwPKM look inert no matter how well it learned. Determinism, which is why
+            # the guard exists, comes from persist_state=False instead: every forward
+            # re-seeds from the learned keys/values (model.py:1481), so each window is
+            # independent, order-free, and reproducible — and BPB stays comparable to every
+            # run in the repo. Only cross-window persistence breaks that, and it stays off.
+            layer.fwpkm.fast_updates = True
     # BUG FIX 2026-07-28: the test above read `inference_updates`, an attribute the module
     # has not had since the rewrite, so getattr(..., False) always fired and this guard did
     # NOTHING — fast weights mutated all through the benchmark, the exact non-determinism it
