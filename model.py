@@ -3656,6 +3656,16 @@ class WaveletLM(nn.Module):
                     "wavelet_dilation_schedule / prime_power_wavelet_basis_max require "
                     "shared_lifting_weights=true, real basis, single-basis lifting")
             config['levels'] = len(_schedule)
+            # PIN THE RESOLVED SCHEDULE so a rebuild from this same dict is IDEMPOTENT.
+            # The line above mutates config['levels'] (7 -> 12 for the prime-power ladder),
+            # and the dyadic half of the schedule is derived FROM config['levels'] at :3650.
+            # Constructing twice therefore compounded: 7 -> 12 levels on the training build,
+            # then 12 -> 17 on the benchmark reload (dyadic ran to 2^11=2048), so S went 13
+            # -> 18 and the width check at :2228 killed PP1's benchmark after 6.64h of
+            # completed training on 2026-07-30. Writing the schedule back means the
+            # `if _pp_max and not _schedule` guard at :3641 short-circuits on every later
+            # build and the architecture is fixed after the first construction.
+            config['wavelet_dilation_schedule'] = list(_schedule)
             print(f"[Lifting] Dilation schedule ({len(_schedule)} levels): {_schedule}")
         self._dilation_schedule = _schedule
         self.mixer_mom_aux_weight = float(config.get("mixer_mom_aux_weight", 0.01)) \
