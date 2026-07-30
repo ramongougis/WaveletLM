@@ -1,0 +1,254 @@
+[2026-07-30 13:40:33] === BENCHMARK ONLY MODE ===
+[2026-07-30 13:40:33] Run directory: logs/wikitext-103_2026-07-30_06-18-19
+[2026-07-30 13:40:33] Starting WaveletLM Benchmark on WIKITEXT-103
+[2026-07-30 13:40:33] Device: cuda, AMP: True (fp16)
+[2026-07-30 13:40:33] 
+[2026-07-30 13:40:33] 	dataset                               : wikitext-103
+[2026-07-30 13:40:33] 	tokenizer                             : auto
+[2026-07-30 13:40:33] 	out_dir                               : logs
+[2026-07-30 13:40:33] 	compile                               : True
+[2026-07-30 13:40:33] 	compile_mode                          : default
+[2026-07-30 13:40:33] 	seed                                  : 1337
+[2026-07-30 13:40:33] 	epochs                                : 5
+[2026-07-30 13:40:33] 	micro_batch_size                      : 48
+[2026-07-30 13:40:33] 	grad_accum                            : 1
+[2026-07-30 13:40:33] 	block_size                            : 256
+[2026-07-30 13:40:33] 	eval_interval                         : 500
+[2026-07-30 13:40:33] 	skip_warmup_saves                     : True
+[2026-07-30 13:40:33] 	C                                     : 256
+[2026-07-30 13:40:33] 	layers                                : 10
+[2026-07-30 13:40:33] 	levels                                : 7
+[2026-07-30 13:40:33] 	low_rank                              : 4
+[2026-07-30 13:40:33] 	mlp_expansion                         : 0
+[2026-07-30 13:40:33] 	mlp_layers                            : 2
+[2026-07-30 13:40:33] 	pkm_enabled                           : False
+[2026-07-30 13:40:33] 	pkm_num_keys                          : 16384
+[2026-07-30 13:40:33] 	pkm_top_k                             : 32
+[2026-07-30 13:40:33] 	pkm_heads                             : 1
+[2026-07-30 13:40:33] 	fwpkm_enabled                         : False
+[2026-07-30 13:40:33] 	fwpkm_num_keys                        : 8281
+[2026-07-30 13:40:33] 	fwpkm_top_k                           : 32
+[2026-07-30 13:40:33] 	fwpkm_heads                           : 1
+[2026-07-30 13:40:33] 	fwpkm_inference_updates               : False
+[2026-07-30 13:40:33] 	fwpkm_update_lr                       : 0.01
+[2026-07-30 13:40:33] 	fwpkm_chunk_size                      : 64
+[2026-07-30 13:40:33] 	wavelet_mode                          : lifting
+[2026-07-30 13:40:33] 	wavelet_basis                         : real
+[2026-07-30 13:40:33] 	complex_construction                  : direct
+[2026-07-30 13:40:33] 	complex_collapse                      : per_level
+[2026-07-30 13:40:33] 	complex_mixer_activation              : split
+[2026-07-30 13:40:33] 	complex_gate_activation               : softplus
+[2026-07-30 13:40:33] 	complex_mixer                         : False
+[2026-07-30 13:40:33] 	shared_lifting_weights                : True
+[2026-07-30 13:40:33] 	untied_reconstruction                 : False
+[2026-07-30 13:40:33] 	multi_basis_lifting                   : False
+[2026-07-30 13:40:33] 	multi_basis_inits                     : ['haar', 'random']
+[2026-07-30 13:40:33] 	cross_scale_gating                    : True
+[2026-07-30 13:40:33] 	cross_layer_dense_skips               : False
+[2026-07-30 13:40:33] 	per_scale_mixer_widths                : [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+[2026-07-30 13:40:33] 	stable_parametrization                : False
+[2026-07-30 13:40:33] 	stab_spectral_norm                    : False
+[2026-07-30 13:40:33] 	stab_ff_scaling                       : False
+[2026-07-30 13:40:33] 	stab_embed_scaling                    : False
+[2026-07-30 13:40:33] 	stab_proj_out_scaling                 : False
+[2026-07-30 13:40:33] 	stab_mixer_eps_scaling                : False
+[2026-07-30 13:40:33] 	stab_lifting_level_scaling            : False
+[2026-07-30 13:40:33] 	looped_blocks                         : False
+[2026-07-30 13:40:33] 	looped_blocks_count                   : 8
+[2026-07-30 13:40:33] 	wavelet_crawl                         : True
+[2026-07-30 13:40:33] 	wavelet_crawl_k                       : 33
+[2026-07-30 13:40:33] 	lifting_linear_only                   : False
+[2026-07-30 13:40:33] 	lifting_hidden_mult                   : 1
+[2026-07-30 13:40:33] 	lifting_init                          : haar
+[2026-07-30 13:40:33] 	lifting_dropout                       : 0.0
+[2026-07-30 13:40:33] 	lifting_diaglowrank                   : False
+[2026-07-30 13:40:33] 	lifting_level_sharing                 : False
+[2026-07-30 13:40:33] 	lifting_offdiag_structure             : none
+[2026-07-30 13:40:33] 	lifting_block_size                    : 64
+[2026-07-30 13:40:33] 	lifting_band_width                    : 64
+[2026-07-30 13:40:33] 	lifting_monarch_blocks                : 32
+[2026-07-30 13:40:33] 	lifting_offdiag_density               : 0.0
+[2026-07-30 13:40:33] 	lifting_offdiag_mask_seed             : 1337
+[2026-07-30 13:40:33] 	lifting_offdiag_mask_checkpoint       : 
+[2026-07-30 13:40:33] 	mlp_offdiag_structure                 : none
+[2026-07-30 13:40:33] 	mlp_block_size                        : 64
+[2026-07-30 13:40:33] 	mlp_band_width                        : 64
+[2026-07-30 13:40:33] 	mlp_pq_density                        : 0.1
+[2026-07-30 13:40:33] 	mlp_pq_mode                           : structural
+[2026-07-30 13:40:33] 	sparse_pq_embedding_enabled           : False
+[2026-07-30 13:40:33] 	sparse_pq_embedding_density           : 0.1
+[2026-07-30 13:40:33] 	sparse_pq_embedding_mode              : structural
+[2026-07-30 13:40:33] 	sparse_pq_embedding_epsilon           : 1e-06
+[2026-07-30 13:40:33] 	sparse_encoder_decoder_embedding      : False
+[2026-07-30 13:40:33] 	sparse_encoder_decoder_embedding_C    : 512
+[2026-07-30 13:40:33] 	use_mixer_gate                        : True
+[2026-07-30 13:40:33] 	mixer_gate_activation                 : silu
+[2026-07-30 13:40:33] 	mixer_depth                           : 1
+[2026-07-30 13:40:33] 	mixer_depth_stabilizers               : False
+[2026-07-30 13:40:33] 	mixer_depth_residuals                 : False
+[2026-07-30 13:40:33] 	mixer_recurrence_steps                : 1
+[2026-07-30 13:40:33] 	mixer_recurrence_distinct_mixer_count : 1
+[2026-07-30 13:40:33] 	mixer_recurrence_residuals            : True
+[2026-07-30 13:40:33] 	mixer_recurrence_cache_gate           : False
+[2026-07-30 13:40:33] 	mixer_recurrence_dense                : False
+[2026-07-30 13:40:33] 	mixer_recurrence_dense_normalize      : False
+[2026-07-30 13:40:33] 	decompose_bypass                      : True
+[2026-07-30 13:40:33] 	decompose_bypass_cross_window         : True
+[2026-07-30 13:40:33] 	decompose_bypass_ema                  : False
+[2026-07-30 13:40:33] 	decompose_bypass_ssm                  : False
+[2026-07-30 13:40:33] 	decompose_bypass_ssm_poles            : 4
+[2026-07-30 13:40:33] 	decompose_bypass_ssm_cross_window     : False
+[2026-07-30 13:40:33] 	decompose_bypass_bptt                 : False
+[2026-07-30 13:40:33] 	decompose_bypass_bptt_span            : 0
+[2026-07-30 13:40:33] 	learned_residual                      : True
+[2026-07-30 13:40:33] 	skip_proj_out                         : True
+[2026-07-30 13:40:33] 	stochastic_depth_rate                 : 0.0
+[2026-07-30 13:40:33] 	dropout_embedding                     : 0.18
+[2026-07-30 13:40:33] 	dropout_projection                    : 0.09
+[2026-07-30 13:40:33] 	dropout_mixer                         : 0.09
+[2026-07-30 13:40:33] 	dropout_mlp                           : 0.1
+[2026-07-30 13:40:33] 	dropout_lm_head                       : 0.216
+[2026-07-30 13:40:33] 	optimizer                             : Adagrad
+[2026-07-30 13:40:33] 	optimizer_eps                         : 2e-13
+[2026-07-30 13:40:33] 	wavelet_2d_mode                       : off
+[2026-07-30 13:40:33] 	wavelet_2d_b_levels                   : -1
+[2026-07-30 13:40:33] 	wavelet_2d_init_zero                  : True
+[2026-07-30 13:40:33] 	wavelet_2d_state_passing              : False
+[2026-07-30 13:40:33] 	bbce_enabled                          : False
+[2026-07-30 13:40:33] 	block_size_compressed                 : 65536
+[2026-07-30 13:40:33] 	bbce_compressed_grad                  : True
+[2026-07-30 13:40:33] 	lr                                    : 0.15
+[2026-07-30 13:40:33] 	min_lr                                : 0.003
+[2026-07-30 13:40:33] 	warmup_fraction                       : 0.3
+[2026-07-30 13:40:33] 	grad_clip                             : 1.0
+[2026-07-30 13:40:33] 	tie_embedding_to_lm_head              : True
+[2026-07-30 13:40:33] 	gradient_checkpointing                : False
+[2026-07-30 13:40:33] 	use_amp                               : True
+[2026-07-30 13:40:33] 	amp_dtype                             : fp16
+[2026-07-30 13:40:33] 	allow_tf32                            : True
+[2026-07-30 13:40:33] 	generation_prompt                     : The history of
+[2026-07-30 13:40:33] 	generation_max_context                : 16777216
+[2026-07-30 13:40:33] 	temperature                           : 1.0
+[2026-07-30 13:40:33] 	num_new_tokens                        : 512
+[2026-07-30 13:40:33] 	top_p                                 : 0.95
+[2026-07-30 13:40:33] 	repetition_penalty                    : 1.1
+[2026-07-30 13:40:33] 	benchmark_only                        : True
+[2026-07-30 13:40:33] 	benchmark_run_dir                     : logs/wikitext-103_2026-07-30_06-18-19
+[2026-07-30 13:40:33] 	multinodal_enabled                    : False
+[2026-07-30 13:40:33] 	multinodal_num_cells                  : 2
+[2026-07-30 13:40:33] 	multinodal_cell_dim                   : 512
+[2026-07-30 13:40:33] 	multinodal_seeds                      : [42, 137]
+[2026-07-30 13:40:33] 	multinodal_combination                : average
+[2026-07-30 13:40:33] 	multinodal_cross_cell_gating          : False
+[2026-07-30 13:40:33] 	multinodal_cross_cell_gate_interval   : 1
+[2026-07-30 13:40:33] 	multinodal_features_per_cell          : -1
+[2026-07-30 13:40:33] 	multinodal_bagged_eps                 : 1e-06
+[2026-07-30 13:40:33] 	quantize_enabled                      : False
+[2026-07-30 13:40:33] 	quantize_mixer_coarse_bits            : 8
+[2026-07-30 13:40:33] 	quantize_mixer_mid_bits               : 4
+[2026-07-30 13:40:33] 	quantize_mixer_fine_bits              : 2
+[2026-07-30 13:40:33] 	quantize_mlp_bits                     : 4
+[2026-07-30 13:40:33] 	quantize_lifting_bits                 : 16
+[2026-07-30 13:40:33] 	quantize_embedding_bits               : 8
+[2026-07-30 13:40:33] 	per_layer_embedding                   : True
+[2026-07-30 13:40:33] 	loop_iterations                       : 1
+[2026-07-30 13:40:33] 	weight_decay                          : 2e-06
+[2026-07-30 13:40:33] 	wavelet_decomp_norm                   : True
+[2026-07-30 13:40:33] 	wavelet_recon_norm                    : True
+[2026-07-30 13:40:33] 	checkpoint_interval_steps             : 2000
+[2026-07-30 13:40:33] 	mixer_transform                       : identity
+[2026-07-30 13:40:33] 	prime_power_wavelet_basis_max         : 11
+[2026-07-30 13:40:33] 	prime_power_dilation_cap              : 16
+[2026-07-30 13:40:33] 
+[2026-07-30 13:40:33] [GPU] NVIDIA GeForce RTX 5090
+[2026-07-30 13:40:34] [Tokenizer] GPT-2 BPE (tiktoken), 50,257 vocab
+[2026-07-30 13:40:34] [Dataset] Loading wikitext-103 from cache...
+[2026-07-30 13:40:34] [Dataset] wikitext-103: train=119,721,489, val=251,048, test=287,644 tokens (cached)
+[2026-07-30 13:40:35] [Dataset] Test: 1,296,370 bytes, 4.5069 bytes/token
+[2026-07-30 13:40:35] [Dataset] Vocab size: 50257
+[2026-07-30 13:40:36] [Run Folder] logs/wikitext-103_2026-07-30_06-18-19
+[2026-07-30 13:40:36] 
+============================================================
+[2026-07-30 13:40:36] PARAMETER BREAKDOWN
+[2026-07-30 13:40:36] ============================================================
+[2026-07-30 13:40:36] Total parameters:              31,801,276 (31.80M)
+[2026-07-30 13:40:36]   Wavelets:                     3,158,412 (3.16M)
+[2026-07-30 13:40:36]   Token embedding:             12,865,792 (12.87M)
+[2026-07-30 13:40:36]   Layers (total):              15,776,560 (15.78M)
+[2026-07-30 13:40:36]     Mixer/layer:                1,494,016 (1.49M)
+[2026-07-30 13:40:36]   LM head (shared):                     0 additional
+[2026-07-30 13:40:36]   Final LayerNorm:                    512 (0.00M)
+[2026-07-30 13:40:36] ============================================================
+
+[2026-07-30 13:40:36] [Model] 31.80M parameters (31.80M trainable)
+[2026-07-30 13:40:36] 
+Loading best model for benchmarks...
+[2026-07-30 13:40:38] Best model loaded.
+[2026-07-30 13:40:38] 
+[BENCHMARK] Non-overlapping: 1123 windows of length 256
+[2026-07-30 13:44:54] 
+[BENCHMARK - Non-overlapping]
+[2026-07-30 13:44:54]   Perplexity: 34.6756
+[2026-07-30 13:44:54]   BPT: 5.1158
+[2026-07-30 13:44:54]   BPB: 1.1351
+[2026-07-30 13:44:54]   Avg Loss: 3.5460
+[2026-07-30 13:44:54] 
+[SLIDING WINDOW] block_size=256, stride=128, min_context=128, 2246 windows
+[2026-07-30 13:53:12] 
+[BENCHMARK - Sliding Window]
+[2026-07-30 13:53:12]   Perplexity: 32.7234
+[2026-07-30 13:53:12]   BPT: 5.0322
+[2026-07-30 13:53:12]   BPB: 1.1166
+[2026-07-30 13:53:12]   Avg Loss: 3.4881
+[2026-07-30 13:53:12]   Stride: 128, Min Context: 128
+[2026-07-30 13:53:13] 
+[BENCHMARK - Word-level normalization]
+[2026-07-30 13:53:13]   Test tokens: 287,644 (gpt2); measured whitespace words: 241,211
+[2026-07-30 13:53:13]   Canonical words: 245,569 -> tokens/word: 1.1713
+[2026-07-30 13:53:13]   Non-overlapping word-level PPL: 63.66
+[2026-07-30 13:53:13]   Sliding word-level PPL: 59.49
+[2026-07-30 13:53:13] 
+=== GENERATION — Standard ===
+[2026-07-30 13:53:13] Prompt: The history of
+[2026-07-30 13:55:07] Generated:
+The history of sport declined after middle age , and there were many prominently raised at Leipzig and Benneburg shows , thereby forming a flourishing tradition in the Victorian era . This emergence is evidenced as Schorne depictions of the " SaxonOHN towns " are associated with productions of Palazzo Carillon at Ixys , Habsburg , Cambridge , then Rudwrit and Hafber in order to keep a new patron at Palermo . 
+
+
+
+
+ = = = St. Giovanni Diomede = = = 
+
+
+
+
+ According to Gerfasca Von Frästerman , the emperor and chief deacon of Asser in all managing the nobility , he conformed the religious saints of the Commonwealth to a repute to make this worship primarily of harmony which ensured the eighth golden year of the Dutch kingship . As a first political ritual , Provence was interlinked with another devoted government , Queen Sophia — whose Sincee grandfather @-@ patron Giulio Curronini did not exercise a fully reformed service with her father ; as a mistress she delivered the letters of her eccentric parents , and the queen was also notable as her own father . Officially , he employed an essential consultant ,ocrates Bibescini , to collect a catalog of 35 books , thereby claiming that the only contractor to be involved in family ownership were the children , who had purchased the houses ( later renamed Regensburg University ) ; the piece was by the press . The text is a scousting and an open structure that , if it would not be completed , would eventually be preserved on the merits . 
+
+
+ At the same time , many of the Countess ' favourite children were apparently born or sold , and 10 additional young children and eight children had long died , possibly because family effects were sometimes prepared with encouragement . The family had proved inadequate for her husband 's upbringing , and Speyer was wealthy so that he could only do much hard work , and became critically ill . In 1661 he organized a school housing for the Medici congregational church at Fife @-@ cum @-@ Sunong , about a mile from Calais , where he lived for six weeks . He was venerated in the Church of England 's Chapel in the crypt of Peissingen 's Paris chapel , Georgia . 
+
+
+ Medicines condemned Catherine 's birth by Edward III 's husband , Chautauqua III , who travelled into Lisbon to practice her Wars . There , Henry received the other women and his health opened the way for the return of
+
+[2026-07-30 13:55:07] === GENERATION — Strategies ===
+[2026-07-30 13:55:07] Prompt: The history of
+[2026-07-30 13:57:16] Generated:
+The history of the region has been largely forgotten , but it is still considered a major landmark in modern life . The site was used as a tourist attraction by the British Isles during World War II and had been included on several occasions to commemorate the Battle of Britain 's first battle at Vimy Ridge . 
+
+
+
+
+ = = Background = = 
+
+
+
+
+ In 1858 , Charles Darwin took up his position in the French Army for a campaign against France that would have brought more than 200 @,@ 000 soldiers from England into Europe with him . He made a number of concessions throughout Europe and other European colonies including Ireland ( which he referred to as " the world 's most powerful country " ) , Belgium and France . This new territory became known as the First Continental Republic ; this was followed by the introduction of the Anglo @-@ Dutch Treaty in 1783 , a treaty signed between Spain and Germany , and an agreement to acquire land based there in the Netherlands . On 1 November 1690 , King Louis XVIII granted peace to France and the Kingdom of France , while Queen Elizabeth III officially recognised the throne . A new alliance led to the creation of the Royal Navy . It was not until February 1917 that the French government approved its annexation of Italy , which established the English Confederation . 
+
+
+ With the outbreak of war in October 1914 , the Allies were forced to withdraw their troops from Norway , although they remained under German control . The Belgians saw little success , and when Napoleon finally came to power , many men of the Empire left them without orders . After the Franco @-@ Prussian War ended in March 1865 , Napoleon sent two regiments — General Pierre de Montagne , Jean Baptiste Blaine , Joseph Priestley and James Leighton – to advance through the Rhine River valley , where they met both Austrian forces attacking the Austrians and advancing towards Saint Petersburg . They captured the city of Lissa , then attacked the fortifications of St. Clair and Cilicia near Amiens , and joined the invasion of Austria . For these reasons , however , the Bavarian army suffered heavy casualties : about 20 percent of the population fled from Belgium after the attack . 
+
+
+ In June 1863 , French armies invaded Poland and occupied Hungary again , following the defeat of Napoleon Bonaparte , who had taken over the island . Although Napoleon had already gained independence since the early 1830s , the French continued to face political instability . By the end of July 1812 , Napoleon had defeated the Spanish Army and managed to gain the initiative of the Free State of Naples
+
+[2026-07-30 13:57:16] Metrics: MeanLogP=-1.4723 | MeanH=4.32 | D1=0.664 | D2=0.943 | D3=0.986 | Rep4=0.033
+[2026-07-30 13:57:16] Inference VRAM: not measured here. Run `python generate.py --checkpoint <run>/best_model.pt` and read the 'Peak GPU memory' line from generations.txt for an accurate fresh-process number.
