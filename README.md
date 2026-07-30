@@ -2305,7 +2305,44 @@ Everything moves from Mini except width and the width-bound learning rate (`lr �
 |---|---|---|---|
 | **Micro baseline** (shared lifting) | 24.78M | **1.1330** | 4.90h ([log](logs/wikitext-103_2026-07-27_21-37-29/log.txt)) |
 | Micro-untied (per-layer bases) | 41.36M | **1.0929** | misses its 1.0905 bar by 0.0024 ([log](logs/wikitext-103_2026-07-28_02-50-24/log.txt)) |
+| SEQ0 — sequential-order control | 24.78M | 1.1416 | +0.0086 vs baseline; the control for every FwPKM arm ([log](logs/wikitext-103_2026-07-28_17-15-37/log.txt)) |
+| FWPKM2 — FwPKM, 5,625 slots / top-32 | 28.10M | 1.1385 | −0.0031 vs SEQ0, but misses its 1.1312 bar by 0.0073 ([log](logs/wikitext-103_2026-07-29_10-40-26/log.txt)) |
+| FWPKM3 — FwPKM, 18,769 slots / top-8 | 34.86M | 1.1384 | 13.3× the store bought −0.0001; misses its 1.1133 bar by 0.0251 ([log](logs/wikitext-103_2026-07-29_16-06-31/log.txt)) |
+| MLR1 — block-MoE E=4 + coarse-only ladder | 58.46M | 1.0908 | best Micro number, but misses its 1.0618 bar by 0.0290 ([log](logs/wikitext-103_2026-07-29_22-01-08/log.txt)) |
 | Mini D0, for reference | 72.89M | 1.0436 | ([log](logs/wikitext-103_2026-07-12_08-04-38/log.txt)) |
+
+**Sequential ordering costs +0.0086 BPB — 5× less than the archive implied.** Training on contiguous
+windows instead of random ones is the precondition for any cross-window memory, and SEQ0 prices it
+at **1.1416 vs 1.1330** ([log](logs/wikitext-103_2026-07-28_17-15-37/log.txt)), or +0.027 nats. A
+~0.14-nat penalty recorded on an older config did not reproduce. Sequential also ran **1.28× faster**
+(3.84h vs 4.90h) from contiguous reads. The `best_val` gap is far larger (+0.1358 nats) because
+sequential models are scored on *random* val windows — another instance of why val loss does not
+substitute for BPB.
+
+**FwPKM: no measurable memory effect, at any store size.** Three arms, all against SEQ0 (the
+matched sequential control, never the random-order baseline):
+
+| arm | store capacity | sliding BPB | vs SEQ0 |
+|---|---|---|---|
+| FWPKM2, `persist_state=true`, memory frozen at eval | 176 tokens | 1.1393 | −0.0023 |
+| FWPKM2, both bugs fixed | 176 tokens | 1.1385 | −0.0031 |
+| FWPKM3, 13.3× the store | 2,346 tokens | 1.1384 | −0.0032 |
+
+**FWPKM3 − FWPKM2 = −0.0001, one tenth of the noise floor**: raising retention from 176 to 2,346
+tokens changed nothing, so store size was never the binding constraint. The bug fixes moved it
+−0.0008, also below the floor — the module scored the same working correctly as it did with its
+key/value parameters frozen after step 1 and its writes disabled during eval. And the residual
+−0.0031 does not survive a parameter control: the width law says 28.10M params spent on plain width
+should return **−0.0104**, so FwPKM *underperforms its own parameter count* by 0.0073, and FWPKM3 by
+0.0251. Recorded as a negative result. The implementation is now reference-faithful
+([plans/fwpkm_reference_comparison.md](plans/fwpkm_reference_comparison.md)), which makes this a
+statement about the mechanism at this scale rather than about the port.
+
+**MLR1 is the best Micro number and cannot yet be attributed.** The coarse-only scale ladder over
+four block-experts reached **1.0908**, but its control (`MOEA_Micro`, identical params, ladder the
+only difference) NaN'd at step 5500 and is queued for a rerun at half LR. Without it, 1.0908
+confounds the ladder with 4× block capacity — and against the width law it misses a 1.0618 bar by
+0.0290, so on current evidence the parameters would have been better spent on width.
 
 **The width law is steeper than the C-knee sweep implied.** The −0.065 BPB/e-fold slope used for every kill rule was fitted entirely on MBS=8 runs. With two *same-batch* anchors — D0 (72.89M / 1.0436) and Micro (24.78M / 1.1330) — the MBS=48 slope is **−0.0829/e-fold, 27% steeper**, so every previously written bar was too lenient for arms above D0. *Caveat, and not a small one:* this is a two-point slope spanning C=256→512 only, and the true law is curved in log-params, so it overstates the gain available going *up* from D0. K5 (C=768) supplies the third same-batch anchor that resolves it. A competing explanation also survives: against the MBS=8 curve interpolated at its own params, D0 sits *on* the curve (−0.0020) while Micro sits *below* it (+0.0097), and MBS=8 runs take 292,290 optimizer steps against MBS=48's 48,710 — so part of the extra steepness may be an **update-count deficit** that hits small models hardest rather than width at all. Within-Micro rankings are unaffected (all arms share batch and step count); Micro's absolute BPB should not be placed on the C-knee ladder beside MBS=8 points without this footnote.
 
