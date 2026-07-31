@@ -2182,7 +2182,7 @@ class WaveletLMBlock(nn.Module):
                 # receives exactly 0 regardless of beta_s. S scalars/layer (~80 total).
                 self.assoc_beta_scale = nn.Parameter(
                     torch.ones(S, device=device, dtype=dtype))
-            if self.assoc_feature_map == "softplus_s":
+            if self.assoc_feature_map in ("softplus_s", "leakyrelu"):
                 # Learnable sharpness INSIDE softplus: normalize(softplus(s*Wx)). Because
                 # softplus is non-homogeneous, s does NOT cancel under L2-norm (an OUTER
                 # scalar temperature would). softplus(s*z)/s -> relu(z) as s->inf, so s
@@ -2895,6 +2895,20 @@ class WaveletLMBlock(nn.Module):
                 s = self.assoc_log_s.exp()                       # learnable sharpness (per layer), >0
                 q = F.normalize(F.softplus(s * self.assoc_q(x0)), dim=-1, eps=1e-6)  # selective + strictly positive
                 k = F.normalize(F.softplus(s * self.assoc_k(x0)), dim=-1, eps=1e-6)
+            elif self.assoc_feature_map == "leakyrelu":
+                # SIGNED feature map -- deliberately violates the nonnegativity the
+                # normalized read assumes, to measure the consequence rather than argue it.
+                # phi(q).phi(k) is now a SIGNED inner product, so `den` becomes a sum of
+                # cancelling terms and can approach or cross zero. That is the ORIGINAL
+                # 2026-07-23 failure recorded above: signed q,k -> denominator negative
+                # ~50% of the time -> y exploded (absmax ~779). PREDICTION: explodes or
+                # diverges, most likely faster than relu_l2 did (relu_l2 at least kept
+                # `den` nonneg and only collapsed it toward the clamp).
+                # NOT "strictly positive" -- leaky_relu(z) < 0 for z < 0 by construction;
+                # the negative slope is the whole point of trying it.
+                s = self.assoc_log_s.exp()                       # learnable sharpness (per layer), >0
+                q = F.normalize(F.leaky_relu(s * self.assoc_q(x0)), dim=-1, eps=1e-6)
+                k = F.normalize(F.leaky_relu(s * self.assoc_k(x0)), dim=-1, eps=1e-6)
             elif self.assoc_feature_map == "relu2_l2":
                 # SQUARE then L2-normalize: keeps relu2's built-in sharpening (squaring
                 # emphasizes large components BEFORE the ratio is taken -- unlike a
