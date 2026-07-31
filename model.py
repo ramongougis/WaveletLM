@@ -2839,96 +2839,64 @@ class WaveletLMBlock(nn.Module):
         return x, None
 
     def _assoc_retrieve(self, x0, assoc_prev=None):
-        """Causal linear-attention associative memory (Katharopoulos linear-transformer read).
-
-        phi(x)=elu(x)+1 (NONNEGATIVE feature map) on q,k, then:
-          S_t = sum_{i<=t} phi(k_i) (x) v_i ;  z_t = sum_{i<=t} phi(k_i)
-          y_t = phi(q_t)·S_t / (phi(q_t)·z_t + eps)   [a match-weighted mean of values]
-        History (2026-07-23/24): the ORIGINAL normalized read used L2-normalized
-        (SIGNED) q,k -> denominator negative ~50% of the time -> y exploded (absmax
-        ~779). Dropping the denominator (unnormalized read) fixed that AND solved MQAR
-        (T=64) but the unnormalized sum GROWS with sequence length -> exploded again at
-        T=256 (WT-103, mqar_mixed.py). Nonneg features make the denominator POSITIVE and
-        BOUNDED at all T -> stable everywhere, and it's still a genuine content-addressed
-        readout (matched keys dominate the weighted mean). The delta rule (v2) remains the
-        upgrade for interference/capacity. NOTE: naive O(T·d^2) cumsum; chunked scan later.
-        """
-        # The whole scan runs in TRUE fp32. num = q·S sums a length-T cumsum over d,
-        # so on occasional batches it reaches ~1e5 — past the fp16 max (65504) -> inf
-        # -> y=inf -> NaN. Casting operands with .float() is NOT enough: autocast
-        # re-casts einsum/matmul inputs back to fp16. Disabling autocast forces fp32
-        # accumulation. (Confirmed 2026-07-24: repro NaN'd at the deepest layer via a
-        # sporadic num overflow while residual, out_proj, and beta were all still tiny
-        # -> not a residual/injection blowup, purely fp16 range in the retrieval.)
-        with torch.autocast(device_type=x0.device.type, enabled=False):
-            x0 = x0.float()
+            """Causal linear-attention associative memory (Katharopoulos linear-transformer read).
+            """
+            # 1. Perform normalization and residual connections in the active model dtype.
+            # This keeps the initial operations matching your model's current precision (e.g., bf16/fp16).
             if self.associative_bypass_cross_layer and assoc_prev is not None:
-                x0 = x0 + self.assoc_gamma * assoc_prev.float()  # depth-wise recall highway (inside pre-norm)
-            x0 = self.assoc_ln(x0)                               # pre-norm: read direction, bounds |v|
-            if self.assoc_feature_map == "relu2":
-                # nonneg, NO DC floor -> selective; but UNBOUNDED (squared) -> spiky
-                # features that are intrinsically NaN-prone under Adagrad+fp16 (pod
-                # NaN'd at lr=3.25e-3, tiny). Kept for ablation; prefer relu_l2.
-                q = F.relu(self.assoc_q(x0)).square()
-                k = F.relu(self.assoc_k(x0)).square()
-            elif self.assoc_feature_map == "relu_l2":
-                # selective (relu -> no DC floor) AND bounded (unit L2 -> <q,k> in
-                # [0,1]) -> fixes the elu1 stall without the relu2 blowup. eps guards
-                # the all-negative (zero) case: normalize(0)=0 -> den clamp -> y=0.
-                q = F.normalize(F.relu(self.assoc_q(x0)), dim=-1, eps=1e-6)
-                k = F.normalize(F.relu(self.assoc_k(x0)), dim=-1, eps=1e-6)
-            elif self.assoc_feature_map == "sigmoid_l2":
-                # PREDICTED TO STALL, queued to measure rather than argue. sigmoid(0)=0.5,
-                # so every component carries a DC floor of ~0.5 -- LARGER than elu1's ~1.0/dim
-                # floor, and that floor is exactly the documented cause of elu1's stall (a
-                # floor makes phi(q).phi(k) nearly constant across keys, so the weighted mean
-                # degenerates toward a running mean and stops being content-addressed). The
-                # L2 norm cancels a COMMON scale but not a per-component additive floor, so
-                # it only partly helps. Strictly positive and bounded, so it should be STABLE
-                # -- the expected failure is uninformative retrieval, not NaN.
-                q = F.normalize(torch.sigmoid(self.assoc_q(x0)), dim=-1, eps=1e-6)
-                k = F.normalize(torch.sigmoid(self.assoc_k(x0)), dim=-1, eps=1e-6)
-            elif self.assoc_feature_map == "softplus_l2":
-                q = F.normalize(F.softplus(self.assoc_q(x0)), dim=-1, eps=1e-6)
-                k = F.normalize(F.softplus(self.assoc_k(x0)), dim=-1, eps=1e-6)
-            elif self.assoc_feature_map == "softplus_s":
-                s = self.assoc_log_s.exp()                       # learnable sharpness (per layer), >0
-                q = F.normalize(F.softplus(s * self.assoc_q(x0)), dim=-1, eps=1e-6)  # selective + strictly positive
-                k = F.normalize(F.softplus(s * self.assoc_k(x0)), dim=-1, eps=1e-6)
-            elif self.assoc_feature_map == "leakyrelu":
-                # SIGNED feature map -- deliberately violates the nonnegativity the
-                # normalized read assumes, to measure the consequence rather than argue it.
-                # phi(q).phi(k) is now a SIGNED inner product, so `den` becomes a sum of
-                # cancelling terms and can approach or cross zero. That is the ORIGINAL
-                # 2026-07-23 failure recorded above: signed q,k -> denominator negative
-                # ~50% of the time -> y exploded (absmax ~779). PREDICTION: explodes or
-                # diverges, most likely faster than relu_l2 did (relu_l2 at least kept
-                # `den` nonneg and only collapsed it toward the clamp).
-                # NOT "strictly positive" -- leaky_relu(z) < 0 for z < 0 by construction;
-                # the negative slope is the whole point of trying it.
-                s = self.assoc_log_s.exp()                       # learnable sharpness (per layer), >0
-                q = F.normalize(F.leaky_relu(s * self.assoc_q(x0)), dim=-1, eps=1e-6)
-                k = F.normalize(F.leaky_relu(s * self.assoc_k(x0)), dim=-1, eps=1e-6)
-            elif self.assoc_feature_map == "relu2_l2":
-                # SQUARE then L2-normalize: keeps relu2's built-in sharpening (squaring
-                # emphasizes large components BEFORE the ratio is taken -- unlike a
-                # uniform scalar temperature, this does NOT cancel in y=num/den) while
-                # restoring relu_l2's structural boundedness (score in [0,1] regardless
-                # of input scale). Candidate for narrowing relu_l2's MQAR ceiling gap
-                # (93%->80%, measured 2026-07-24) without relu2's NaN risk.
-                q = F.normalize(F.relu(self.assoc_q(x0)).square(), dim=-1, eps=1e-6)
-                k = F.normalize(F.relu(self.assoc_k(x0)).square(), dim=-1, eps=1e-6)
-            else:                                                # "elu1" (original)
-                q = F.elu(self.assoc_q(x0)) + 1.0                # (B,T,d) nonneg (DC floor ~1.0/dim)
-                k = F.elu(self.assoc_k(x0)) + 1.0                # (B,T,d) nonneg (DC floor ~1.0/dim)
-            v = self.assoc_v(x0)                                 # (B,T,d)
-            kv = k.unsqueeze(-1) * v.unsqueeze(-2)               # (B,T,d,d)
-            S = kv.cumsum(dim=1)                                 # (B,T,d,d)
-            z = k.cumsum(dim=1)                                  # (B,T,d)
-            num = torch.einsum('btd,btde->bte', q, S)           # (B,T,d) fp32 — no overflow
-            den = (q * z).sum(-1, keepdim=True).clamp_min(1e-6) # (B,T,1) nonneg, bounded
-            y = num / den                                       # (B,T,d) match-weighted mean
-        return self.assoc_out(y.to(self.assoc_out.weight.dtype)) # (B,T,C)
+                # Cast assoc_prev to match x0's dtype to prevent cross-precision addition errors
+                x0 = x0 + self.assoc_gamma * assoc_prev.to(x0.dtype)  
+                
+            x0 = self.assoc_ln(x0)  # pre-norm
+
+            # 2. Project q, k, and v outside the disabled autocast block.
+            # This allows PyTorch AMP to accelerate these projections on Tensor Cores (fp16/bf16)
+            # and avoids PyTorch's "expected mat1 and mat2 to have same dtype" error.
+            q_proj = self.assoc_q(x0)
+            k_proj = self.assoc_k(x0)
+            v_proj = self.assoc_v(x0)
+
+            # 3. Enter the FP32 block for high-precision attention math and cumulative sums
+            with torch.autocast(device_type=x0.device.type, enabled=False):
+                # Upcast the projections safely to FP32
+                q_proj = q_proj.float()
+                k_proj = k_proj.float()
+                v_proj = v_proj.float()
+
+                if self.assoc_feature_map == "relu2":
+                    q = F.relu(q_proj).square()
+                    k = F.relu(k_proj).square()
+                elif self.assoc_feature_map == "relu_l2":
+                    q = F.normalize(F.relu(q_proj), dim=-1, eps=1e-6)
+                    k = F.normalize(F.relu(k_proj), dim=-1, eps=1e-6)
+                elif self.assoc_feature_map == "sigmoid_l2":
+                    q = F.normalize(torch.sigmoid(q_proj), dim=-1, eps=1e-6)
+                    k = F.normalize(torch.sigmoid(k_proj), dim=-1, eps=1e-6)
+                elif self.assoc_feature_map == "softplus_l2":
+                    q = F.normalize(F.softplus(q_proj), dim=-1, eps=1e-6)
+                    k = F.normalize(F.softplus(k_proj), dim=-1, eps=1e-6)
+                elif self.assoc_feature_map == "softplus_s":
+                    s = self.assoc_log_s.float().exp()  # Ensure the log scale parameter is upcast to float
+                    q = F.normalize(F.softplus(s * q_proj), dim=-1, eps=1e-6)
+                    k = F.normalize(F.softplus(s * k_proj), dim=-1, eps=1e-6)
+                elif self.assoc_feature_map == "relu2_l2":
+                    q = F.normalize(F.relu(q_proj).square(), dim=-1, eps=1e-6)
+                    k = F.normalize(F.relu(k_proj).square(), dim=-1, eps=1e-6)
+                else:  # "elu1" (original)
+                    q = F.elu(q_proj) + 1.0
+                    k = F.elu(k_proj) + 1.0
+
+                # Causal linear-attention reduction (using the non-negative q and k)
+                kv = k.unsqueeze(-1) * v_proj.unsqueeze(-2)         # (B, T, d, d)
+                S = kv.cumsum(dim=1)                                 # (B, T, d, d)
+                z = k.cumsum(dim=1)                                  # (B, T, d)
+                
+                num = torch.einsum('btd,btde->bte', q, S)           # (B, T, d) FP32
+                den = (q * z).sum(-1, keepdim=True).clamp_min(1e-6) # (B, T, 1) nonneg, bounded
+                y = num / den                                       # (B, T, d) match-weighted mean
+
+            # 4. Cast the result back to the linear layer's parameter dtype (e.g., bf16/fp16) for the final projection.
+            return self.assoc_out(y.to(self.assoc_out.weight.dtype)) # (B, T, C)
 
     def forward(self, x: torch.Tensor, prev_state: torch.Tensor = None, token_embeddings: torch.Tensor = None,
                 assoc_prev: torch.Tensor = None):
