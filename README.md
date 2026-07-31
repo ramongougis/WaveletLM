@@ -2309,7 +2309,27 @@ Everything moves from Mini except width and the width-bound learning rate (`lr �
 | FWPKM2 — FwPKM, 5,625 slots / top-32 | 28.10M | 1.1385 | −0.0031 vs SEQ0, but misses its 1.1312 bar by 0.0073 ([log](logs/wikitext-103_2026-07-29_10-40-26/log.txt)) |
 | FWPKM3 — FwPKM, 18,769 slots / top-8 | 34.86M | 1.1384 | 13.3× the store bought −0.0001; misses its 1.1133 bar by 0.0251 ([log](logs/wikitext-103_2026-07-29_16-06-31/log.txt)) |
 | MLR1 — block-MoE E=4 + coarse-only ladder | 58.46M | 1.0908 | best Micro number, but misses its 1.0618 bar by 0.0290 ([log](logs/wikitext-103_2026-07-29_22-01-08/log.txt)) |
+| PP1 — 12-level prime-power ladder, crawl ON | 31.80M | 1.1166 | −0.0164 vs baseline, but misses its 1.1123 width-isoparameter bar by 0.0043 ([log](logs/wikitext-103_2026-07-30_06-18-19/log.txt)) |
+| PP2 — same ladder, crawl OFF | 31.80M | 1.1328 | the crawl control for PP1 ([log](logs/wikitext-103_2026-07-30_14-02-17/log.txt)) |
+| MOEA — block-MoE E=4, no ladder | 58.46M | 1.1131 | the ladder control for MLR1; completed at half LR ([log](logs/wikitext-103_2026-07-30_21-27-23/log.txt)) |
 | Mini D0, for reference | 72.89M | 1.0436 | ([log](logs/wikitext-103_2026-07-12_08-04-38/log.txt)) |
+
+**The prime-power ladder beats the baseline and still loses to width.** Unioning the dyadic ladder
+with odd prime powers (`{1,2,3,4,5,7,8,9,11,16,32,64}`, 12 levels) scored **1.1166 at 31.80M** —
+−0.0164 against the baseline, 16× the noise floor and unambiguously real. Against the width law it
+misses a 1.1123 bar by 0.0043, so the extra 7.0M parameters would have returned more as plain width.
+The arm's actual question is **PP1 − PP2** (crawl ON minus OFF, isolating how much of the prime rungs'
+value the learned dilation mixing already captures); PP2 is pending, so this row is half an answer.
+
+Two implementation notes, both discovered the expensive way. The published `cap=128` variant
+**cannot run in fp16 at all**: 18 levels put activations at 76,239 against fp16's 65,504 ceiling on
+the *first forward at initialization*, which is why the original PP1 and PP2 both died at step 500
+regardless of the crawl setting. Measured headroom is 42.9× at 7 levels, 8.6× at 12 (`cap=16`), 3.3×
+at 14, and 0.9× at 18 — so `cap=32` was rejected too, since a 3.3× margin does not survive warmup.
+Separately, the schedule construction **mutated `config['levels']` and derived the dyadic half from
+it**, so rebuilding from the same config compounded 7 → 12 → 17 levels and crashed PP1's benchmark
+after training had already completed; the resolved schedule is now pinned into the config, verified
+idempotent across three constructions.
 
 **Sequential ordering costs +0.0086 BPB — 5× less than the archive implied.** Training on contiguous
 windows instead of random ones is the precondition for any cross-window memory, and SEQ0 prices it
@@ -2338,11 +2358,26 @@ should return **−0.0104**, so FwPKM *underperforms its own parameter count* by
 ([plans/fwpkm_reference_comparison.md](plans/fwpkm_reference_comparison.md)), which makes this a
 statement about the mechanism at this scale rather than about the port.
 
-**MLR1 is the best Micro number and cannot yet be attributed.** The coarse-only scale ladder over
-four block-experts reached **1.0908**, but its control (`MOEA_Micro`, identical params, ladder the
-only difference) NaN'd at step 5500 and is queued for a rerun at half LR. Without it, 1.0908
-confounds the ladder with 4× block capacity — and against the width law it misses a 1.0618 bar by
-0.0290, so on current evidence the parameters would have been better spent on width.
+**The multiresolution scale ladder is the tier's clearest structural win.** MLR1 reached
+**1.0908** against MOEA's **1.1131** at *identical* parameters (58,457,616) with the coarse-only
+ladder as the only difference — **−0.0223 BPB, 22× the noise floor**
+([MLR1](logs/wikitext-103_2026-07-29_22-01-08/log.txt),
+[MOEA](logs/wikitext-103_2026-07-30_21-27-23/log.txt)). MOEA needed its LR halved to 0.0375 after
+NaN-ing at step 5500; MLR1 had survived the same schedule because its masked experts sit further
+from the ceiling. So the gain belongs to *resolution specialisation*, not to 4× block capacity —
+routing tokens to experts that see progressively coarser scale bands beats routing them to four
+identical full-band experts. **Both arms still lose to plain width** (bar 1.0618; MOEA misses by
+0.0513, MLR1 by 0.0290), so this is a statement about mechanism, not about parameter allocation.
+The result is also the *resolution half only* — without a decimating compressor the experts get
+less detail but no more span, which makes a win the informative outcome and a loss weak evidence.
+
+**The wavelet crawl is not redundant with the prime rungs.** PP1 (crawl ON) minus PP2 (crawl OFF)
+is **−0.0162 BPB at identical parameters**, 16× the noise floor
+([PP2](logs/wikitext-103_2026-07-30_14-02-17/log.txt)) — the learned dilation mixing keeps earning
+its place even once the ladder already carries 12 rungs. One tempting misreading to avoid: PP2's
+1.1328 sits almost exactly on the baseline's 1.1330, but the two differ in *both* level count and
+crawl, so the near-tie says nothing on its own. `SB0_Micro` (7 levels, crawl OFF) is the missing
+cell of that 2×2 and is queued.
 
 **The width law is steeper than the C-knee sweep implied.** The −0.065 BPB/e-fold slope used for every kill rule was fitted entirely on MBS=8 runs. With two *same-batch* anchors — D0 (72.89M / 1.0436) and Micro (24.78M / 1.1330) — the MBS=48 slope is **−0.0829/e-fold, 27% steeper**, so every previously written bar was too lenient for arms above D0. *Caveat, and not a small one:* this is a two-point slope spanning C=256→512 only, and the true law is curved in log-params, so it overstates the gain available going *up* from D0. K5 (C=768) supplies the third same-batch anchor that resolves it. A competing explanation also survives: against the MBS=8 curve interpolated at its own params, D0 sits *on* the curve (−0.0020) while Micro sits *below* it (+0.0097), and MBS=8 runs take 292,290 optimizer steps against MBS=48's 48,710 — so part of the extra steepness may be an **update-count deficit** that hits small models hardest rather than width at all. Within-Micro rankings are unaffected (all arms share batch and step count); Micro's absolute BPB should not be placed on the C-knee ladder beside MBS=8 points without this footnote.
 

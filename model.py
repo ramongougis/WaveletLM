@@ -2877,6 +2877,17 @@ class WaveletLMBlock(nn.Module):
                 # the all-negative (zero) case: normalize(0)=0 -> den clamp -> y=0.
                 q = F.normalize(F.relu(self.assoc_q(x0)), dim=-1, eps=1e-6)
                 k = F.normalize(F.relu(self.assoc_k(x0)), dim=-1, eps=1e-6)
+            elif self.assoc_feature_map == "sigmoid_l2":
+                # PREDICTED TO STALL, queued to measure rather than argue. sigmoid(0)=0.5,
+                # so every component carries a DC floor of ~0.5 -- LARGER than elu1's ~1.0/dim
+                # floor, and that floor is exactly the documented cause of elu1's stall (a
+                # floor makes phi(q).phi(k) nearly constant across keys, so the weighted mean
+                # degenerates toward a running mean and stops being content-addressed). The
+                # L2 norm cancels a COMMON scale but not a per-component additive floor, so
+                # it only partly helps. Strictly positive and bounded, so it should be STABLE
+                # -- the expected failure is uninformative retrieval, not NaN.
+                q = F.normalize(torch.sigmoid(self.assoc_q(x0)), dim=-1, eps=1e-6)
+                k = F.normalize(torch.sigmoid(self.assoc_k(x0)), dim=-1, eps=1e-6)
             elif self.assoc_feature_map == "softplus_l2":
                 q = F.normalize(F.softplus(self.assoc_q(x0)), dim=-1, eps=1e-6)
                 k = F.normalize(F.softplus(self.assoc_k(x0)), dim=-1, eps=1e-6)
