@@ -5,7 +5,7 @@
 
 ## Summary
 
-Re-encode the input so that **position becomes semantically meaningful**. Sentences are deterministically transformed into fixed-width clause lattices — one slot per grammatical role, in a fixed order — connected by an inter-clause relation stream (AND, IF/THEN, NOT, coreference entity tokens). Clauses tile into **phrases bound by `block_size`**; the design target is the **pairwise regime** (two phrases per block), where same-role comparison across phrases is a single fixed offset and sparse slot fill converts to superposition memory capacity (see [Phrase-pair geometry](#phrase-pair-geometry-block-bound) and [PAD ≡ 0](#pad--0-design-requirement-not-an-open-question)). WaveletLM is a pure position-mixing machine: every token interaction is a function of relative offset (dyadic dilations + crawl lags). Under the lattice, relative offsets *are* grammatical relations — SUBJ→VERB is the same offset in every clause — so fixed-offset mixing performs alignment work that surface text demands content-based mechanisms for.
+Re-encode the input so that **position becomes semantically meaningful**. Sentences are deterministically transformed into fixed-width clause lattices — one slot per grammatical role, in a fixed, **head-first order** — connected by an inter-clause relation stream (AND, IF/THEN, NOT, coreference entity tokens). Clauses tile into **phrases bound by `block_size`**; the design target is the **single-phrase regime** (one phrase per block) under the current shift-equivariant architecture with a **slot-phase channel** supplying absolute slot identity (branch (a); a decimated frame-aligned variant where the polyphase cascade is grammatical by construction is held in reserve as branch (b) — see [Phase semantics](#phase-semantics-two-branches)). The pairwise regime (two phrases per block, same-role comparison at a single fixed offset, sparse fill as superposition capacity) is preserved as a **contingent extension**, pending resolution of the next-token-prediction vs. comparison objective conflict (see [Phrase geometry](#phrase-geometry-block-bound)). WaveletLM is a pure position-mixing machine: every token interaction is a function of relative offset (dyadic dilations + crawl lags). Under the lattice, relative offsets *are* grammatical relations — SUBJ→VERB is the same offset in every clause — so fixed-offset mixing performs alignment work that surface text demands content-based mechanisms for.
 
 Invertibility to surface text is achieved by **bookkeeping, not linguistics**: the encoder emits a per-clause receipt (surface permutation, deleted function words, morphological features, coref realizations) sufficient for exact reconstruction. The model never sees the receipt.
 
@@ -27,28 +27,50 @@ Invertibility to surface text is achieved by **bookkeeping, not linguistics**: t
 
 ### Clause frame, sized against the current decomposition
 
-Fixed-width, power-of-two slot frame. Working draft (width 8, minimal; the real frame likely needs OBL/IOBJ and width 16 — E0 decides):
+Fixed-width, power-of-two slot frame in **polyphase-aligned, head-first order** (width 8 draft; the real frame likely needs width 16 — E0 decides):
 
 ```
-[DET_S] [ADJ_S] [SUBJ] [ADV] [VERB] [DET_O] [ADJ_O] [OBJ]
+[VERB] [ADV] [OBJ] [ADJ_O] [SUBJ] [ADJ_S] [OBL] [DET]
+  0      1     2      3       4      5      6     7
 ```
 
-Empty slots hold `PAD`. Alignment with the current Micro/Mini recipe (`levels=7`, `block_size=256`, `wavelet_crawl_k=33`):
+Empty slots hold `PAD` (≡ 0, see below).
+
+**Why this order.** The current decomposition is **undecimated** (every scale stays at full length T; dilated filters) and hence shift-equivariant, so the justification differs by architecture branch (see [Phase semantics](#phase-semantics-two-branches)):
+
+- *Branch (a), current architecture:* (i) every modifier sits adjacent to its head (ADV|VERB, ADJ_O|OBJ, ADJ_S|SUBJ at offset ±1 — exactly where the autopsy shows level-0/lag-1 sharpening, so head–modifier prediction rides the transform's sharpest statistic); (ii) consecutive clause heads sit at exactly lag-width apart (VERB→VERB at lag 8), putting clause-skeleton statistics on one clean dyadic lag.
+- *Branch (b), decimated variant:* the lifting scheme's even/odd split becomes a known grammatical partition (evens = arguments, odds = their modifiers), and the decimation cascade retains slots {0,2,4,6} → {0,4} → {0} — **head-ward pruning of the dependency tree by construction**: full clause → arguments → (VERB, SUBJ) → VERB. The approx stream at scale k *is* a structural summary of the phrase (its predicate–argument headline), computed by the transform with no curriculum and no supervision — structurally superseding the rejected summary-phrases-as-training-data idea. Study-4-style scale-role questions ("skeleton at coarse, modification at fine") convert from probing hypotheses into design properties to verify.
+
+The same order serves both branches, so it is fixed now regardless of which branch runs first.
+
+### Phase semantics: two branches
+
+**Branch (a) — shift-equivariant (default; matches the current undecimated architecture).** No phase-lock is required: the load-bearing property is *relative-offset* stationarity, which is shift-invariant, so training windows may be cut at arbitrary offsets and the sliding eval runs unchanged. What equivariance costs is **absolute slot identity** — the model cannot read "this position is a VERB slot" from position alone and would have to phase-sync from content. The fix is already in the dependency doc's design space: the runtime positional channel becomes a **slot-phase channel** — position mod width, a period-8 named feature on the concat channel. Cheap, interpretable (the channel *is* slot identity), and it upgrades the planned ±PE ablation into a sharper test with a pre-registered mechanistic prediction: **the phase channel is a clear win on lattice input and redundant on surface text.** That measured asymmetry would be direct evidence the model uses slot identity as such.
+
+**Branch (b) — decimated variant (architecture change, held in reserve).** A genuinely decimating, frame-aligned lifting path realizes the grammatical polyphase cascade above. Here the **phase-lock invariant** applies: parity is anchored at the sequence origin; window *cutting* (training-sample offsets, sliding-eval stride, left-truncation of long contexts) must be frame-strided at multiples of the width; shift-augmentation is prohibited (it would average the grammatical partition away). Next-token prediction is unaffected in this branch too — autoregressive generation *grows* the sequence from a fixed origin rather than shifting it, so parity never changes as tokens append, and a frame-aligned window still contains prediction targets at all within-frame phases, so every phase is trained.
+
+Branch (a) runs first (no architecture change); branch (b) is promoted only if (a)'s interpretability readout shows the model straining to represent slot identity, or on its own merits as a summary-cascade experiment.
+
+Alignment with the current Micro/Mini recipe (`levels=7`, `block_size=256`, `wavelet_crawl_k=33`):
 
 - **Within-clause** role relations at width 8 live at offsets 1–7 → scales 1–3.
 - **Inter-clause** relations (adjacent and nearby clauses) live at offsets 8–128 → scales 4–7. Clause structure lands cleanly on the existing 7-level ladder with no depth change; a width-16 frame shifts the within/between boundary up one scale.
 - A 256-token block holds 32 width-8 clauses (16 at width 16); the crawl window (k=33) spans ~4 adjacent clauses at width 8.
 
-### Phrase-pair geometry (block-bound)
+### Phrase geometry (block-bound)
 
-**The binding parameter for phrase length is `block_size`, not C.** A *phrase* is a multi-clause unit on the shared slot grid: in the pairwise regime, one block = two phrases of `block_size/2` tokens each (128 at block 256 → 16 width-8 clauses per phrase); in the single-phrase regime, one phrase fills the block. The pairwise regime is the default design target.
+**The binding parameter for phrase length is `block_size`, not C.** A *phrase* is a multi-clause unit on the shared slot grid.
 
-Two pure layouts exist for the pair, and they allocate the scale budget oppositely:
+**Design target: single-phrase regime** — one phrase fills the block (256 tokens → 32 width-8 clauses), trained with standard next-token prediction. This regime needs none of the pair machinery and carries the full interpretability program on its own.
 
-- **Block-mirrored** — phrase 2 occupies the second half-block on the same slot grid. Corresponding roles across phrases sit at **constant offset 128**: every same-role comparison (SUBJ₁↔SUBJ₂, VERB₁↔VERB₂) is a single fixed lag. Within-phrase relations stay at fine scales; cross-phrase comparison is one coarse-scale statistic.
-- **Slot-interleaved** — phrases alternate slot-by-slot; corresponding roles sit at **offset 1** (finest scale) and within-phrase relations shift up one scale. Given the autopsy finding that fine levels sharpen onto small lags while coarse levels stay diffuse, the interleaved layout may be the one the architecture natively prefers.
+**Contingent extension: pairwise regime** — two phrases of `block_size/2` tokens each. Preserved, not active, because it creates an **objective conflict**: the comparator framing wants matching/contrastive/summary objectives, which break surface-BPB comparability and are in tension with next-token prediction at shared slots. Resolution paths (deferred, under study alongside the underlying mathematics): separate models per regime, or one model with a **mode-token prefix** per block (the T5 mechanism) — the open question being whether the wavelet tolerates objective-conditional statistics at shared slot positions. The pair machinery below activates only if this resolves.
 
-This is an empirical fork, not a design decision — a cheap paired arm at Micro settles it (E3 runs the winner; the loser is recorded).
+Two pure layouts exist for the pair, allocating the scale budget oppositely:
+
+- **Block-mirrored** — phrase 2 occupies the second half-block on the same slot grid. Corresponding roles across phrases sit at **constant offset 128**: every same-role comparison (SUBJ₁↔SUBJ₂, VERB₁↔VERB₂) is a single fixed lag. Within-phrase relations stay at fine scales; cross-phrase comparison is one coarse-scale statistic. Additional constraint from the phase-lock invariant: half-block mirroring preserves parity semantics only if the phrase width is a whole number of frames (16 at width 8 — satisfied, but coupled).
+- **Slot-interleaved** — phrases alternate slot-by-slot; corresponding roles sit at **offset 1** (finest scale) and within-phrase relations shift up one scale. Given the autopsy finding that fine levels sharpen onto small lags while coarse levels stay diffuse, the interleaved layout may be the one the architecture natively prefers. Note it also reassigns the polyphase partition: the level-1 even/odd split becomes *phrase identity* rather than argument/modifier — a coherent but different grammatical reading, decided with the layout.
+
+This is an empirical fork settled by a cheap paired arm at Micro (E2b) **if and when the pair regime activates**.
 
 **Config requirement (mirrored layout only):** nothing in the current recipe reaches lag 128 directly — the 7-level ladder's deepest detail dilation is 64 and `wavelet_crawl_k=33` caps learned lags at 33; the half-block offset is reachable only through the smoothed approx path. The mirrored layout therefore requires one of: an eighth level, a crawl lag at 128, or a dedicated pair-mixer at the fixed half-block offset. The wavelet-autopsy instrument verifies post hoc whether the chosen path is actually used. The interleaved layout needs no config change.
 
@@ -67,7 +89,7 @@ A written table from UD dependency labels to slots. Content words are routed by 
 When multiple tokens compete for one slot, the head-closest token stays in-slot; the remainder append to a variable-length overflow tail after the clause, each tagged with its home slot:
 
 ```
-the friendly dog PAD barked PAD PAD PAD | OVF ADJ_S:big ADJ_S:old
+barked PAD PAD PAD dog friendly PAD the | OVF ADJ_S:big ADJ_S:old
 ```
 
 Keeps the main lattice fixed-width and dense; rare pile-ups pay a tail instead of forcing worst-case width everywhere. The overflow region is also where subword-fallback tokens live. In-slot selection rule (head-closest vs. frequency-ranked) is a recorded convention.
@@ -102,12 +124,15 @@ PAD embeds as the **exact zero vector**, excluded from any embedding normalizati
 Relations:  AND(C1, C2)   NOT(C1)
 Entities:   E1 = "the dog"    E2 = "the cat"
 
-C1:  the  old  E1  PAD      chase  the  PAD  E2   |  OVF ADJ_S:big
-C2:  PAD  PAD  E1  quietly  sleep  PAD  PAD  PAD
+      VERB    ADV      OBJ  ADJ_O  SUBJ  ADJ_S  OBL  DET
+C1:   chase   PAD      E2   PAD    E1    old    PAD  the   |  OVF ADJ_S:big
+C2:   sleep   quietly  PAD  PAD    E1    PAD    PAD  PAD
 
-Receipt C1: perm=[…], morph={chase:(Past, Neg, do-support)}
+Receipt C1: perm=[…], morph={chase:(Past, Neg, do-support)}, det_scope={the→E1,E2}
 Receipt C2: coref={E1→"it"}, morph={sleep:(Past)}
 ```
+
+Note the head-first reading of C1: modifiers sit adjacent to their heads (old|E1 at offset ±1), and under the decimated variant (branch (b)) the polyphase cascade is visible in the layout itself — level-1 evens {chase, E2, E1, PAD} are the predicate–argument core, level-2 survivors {chase, E1} are the skeleton "dog chase", the level-3 survivor is the bare predicate. Under the current undecimated architecture (branch (a)) the same layout instead delivers these as fixed-lag statistics (head–modifier at lag 1, VERB→VERB at lag 8) plus slot identity via the phase channel.
 
 ## Metrics: the accounting rule
 
@@ -132,9 +157,9 @@ Protocol conventions follow the release pipeline: Micro tier (C=256, L=10, level
 | E0 | **Encoder census.** Encode TinyStories; report per-slot fill rate, median PAD fraction, overflow frequency, relation-token overhead, `RAW`-clause fraction, per-slot OOV rate under the word-level vocab. Wavelet-decompose sample canonical streams at levels=7; inspect per-scale variance for DC domination. Decides frame width (8 vs 16) and slot inventory. | CPU only | Gates all training |
 | E1 | **Round-trip validation.** Exact string match over the full corpus. Unit test of the bookkeeping, run before any training. | CPU only | Gates E2–E4 |
 | E2 | **Synthetic regularity curve.** Synthetic language with a controllable canonicalization knob; sub-Micro WaveletLM + matched small transformer at each regularity level; measure how the gap moves with regularity. Sidesteps the encoder pipeline entirely; isolates representation misfit from capacity. | sub-Micro GPU | Informs go/no-go on E3 |
-| E2b | **Layout fork.** Block-mirrored vs. slot-interleaved phrase pairing, paired arms at Micro on the E2 synthetic corpus (identical content, layout the sole difference). Winner becomes E3's layout; wavelet-autopsy on both checkpoints reads which scales each layout actually recruits for cross-phrase comparison. | Micro-scale | Decides E3 layout |
-| E3 | **Canonical vs. surface, paired.** Micro-on-canonical (winning layout) vs. Micro-on-surface at matched compute, scored in surface-BPB (sliding protocol). **Objective is pinned to next-token prediction over pair-blocks** — i.e., predict phrase 2 given phrase 1 — so the accounting rule and every README comparison survive; richer objectives (matching, contrastive, summary-generation) are explicitly deferred to post-E3. The two arms are each other's control. Promotion to Mini on a pass per the asymmetric rule. | Micro (~5h) → Mini | Headline prediction result |
-| E4 | **Recall-through-position probe + capacity curve.** MQAR-style synthetic recall ([tools/interpretability/mqar.py](../tools/interpretability/mqar.py)) and the recall-localization diagnostics (`recall_diagnostics.py`) on the lattice model: does fixed-slot encoding move the QRY-side read off its floor — i.e., does retrieval-by-role through position supply what content-addressed reads were needed for on surface text? Second axis: **recall capacity as a function of fill density** — sweep slot fill rate in the synthetic corpus and measure stored-comparison capacity, testing the sparse-superposition claim directly (and scoring the pre-registered VSA-contrast expectation). | Micro-scale | Standalone finding either way |
+| E2b | **Layout fork (contingent — runs only if the pair regime activates).** Block-mirrored vs. slot-interleaved phrase pairing, paired arms at Micro on the E2 synthetic corpus (identical content, layout the sole difference). Wavelet-autopsy on both checkpoints reads which scales each layout recruits for cross-phrase comparison. | Micro-scale | Decides pair layout |
+| E3 | **Canonical vs. surface, paired.** Micro-on-canonical (single-phrase regime, branch (a), slot-phase channel on) vs. Micro-on-surface at matched compute, scored in surface-BPB (sliding protocol), objective: standard next-token prediction. The two arms are each other's control. Promotion to Mini on a pass per the asymmetric rule. Secondary readouts: the **±phase-channel ablation** with its pre-registered prediction (win on lattice, redundant on surface), and autopsy of whether crawl/mixer weights sharpen onto the designed lags (head–modifier at 1, VERB→VERB at width). | Micro (~5h) → Mini | Headline prediction result |
+| E4 | **Recall-through-position probe.** MQAR-style synthetic recall ([tools/interpretability/mqar.py](../tools/interpretability/mqar.py)) and the recall-localization diagnostics (`recall_diagnostics.py`) on the single-phrase lattice model: does fixed-slot encoding move the QRY-side read off its floor — i.e., does retrieval-by-role through position supply what content-addressed reads were needed for on surface text? **Contingent second axis (pair regime only):** recall capacity as a function of fill density, testing the sparse-superposition claim and scoring the pre-registered VSA-contrast expectation. | Micro-scale | Standalone finding either way |
 | E5 | **Named-frame interpretability readout.** With the prescribed embedding (dependency doc) under the frozen-tied head: mixing-weight and crawl-weight maps over (role-pair, scale); verify role-offset statistics (e.g. agreement at the SUBJ→VERB offset) are load-bearing via the existing FDA / dimensional-suppression / SOW rails (Study 8 machinery). | analysis | Joint artifact with embedding doc |
 
 Results, including any parallels to previously parked retrieval mechanisms, go in a Results section here and in the final paper once testing completes.
@@ -157,10 +182,12 @@ A lattice model that loses modestly on surface-BPB but whose every weight has a 
 
 ## Open questions
 
-- Frame width and slot inventory after E0? (Draft width-8 frame is known-insufficient: no OBL/IOBJ.)
+- Frame width and slot inventory after E0? (Draft width-8 frame folds both determiners into one slot and has a single ADV; width 16 relieves both, at the cost of shifting the within/between-clause scale boundary.)
+- Head-first slot-order details: where do OBL vs. IOBJ sit in the survivor priority, and does copular/verbless-clause routing need a distinct head convention?
+- Objective folding for the pair regime: separate models, or one model with mode-token prefixes — and does the wavelet tolerate objective-conditional statistics at shared slot positions? (Under study with the underlying mathematics; the pair machinery stays dormant until resolved.)
 - Word-level vocab construction: shared with the semantic-embedding plan's frequency-capped vocab, or lattice-specific? (They must agree if E5 is to run on one model.)
-- Phrase segmentation policy: how is running text cut into half-block phrases — sentence-aligned with slack, greedy clause packing, or fixed-count clauses? (Segmentation is receipt-tracked either way, but the choice shifts E0's fill statistics.)
-- Which pairing curriculum for natural text — adjacent phrases only (pure LM order), or does the pair slot eventually host constructed pairs (phrase + earlier phrase, phrase + summary)? Deferred with the richer objectives, but the data pipeline should not preclude it.
+- Phrase segmentation policy: how is running text cut into full-block phrases — sentence-aligned with slack, greedy clause packing, or fixed-count clauses? (Receipt-tracked either way, but the choice shifts E0's fill statistics. Frame-aligned cutting is mandatory only under branch (b); branch (a) tolerates arbitrary cuts.)
+- Slot-phase channel realization: one-hot width-8 vs. sinusoidal period-width vs. learned-per-phase — and does it share the concat channel with the relation stream or get its own?
 - Relation tokens: prefix stream, interleaved between clauses, or a separate concat channel (mirroring the PE-channel design in the dependency doc)? Constraint from PAD ≡ 0: whatever the placement, relation/OVF tokens must not form their own constant-offset DC channel (E0 verifies).
 - How much does the frozen encoder's error rate on harder corpora (post-TinyStories, markup-normalized WT-103) erode both the prediction and interpretability claims?
 - Does the lattice change the crawl's learned posture (lag weights snapping to role offsets — multiples of the frame width) — a free check via the existing wavelet-autopsy instrument?
