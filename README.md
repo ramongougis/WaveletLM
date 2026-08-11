@@ -2750,7 +2750,7 @@ See [plans/reincorporate_large_semantic_embedding.md](plans/reincorporate_large_
 
 Re-encodes the input so that position becomes semantically meaningful. Sentences are deterministically transformed into fixed-width clause lattices, with one slot per grammatical role in a fixed order, then connected by an inter-clause relation stream (AND, IF/THEN, NOT, coreference entity tokens). WaveletLM is a pure position-mixing machine: every token interaction is a function of relative offset (dyadic dilations + crawl lags). Under the lattice, relative offsets are grammatical relations (for example, SUBJ→VERB is the same offset in every clause), so fixed-offset mixing performs alignment work that surface text demands content-based mechanisms for.
 
-Invertibility to surface text is achieved by bookkeeping, not linguistics: the encoder emits a per-clause receipt (surface permutation, deleted function words, morphological features, coref realizations) sufficient for exact reconstruction. The model never sees the receipt, and those using the model .
+Invertibility to surface text is achieved by bookkeeping, not linguistics: the encoder emits a per-clause receipt (surface permutation, deleted function words, morphological features, coref realizations) sufficient for exact reconstruction.
 
 Naturally requires the [semantic embedding]((plans/reincorporate_large_semantic_embedding.md)) and its word-level tokenization. See [plans/canonical_lattice_encoding.md](plans/canonical_lattice_encoding.md) for more info.
 
