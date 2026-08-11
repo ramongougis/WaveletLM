@@ -5,7 +5,7 @@
 
 ## Summary
 
-Re-encode the input so that **position becomes semantically meaningful**. Sentences are deterministically transformed into fixed-width clause lattices — one slot per grammatical role, in a fixed order — connected by an inter-clause relation stream (AND, IF/THEN, NOT, coreference entity tokens). WaveletLM is a pure position-mixing machine: every token interaction is a function of relative offset (dyadic dilations + crawl lags). Under the lattice, relative offsets *are* grammatical relations — SUBJ→VERB is the same offset in every clause — so fixed-offset mixing performs alignment work that surface text demands content-based mechanisms for.
+Re-encode the input so that **position becomes semantically meaningful**. Sentences are deterministically transformed into fixed-width clause lattices — one slot per grammatical role, in a fixed order — connected by an inter-clause relation stream (AND, IF/THEN, NOT, coreference entity tokens). Clauses tile into **phrases bound by `block_size`**; the design target is the **pairwise regime** (two phrases per block), where same-role comparison across phrases is a single fixed offset and sparse slot fill converts to superposition memory capacity (see [Phrase-pair geometry](#phrase-pair-geometry-block-bound) and [PAD ≡ 0](#pad--0-design-requirement-not-an-open-question)). WaveletLM is a pure position-mixing machine: every token interaction is a function of relative offset (dyadic dilations + crawl lags). Under the lattice, relative offsets *are* grammatical relations — SUBJ→VERB is the same offset in every clause — so fixed-offset mixing performs alignment work that surface text demands content-based mechanisms for.
 
 Invertibility to surface text is achieved by **bookkeeping, not linguistics**: the encoder emits a per-clause receipt (surface permutation, deleted function words, morphological features, coref realizations) sufficient for exact reconstruction. The model never sees the receipt.
 
@@ -38,6 +38,19 @@ Empty slots hold `PAD`. Alignment with the current Micro/Mini recipe (`levels=7`
 - **Within-clause** role relations at width 8 live at offsets 1–7 → scales 1–3.
 - **Inter-clause** relations (adjacent and nearby clauses) live at offsets 8–128 → scales 4–7. Clause structure lands cleanly on the existing 7-level ladder with no depth change; a width-16 frame shifts the within/between boundary up one scale.
 - A 256-token block holds 32 width-8 clauses (16 at width 16); the crawl window (k=33) spans ~4 adjacent clauses at width 8.
+
+### Phrase-pair geometry (block-bound)
+
+**The binding parameter for phrase length is `block_size`, not C.** A *phrase* is a multi-clause unit on the shared slot grid: in the pairwise regime, one block = two phrases of `block_size/2` tokens each (128 at block 256 → 16 width-8 clauses per phrase); in the single-phrase regime, one phrase fills the block. The pairwise regime is the default design target.
+
+Two pure layouts exist for the pair, and they allocate the scale budget oppositely:
+
+- **Block-mirrored** — phrase 2 occupies the second half-block on the same slot grid. Corresponding roles across phrases sit at **constant offset 128**: every same-role comparison (SUBJ₁↔SUBJ₂, VERB₁↔VERB₂) is a single fixed lag. Within-phrase relations stay at fine scales; cross-phrase comparison is one coarse-scale statistic.
+- **Slot-interleaved** — phrases alternate slot-by-slot; corresponding roles sit at **offset 1** (finest scale) and within-phrase relations shift up one scale. Given the autopsy finding that fine levels sharpen onto small lags while coarse levels stay diffuse, the interleaved layout may be the one the architecture natively prefers.
+
+This is an empirical fork, not a design decision — a cheap paired arm at Micro settles it (E3 runs the winner; the loser is recorded).
+
+**Config requirement (mirrored layout only):** nothing in the current recipe reaches lag 128 directly — the 7-level ladder's deepest detail dilation is 64 and `wavelet_crawl_k=33` caps learned lags at 33; the half-block offset is reachable only through the smoothed approx path. The mirrored layout therefore requires one of: an eighth level, a crawl lag at 128, or a dedicated pair-mixer at the fixed half-block offset. The wavelet-autopsy instrument verifies post hoc whether the chosen path is actually used. The interleaved layout needs no config change.
 
 Slot inventory, ordering, and width are **design constants** recorded in the spec; changing them invalidates cross-run comparisons.
 
@@ -72,6 +85,15 @@ The recursive structure that killed flat-template formalisms (conjunction, condi
 
 Per clause, the encoder records: (a) the permutation mapping filled slots back to surface indices, (b) deleted function words, (c) morph features for re-inflection, (d) surface realization of each entity mention ("it", elided, full NP). Reconstruction is deterministic: read filled slots, invert the permutation, re-inflect, reinsert deletions. Exact round-trip is guaranteed **by construction**; a mismatch is a bug in the bookkeeping code, not a modeling result. The receipt is metadata only — never in the model's input stream, so no leakage surface.
 
+### PAD ≡ 0 (design requirement, not an open question)
+
+PAD embeds as the **exact zero vector**, excluded from any embedding normalization/whitening statistics. Two independent arguments land on the same decision:
+
+1. **DC-pathology elimination.** Any learned nonzero PAD embedding makes a majority-PAD stream DC-dominated at coarse scales (risk #1). With PAD ≡ 0, empty slots contribute *nothing* to any wavelet sum at any scale — the pathology vanishes identically rather than being mitigated. Position already disambiguates emptiness (a zero at the ADJ_S offset *means* no adjective; slot identity is positional), so the zero costs nothing semantically.
+2. **Sparse superposition capacity.** A sparsely filled lattice is a sparse role-bound code, and sparse distributed codes carry superlinearly more items per unit of substrate before crosstalk (the Willshaw/SDM capacity lesson: interference scales with pattern density). Sparser phrases → more phrase-comparisons storable in the same state. This is the mechanism by which the pairwise regime, "if made sparse enough," buys memory capacity — and it only holds if empty slots are true zeros.
+
+**Recorded caveat:** this is the project's second superposition-memory bet; the VSA memory was removed for not helping. The distinction to hold this design to: VSA superposed in *feature space* with learned bindings (circular convolution); the lattice superposes in a *prescribed positional code* where binding is by slot. Pre-registered expectation: slot-bound superposition survives where feature-bound didn't, because the binding operation is free and exact rather than learned and approximate. E4's capacity curve is the test; if it fails the same way VSA did, that is a finding about superposition in this architecture generally, and it gets recorded as such.
+
 ### Worked example
 
 "The big old dog didn't chase the cat, and it slept quietly."
@@ -95,7 +117,7 @@ The honest headline claim, if the approach works, is system-level: *WaveletLM-on
 
 ## Known risks
 
-1. **PAD/DC pathology (top risk).** Dense PAD runs concentrate energy at coarse scales — the same DC-domination failure family as the Haar normalization bug (pre-`wavelet_decomp_norm`/`recon_norm`) and the feature-map DC floor that stalled selectivity in the retrieval screens, reintroduced through the data layout. E0 gates all training on this measurement.
+1. **PAD/DC pathology (top risk, mitigated by design).** Dense PAD runs concentrate energy at coarse scales — the same DC-domination failure family as the Haar normalization bug (pre-`wavelet_decomp_norm`/`recon_norm`) and the feature-map DC floor that stalled selectivity in the retrieval screens, reintroduced through the data layout. The PAD ≡ 0 requirement eliminates the mechanism identically rather than mitigating it; E0's per-scale variance census remains the verification that no other constant-offset channel (relation tokens, OVF tags) reintroduces it.
 2. **Canonicalization deletes predictively useful redundancy.** Agreement, word-order convention, do-support are the low-entropy scaffolding that makes surface text partially self-predicting. The canonical stream removes the easy bits and keeps the hard ones (content-word choice); surface-BPB may *rise* even as legibility improves. Pre-registered prior: coin flip, slight lean negative.
 3. **Encoder quality floor.** Parser/coref errors are invisible downstream: a wrong coref chain yields a perfectly legible lattice of the wrong proposition. Mitigation: start on TinyStories, where sentence structure keeps parse/coref error near-floor; treat encoder version as a frozen experimental constant.
 4. **Corpus format shock.** WT-103's idiosyncratic markup (` @-@ `, spaced punctuation — the same artifact implicated in F1's away-penalty) will degrade any off-the-shelf parser. Extending past TinyStories requires a markup-normalization pass, itself receipt-tracked to preserve round-trip.
@@ -110,8 +132,9 @@ Protocol conventions follow the release pipeline: Micro tier (C=256, L=10, level
 | E0 | **Encoder census.** Encode TinyStories; report per-slot fill rate, median PAD fraction, overflow frequency, relation-token overhead, `RAW`-clause fraction, per-slot OOV rate under the word-level vocab. Wavelet-decompose sample canonical streams at levels=7; inspect per-scale variance for DC domination. Decides frame width (8 vs 16) and slot inventory. | CPU only | Gates all training |
 | E1 | **Round-trip validation.** Exact string match over the full corpus. Unit test of the bookkeeping, run before any training. | CPU only | Gates E2–E4 |
 | E2 | **Synthetic regularity curve.** Synthetic language with a controllable canonicalization knob; sub-Micro WaveletLM + matched small transformer at each regularity level; measure how the gap moves with regularity. Sidesteps the encoder pipeline entirely; isolates representation misfit from capacity. | sub-Micro GPU | Informs go/no-go on E3 |
-| E3 | **Canonical vs. surface, paired.** Micro-on-canonical vs. Micro-on-surface at matched compute, scored in surface-BPB (sliding protocol). The two arms are each other's control. Promotion to Mini on a pass per the asymmetric rule. | Micro (~5h) → Mini | Headline prediction result |
-| E4 | **Recall-through-position probe.** MQAR-style synthetic recall ([tools/interpretability/mqar.py](../tools/interpretability/mqar.py)) and the recall-localization diagnostics (`recall_diagnostics.py`) on the lattice model: does fixed-slot encoding move the QRY-side read off its floor — i.e., does retrieval-by-role through position supply what content-addressed reads were needed for on surface text? | Micro-scale | Standalone finding either way |
+| E2b | **Layout fork.** Block-mirrored vs. slot-interleaved phrase pairing, paired arms at Micro on the E2 synthetic corpus (identical content, layout the sole difference). Winner becomes E3's layout; wavelet-autopsy on both checkpoints reads which scales each layout actually recruits for cross-phrase comparison. | Micro-scale | Decides E3 layout |
+| E3 | **Canonical vs. surface, paired.** Micro-on-canonical (winning layout) vs. Micro-on-surface at matched compute, scored in surface-BPB (sliding protocol). **Objective is pinned to next-token prediction over pair-blocks** — i.e., predict phrase 2 given phrase 1 — so the accounting rule and every README comparison survive; richer objectives (matching, contrastive, summary-generation) are explicitly deferred to post-E3. The two arms are each other's control. Promotion to Mini on a pass per the asymmetric rule. | Micro (~5h) → Mini | Headline prediction result |
+| E4 | **Recall-through-position probe + capacity curve.** MQAR-style synthetic recall ([tools/interpretability/mqar.py](../tools/interpretability/mqar.py)) and the recall-localization diagnostics (`recall_diagnostics.py`) on the lattice model: does fixed-slot encoding move the QRY-side read off its floor — i.e., does retrieval-by-role through position supply what content-addressed reads were needed for on surface text? Second axis: **recall capacity as a function of fill density** — sweep slot fill rate in the synthetic corpus and measure stored-comparison capacity, testing the sparse-superposition claim directly (and scoring the pre-registered VSA-contrast expectation). | Micro-scale | Standalone finding either way |
 | E5 | **Named-frame interpretability readout.** With the prescribed embedding (dependency doc) under the frozen-tied head: mixing-weight and crawl-weight maps over (role-pair, scale); verify role-offset statistics (e.g. agreement at the SUBJ→VERB offset) are load-bearing via the existing FDA / dimensional-suppression / SOW rails (Study 8 machinery). | analysis | Joint artifact with embedding doc |
 
 Results, including any parallels to previously parked retrieval mechanisms, go in a Results section here and in the final paper once testing completes.
@@ -136,8 +159,9 @@ A lattice model that loses modestly on surface-BPB but whose every weight has a 
 
 - Frame width and slot inventory after E0? (Draft width-8 frame is known-insufficient: no OBL/IOBJ.)
 - Word-level vocab construction: shared with the semantic-embedding plan's frequency-capped vocab, or lattice-specific? (They must agree if E5 is to run on one model.)
-- Does PAD need its own embedding treatment (zero-vector, excluded from whitening statistics) to avoid polluting the frozen embedding's normalization?
-- Relation tokens: prefix stream, interleaved between clauses, or a separate concat channel (mirroring the PE-channel design in the dependency doc)?
+- Phrase segmentation policy: how is running text cut into half-block phrases — sentence-aligned with slack, greedy clause packing, or fixed-count clauses? (Segmentation is receipt-tracked either way, but the choice shifts E0's fill statistics.)
+- Which pairing curriculum for natural text — adjacent phrases only (pure LM order), or does the pair slot eventually host constructed pairs (phrase + earlier phrase, phrase + summary)? Deferred with the richer objectives, but the data pipeline should not preclude it.
+- Relation tokens: prefix stream, interleaved between clauses, or a separate concat channel (mirroring the PE-channel design in the dependency doc)? Constraint from PAD ≡ 0: whatever the placement, relation/OVF tokens must not form their own constant-offset DC channel (E0 verifies).
 - How much does the frozen encoder's error rate on harder corpora (post-TinyStories, markup-normalized WT-103) erode both the prediction and interpretability claims?
 - Does the lattice change the crawl's learned posture (lag weights snapping to role offsets — multiples of the frame width) — a free check via the existing wavelet-autopsy instrument?
 
