@@ -1,6 +1,6 @@
 # Canonical Lattice Encoding (fixed-slot conlang input)
 
-**Status:** design / pre-experimental. Post-release track; not a release gate.
+**Status:** design / pre-experimental. **Promoted to the Release Pipeline 2026-08-15** — no longer post-release. E0/E1 are CPU-only and gate all training.
 **Depends on:** [`reincorporate_large_semantic_embedding.md`](reincorporate_large_semantic_embedding.md) — the lattice supplies the *positional* named frame; the prescribed embedding supplies the *dimensional* named frame; E5 is where they combine. Also inherits that plan's word-level-tokenization assumption (see [Tokenizer dependency](#tokenizer-dependency)). Sequencing per the feedback recorded in that doc stands: the dyadic-bucket PMI variance-explained curve runs before any embedding training; only E0/E1 here (CPU-only) are cheap enough to interleave with the release pipeline.
 
 ## Summary
@@ -195,3 +195,11 @@ A lattice model that loses modestly on surface-BPB but whose every weight has a 
 ## Relationship to the embedding reincorporation plan
 
 The two plans are the same bet made on orthogonal axes: prescribe the *representation* (named dimensions) and prescribe the *layout* (named positions), and check whether an architecture whose mixing is native to both prescriptions closes the gap to learned/surface baselines at acceptable cost, with a categorically stronger interpretability artifact as the payoff. They share the word-level tokenizer prerequisite and meet at E5. Sequencing stands as recorded in the dependency doc: PMI variance-explained curve first; E0/E1 here are CPU-only and can interleave with the release pipeline at any point.
+
+## Relationship to conceptual congruence
+
+[`conceptual_congruence.md`](conceptual_congruence.md) is the third axis of the same bet — prescribe the *valuation* (named concepts, assigned per situation) alongside the prescribed representation and layout. It attaches a concept channel whose label is broadcast across a span, making the signal piecewise constant: fine scales localize where the concept turns, coarse scales carry the accumulated state.
+
+**The lattice is what makes the spans well-posed.** Congruence resolves scope at labeling time, which relocates the difficulty onto boundary placement — and sentence-level spans mis-handle mixed valence ("He told me I should hire a hitman, and I refused" is two clauses with opposite labels). Clause segmentation supplies those boundaries by construction. The relation stream contributes further: `NOT(C1)` carries negation as an explicit scoped operator, so a negated clause's label composes exactly rather than being inferred from surface form.
+
+The combination is scheduled as its own README roadmap entry. Its pre-registered prediction (C5 in that plan) is that the lattice arm wins **and that the gap concentrates on mixed-valence cases** — an even spread would falsify the boundary explanation even if the arm won.
